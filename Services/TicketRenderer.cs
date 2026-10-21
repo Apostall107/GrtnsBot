@@ -1,0 +1,101 @@
+using System.Text;
+using Discord;
+using LfgBot.Models;
+
+namespace LfgBot.Services;
+
+public static class TicketRenderer
+{
+    public const string DefaultCategoryName = "Tickets";
+
+    // ---------- Панель в канале ----------
+    public static (Embed Embed, MessageComponent Components) Panel()
+    {
+        var embed = new EmbedBuilder()
+            .WithTitle("🎫 Applications & Tickets")
+            .WithColor(Color.Orange)
+            .WithDescription(
+                "**How to apply**\n" +
+                "1. Click **Create ticket**.\n" +
+                "2. Choose the project you are applying to (e.g. WWM, Aion 2). Only you can see this menu.\n" +
+                "3. The bot creates a private **text** and **voice** channel for you and the project leadership.\n" +
+                "4. Talk with the leadership there. When they **Approve** your application, " +
+                "you get the project role automatically.\n" +
+                "5. Anyone in the ticket can **Close** it — both channels are deleted.\n\n" +
+                "-# You can have one open ticket per project.")
+            .Build();
+
+        var comps = new ComponentBuilder()
+            .WithButton("Create ticket", "ticket:start", ButtonStyle.Primary, new Emoji("🎫"))
+            .Build();
+
+        return (embed, comps);
+    }
+
+    // ---------- Выбор проекта ----------
+    public static MessageComponent ProjectPicker(IReadOnlyList<TicketProject> projects)
+    {
+        var menu = new SelectMenuBuilder()
+            .WithCustomId("ticket:project")
+            .WithPlaceholder("Choose a project");
+
+        foreach (var p in projects.Take(TicketStore.MaxProjects))
+            menu.AddOption(p.Name, p.Key, $"Apply to {p.Name}");
+
+        return new ComponentBuilder().WithSelectMenu(menu).Build();
+    }
+
+    // ---------- Сообщение внутри тикета ----------
+    public static (Embed Embed, MessageComponent Components) TicketMessage(Ticket t, TicketProject? p)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"Applicant: <@{t.UserId}>");
+        sb.AppendLine($"Voice: <#{t.VoiceChannelId}>");
+        if (p is { StaffRoleIds.Count: > 0 })
+            sb.AppendLine($"Leadership: {string.Join(", ", p.StaffRoleIds.Select(r => $"<@&{r}>"))}");
+        if (p is { MemberRoleIds.Count: > 0 })
+            sb.AppendLine($"Roles on approve: {string.Join(", ", p.MemberRoleIds.Select(r => $"<@&{r}>"))}");
+        sb.AppendLine();
+        sb.AppendLine(t.ApprovedBy is { } by
+            ? $"✅ **Approved** by <@{by}>"
+            : "Leadership can **Approve** this application. Anyone here can **Close** the ticket.");
+
+        var embed = new EmbedBuilder()
+            .WithTitle($"🎫 {p?.Name ?? "Project"} — application")
+            .WithDescription(sb.ToString())
+            .WithColor(t.ApprovedBy is null ? Color.Orange : Color.Green)
+            .WithFooter($"Ticket {t.Id}")
+            .WithTimestamp(t.CreatedAt)
+            .Build();
+
+        var comps = new ComponentBuilder()
+            .WithButton("Approve", $"ticket:approve:{t.Id}", ButtonStyle.Success, new Emoji("✅"),
+                disabled: t.ApprovedBy is not null)
+            .WithButton("Close", $"ticket:close:{t.Id}", ButtonStyle.Danger, new Emoji("🔒"))
+            .Build();
+
+        return (embed, comps);
+    }
+
+    // ---------- Имена каналов ----------
+    public static string TextChannelName(TicketProject p, IUser user) => Slug($"{p.Name}-{user.Username}");
+
+    public static string VoiceChannelName(TicketProject p, IGuildUser user)
+    {
+        var name = $"🎙 {p.Name} • {user.DisplayName}";
+        return name.Length <= 100 ? name : name[..100];
+    }
+
+    private static string Slug(string value)
+    {
+        var sb = new StringBuilder();
+        foreach (var c in value.ToLowerInvariant())
+        {
+            if (char.IsLetterOrDigit(c)) sb.Append(c);
+            else if (sb.Length > 0 && sb[^1] != '-') sb.Append('-');
+        }
+        var slug = sb.ToString().Trim('-');
+        if (slug.Length == 0) slug = "ticket";
+        return slug.Length <= 100 ? slug : slug[..100];
+    }
+}

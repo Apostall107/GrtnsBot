@@ -1,0 +1,27 @@
+[Unit]
+Description=Greatness Discord Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=greatnessbot
+Group=greatnessbot
+WorkingDirectory=/opt/greatnessbot
+ExecStart=/opt/greatnessbot/LfgBot
+# Token and other secrets: /etc/greatnessbot.env (created by install.sh, readable by root only)
+EnvironmentFile=/etc/greatnessbot.env
+Environment=DOTNET_ENVIRONMENT=Production
+Environment=DOTNET_BUNDLE_EXTRACT_BASE_DIR=/opt/greatnessbot/.bundle
+Restart=always
+RestartSec=10
+
+# Basic hardening: the bot can write only into its own folder
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/greatnessbot
+
+[Install]
+WantedBy=multi-user.target
