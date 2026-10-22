@@ -1,0 +1,21 @@
+# Build output
+bin/
+obj/
+publish/
+deploy-linux/
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Bot runtime data (lives next to the running exe / in /opt/greatnessbot/data on the server)
+data/
+
+# Secrets
+*.env
+appsettings.*.json
+
+# Windows shortcuts
+*.lnk
