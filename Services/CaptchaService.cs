@@ -52,8 +52,8 @@ public sealed class CaptchaService(CaptchaStore store, BotOwner owner, ILogger<C
 
             var settings = store.Get();
             var challenge = _challenges.AddOrUpdate(userId,
-                _ => new Challenge(CaptchaImage.NewCode(settings.CodeLength), settings.MaxAttempts),
-                (_, existing) => { existing.Code = CaptchaImage.NewCode(settings.CodeLength); return existing; });
+                _ => new Challenge(CaptchaImage.NewCode(settings.CodeLength, settings.Mirror), settings.MaxAttempts),
+                (_, existing) => { existing.Code = CaptchaImage.NewCode(settings.CodeLength, settings.Mirror); return existing; });
 
             var (embed, components) = BuildMessage(challenge, settings, null);
             using var image = new MemoryStream(Render(challenge.Code, settings));
@@ -76,20 +76,20 @@ public sealed class CaptchaService(CaptchaStore store, BotOwner owner, ILogger<C
     {
         if (!_challenges.TryGetValue(userId, out var challenge)) return null;
         var settings = store.Get();
-        challenge.Code = CaptchaImage.NewCode(settings.CodeLength);
+        challenge.Code = CaptchaImage.NewCode(settings.CodeLength, settings.Mirror);
         var (embed, components) = BuildMessage(challenge, settings, notice);
         return (embed, components, new FileAttachment(new MemoryStream(Render(challenge.Code, settings)), FileName));
     }
 
     public static byte[] Render(string code, CaptchaSettings settings) =>
-        CaptchaImage.RenderPng(code, settings.Mirror, settings.Distortion);
+        CaptchaImage.RenderPng(code, settings.Mirror, settings.DistortionPercent);
 
     /// <summary>Подсказка, как читать картинку.</summary>
     public static string HowToRead(int length, bool mirror)
     {
         var rows = length > CaptchaImage.PerRow ? $" in {(length + CaptchaImage.PerRow - 1) / CaptchaImage.PerRow} rows" : "";
         return $"The picture has **{length} characters**{rows}." +
-               (mirror ? " It is **mirrored**: read each row as in a mirror, from right to left." : "");
+               (mirror ? " Every character is **mirrored** — read them left to right as usual." : "");
     }
 
     public CaptchaResult Submit(ulong userId, string? input, out int attemptsLeft)
