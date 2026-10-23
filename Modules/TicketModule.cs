@@ -283,9 +283,53 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner) : Interac
         await FollowupAsync($"🎉 <@{ticket.UserId}> approved by <@{Context.User.Id}> — {Mentions(granted)} granted.",
             allowedMentions: new AllowedMentions { UserIds = [ticket.UserId] });
 
+        // Не все роли выдались — тикет не закрываем, чтобы руководство могло исправить и выдать вручную
         if (failed.Count > 0)
-            await FollowupAsync($"⚠️ Couldn't give {Mentions(failed)} — move my role above them in Server Settings → Roles.",
+        {
+            await FollowupAsync($"⚠️ Couldn't give {Mentions(failed)} — move my role above them in Server Settings → Roles. " +
+                                "The ticket stays open; close it when the roles are sorted out.",
                 ephemeral: true, allowedMentions: AllowedMentions.None);
+            return;
+        }
+
+        await FollowupAsync($"🔒 This ticket will close in {(int)ApproveCloseDelay.TotalSeconds} seconds.");
+        await NotifyApprovedAsync(applicant, project, granted);
+        _ = CloseAfterDelayAsync(updated);
+    }
+
+    /// <summary>Сколько ждать после Approve перед удалением каналов — чтобы все успели увидеть сообщение.</summary>
+    private static readonly TimeSpan ApproveCloseDelay = TimeSpan.FromSeconds(15);
+
+    /// <summary>ЛС заявителю: каналы тикета сейчас исчезнут, а итог должен остаться у него.</summary>
+    private async Task NotifyApprovedAsync(IUser applicant, TicketProject project, IEnumerable<ulong> roleIds)
+    {
+        var roles = string.Join(", ", roleIds.Select(id => Context.Guild.GetRole(id)?.Name ?? "role").Select(Format.Sanitize));
+        try
+        {
+            await applicant.SendMessageAsync(
+                $"✅ Your application to **{Format.Sanitize(project.Name)}** on **{Format.Sanitize(Context.Guild.Name)}** " +
+                $"was approved. You got: **{roles}**.");
+        }
+        catch (Discord.Net.HttpException)
+        {
+            // у человека закрыты ЛС — ничего страшного
+        }
+    }
+
+    private async Task CloseAfterDelayAsync(Ticket ticket)
+    {
+        try
+        {
+            await Task.Delay(ApproveCloseDelay);
+            if (store.FindTicket(ticket.Id) is null) return; // уже закрыли вручную
+            store.RemoveTicket(ticket.Id);
+            await DeleteTicketChannelAsync(ticket, ticket.VoiceChannelId);
+            await DeleteTicketChannelAsync(ticket, ticket.TextChannelId);
+        }
+        catch (Exception)
+        {
+            // каналы могли удалить вручную — тикет уже убран из списка
+        }
     }
 
     private static string Mentions(IEnumerable<ulong> roleIds) => string.Join(", ", roleIds.Select(r => $"<@&{r}>"));
