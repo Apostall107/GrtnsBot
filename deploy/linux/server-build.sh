@@ -36,7 +36,9 @@ cp deploy/linux/*.sh deploy/linux/*.service deploy/linux/*.md "$OUT/"
 # Data from the repo is used only on the very first install (install.sh keeps existing server data)
 if [ -d data ]; then cp -r data "$OUT/data"; fi
 
-if systemctl list-unit-files | grep -q '^greatnessbot\.service'; then
+# Not `systemctl list-unit-files | grep -q`: with pipefail, grep -q closes the pipe early,
+# systemctl gets SIGPIPE and the check wrongly falls through to a first install.
+if [ -f /etc/systemd/system/greatnessbot.service ]; then
     echo "=== Update ==="
     sudo bash "$OUT/update.sh"
 else
