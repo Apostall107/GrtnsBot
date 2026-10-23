@@ -8,7 +8,7 @@ using LfgBot.Services;
 namespace LfgBot.Modules;
 
 [RequireContext(ContextType.Guild)]
-public sealed class TicketModule(TicketStore store) : InteractionModuleBase<SocketInteractionContext>
+public sealed class TicketModule(TicketStore store, BotOwner botOwner) : InteractionModuleBase<SocketInteractionContext>
 {
     // Защита от двойного клика: пока создаётся тикет, второй не создаём
     private static readonly ConcurrentDictionary<string, byte> Creating = new();
@@ -21,7 +21,7 @@ public sealed class TicketModule(TicketStore store) : InteractionModuleBase<Sock
     // ================= Панель =================
 
     [SlashCommand("ticket-panel", "Post the ticket panel with instructions in this channel")]
-    [DefaultMemberPermissions(GuildPermission.ManageGuild)]
+    [RequireBotAdmin]
     public async Task PanelCommand()
     {
         if (await GetChannelAsync(Context.Interaction.ChannelId ?? 0) is not { } channel)
@@ -337,8 +337,9 @@ public sealed class TicketModule(TicketStore store) : InteractionModuleBase<Sock
     // ================= Хелперы =================
 
     private bool IsStaff(TicketProject project) =>
-        Context.User is IGuildUser user &&
-        (user.GuildPermissions.Administrator || user.RoleIds.Any(id => project.StaffRoleIds.Contains(id)));
+        botOwner.Is(Context.User.Id) ||
+        (Context.User is IGuildUser user &&
+         (user.GuildPermissions.Administrator || user.RoleIds.Any(id => project.StaffRoleIds.Contains(id))));
 
     /// <summary>
     /// Тикет этого сервера, и кнопка нажата внутри его текстового канала.

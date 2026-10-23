@@ -8,7 +8,7 @@ namespace LfgBot.Modules;
 
 [Group("ticket-project", "Manage ticket projects and their roles")]
 [RequireContext(ContextType.Guild)]
-[DefaultMemberPermissions(GuildPermission.ManageGuild)]
+[RequireBotAdmin]
 public sealed class TicketAdminModule(TicketStore store) : InteractionModuleBase<SocketInteractionContext>
 {
     [SlashCommand("add", "Add a project (e.g. WWM, Aion 2)")]

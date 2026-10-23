@@ -11,7 +11,7 @@ public sealed record RoomRef(SocketVoiceChannel Channel, TempVoiceRoom Room);
 /// Действия владельца с временной комнатой. Общие для команд /room и кнопок панели.
 /// Работает только с комнатами из списка бота на текущем сервере.
 /// </summary>
-public sealed class TempRoomManager(TempVoiceStore store, DiscordSocketClient client, ILogger<TempRoomManager> logger)
+public sealed class TempRoomManager(TempVoiceStore store, DiscordSocketClient client, BotOwner botOwner, ILogger<TempRoomManager> logger)
 {
     /// <summary>
     /// Порядок голосовых каналов в категории: сначала создатели, под ними временные комнаты (старые выше),
@@ -61,7 +61,7 @@ public sealed class TempRoomManager(TempVoiceStore store, DiscordSocketClient cl
         if (channel is null || stored is null || stored.GuildId != guild.Id)
             return "Join your temporary room first.";
 
-        if (ownerOnly && stored.OwnerId != user.Id)
+        if (ownerOnly && stored.OwnerId != user.Id && !botOwner.Is(user.Id))
             return $"Only the room owner <@{stored.OwnerId}> can do this. If they left, use **Claim**.";
 
         room = new RoomRef(channel, stored);

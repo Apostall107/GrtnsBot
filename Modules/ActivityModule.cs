@@ -8,7 +8,7 @@ namespace LfgBot.Modules;
 
 [Group("activity", "Activities for group signups")]
 [RequireContext(ContextType.Guild)]
-[DefaultMemberPermissions(GuildPermission.ManageGuild)]
+[RequireBotAdmin]
 public sealed class ActivityModule(ActivityStore store) : InteractionModuleBase<SocketInteractionContext>
 {
     [SlashCommand("add", "Add an activity with a role to ping")]
