@@ -20,7 +20,7 @@ public static class TicketRenderer
                 "2. Choose the project you are applying to (e.g. WWM, Aion 2). Only you can see this menu.\n" +
                 "3. The bot creates a private **text** and **voice** channel for you and the project leadership.\n" +
                 "4. Talk with the leadership there. When they **Approve** your application, " +
-                "you get the project role automatically.\n" +
+                "you get the project role automatically and the ticket closes (you'll also get a DM).\n" +
                 "5. Anyone in the ticket can **Close** it — both channels are deleted.\n\n" +
                 "-# You can have one open ticket per project.")
             .Build();
@@ -64,7 +64,8 @@ public static class TicketRenderer
         sb.AppendLine();
         sb.AppendLine(t.ApprovedBy is { } by
             ? $"✅ **Approved** by <@{by}>"
-            : "Leadership can **Approve** this application. Anyone here can **Close** the ticket.");
+            : "Leadership can **Approve** this application — the role is given and the ticket closes. " +
+              "Anyone here can **Close** the ticket.");
 
         var embed = new EmbedBuilder()
             .WithTitle($"🎫 {p?.Name ?? "Project"} — application")
