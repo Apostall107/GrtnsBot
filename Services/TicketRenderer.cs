@@ -46,7 +46,13 @@ public static class TicketRenderer
     }
 
     // ---------- Сообщение внутри тикета ----------
-    public static (Embed Embed, MessageComponent Components) TicketMessage(Ticket t, TicketProject? p)
+    public const int MaxCustomTextLength = 4000;
+
+    /// <summary>
+    /// Сообщение тикета: embed с системной информацией, под ним (если задан) embed со своим текстом проекта,
+    /// ниже — кнопки. В тексте {applicant} → упоминание заявителя, {project} → название проекта.
+    /// </summary>
+    public static (Embed[] Embeds, MessageComponent Components) TicketMessage(Ticket t, TicketProject? p)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"Applicant: <@{t.UserId}>");
@@ -68,13 +74,28 @@ public static class TicketRenderer
             .WithTimestamp(t.CreatedAt)
             .Build();
 
+        var embeds = new List<Embed> { embed };
+        if (!string.IsNullOrWhiteSpace(p?.CustomText))
+            embeds.Add(new EmbedBuilder()
+                .WithDescription(ApplyPlaceholders(p.CustomText, t, p))
+                .WithColor(Color.LightGrey)
+                .Build());
+
         var comps = new ComponentBuilder()
             .WithButton("Approve", $"ticket:approve:{t.Id}", ButtonStyle.Success, new Emoji("✅"),
                 disabled: t.ApprovedBy is not null)
             .WithButton("Close", $"ticket:close:{t.Id}", ButtonStyle.Danger, new Emoji("🔒"))
             .Build();
 
-        return (embed, comps);
+        return (embeds.ToArray(), comps);
+    }
+
+    private static string ApplyPlaceholders(string text, Ticket t, TicketProject p)
+    {
+        var result = text
+            .Replace("{applicant}", $"<@{t.UserId}>", StringComparison.OrdinalIgnoreCase)
+            .Replace("{project}", p.Name, StringComparison.OrdinalIgnoreCase);
+        return result.Length <= 4096 ? result : result[..4096];
     }
 
     // ---------- Имена каналов ----------

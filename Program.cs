@@ -36,6 +36,8 @@ builder.Services.AddSingleton<TempRoomManager>();
 builder.Services.AddSingleton<LfgNotifyStore>();
 builder.Services.AddSingleton<LfgNotifier>();
 builder.Services.AddSingleton<LfgSignupService>();
+builder.Services.AddSingleton<AdminStore>();
+builder.Services.AddSingleton<TicketMessageService>();
 builder.Services.AddHostedService<BotService>();
 builder.Services.AddHostedService<GroupCleanupService>();
 builder.Services.AddHostedService<TempVoiceService>();
