@@ -10,6 +10,12 @@ public sealed class CaptchaSettings
     /// <summary>Сколько минут действует пройденная капча. 0 — капча перед каждой командой.</summary>
     public int ValidityMinutes { get; set; } = 60;
     public int MaxAttempts { get; set; } = 3;
+    /// <summary>Длина кода, 4–30. Строки по 10 символов.</summary>
+    public int CodeLength { get; set; } = 30;
+    /// <summary>Отражать картинку по горизонтали.</summary>
+    public bool Mirror { get; set; } = true;
+    /// <summary>Сила искажения: 1 — слабое, 2 — среднее, 3 — сильное.</summary>
+    public int Distortion { get; set; } = 2;
     /// <summary>Блокировка после неудачи, минут.</summary>
     public int BlockMinutes { get; set; } = 10;
     /// <summary>Отправлять в таймаут Discord на время блокировки (дополнительно к блокировке бота).</summary>
@@ -20,6 +26,9 @@ public sealed class CaptchaSettings
         Users = Users.ToList(),
         ValidityMinutes = ValidityMinutes,
         MaxAttempts = MaxAttempts,
+        CodeLength = CodeLength,
+        Mirror = Mirror,
+        Distortion = Distortion,
         BlockMinutes = BlockMinutes,
         TimeoutOnFail = TimeoutOnFail
     };

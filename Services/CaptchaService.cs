@@ -52,11 +52,11 @@ public sealed class CaptchaService(CaptchaStore store, BotOwner owner, ILogger<C
 
             var settings = store.Get();
             var challenge = _challenges.AddOrUpdate(userId,
-                _ => new Challenge(CaptchaImage.NewCode(), settings.MaxAttempts),
-                (_, existing) => { existing.Code = CaptchaImage.NewCode(); return existing; });
+                _ => new Challenge(CaptchaImage.NewCode(settings.CodeLength), settings.MaxAttempts),
+                (_, existing) => { existing.Code = CaptchaImage.NewCode(settings.CodeLength); return existing; });
 
-            var (embed, components) = BuildMessage(challenge.AttemptsLeft, null);
-            using var image = new MemoryStream(CaptchaImage.RenderPng(challenge.Code));
+            var (embed, components) = BuildMessage(challenge, settings, null);
+            using var image = new MemoryStream(Render(challenge.Code, settings));
             await interaction.RespondWithFileAsync(new FileAttachment(image, FileName),
                 embed: embed, components: components, ephemeral: true);
             return true;
@@ -75,9 +75,21 @@ public sealed class CaptchaService(CaptchaStore store, BotOwner owner, ILogger<C
     public (Embed Embed, MessageComponent Components, FileAttachment File)? Regenerate(ulong userId, string? notice = null)
     {
         if (!_challenges.TryGetValue(userId, out var challenge)) return null;
-        challenge.Code = CaptchaImage.NewCode();
-        var (embed, components) = BuildMessage(challenge.AttemptsLeft, notice);
-        return (embed, components, new FileAttachment(new MemoryStream(CaptchaImage.RenderPng(challenge.Code)), FileName));
+        var settings = store.Get();
+        challenge.Code = CaptchaImage.NewCode(settings.CodeLength);
+        var (embed, components) = BuildMessage(challenge, settings, notice);
+        return (embed, components, new FileAttachment(new MemoryStream(Render(challenge.Code, settings)), FileName));
+    }
+
+    public static byte[] Render(string code, CaptchaSettings settings) =>
+        CaptchaImage.RenderPng(code, settings.Mirror, settings.Distortion);
+
+    /// <summary>Подсказка, как читать картинку.</summary>
+    public static string HowToRead(int length, bool mirror)
+    {
+        var rows = length > CaptchaImage.PerRow ? $" in {(length + CaptchaImage.PerRow - 1) / CaptchaImage.PerRow} rows" : "";
+        return $"The picture has **{length} characters**{rows}." +
+               (mirror ? " It is **mirrored**: read each row as in a mirror, from right to left." : "");
     }
 
     public CaptchaResult Submit(ulong userId, string? input, out int attemptsLeft)
@@ -86,7 +98,7 @@ public sealed class CaptchaService(CaptchaStore store, BotOwner owner, ILogger<C
         if (!_challenges.TryGetValue(userId, out var challenge)) return CaptchaResult.NoChallenge;
 
         var settings = store.Get();
-        if (string.Equals((input ?? "").Trim(), challenge.Code, StringComparison.OrdinalIgnoreCase))
+        if (CaptchaImage.Normalize(input) == challenge.Code)
         {
             _challenges.TryRemove(userId, out _);
             if (settings.ValidityMinutes <= 0) _oneShot[userId] = 1;
@@ -148,15 +160,18 @@ public sealed class CaptchaService(CaptchaStore store, BotOwner owner, ILogger<C
         _ => false
     };
 
-    private static (Embed Embed, MessageComponent Components) BuildMessage(int attemptsLeft, string? notice)
+    private static (Embed Embed, MessageComponent Components) BuildMessage(Challenge challenge, CaptchaSettings settings,
+        string? notice)
     {
+        var attemptsLeft = challenge.AttemptsLeft;
         var embed = new EmbedBuilder()
             .WithTitle("🤖 Verification required")
             .WithColor(Color.Orange)
             .WithDescription(
                 (notice is null ? "" : notice + "\n\n") +
                 "Before using the bot, type the code from the picture.\n" +
-                "Click **Enter code**. Letters are not case-sensitive. Can't read it? Click **New picture**.\n\n" +
+                HowToRead(challenge.Code.Length, settings.Mirror) + "\n" +
+                "Click **Enter code**. Case and spaces don't matter. Can't read it? Click **New picture**.\n\n" +
                 $"Attempts left: **{attemptsLeft}**")
             .WithImageUrl($"attachment://{FileName}")
             .Build();
