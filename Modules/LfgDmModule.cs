@@ -10,7 +10,7 @@ namespace LfgBot.Modules;
 /// Запись в сбор прямо из ЛС-оповещения. Без RequireContext(Guild): кнопки нажимают в личке.
 /// Сервер берётся из самого сбора; записаться может только участник этого сервера.
 /// </summary>
-public sealed class LfgDmModule(LfgStore store, CharacterStore characters, LfgSignupService signup)
+public sealed class LfgDmModule(LfgStore store, CharacterStore characters, LfgSignupService signup, LfgNotifyStore notifyPrefs)
     : InteractionModuleBase<SocketInteractionContext>
 {
     private SocketMessageComponent Component => (SocketMessageComponent)Context.Interaction;
@@ -78,6 +78,36 @@ public sealed class LfgDmModule(LfgStore store, CharacterStore characters, LfgSi
         characters.Add(group.GuildId, Context.User.Id, name);
         var result = await signup.JoinAsync(group, Context.User.Id, Enum.Parse<SlotRole>(role), name);
         await RespondAsync(result, ephemeral: true);
+    }
+
+    // ================= Отписка прямо из ЛС =================
+
+    [ComponentInteraction("lfgdm:off:*")]
+    public Task OnDmOff(string guildId) => SetDmPreferenceAsync(guildId, false);
+
+    [ComponentInteraction("lfgdm:on:*")]
+    public Task OnDmOn(string guildId) => SetDmPreferenceAsync(guildId, true);
+
+    private async Task SetDmPreferenceAsync(string guildIdText, bool enabled)
+    {
+        if (!ulong.TryParse(guildIdText, out var guildId) || Context.Client.GetGuild(guildId) is not { } guild)
+        {
+            await RespondAsync("That server is no longer available.", ephemeral: true);
+            return;
+        }
+
+        notifyPrefs.SetEnabled(guildId, Context.User.Id, enabled);
+
+        var toggle = new ComponentBuilder()
+            .WithButton(enabled ? "Turn off these DMs" : "Turn DMs back on", $"lfgdm:{(enabled ? "off" : "on")}:{guildId}",
+                ButtonStyle.Secondary, new Emoji(enabled ? "🔕" : "🔔"))
+            .Build();
+
+        await RespondAsync(enabled
+                ? $"🔔 DMs on: you will get a DM when a group is started for your roles on **{Format.Sanitize(guild.Name)}**."
+                : $"🔕 DMs off: you will no longer get LFG DMs from **{Format.Sanitize(guild.Name)}**. " +
+                  "You can turn them back on here, with 🔔 on the LFG panel or `/lfg-dm on`.",
+            components: toggle, ephemeral: true);
     }
 
     /// <summary>Сбор существует, и нажавший — участник сервера этого сбора.</summary>
