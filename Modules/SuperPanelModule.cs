@@ -95,8 +95,9 @@ public sealed class SuperPanelModule(CaptchaStore store, CaptchaService captcha,
         var enabled = false;
         store.Update(s => enabled = s.TimeoutOnFail = !s.TimeoutOnFail);
         return ShowAsync(Screen(enabled
-            ? "✅ Users who fail the captcha will also get a Discord timeout for the block time. " +
-              "The bot needs **Timeout Members** and its role must be above theirs."
+            ? "✅ Users who fail the captcha will also get a Discord timeout for the block time and are disconnected " +
+              "from voice. Administrators can't be timed out — they are kept out of voice instead. " +
+              "The bot needs **Timeout Members** and **Move Members**."
             : "✅ Users who fail the captcha will only be blocked from the bot."));
     }
 
@@ -142,7 +143,7 @@ public sealed class SuperPanelModule(CaptchaStore store, CaptchaService captcha,
         sb.AppendLine("**Settings**");
         sb.AppendLine($"• Valid after solving: {(s.ValidityMinutes <= 0 ? "every command" : $"{s.ValidityMinutes} min")}");
         sb.AppendLine($"• Attempts per captcha: {s.MaxAttempts}");
-        sb.AppendLine($"• On failure: blocked from the bot for {s.BlockMinutes} min{(s.TimeoutOnFail ? " **and timed out on the server**" : "")}");
+        sb.AppendLine($"• On failure: blocked from the bot for {s.BlockMinutes} min{(s.TimeoutOnFail ? " **and timed out on the server** (admins: kept out of voice)" : "")}");
         sb.AppendLine();
         sb.AppendLine($"-# Owner <@{owner.Id}> always has full access to the bot and never gets a captcha.");
 
