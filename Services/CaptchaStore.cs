@@ -12,8 +12,8 @@ public sealed class CaptchaSettings
     public int MaxAttempts { get; set; } = 3;
     /// <summary>Блокировка после неудачи, минут.</summary>
     public int BlockMinutes { get; set; } = 10;
-    /// <summary>Кикать с сервера после неудачи (дополнительно к блокировке).</summary>
-    public bool KickOnFail { get; set; }
+    /// <summary>Отправлять в таймаут Discord на время блокировки (дополнительно к блокировке бота).</summary>
+    public bool TimeoutOnFail { get; set; }
 
     public CaptchaSettings Clone() => new()
     {
@@ -21,7 +21,7 @@ public sealed class CaptchaSettings
         ValidityMinutes = ValidityMinutes,
         MaxAttempts = MaxAttempts,
         BlockMinutes = BlockMinutes,
-        KickOnFail = KickOnFail
+        TimeoutOnFail = TimeoutOnFail
     };
 }
 

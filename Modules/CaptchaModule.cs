@@ -74,7 +74,7 @@ public sealed class CaptchaModule(CaptchaService captcha, CaptchaStore store, IL
                 var text = "⛔ Too many wrong attempts." +
                            (until is { } u ? $" You can use the bot again <t:{u.ToUnixTimeSeconds()}:R>." : "");
                 await RespondAsync(text, ephemeral: true);
-                if (settings.KickOnFail) await KickAsync();
+                if (settings.TimeoutOnFail) await TimeoutAsync(TimeSpan.FromMinutes(Math.Max(1, settings.BlockMinutes)));
                 break;
 
             default:
@@ -83,17 +83,21 @@ public sealed class CaptchaModule(CaptchaService captcha, CaptchaStore store, IL
         }
     }
 
-    private async Task KickAsync()
+    /// <summary>Таймаут Discord (нельзя писать и заходить в голос). Максимум Discord — 28 дней.</summary>
+    private async Task TimeoutAsync(TimeSpan duration)
     {
         if (Context.Guild?.GetUser(Context.User.Id) is not { } member) return;
+        if (duration > TimeSpan.FromDays(28)) duration = TimeSpan.FromDays(28);
         try
         {
-            await member.KickAsync("Failed bot captcha");
-            logger.LogInformation("Kicked {User} ({UserId}) for failing the captcha", member.Username, member.Id);
+            await member.SetTimeOutAsync(duration, new RequestOptions { AuditLogReason = "Failed bot captcha" });
+            logger.LogInformation("Timed out {User} ({UserId}) for {Minutes} min for failing the captcha",
+                member.Username, member.Id, (int)duration.TotalMinutes);
         }
         catch (Discord.Net.HttpException ex)
         {
-            logger.LogWarning(ex, "Could not kick {UserId} after a failed captcha (Kick Members permission?)", member.Id);
+            logger.LogWarning(ex, "Could not time out {UserId} after a failed captcha " +
+                                  "(Moderate Members permission, or the member's role is above the bot's)", member.Id);
         }
     }
 }
