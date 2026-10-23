@@ -111,6 +111,31 @@ public sealed class SuperPanelModule(CaptchaStore store, CaptchaService captcha,
             : "✅ Users who fail the captcha will only be blocked from the bot."));
     }
 
+    [ComponentInteraction("sp:cap:time")]
+    public Task OnTimeLimit()
+    {
+        var s = store.Get();
+        var modal = new ModalBuilder()
+            .WithTitle("Captcha time limit")
+            .WithCustomId("sp:cap:timeset")
+            .AddTextInput("Seconds per picture (0 = no limit, max 3600)", "seconds", TextInputStyle.Short,
+                placeholder: "180", maxLength: 4, value: s.TimeLimitSeconds.ToString())
+            .Build();
+        return RespondWithModalAsync(modal);
+    }
+
+    [ModalInteraction("sp:cap:timeset")]
+    public Task OnTimeLimitSubmitted(SuperCaptchaTimeModal modal)
+    {
+        if (!int.TryParse(modal.Seconds?.Trim(), out var seconds) || seconds is < 0 or > 3600)
+            return ShowAsync(Screen("⚠️ Time limit must be a number of seconds from 0 to 3600."));
+
+        store.Update(s => s.TimeLimitSeconds = seconds);
+        return ShowAsync(Screen(seconds == 0
+            ? "✅ Time limit removed."
+            : $"✅ Time limit: {seconds} s per picture. Not answering in time counts as a wrong attempt."));
+    }
+
     [ComponentInteraction("sp:cap:mirror")]
     public Task OnMirrorToggle()
     {
@@ -162,6 +187,7 @@ public sealed class SuperPanelModule(CaptchaStore store, CaptchaService captcha,
         sb.AppendLine("**Settings**");
         sb.AppendLine($"• Valid after solving: {(s.ValidityMinutes <= 0 ? "every command" : $"{s.ValidityMinutes} min")}");
         sb.AppendLine($"• Attempts per captcha: {s.MaxAttempts}");
+        sb.AppendLine($"• Time per picture: {(s.TimeLimitSeconds > 0 ? $"{s.TimeLimitSeconds} s (too late = wrong attempt)" : "no limit")}");
         sb.AppendLine($"• Code: {s.CodeLength} characters, distortion {s.DistortionPercent}%, {(s.Mirror ? "mirrored characters" : "normal characters")}");
         sb.AppendLine($"• On failure: blocked from the bot for {s.BlockMinutes} min{(s.TimeoutOnFail ? " **and timed out on the server** (admins: kept out of voice)" : "")}");
         sb.AppendLine();
@@ -202,6 +228,8 @@ public sealed class SuperPanelModule(CaptchaStore store, CaptchaService captcha,
                  s.Mirror ? ButtonStyle.Primary : ButtonStyle.Secondary, new Emoji("🪞"), row: 3)
              .WithButton("Reset verifications", "sp:cap:reset", ButtonStyle.Secondary, new Emoji("🔄"), row: 2)
              .WithButton("Preview captcha", "sp:cap:preview", ButtonStyle.Secondary, new Emoji("🔍"), row: 2)
+             .WithButton(s.TimeLimitSeconds > 0 ? $"Time limit: {s.TimeLimitSeconds} s" : "Time limit: off", "sp:cap:time",
+                 ButtonStyle.Secondary, new Emoji("⏱️"), row: 3)
              .WithButton("Refresh", "sp:home", ButtonStyle.Secondary, row: 3);
 
         return new Services.Screen(notice, embed, comps.Build());
@@ -232,6 +260,15 @@ public sealed class SuperPanelModule(CaptchaStore store, CaptchaService captcha,
         if (text.Length == 0) return "—";
         return text.Length <= 100 ? text : text[..99] + "…";
     }
+}
+
+public sealed class SuperCaptchaTimeModal : IModal
+{
+    public string Title => "Captcha time limit";
+
+    [InputLabel("Seconds per picture")]
+    [ModalTextInput("seconds")]
+    public string? Seconds { get; set; }
 }
 
 public sealed class SuperCaptchaSettingsModal : IModal

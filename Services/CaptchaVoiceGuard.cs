@@ -34,6 +34,29 @@ public sealed class CaptchaVoiceGuard(DiscordSocketClient client, CaptchaService
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Наказание за проваленную капчу: таймаут Discord (максимум 28 дней) и отключение от голоса.
+    /// Таймаут нельзя выдать администратору или роли выше бота — тогда остаётся только отключение от голоса,
+    /// а повторные заходы режет этот же сервис.
+    /// </summary>
+    public async Task PunishAsync(SocketGuildUser member, TimeSpan duration)
+    {
+        if (duration > TimeSpan.FromDays(28)) duration = TimeSpan.FromDays(28);
+        try
+        {
+            await member.SetTimeOutAsync(duration, new RequestOptions { AuditLogReason = "Failed bot captcha" });
+            logger.LogInformation("Timed out {User} ({UserId}) for {Minutes} min for failing the captcha",
+                member.Username, member.Id, (int)duration.TotalMinutes);
+        }
+        catch (Discord.Net.HttpException ex)
+        {
+            logger.LogWarning(ex, "Could not time out {UserId} after a failed captcha " +
+                                  "(administrator, role above the bot's, or no Timeout Members permission)", member.Id);
+        }
+
+        if (member.VoiceChannel is not null) await DisconnectAsync(member);
+    }
+
     public async Task DisconnectAsync(SocketGuildUser member)
     {
         try

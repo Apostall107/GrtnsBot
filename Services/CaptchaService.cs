@@ -1,17 +1,28 @@
 using System.Collections.Concurrent;
 using Discord;
 using Discord.WebSocket;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace LfgBot.Services;
 
-public enum CaptchaResult { Passed, Wrong, Failed, NoChallenge }
+public enum CaptchaResult
+{
+    Passed,
+    /// <summary>Неверный код, попытки ещё есть.</summary>
+    Wrong,
+    /// <summary>Время на картинку вышло (засчитано как неверная попытка), попытки ещё есть.</summary>
+    TimedOut,
+    /// <summary>Попытки кончились — пользователь заблокирован.</summary>
+    Failed,
+    NoChallenge
+}
 
 /// <summary>
 /// Капча перед действиями с ботом для пользователей из списка супер-панели.
 /// Состояние (задания, пройденные капчи, блокировки) — только в памяти: после перезапуска капчу проходят заново.
 /// </summary>
-public sealed class CaptchaService(CaptchaStore store, BotOwner owner, ILogger<CaptchaService> logger)
+public sealed class CaptchaService(CaptchaStore store, BotOwner owner, IServiceProvider services, ILogger<CaptchaService> logger)
 {
     public const string FileName = "captcha.png";
 
@@ -19,7 +30,13 @@ public sealed class CaptchaService(CaptchaStore store, BotOwner owner, ILogger<C
     {
         public string Code { get; set; } = code;
         public int AttemptsLeft { get; set; } = attemptsLeft;
+        /// <summary>До когда нужно ввести код текущей картинки. null — без лимита.</summary>
+        public DateTimeOffset? Deadline { get; set; }
+        public bool IsExpired => Deadline is { } d && DateTimeOffset.UtcNow > d;
     }
+
+    private static DateTimeOffset? NewDeadline(CaptchaSettings settings) =>
+        settings.TimeLimitSeconds > 0 ? DateTimeOffset.UtcNow.AddSeconds(settings.TimeLimitSeconds) : null;
 
     private readonly ConcurrentDictionary<ulong, Challenge> _challenges = new();
     private readonly ConcurrentDictionary<ulong, DateTimeOffset> _verifiedUntil = new();
@@ -51,11 +68,35 @@ public sealed class CaptchaService(CaptchaStore store, BotOwner owner, ILogger<C
             if (ConsumeVerification(userId)) return false;
 
             var settings = store.Get();
+            string? notice = null;
+
+            // Не успел ввести код прошлой картинки — это неверная попытка
+            if (_challenges.TryGetValue(userId, out var previous) && previous.IsExpired)
+            {
+                previous.AttemptsLeft--;
+                if (previous.AttemptsLeft <= 0)
+                {
+                    _challenges.TryRemove(userId, out _);
+                    var blockedUntil = Block(userId, settings);
+                    await interaction.RespondAsync(
+                        "⛔ Time ran out and there are no attempts left. " +
+                        $"You can use the bot again <t:{blockedUntil.ToUnixTimeSeconds()}:R>.", ephemeral: true);
+                    if (settings.TimeoutOnFail && interaction.User is SocketGuildUser member)
+                        await services.GetRequiredService<CaptchaVoiceGuard>()
+                            .PunishAsync(member, TimeSpan.FromMinutes(Math.Max(1, settings.BlockMinutes)));
+                    return true;
+                }
+
+                previous.Deadline = NewDeadline(settings);
+                notice = "⏰ Time ran out on the previous picture — that counted as a wrong attempt.";
+            }
+
             var challenge = _challenges.AddOrUpdate(userId,
-                _ => new Challenge(CaptchaImage.NewCode(settings.CodeLength, settings.Mirror), settings.MaxAttempts),
+                _ => new Challenge(CaptchaImage.NewCode(settings.CodeLength, settings.Mirror), settings.MaxAttempts)
+                    { Deadline = NewDeadline(settings) },
                 (_, existing) => { existing.Code = CaptchaImage.NewCode(settings.CodeLength, settings.Mirror); return existing; });
 
-            var (embed, components) = BuildMessage(challenge, settings, null);
+            var (embed, components) = BuildMessage(challenge, settings, notice);
             using var image = new MemoryStream(Render(challenge.Code, settings));
             await interaction.RespondWithFileAsync(new FileAttachment(image, FileName),
                 embed: embed, components: components, ephemeral: true);
@@ -92,13 +133,15 @@ public sealed class CaptchaService(CaptchaStore store, BotOwner owner, ILogger<C
                (mirror ? " Every character is **mirrored** — read them left to right as usual." : "");
     }
 
+    /// <summary>Проверить ввод. input = null — время вышло без ввода (нажал Enter code слишком поздно).</summary>
     public CaptchaResult Submit(ulong userId, string? input, out int attemptsLeft)
     {
         attemptsLeft = 0;
         if (!_challenges.TryGetValue(userId, out var challenge)) return CaptchaResult.NoChallenge;
 
         var settings = store.Get();
-        if (CaptchaImage.Normalize(input) == challenge.Code)
+        var timedOut = challenge.IsExpired;
+        if (!timedOut && input is not null && CaptchaImage.Normalize(input) == challenge.Code)
         {
             _challenges.TryRemove(userId, out _);
             if (settings.ValidityMinutes <= 0) _oneShot[userId] = 1;
@@ -108,11 +151,25 @@ public sealed class CaptchaService(CaptchaStore store, BotOwner owner, ILogger<C
 
         challenge.AttemptsLeft--;
         attemptsLeft = challenge.AttemptsLeft;
-        if (challenge.AttemptsLeft > 0) return CaptchaResult.Wrong;
+        if (challenge.AttemptsLeft > 0)
+        {
+            challenge.Deadline = NewDeadline(settings); // следующая картинка — с новым временем
+            return timedOut ? CaptchaResult.TimedOut : CaptchaResult.Wrong;
+        }
 
         _challenges.TryRemove(userId, out _);
-        _blockedUntil[userId] = DateTimeOffset.UtcNow.AddMinutes(Math.Max(1, settings.BlockMinutes));
+        Block(userId, settings);
         return CaptchaResult.Failed;
+    }
+
+    /// <summary>Истекло ли время на текущую картинку.</summary>
+    public bool IsExpired(ulong userId) => _challenges.TryGetValue(userId, out var c) && c.IsExpired;
+
+    private DateTimeOffset Block(ulong userId, CaptchaSettings settings)
+    {
+        var until = DateTimeOffset.UtcNow.AddMinutes(Math.Max(1, settings.BlockMinutes));
+        _blockedUntil[userId] = until;
+        return until;
     }
 
     /// <summary>Сбросить состояние пользователя (при удалении из списка).</summary>
@@ -172,7 +229,10 @@ public sealed class CaptchaService(CaptchaStore store, BotOwner owner, ILogger<C
                 "Before using the bot, type the code from the picture.\n" +
                 HowToRead(challenge.Code.Length, settings.Mirror) + "\n" +
                 "Click **Enter code**. Case and spaces don't matter. Can't read it? Click **New picture**.\n\n" +
-                $"Attempts left: **{attemptsLeft}**")
+                $"Attempts left: **{attemptsLeft}**" +
+                (challenge.Deadline is { } d
+                    ? $"\n⏱️ Time limit: <t:{d.ToUnixTimeSeconds()}:R> — after that the attempt counts as wrong."
+                    : ""))
             .WithImageUrl($"attachment://{FileName}")
             .Build();
 
