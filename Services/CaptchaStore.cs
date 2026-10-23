@@ -10,6 +10,8 @@ public sealed class CaptchaSettings
     /// <summary>Сколько минут действует пройденная капча. 0 — капча перед каждой командой.</summary>
     public int ValidityMinutes { get; set; } = 60;
     public int MaxAttempts { get; set; } = 3;
+    /// <summary>Сколько секунд даётся на одну картинку; не успел — попытка засчитывается как неверная. 0 — без лимита.</summary>
+    public int TimeLimitSeconds { get; set; } = 180;
     /// <summary>Длина кода, 4–100. Строки по 10 символов.</summary>
     public int CodeLength { get; set; } = 30;
     /// <summary>Отражать каждый символ по горизонтали.</summary>
@@ -26,6 +28,7 @@ public sealed class CaptchaSettings
         Users = Users.ToList(),
         ValidityMinutes = ValidityMinutes,
         MaxAttempts = MaxAttempts,
+        TimeLimitSeconds = TimeLimitSeconds,
         CodeLength = CodeLength,
         Mirror = Mirror,
         DistortionPercent = DistortionPercent,
