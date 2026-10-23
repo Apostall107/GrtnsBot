@@ -81,6 +81,12 @@ public sealed class TicketStore
 
     // ---------- Тикеты ----------
 
+    public IReadOnlyList<Ticket> GetTickets(ulong guildId)
+    {
+        lock (_lock)
+            return _data.Tickets.Where(t => t.GuildId == guildId).ToList();
+    }
+
     public Ticket? FindTicket(string id)
     {
         lock (_lock)
