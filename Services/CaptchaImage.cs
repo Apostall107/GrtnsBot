@@ -15,7 +15,7 @@ public static class CaptchaImage
     public const string Alphabet = "ACDEFGHJKMNPQRTUVWXY34679";
 
     public const int MinLength = 4;
-    public const int MaxLength = 30;
+    public const int MaxLength = 100;
     public const int PerRow = 10;      // символов в строке
     private const int CharStep = 44;   // шаг символа, px
     private const int GroupGap = 14;   // доп. отступ после каждых 5 символов
@@ -50,12 +50,16 @@ public static class CaptchaImage
         ['9'] = ["01110", "10001", "10001", "01111", "00001", "00010", "01100"],
     };
 
-    public static string NewCode(int length = 5)
+    /// <summary>Для зеркальных символов: отражённые E и 3 выглядят друг как друг.</summary>
+    public const string MirrorAlphabet = "ACDFGHJKMNPQRTUVWXY4679";
+
+    public static string NewCode(int length = 5, bool mirror = false)
     {
         length = Math.Clamp(length, MinLength, MaxLength);
+        var alphabet = mirror ? MirrorAlphabet : Alphabet;
         var sb = new StringBuilder(length);
         for (var i = 0; i < length; i++)
-            sb.Append(Alphabet[RandomNumberGenerator.GetInt32(Alphabet.Length)]);
+            sb.Append(alphabet[RandomNumberGenerator.GetInt32(alphabet.Length)]);
         return sb.ToString();
     }
 
@@ -63,11 +67,11 @@ public static class CaptchaImage
     public static string Normalize(string? input) =>
         new string((input ?? "").Where(c => !char.IsWhiteSpace(c) && c != '-').ToArray()).ToUpperInvariant();
 
-    /// <param name="mirror">Отразить картинку по горизонтали (код читается справа налево зеркально).</param>
-    /// <param name="distortion">1 — слабое, 2 — среднее, 3 — сильное искажение.</param>
-    public static byte[] RenderPng(string code, bool mirror = false, int distortion = 1)
+    /// <param name="mirror">Отразить каждый символ по горизонтали (порядок символов обычный, слева направо).</param>
+    /// <param name="distortion">Сила искажения, 0–100: 0 — ровный текст без шума, 100 — максимум.</param>
+    public static byte[] RenderPng(string code, bool mirror = false, int distortion = 50)
     {
-        distortion = Math.Clamp(distortion, 1, 3);
+        var d = Math.Clamp(distortion, 0, 100) / 100.0;
         var rnd = new Random(RandomNumberGenerator.GetInt32(int.MaxValue));
 
         var perRow = Math.Min(code.Length, PerRow);
@@ -90,26 +94,28 @@ public static class CaptchaImage
         }
 
         // Линии позади текста
-        for (var i = 0; i < 3 + rows * (1 + distortion); i++) Line(canvas, rnd, RandomColor(rnd, 120, 200), 1);
+        for (var i = 0; i < (int)Math.Round(rows * 4 * d); i++) Line(canvas, rnd, RandomColor(rnd, 120, 200), 1);
 
         // Символы: строки по 10, отступ после каждых 5; у каждого свой масштаб, поворот и цвет
-        var maxAngle = distortion switch { 1 => 0.5, 2 => 0.75, _ => 1.0 };
+        var maxAngle = 1.1 * d;
+        var jitter = 1 + (int)Math.Round(6 * d);
         for (var i = 0; i < code.Length; i++)
         {
             if (!Font.TryGetValue(code[i], out var glyph)) continue;
             int row = i / PerRow, col = i % PerRow;
             var scale = 7.0 + rnd.NextDouble() * 2.2;
             var angle = (rnd.NextDouble() - 0.5) * maxAngle;
-            var cx = 15 + CharStep * (col + 0.5) + col / 5 * GroupGap + rnd.Next(-3, 4);
-            var cy = 8 + RowStep * (row + 0.5) + rnd.Next(-6, 7);
-            DrawGlyph(canvas, glyph, cx, cy, scale, angle, RandomColor(rnd, 20, 110));
+            var cx = 15 + CharStep * (col + 0.5) + col / 5 * GroupGap + rnd.Next(-jitter, jitter + 1) / 2;
+            var cy = 8 + RowStep * (row + 0.5) + rnd.Next(-jitter, jitter + 1);
+            DrawGlyph(canvas, glyph, cx, cy, scale, angle, mirror, RandomColor(rnd, 20, 110));
         }
 
-        // Волновое искажение (сила зависит от уровня), затем ещё одна волна с другим периодом
+        // Волновое искажение (сила зависит от уровня); с 50% — ещё одна волна с другим периодом
         var image = canvas;
-        for (var pass = 0; pass < (distortion >= 2 ? 2 : 1); pass++)
+        var passes = d <= 0 ? 0 : d >= 0.5 ? 2 : 1;
+        for (var pass = 0; pass < passes; pass++)
         {
-            var k = distortion switch { 1 => 1.0, 2 => 1.6, _ => 2.3 };
+            var k = 2.5 * d;
             double ax = (2 + rnd.NextDouble() * 1.5) * k, ay = (2.5 + rnd.NextDouble() * 2) * k;
             double px = 70 + rnd.NextDouble() * 40, py = 45 + rnd.NextDouble() * 25;
             if (pass == 1) { ax /= 2; ay /= 2; px /= 2.2; py /= 1.8; }
@@ -117,15 +123,14 @@ public static class CaptchaImage
         }
 
         // Шум поверх: линии через текст и точки
-        for (var i = 0; i < rows * (1 + distortion); i++) Line(image, rnd, RandomColor(rnd, 40, 140), 2);
-        var dots = width * height / (distortion switch { 1 => 36, 2 => 24, _ => 16 });
+        for (var i = 0; i < (int)Math.Round(rows * 3 * d); i++) Line(image, rnd, RandomColor(rnd, 40, 140), 2);
+        var dots = (int)(width * height * d / 14);
         for (var i = 0; i < dots; i++)
         {
             var c = RandomColor(rnd, 30, 220);
             image.Set(rnd.Next(width), rnd.Next(height), c.R, c.G, c.B);
         }
 
-        if (mirror) image = image.MirrorHorizontally();
         return EncodePng(image.Pixels, width, height);
     }
 
@@ -143,7 +148,7 @@ public static class CaptchaImage
     }
 
     private static void DrawGlyph(Canvas img, string[] glyph, double cx, double cy, double scale, double angle,
-        (byte R, byte G, byte B) color)
+        bool mirror, (byte R, byte G, byte B) color)
     {
         double gw = 5 * scale, gh = 7 * scale;
         var radius = (int)Math.Ceiling(Math.Max(gw, gh) * 0.75);
@@ -157,7 +162,7 @@ public static class CaptchaImage
             var gy = -sin * dx + cos * dy + gh / 2;
             var col = (int)Math.Floor(gx / scale);
             var row = (int)Math.Floor(gy / scale);
-            if (row is < 0 or > 6 || col is < 0 or > 4 || glyph[row][col] != '1') continue;
+            if (row is < 0 or > 6 || col is < 0 or > 4 || glyph[row][mirror ? 4 - col : col] != '1') continue;
             img.Set((int)Math.Round(cx + dx), (int)Math.Round(cy + dy), color.R, color.G, color.B);
         }
     }
@@ -192,15 +197,6 @@ public static class CaptchaImage
             Pixels[i] = r;
             Pixels[i + 1] = g;
             Pixels[i + 2] = b;
-        }
-
-        public Canvas MirrorHorizontally()
-        {
-            var dst = new Canvas(Width, Height);
-            for (var y = 0; y < Height; y++)
-            for (var x = 0; x < Width; x++)
-                Buffer.BlockCopy(Pixels, (y * Width + x) * 3, dst.Pixels, (y * Width + (Width - 1 - x)) * 3, 3);
-            return dst;
         }
     }
 

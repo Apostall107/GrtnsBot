@@ -67,9 +67,9 @@ public sealed class SuperPanelModule(CaptchaStore store, CaptchaService captcha,
             .AddTextInput("Block after failing, min (1–1440)", "block", TextInputStyle.Short,
                 placeholder: "10", maxLength: 4, value: s.BlockMinutes.ToString())
             .AddTextInput($"Code length ({CaptchaImage.MinLength}–{CaptchaImage.MaxLength})", "length", TextInputStyle.Short,
-                placeholder: "30", maxLength: 2, value: s.CodeLength.ToString())
-            .AddTextInput("Distortion (1 low, 2 medium, 3 high)", "distortion", TextInputStyle.Short,
-                placeholder: "2", maxLength: 1, value: s.Distortion.ToString())
+                placeholder: "30", maxLength: 3, value: s.CodeLength.ToString())
+            .AddTextInput("Distortion, % (0 = none, 100 = max)", "distortion", TextInputStyle.Short,
+                placeholder: "50", maxLength: 3, value: s.DistortionPercent.ToString())
             .Build();
         return RespondWithModalAsync(modal);
     }
@@ -85,8 +85,8 @@ public sealed class SuperPanelModule(CaptchaStore store, CaptchaService captcha,
             return ShowAsync(Screen("⚠️ Block time must be a number from 1 to 1440 minutes."));
         if (!int.TryParse(modal.Length?.Trim(), out var length) || length < CaptchaImage.MinLength || length > CaptchaImage.MaxLength)
             return ShowAsync(Screen($"⚠️ Code length must be from {CaptchaImage.MinLength} to {CaptchaImage.MaxLength}."));
-        if (!int.TryParse(modal.Distortion?.Trim(), out var distortion) || distortion is < 1 or > 3)
-            return ShowAsync(Screen("⚠️ Distortion must be 1, 2 or 3."));
+        if (!int.TryParse(modal.Distortion?.Trim().TrimEnd('%'), out var distortion) || distortion is < 0 or > 100)
+            return ShowAsync(Screen("⚠️ Distortion must be a number from 0 to 100."));
 
         store.Update(s =>
         {
@@ -94,7 +94,7 @@ public sealed class SuperPanelModule(CaptchaStore store, CaptchaService captcha,
             s.MaxAttempts = attempts;
             s.BlockMinutes = block;
             s.CodeLength = length;
-            s.Distortion = distortion;
+            s.DistortionPercent = distortion;
         });
         return ShowAsync(Screen("✅ Settings saved."));
     }
@@ -116,7 +116,7 @@ public sealed class SuperPanelModule(CaptchaStore store, CaptchaService captcha,
     {
         var enabled = false;
         store.Update(s => enabled = s.Mirror = !s.Mirror);
-        return ShowAsync(Screen(enabled ? "✅ The captcha picture is now mirrored." : "✅ The captcha picture is no longer mirrored."));
+        return ShowAsync(Screen(enabled ? "✅ Captcha characters are now mirrored." : "✅ Captcha characters are no longer mirrored."));
     }
 
     [ComponentInteraction("sp:cap:reset")]
@@ -130,7 +130,7 @@ public sealed class SuperPanelModule(CaptchaStore store, CaptchaService captcha,
     public async Task OnPreview()
     {
         var settings = store.Get();
-        var code = CaptchaImage.NewCode(settings.CodeLength);
+        var code = CaptchaImage.NewCode(settings.CodeLength, settings.Mirror);
         using var image = new MemoryStream(CaptchaService.Render(code, settings));
         var embed = new EmbedBuilder()
             .WithTitle("🔍 Captcha preview")
@@ -162,7 +162,7 @@ public sealed class SuperPanelModule(CaptchaStore store, CaptchaService captcha,
         sb.AppendLine("**Settings**");
         sb.AppendLine($"• Valid after solving: {(s.ValidityMinutes <= 0 ? "every command" : $"{s.ValidityMinutes} min")}");
         sb.AppendLine($"• Attempts per captcha: {s.MaxAttempts}");
-        sb.AppendLine($"• Code: {s.CodeLength} characters, distortion {s.Distortion}/3, {(s.Mirror ? "mirrored" : "not mirrored")}");
+        sb.AppendLine($"• Code: {s.CodeLength} characters, distortion {s.DistortionPercent}%, {(s.Mirror ? "mirrored characters" : "normal characters")}");
         sb.AppendLine($"• On failure: blocked from the bot for {s.BlockMinutes} min{(s.TimeoutOnFail ? " **and timed out on the server** (admins: kept out of voice)" : "")}");
         sb.AppendLine();
         sb.AppendLine($"-# Owner <@{owner.Id}> always has full access to the bot and never gets a captcha.");
@@ -198,7 +198,7 @@ public sealed class SuperPanelModule(CaptchaStore store, CaptchaService captcha,
         comps.WithButton("Settings", "sp:cap:settings", ButtonStyle.Primary, new Emoji("⚙️"), row: 2)
              .WithButton(s.TimeoutOnFail ? "Timeout on fail: ON" : "Timeout on fail: OFF", "sp:cap:timeout",
                  s.TimeoutOnFail ? ButtonStyle.Danger : ButtonStyle.Secondary, new Emoji("⏳"), row: 2)
-             .WithButton(s.Mirror ? "Mirror: ON" : "Mirror: OFF", "sp:cap:mirror",
+             .WithButton(s.Mirror ? "Mirror letters: ON" : "Mirror letters: OFF", "sp:cap:mirror",
                  s.Mirror ? ButtonStyle.Primary : ButtonStyle.Secondary, new Emoji("🪞"), row: 3)
              .WithButton("Reset verifications", "sp:cap:reset", ButtonStyle.Secondary, new Emoji("🔄"), row: 2)
              .WithButton("Preview captcha", "sp:cap:preview", ButtonStyle.Secondary, new Emoji("🔍"), row: 2)
