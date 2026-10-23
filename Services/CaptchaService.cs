@@ -129,6 +129,9 @@ public sealed class CaptchaService(CaptchaStore store, BotOwner owner, ILogger<C
         return null;
     }
 
+    /// <summary>Заблокирован и включено наказание на сервере — отключать от голоса.</summary>
+    public bool IsVoiceRestricted(ulong userId) => BlockedUntil(userId) is not null && store.Get().TimeoutOnFail;
+
     public DateTimeOffset? VerifiedUntil(ulong userId) =>
         _verifiedUntil.TryGetValue(userId, out var until) && until > DateTimeOffset.UtcNow ? until : null;
 

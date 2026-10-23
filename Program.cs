@@ -40,6 +40,8 @@ builder.Services.AddSingleton<BotOwner>();
 builder.Services.AddSingleton<AdminStore>();
 builder.Services.AddSingleton<CaptchaStore>();
 builder.Services.AddSingleton<CaptchaService>();
+builder.Services.AddSingleton<CaptchaVoiceGuard>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<CaptchaVoiceGuard>());
 builder.Services.AddSingleton<TicketMessageService>();
 builder.Services.AddHostedService<BotService>();
 builder.Services.AddHostedService<GroupCleanupService>();

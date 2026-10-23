@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 namespace LfgBot.Modules;
 
 /// <summary>Кнопки и окно ввода капчи. Работают и на сервере, и в ЛС (кнопки из ЛС-оповещений тоже проверяются).</summary>
-public sealed class CaptchaModule(CaptchaService captcha, CaptchaStore store, ILogger<CaptchaModule> logger)
+public sealed class CaptchaModule(CaptchaService captcha, CaptchaStore store, CaptchaVoiceGuard voiceGuard, ILogger<CaptchaModule> logger)
     : InteractionModuleBase<SocketInteractionContext>
 {
     private const string ExpiredText = "This verification has expired. Run your command again.";
@@ -83,7 +83,11 @@ public sealed class CaptchaModule(CaptchaService captcha, CaptchaStore store, IL
         }
     }
 
-    /// <summary>Таймаут Discord (нельзя писать и заходить в голос). Максимум Discord — 28 дней.</summary>
+    /// <summary>
+    /// Таймаут Discord (нельзя писать и заходить в голос), максимум Discord — 28 дней.
+    /// Плюс отключение от голоса: таймаут нельзя выдать администратору или роли выше бота,
+    /// а отключить от голоса можно любого. Повторные заходы в голос режет CaptchaVoiceGuard.
+    /// </summary>
     private async Task TimeoutAsync(TimeSpan duration)
     {
         if (Context.Guild?.GetUser(Context.User.Id) is not { } member) return;
@@ -97,8 +101,10 @@ public sealed class CaptchaModule(CaptchaService captcha, CaptchaStore store, IL
         catch (Discord.Net.HttpException ex)
         {
             logger.LogWarning(ex, "Could not time out {UserId} after a failed captcha " +
-                                  "(Moderate Members permission, or the member's role is above the bot's)", member.Id);
+                                  "(administrator, role above the bot's, or no Timeout Members permission)", member.Id);
         }
+
+        if (member.VoiceChannel is not null) await voiceGuard.DisconnectAsync(member);
     }
 }
 
