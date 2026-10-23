@@ -9,7 +9,7 @@ namespace LfgBot.Modules;
 
 [RequireContext(ContextType.Guild)]
 public sealed class LfgModule(LfgStore store, ActivityStore activities, CharacterStore characters, TimeService time,
-    LfgNotifyStore notifyPrefs, LfgNotifier notifier, LfgSignupService signup)
+    LfgNotifyStore notifyPrefs, LfgNotifier notifier, LfgSignupService signup, BotOwner botOwner)
     : InteractionModuleBase<SocketInteractionContext>
 {
     private SocketMessageComponent Component => (SocketMessageComponent)Context.Interaction;
@@ -37,7 +37,7 @@ public sealed class LfgModule(LfgStore store, ActivityStore activities, Characte
     public Task LfgCommand() => StartDraftAsync();
 
     [SlashCommand("lfg-panel", "Post the LFG panel with instructions in this channel")]
-    [DefaultMemberPermissions(GuildPermission.ManageGuild)]
+    [RequireBotAdmin]
     public async Task PanelCommand()
     {
         if (await GetChannelAsync(ChannelId) is not { } channel)
@@ -461,6 +461,9 @@ public sealed class LfgModule(LfgStore store, ActivityStore activities, Characte
         return error is null ? group : null;
     }
 
+    /// <summary>Организатор сбора или владелец бота.</summary>
+    private bool IsOrganizer(LfgGroup group) => group.OwnerId == Context.User.Id || botOwner.Is(Context.User.Id);
+
     private async Task<LfgGroup?> GetOwnedGroupAsync(string groupId)
     {
         if (!store.Groups.TryGetValue(groupId, out var group))
@@ -469,7 +472,7 @@ public sealed class LfgModule(LfgStore store, ActivityStore activities, Characte
             return null;
         }
 
-        if (group.OwnerId != Context.User.Id)
+        if (!IsOrganizer(group))
         {
             await RespondAsync("Only the organizer can manage this group.", ephemeral: true);
             return null;
@@ -492,7 +495,7 @@ public sealed class LfgModule(LfgStore store, ActivityStore activities, Characte
             return;
         }
 
-        if (group.OwnerId != Context.User.Id)
+        if (!IsOrganizer(group))
         {
             await RespondAsync("Only the organizer can close this group.", ephemeral: true);
             return;
@@ -521,7 +524,7 @@ public sealed class LfgModule(LfgStore store, ActivityStore activities, Characte
             return;
         }
 
-        if (group.OwnerId != Context.User.Id)
+        if (!IsOrganizer(group))
         {
             await RespondAsync("Only the organizer can close this group.", ephemeral: true);
             return;

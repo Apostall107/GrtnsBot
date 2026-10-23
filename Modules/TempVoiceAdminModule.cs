@@ -8,7 +8,7 @@ namespace LfgBot.Modules;
 
 [Group("tempvoice", "Set up auto-created voice rooms")]
 [RequireContext(ContextType.Guild)]
-[DefaultMemberPermissions(GuildPermission.ManageGuild)]
+[RequireBotAdmin]
 public sealed class TempVoiceAdminModule(TempVoiceStore store, TempRoomManager rooms)
     : InteractionModuleBase<SocketInteractionContext>
 {

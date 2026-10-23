@@ -12,6 +12,7 @@ public sealed class BotService(
     InteractionService interactions,
     IServiceProvider services,
     IConfiguration config,
+    CaptchaService captcha,
     ILogger<BotService> logger) : IHostedService
 {
     private bool _commandsRegistered;
@@ -69,6 +70,9 @@ public sealed class BotService(
 
     private async Task OnInteractionAsync(SocketInteraction interaction)
     {
+        // Пользователи из списка супер-панели сначала проходят капчу
+        if (await captcha.InterceptAsync(interaction)) return;
+
         var context = new SocketInteractionContext(client, interaction);
         await interactions.ExecuteCommandAsync(context, services);
     }
