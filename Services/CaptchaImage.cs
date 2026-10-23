@@ -14,8 +14,12 @@ public static class CaptchaImage
     /// <summary>Без похожих символов: 0/O, 1/I/L, 2/Z, 5/S, 8/B.</summary>
     public const string Alphabet = "ACDEFGHJKMNPQRTUVWXY34679";
 
-    public const int Width = 260;
-    public const int Height = 96;
+    public const int MinLength = 4;
+    public const int MaxLength = 30;
+    public const int PerRow = 10;      // символов в строке
+    private const int CharStep = 44;   // шаг символа, px
+    private const int GroupGap = 14;   // доп. отступ после каждых 5 символов
+    private const int RowStep = 80;    // высота строки, px
 
     private static readonly Dictionary<char, string[]> Font = new()
     {
@@ -48,69 +52,97 @@ public static class CaptchaImage
 
     public static string NewCode(int length = 5)
     {
+        length = Math.Clamp(length, MinLength, MaxLength);
         var sb = new StringBuilder(length);
         for (var i = 0; i < length; i++)
             sb.Append(Alphabet[RandomNumberGenerator.GetInt32(Alphabet.Length)]);
         return sb.ToString();
     }
 
-    public static byte[] RenderPng(string code)
+    /// <summary>Убирает пробелы и регистр — так сравнивается ввод с кодом.</summary>
+    public static string Normalize(string? input) =>
+        new string((input ?? "").Where(c => !char.IsWhiteSpace(c) && c != '-').ToArray()).ToUpperInvariant();
+
+    /// <param name="mirror">Отразить картинку по горизонтали (код читается справа налево зеркально).</param>
+    /// <param name="distortion">1 — слабое, 2 — среднее, 3 — сильное искажение.</param>
+    public static byte[] RenderPng(string code, bool mirror = false, int distortion = 1)
     {
+        distortion = Math.Clamp(distortion, 1, 3);
         var rnd = new Random(RandomNumberGenerator.GetInt32(int.MaxValue));
-        var layer = new byte[Width * Height * 3];
+
+        var perRow = Math.Min(code.Length, PerRow);
+        var rows = (code.Length + PerRow - 1) / PerRow;
+        var gaps = (perRow - 1) / 5;
+        var width = 30 + perRow * CharStep + gaps * GroupGap;
+        var height = 16 + rows * RowStep;
+        var canvas = new Canvas(width, height);
 
         // Фон: светлые волны + зерно
         var phase = rnd.NextDouble() * Math.PI * 2;
-        for (var y = 0; y < Height; y++)
-        for (var x = 0; x < Width; x++)
+        for (var y = 0; y < height; y++)
+        for (var x = 0; x < width; x++)
         {
             var wave = 14 * Math.Sin(x / 21.0 + phase) + 10 * Math.Cos(y / 13.0 - phase);
-            Set(layer, x, y,
+            canvas.Set(x, y,
                 Clamp(222 + wave + rnd.Next(-14, 15)),
                 Clamp(226 - wave + rnd.Next(-14, 15)),
                 Clamp(230 + wave / 2 + rnd.Next(-14, 15)));
         }
 
         // Линии позади текста
-        for (var i = 0; i < 4; i++) Line(layer, rnd, RandomColor(rnd, 120, 200), 1);
+        for (var i = 0; i < 3 + rows * (1 + distortion); i++) Line(canvas, rnd, RandomColor(rnd, 120, 200), 1);
 
-        // Символы: свой масштаб, поворот и цвет у каждого
-        var spacing = (Width - 30.0) / code.Length;
+        // Символы: строки по 10, отступ после каждых 5; у каждого свой масштаб, поворот и цвет
+        var maxAngle = distortion switch { 1 => 0.5, 2 => 0.75, _ => 1.0 };
         for (var i = 0; i < code.Length; i++)
         {
             if (!Font.TryGetValue(code[i], out var glyph)) continue;
+            int row = i / PerRow, col = i % PerRow;
             var scale = 7.0 + rnd.NextDouble() * 2.2;
-            var angle = (rnd.NextDouble() - 0.5) * 0.5;
-            var cx = 15 + spacing * (i + 0.5) + rnd.Next(-4, 5);
-            var cy = Height / 2.0 + rnd.Next(-8, 9);
-            DrawGlyph(layer, glyph, cx, cy, scale, angle, RandomColor(rnd, 20, 110));
+            var angle = (rnd.NextDouble() - 0.5) * maxAngle;
+            var cx = 15 + CharStep * (col + 0.5) + col / 5 * GroupGap + rnd.Next(-3, 4);
+            var cy = 8 + RowStep * (row + 0.5) + rnd.Next(-6, 7);
+            DrawGlyph(canvas, glyph, cx, cy, scale, angle, RandomColor(rnd, 20, 110));
         }
 
-        // Волновое искажение всей картинки
-        var image = new byte[layer.Length];
-        double ax = 2 + rnd.NextDouble() * 1.5, ay = 2.5 + rnd.NextDouble() * 2;
-        double px = 70 + rnd.NextDouble() * 40, py = 45 + rnd.NextDouble() * 25;
-        double p1 = rnd.NextDouble() * Math.PI * 2, p2 = rnd.NextDouble() * Math.PI * 2;
-        for (var y = 0; y < Height; y++)
-        for (var x = 0; x < Width; x++)
+        // Волновое искажение (сила зависит от уровня), затем ещё одна волна с другим периодом
+        var image = canvas;
+        for (var pass = 0; pass < (distortion >= 2 ? 2 : 1); pass++)
         {
-            var sx = Math.Clamp(x + (int)(ax * Math.Sin(2 * Math.PI * y / py + p1)), 0, Width - 1);
-            var sy = Math.Clamp(y + (int)(ay * Math.Sin(2 * Math.PI * x / px + p2)), 0, Height - 1);
-            Buffer.BlockCopy(layer, (sy * Width + sx) * 3, image, (y * Width + x) * 3, 3);
+            var k = distortion switch { 1 => 1.0, 2 => 1.6, _ => 2.3 };
+            double ax = (2 + rnd.NextDouble() * 1.5) * k, ay = (2.5 + rnd.NextDouble() * 2) * k;
+            double px = 70 + rnd.NextDouble() * 40, py = 45 + rnd.NextDouble() * 25;
+            if (pass == 1) { ax /= 2; ay /= 2; px /= 2.2; py /= 1.8; }
+            image = Wave(image, ax, ay, px, py, rnd.NextDouble() * Math.PI * 2, rnd.NextDouble() * Math.PI * 2);
         }
 
         // Шум поверх: линии через текст и точки
-        for (var i = 0; i < 3; i++) Line(image, rnd, RandomColor(rnd, 40, 140), 2);
-        for (var i = 0; i < 700; i++)
+        for (var i = 0; i < rows * (1 + distortion); i++) Line(image, rnd, RandomColor(rnd, 40, 140), 2);
+        var dots = width * height / (distortion switch { 1 => 36, 2 => 24, _ => 16 });
+        for (var i = 0; i < dots; i++)
         {
             var c = RandomColor(rnd, 30, 220);
-            Set(image, rnd.Next(Width), rnd.Next(Height), c.R, c.G, c.B);
+            image.Set(rnd.Next(width), rnd.Next(height), c.R, c.G, c.B);
         }
 
-        return EncodePng(image, Width, Height);
+        if (mirror) image = image.MirrorHorizontally();
+        return EncodePng(image.Pixels, width, height);
     }
 
-    private static void DrawGlyph(byte[] img, string[] glyph, double cx, double cy, double scale, double angle,
+    private static Canvas Wave(Canvas src, double ax, double ay, double px, double py, double p1, double p2)
+    {
+        var dst = new Canvas(src.Width, src.Height);
+        for (var y = 0; y < src.Height; y++)
+        for (var x = 0; x < src.Width; x++)
+        {
+            var sx = Math.Clamp(x + (int)(ax * Math.Sin(2 * Math.PI * y / py + p1)), 0, src.Width - 1);
+            var sy = Math.Clamp(y + (int)(ay * Math.Sin(2 * Math.PI * x / px + p2)), 0, src.Height - 1);
+            Buffer.BlockCopy(src.Pixels, (sy * src.Width + sx) * 3, dst.Pixels, (y * src.Width + x) * 3, 3);
+        }
+        return dst;
+    }
+
+    private static void DrawGlyph(Canvas img, string[] glyph, double cx, double cy, double scale, double angle,
         (byte R, byte G, byte B) color)
     {
         double gw = 5 * scale, gh = 7 * scale;
@@ -126,39 +158,51 @@ public static class CaptchaImage
             var col = (int)Math.Floor(gx / scale);
             var row = (int)Math.Floor(gy / scale);
             if (row is < 0 or > 6 || col is < 0 or > 4 || glyph[row][col] != '1') continue;
-
-            var x = (int)Math.Round(cx + dx);
-            var y = (int)Math.Round(cy + dy);
-            if (x is >= 0 and < Width && y is >= 0 and < Height)
-                Set(img, x, y, color.R, color.G, color.B);
+            img.Set((int)Math.Round(cx + dx), (int)Math.Round(cy + dy), color.R, color.G, color.B);
         }
     }
 
     /// <summary>Волнистая линия через всю ширину.</summary>
-    private static void Line(byte[] img, Random rnd, (byte R, byte G, byte B) color, int thickness)
+    private static void Line(Canvas img, Random rnd, (byte R, byte G, byte B) color, int thickness)
     {
-        double y0 = rnd.Next(Height), y1 = rnd.Next(Height);
+        double y0 = rnd.Next(img.Height), y1 = rnd.Next(img.Height);
         double amp = rnd.Next(3, 12), period = rnd.Next(25, 70), phase = rnd.NextDouble() * Math.PI * 2;
-        for (var x = 0; x < Width; x++)
+        for (var x = 0; x < img.Width; x++)
         {
-            var y = (int)(y0 + (y1 - y0) * x / Width + amp * Math.Sin(x / period * Math.PI * 2 + phase));
-            for (var t = 0; t < thickness; t++)
-                if (y + t is >= 0 and < Height) Set(img, x, y + t, color.R, color.G, color.B);
+            var y = (int)(y0 + (y1 - y0) * x / img.Width + amp * Math.Sin(x / period * Math.PI * 2 + phase));
+            for (var t = 0; t < thickness; t++) img.Set(x, y + t, color.R, color.G, color.B);
         }
     }
 
     private static (byte R, byte G, byte B) RandomColor(Random rnd, int min, int max) =>
         ((byte)rnd.Next(min, max), (byte)rnd.Next(min, max), (byte)rnd.Next(min, max));
 
-    private static void Set(byte[] img, int x, int y, byte r, byte g, byte b)
-    {
-        var i = (y * Width + x) * 3;
-        img[i] = r;
-        img[i + 1] = g;
-        img[i + 2] = b;
-    }
-
     private static byte Clamp(double v) => (byte)Math.Clamp((int)v, 0, 255);
+
+    private sealed class Canvas(int width, int height)
+    {
+        public int Width { get; } = width;
+        public int Height { get; } = height;
+        public byte[] Pixels { get; } = new byte[width * height * 3];
+
+        public void Set(int x, int y, byte r, byte g, byte b)
+        {
+            if (x < 0 || x >= Width || y < 0 || y >= Height) return;
+            var i = (y * Width + x) * 3;
+            Pixels[i] = r;
+            Pixels[i + 1] = g;
+            Pixels[i + 2] = b;
+        }
+
+        public Canvas MirrorHorizontally()
+        {
+            var dst = new Canvas(Width, Height);
+            for (var y = 0; y < Height; y++)
+            for (var x = 0; x < Width; x++)
+                Buffer.BlockCopy(Pixels, (y * Width + x) * 3, dst.Pixels, (y * Width + (Width - 1 - x)) * 3, 3);
+            return dst;
+        }
+    }
 
     // ---------- PNG ----------
 

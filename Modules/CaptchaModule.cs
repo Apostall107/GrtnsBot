@@ -113,6 +113,6 @@ public sealed class CaptchaModal : IModal
     public string Title => "Verification";
 
     [InputLabel("Code from the picture")]
-    [ModalTextInput("code", TextInputStyle.Short, placeholder: "e.g. K7MRQ", minLength: 1, maxLength: 10)]
+    [ModalTextInput("code", TextInputStyle.Paragraph, placeholder: "Spaces are allowed, e.g. K7MRQ A3XHT", minLength: 1, maxLength: 60)]
     public string Code { get; set; } = "";
 }
