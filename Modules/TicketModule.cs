@@ -148,10 +148,11 @@ public sealed class TicketModule(TicketStore store) : InteractionModuleBase<Sock
         };
         store.AddTicket(ticket);
 
-        var (embed, comps) = TicketRenderer.TicketMessage(ticket, project);
+        var (embeds, comps) = TicketRenderer.TicketMessage(ticket, project);
         var pings = $"<@{user.Id}> " + string.Join(" ", project.StaffRoleIds.Select(r => $"<@&{r}>"));
-        await text.SendMessageAsync(pings, embed: embed, components: comps,
+        var message = await text.SendMessageAsync(pings, embeds: embeds, components: comps,
             allowedMentions: new AllowedMentions { UserIds = [user.Id], RoleIds = project.StaffRoleIds.ToList() });
+        store.UpdateTicket(ticket.Id, t => t.MessageId = message.Id);
 
         return ticket;
     }
@@ -271,10 +272,10 @@ public sealed class TicketModule(TicketStore store) : InteractionModuleBase<Sock
         }
 
         var updated = store.UpdateTicket(ticketId, t => t.ApprovedBy = Context.User.Id) ?? ticket;
-        var (embed, comps) = TicketRenderer.TicketMessage(updated, project);
+        var (embeds, comps) = TicketRenderer.TicketMessage(updated, project);
         await Component.ModifyOriginalResponseAsync(m =>
         {
-            m.Embeds = new[] { embed };
+            m.Embeds = embeds;
             m.Components = comps;
         });
 

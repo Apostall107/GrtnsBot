@@ -64,6 +64,11 @@ public sealed class TempVoiceStore
         lock (_lock) return _data.Rooms.Find(r => r.GuildId == guildId && r.OwnerId == ownerId);
     }
 
+    public IReadOnlyList<TempVoiceRoom> GetRooms(ulong guildId)
+    {
+        lock (_lock) return _data.Rooms.Where(r => r.GuildId == guildId).ToList();
+    }
+
     public IReadOnlyList<TempVoiceRoom> GetAllRooms()
     {
         lock (_lock) return _data.Rooms.ToList();
