@@ -936,7 +936,7 @@ public sealed class AdminModule(
 
     // ================= Bot admins =================
 
-    private bool CallerIsServerManager => Context.User is IGuildUser u && AdminStore.IsServerManager(u);
+    private bool CallerIsServerManager => Context.User is IGuildUser u && admins.CanManageAdmins(u);
 
     private Screen AdminsTab(string? notice)
     {

@@ -16,9 +16,11 @@ public sealed class AdminStore
     private readonly object _lock = new();
     private readonly string _path;
     private readonly Dictionary<ulong, List<ulong>> _data;
+    private readonly BotOwner _owner;
 
-    public AdminStore(IConfiguration config)
+    public AdminStore(IConfiguration config, BotOwner owner)
     {
+        _owner = owner;
         _path = config["Storage:AdminsPath"] ?? "data/admins.json";
         _data = File.Exists(_path)
             ? JsonSerializer.Deserialize<Dictionary<ulong, List<ulong>>>(File.ReadAllText(_path)) ?? new()
@@ -44,9 +46,12 @@ public sealed class AdminStore
     public static bool IsServerManager(IGuildUser user) =>
         user.GuildPermissions.Administrator || user.GuildPermissions.ManageGuild;
 
+    /// <summary>Может менять список ролей-админов: владелец бота, Administrator или Manage Server.</summary>
+    public bool CanManageAdmins(IGuildUser user) => _owner.Is(user.Id) || IsServerManager(user);
+
     public bool IsAdmin(IGuildUser user)
     {
-        if (IsServerManager(user)) return true;
+        if (_owner.Is(user.Id) || IsServerManager(user)) return true;
         var roles = GetRoles(user.GuildId);
         return user.RoleIds.Any(roles.Contains);
     }
