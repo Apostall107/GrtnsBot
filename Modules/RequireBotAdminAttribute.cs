@@ -11,6 +11,8 @@ public sealed class RequireBotAdminAttribute : PreconditionAttribute
     public override Task<PreconditionResult> CheckRequirementsAsync(
         IInteractionContext context, ICommandInfo commandInfo, IServiceProvider services)
     {
+        if (services.GetRequiredService<BotOwner>().Is(context.User.Id))
+            return Task.FromResult(PreconditionResult.FromSuccess());
         if (context.User is not IGuildUser user)
             return Task.FromResult(PreconditionResult.FromError("This works only on a server."));
 
