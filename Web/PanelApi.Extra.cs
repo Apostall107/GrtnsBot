@@ -87,6 +87,7 @@ public static partial class PanelApi
                         if (slot is not null) slot.CharacterName = name;
                         else if (reserve is not null) reserve.CharacterName = name;
                         error = slot is null && reserve is null ? "This member is no longer in the group." : null;
+                        if (error is null) signup.ApplyProfile(group, userId); // класс и заметка нового персонажа
                         break;
                     default:
                         error = "Unknown action.";

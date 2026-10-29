@@ -3,9 +3,21 @@ using Microsoft.Extensions.Configuration;
 
 namespace LfgBot.Services;
 
-/// <summary>Сохранённые ники персонажей пользователя на сервере, хранятся в JSON.</summary>
+/// <summary>Класс (роль сервера, которая есть у игрока) и заметка к персонажу.</summary>
+public sealed class CharacterInfo
+{
+    public ulong? ClassRoleId { get; set; }
+    public string? Comment { get; set; }
+}
+
+/// <summary>
+/// Сохранённые ники персонажей пользователя на сервере (data/characters.json)
+/// и их профиль — класс-роль и заметка (data/character-info.json).
+/// </summary>
 public sealed class CharacterStore
 {
+    public const int MaxCommentLength = 100;
+
     // В выпадающем списке максимум 25 пунктов, один занят «Новым персонажем»
     public const int MaxPerUser = 24;
     public const int MaxNameLength = 32;
@@ -14,6 +26,8 @@ public sealed class CharacterStore
     private readonly object _lock = new();
     private readonly string _path;
     private readonly Dictionary<string, List<string>> _data;
+    private readonly string _infoPath;
+    private readonly Dictionary<string, CharacterInfo> _info;
 
     public CharacterStore(IConfiguration config)
     {
@@ -21,9 +35,45 @@ public sealed class CharacterStore
         _data = File.Exists(_path)
             ? JsonSerializer.Deserialize<Dictionary<string, List<string>>>(File.ReadAllText(_path)) ?? new()
             : new();
+        _infoPath = config["Storage:CharacterInfoPath"] ?? "data/character-info.json";
+        _info = File.Exists(_infoPath)
+            ? JsonSerializer.Deserialize<Dictionary<string, CharacterInfo>>(File.ReadAllText(_infoPath)) ?? new()
+            : new();
     }
 
     private static string Key(ulong guildId, ulong userId) => $"{guildId}:{userId}";
+
+    private static string InfoKey(ulong guildId, ulong userId, string name) => $"{guildId}:{userId}:{name.Trim().ToLowerInvariant()}";
+
+    /// <summary>Класс и заметка персонажа (null — не заданы).</summary>
+    public CharacterInfo? GetInfo(ulong guildId, ulong userId, string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        lock (_lock)
+            return _info.TryGetValue(InfoKey(guildId, userId, name), out var i)
+                ? new CharacterInfo { ClassRoleId = i.ClassRoleId, Comment = i.Comment }
+                : null;
+    }
+
+    /// <summary>Меняет класс и/или заметку. setClass/setComment = false — поле не трогать.</summary>
+    public void SetInfo(ulong guildId, ulong userId, string name, bool setClass, ulong? classRoleId, bool setComment, string? comment)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return;
+        comment = string.IsNullOrWhiteSpace(comment) ? null : comment.Trim();
+        if (comment is { Length: > MaxCommentLength }) comment = comment[..MaxCommentLength];
+
+        lock (_lock)
+        {
+            var key = InfoKey(guildId, userId, name);
+            if (!_info.TryGetValue(key, out var info)) info = new CharacterInfo();
+            if (setClass) info.ClassRoleId = classRoleId;
+            if (setComment) info.Comment = comment;
+
+            if (info.ClassRoleId is null && info.Comment is null) _info.Remove(key);
+            else _info[key] = info;
+            SaveInfo();
+        }
+    }
 
     public IReadOnlyList<string> Get(ulong guildId, ulong userId)
     {
@@ -57,9 +107,20 @@ public sealed class CharacterStore
         {
             if (!_data.TryGetValue(Key(guildId, userId), out var list)) return false;
             var removed = list.RemoveAll(n => n.Equals(name, StringComparison.OrdinalIgnoreCase)) > 0;
-            if (removed) Save();
+            if (removed)
+            {
+                Save();
+                if (_info.Remove(InfoKey(guildId, userId, name))) SaveInfo();
+            }
             return removed;
         }
+    }
+
+    private void SaveInfo()
+    {
+        var dir = Path.GetDirectoryName(Path.GetFullPath(_infoPath));
+        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+        File.WriteAllText(_infoPath, JsonSerializer.Serialize(_info, JsonOptions));
     }
 
     private void Save()

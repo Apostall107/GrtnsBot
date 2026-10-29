@@ -332,6 +332,7 @@ function renderShell() {
   if (!state.guildId) { main.append(empty("The bot is not on any server yet.")); return; }
   const page = { overview: pageOverview, lfg: pageLfg, tickets: pageTickets, voice: pageVoice, texts: pageTexts, posts: pagePosts, log: pageLog, settings: pageSettings, access: pageAccess }[state.tab];
   page(main);
+  addGuideButton(main, state.tab);
 }
 
 /** Re-renders the current page only (keeps the shell). */
@@ -579,6 +580,13 @@ function recurringDialog(acts, r) {
   d.showModal();
 }
 
+/** Class of a character: the role's emoji, otherwise a small role chip. */
+function classMark(e) {
+  if (!e.classRole) return null;
+  if (e.classIcon) return h("span", { title: `@${e.classRole.name}` }, e.classIcon);
+  return roleChip(e.classRole);
+}
+
 function groupCard(g) {
   const close = h("button", { class: "btn danger" }, "🗑️ Force close");
   close.addEventListener("click", async () => {
@@ -602,7 +610,8 @@ function groupCard(g) {
     h("div", { class: "muted small", style: "margin-bottom:8px" }, `Auto-delete ${fmtRelative(g.expiresAt)}`),
     h("ul", { class: "slots" }, g.slots.map((s, i) => h("li", {},
       h("span", { class: "num" }, i + 1), h("span", {}, s.emoji),
-      s.member ? member(s.member) : h("span", { class: "free" }, `free (${s.slotRole})`),
+      s.member ? h("span", {}, h("span", { class: "row", style: "gap:4px" }, classMark(s), member(s.member)),
+        s.comment ? h("div", { class: "muted small" }, `💬 ${s.comment}`) : null) : h("span", { class: "free" }, `free (${s.slotRole})`),
       s.character ? h("span", { class: "char" }, s.character) : h("span", { class: "char" }),
       s.member ? h("span", {},
         tool("✏️", "Change character", rename(s.member, s.character)),
@@ -611,7 +620,9 @@ function groupCard(g) {
           if (await confirmDialog(`Remove ${s.member.name}?`, "Their slot becomes free.", "Remove")) roster("remove", s.member, "Removed.");
         }) : null) : null))),
     g.reserve.length ? h("div", { style: "margin-top:8px" }, h("div", { class: "muted small" }, `Reserve (${g.reserve.length})`),
-      h("ul", { class: "slots" }, g.reserve.map(r => h("li", {}, h("span", {}, r.emoji), member(r.member),
+      h("ul", { class: "slots" }, g.reserve.map(r => h("li", {}, h("span", {}, r.emoji),
+        h("span", {}, h("span", { class: "row", style: "gap:4px" }, classMark(r), member(r.member)),
+          r.comment ? h("div", { class: "muted small" }, `💬 ${r.comment}`) : null),
         h("span", { class: "char" }, r.character || ""),
         h("span", {},
           tool("⬆️", "Move into the group (sends a DM)", () => roster("promote", r.member, "Moved into the group, DM sent.")),
@@ -1170,6 +1181,255 @@ async function pageAccess(main) {
         h("tbody", {},
           h("tr", {}, h("td", {}, member(data.owner)), h("td", {}, h("span", { class: "badge ok" }, "owner · everything")), h("td", {}), h("td", {})),
           rows)))));
+}
+
+// ================= Guides (❔ button on every tab) =================
+// Each guide: features / discord / panel → list of sections [title, [lines]]. `code` and **bold** are formatted.
+
+const HELP = {
+  overview: {
+    title: "Overview",
+    features: [["The admin panel", [
+      "One place to manage **Greatness Bot**: LFG groups, tickets, temporary voice rooms, panel texts, bot messages, the action log and settings.",
+      "Everything works on the same data as the bot — a change here is visible in Discord immediately, and the other way round.",
+      "Pick the server in the top bar. The green dot means the bot is connected to Discord."
+    ]]],
+    discord: [["Commands overview", [
+      "`/lfg`, `/lfg-dm`, `/character list|add|class|note|remove` — groups and characters (everyone).",
+      "`/room rename|limit|lock|unlock|permit|kick|claim|panel` — your temporary voice room (everyone).",
+      "`/admin` — the in-Discord admin panel (bot admins).",
+      "`/lfg-panel`, `/ticket-panel`, `/tempvoice …`, `/activity …`, `/ticket-project …` — setup commands (bot admins)."
+    ]]],
+    panel: [["Using the panel", [
+      "Tabs on the left show only the sections you have access to.",
+      "The cards on this page show counters; click one to open its section.",
+      "❔ **Guide** on every tab explains that module: what it can do, how to use it in Discord and here."
+    ]]]
+  },
+  lfg: {
+    title: "LFG — group & raid finder",
+    features: [
+      ["What it can do", [
+        "Groups of 2–25 slots with roles ⚔️ DD / 🛡️ Tank / 💚 Sup / 🎲 All per slot.",
+        "**Activities** — a name linked to a server role: the role is pinged and its members get a DM when a group is posted.",
+        "Start time shown to everyone in their own time zone; ⏰ reminder before the start; the post is removed automatically after the start.",
+        "**Characters**: members sign up with a saved character; each character can have a **class role** (one of the member's roles, shown next to the name) and a **note** (shown under the name).",
+        "**Reserve** when the needed slots are full; the organizer moves people between the group and the reserve (with a DM).",
+        "📋 **Invites** — ready `/invite Name` commands for AION 2.",
+        "From this panel: create groups, **recurring groups** posted on a schedule, edit the roster, force-close."
+      ]]
+    ],
+    discord: [
+      ["Create a group", [
+        "Click **Create LFG** on the LFG panel (or use `/lfg`). A menu only you can see opens.",
+        "Choose the size → the activity (or «Custom activity», no ping) → select slots and set their roles → **Next**.",
+        "Pick the date and time (or «No time») → **Publish**. You take slot 1 with your last used character."
+      ]],
+      ["Sign up", [
+        "Click a role button under the group post, then pick a saved character or **New character**.",
+        "Under the reply you can pick your **class role** and **add a note** — saved for that character and shown in the post.",
+        "Later: `/character class name role` and `/character note name text` (empty = remove). `/character list` shows them.",
+        "Click the same role again to switch character, another role to switch role. **Leave** frees your slot.",
+        "Grey role button = no free slot → you go to the **reserve**."
+      ]],
+      ["Organizer", [
+        "⚙️ **Manage** — move members between the group and the reserve (moved-in members get a DM).",
+        "📋 **Invites** — `/invite` commands. **Close** — shows invites, then deletes the post."
+      ]],
+      ["DMs and admin commands", [
+        "🔔 / 🔕 under the panel or `/lfg-dm` — turn group DMs on or off for yourself.",
+        "Admins: `/lfg-panel` posts the panel, `/activity add|remove|list` manages activities, `/admin` → LFG."
+      ]]
+    ],
+    panel: [
+      ["Activities & panel", [
+        "**Activities** — add a name + the role to ping, or remove one. Posted groups are not affected.",
+        "**LFG panel** — pick a text channel and **Post** the message with the Create LFG button."
+      ]],
+      ["Create a group", [
+        "Channel, activity (or a custom name), number of slots and the role of each slot.",
+        "Date and time are in the server time zone (Settings); leave both empty for «no time».",
+        "Options: DM the activity role, organizer (you) takes slot 1. **Publish**."
+      ]],
+      ["Recurring groups", [
+        "**Add schedule**: the same form + days of the week, start time, how many hours before the start to post, the organizer, on/off.",
+        "The table shows the next post and start. If a post fails (no access to the channel) that occurrence is skipped and the error is shown."
+      ]],
+      ["Active groups", [
+        "Each card shows the roster with class and notes. Member tools: ✏️ change character, ⬇️ to reserve, ✖️ remove.",
+        "Reserve tools: ⬆️ into the group (DM), ✏️, ✖️. **Force close** deletes the post. Every change updates the Discord post at once."
+      ]]
+    ]
+  },
+  tickets: {
+    title: "Tickets — applications",
+    features: [["What it can do", [
+      "A panel with **Create ticket**; the applicant picks a **project** (e.g. WWM, Aion 2).",
+      "The bot creates a private **text + voice** channel visible to the applicant and the project's **leadership roles**.",
+      "**Approve** (leadership) gives the project's roles, DMs the applicant and closes the ticket after 15 seconds.",
+      "**Close** (anyone in the ticket) deletes both channels. One open ticket per project per member.",
+      "Per project: leadership roles, roles given on Approve, the category for channels and a custom text in the ticket message."
+    ]]],
+    discord: [
+      ["Applicant", [
+        "Click **Create ticket** on the ticket panel → choose the project.",
+        "Talk with the leadership in the private channels. **Close** ends the ticket."
+      ]],
+      ["Leadership", [
+        "**Approve** gives the roles and closes the ticket. If a role can't be given (bot role too low), the ticket stays open."
+      ]],
+      ["Admin commands", [
+        "`/ticket-panel` — post the panel.",
+        "`/ticket-project add|remove|staff-add|staff-remove|member-role-add|member-role-remove|category|list`.",
+        "`/admin` → Tickets — the same in a menu."
+      ]]
+    ],
+    panel: [
+      ["Projects", [
+        "**New project** — name + the role given on Approve. Then set leadership roles, approve roles, the category and the ticket text, and **Save**.",
+        "Saving a new ticket text updates the message in open tickets of that project."
+      ]],
+      ["Panel & open tickets", [
+        "**Ticket panel** — post it into a text channel.",
+        "**Open tickets** — status, link, **Force close** (deletes the channels)."
+      ]]
+    ]
+  },
+  voice: {
+    title: "Temp Voice — personal voice rooms",
+    features: [["What it can do", [
+      "Join a **«join to create»** channel → the bot creates your own room and moves you there.",
+      "The room copies the permissions of its «join to create» channel and is deleted when empty.",
+      "The owner can rename, set a user limit, lock/unlock, permit or kick members; anyone can **claim** a room whose owner left."
+    ]]],
+    discord: [
+      ["Members", [
+        "Join the «➕ Create room» channel → you get your room.",
+        "Use the **Room controls** panel or `/room rename|limit|lock|unlock|permit|kick|claim`; `/room panel` shows the controls just for you.",
+        "Discord allows 2 renames per 10 minutes."
+      ]],
+      ["Admin commands", [
+        "`/tempvoice create|add|remove|panel|list`, or `/admin` → Temp Voice."
+      ]]
+    ],
+    panel: [[ "Managing", [
+      "**Create a 'join to create' channel** (name, category, room name template with `{user}`, limit) or **use an existing** voice channel.",
+      "Edit the room name template and limit of each channel, or remove it (the channel itself stays).",
+      "**Room control panel** — post it into a text channel.",
+      "**Active rooms** — owner, who is inside, 👑 transfer ownership, delete the room."
+    ]]]
+  },
+  texts: {
+    title: "Panel texts",
+    features: [["What it can do", [
+      "Edit the title, text and button labels of the **LFG**, **Ticket** and **Room controls** panels.",
+      "Saving updates the panels already posted in Discord. **Reset to default** restores the original text.",
+      "LFG panel placeholders: `{hours}` — auto-delete hours, `{reminder}` — reminder minutes."
+    ]]],
+    discord: [["Where it shows", [
+      "Panels posted by `/lfg-panel`, `/ticket-panel`, `/tempvoice panel`, `/admin` or this site use your text; `/room panel` too.",
+      "Discord markdown works: **bold**, *italic*, `code`, lists, `-#` small text."
+    ]]],
+    panel: [["Editing", [
+      "Change the fields of a panel → **Save & update panels**. Empty field = default text.",
+      "Panels posted before the bot started remembering them: click **Find posted panels** once."
+    ]]]
+  },
+  posts: {
+    title: "Posts — bot messages",
+    features: [["What it can do", [
+      "**Panels** — every known panel message: link, update with the current text, delete.",
+      "**Bot messages in a channel** — the last 50–500 messages of the bot with their type (panel, LFG group, ticket, other); delete one or many."
+    ]]],
+    discord: [["In Discord", [
+      "Deleting here deletes the message in Discord. Deleting an LFG group post closes the group properly (like Force close)."
+    ]]],
+    panel: [["Using it", [
+      "Pick a channel and the number of messages → **Load**. Tick messages → **Delete selected**.",
+      "**Find posted panels** adds older panel messages to the Panels list."
+    ]]]
+  },
+  log: {
+    title: "Log",
+    features: [["What is logged", [
+      "Every change made on this site — who, what and with which data.",
+      "In Discord: groups created/closed, roster changes, character class/note, tickets opened/approved/closed, force-closes via `/admin`.",
+      "By the bot itself: expired groups, recurring groups posted or failed. The last 5000 actions are kept."
+    ]]],
+    discord: [["In Discord", ["Nothing to do — actions are logged automatically."]]],
+    panel: [["Filters", [
+      "Filter by person, module or search text. **Load more** shows older entries."
+    ]]]
+  },
+  settings: {
+    title: "Settings",
+    features: [["What you can change", [
+      "Server **time zone** — used for LFG start times and recurring groups.",
+      "After how many hours LFG posts are deleted (counted from the start, or creation without a time).",
+      "How many minutes before the start the reminder is sent (0 = off)."
+    ]]],
+    discord: [["Effect in Discord", [
+      "Applies immediately to new groups and reminders; LFG panels are re-rendered with the new numbers.",
+      "Already posted groups keep their auto-delete time."
+    ]]],
+    panel: [["Using it", ["Empty field = the value from appsettings.json (shown as the placeholder). **Save**."]]]
+  },
+  access: {
+    title: "Access",
+    features: [["What it can do", [
+      "Only the bot owner sees this tab. Give people access to this panel — per section (LFG, Tickets, Temp Voice, Panel texts, Posts, Log, Settings).",
+      "Changes apply at once, no re-login needed. Access itself can't be given to anyone."
+    ]]],
+    discord: [["In Discord", [
+      "Panel access doesn't change anything in Discord. Discord admin commands depend on Manage Server or the bot admin roles (`/admin` → Bot admins)."
+    ]]],
+    panel: [["Using it", [
+      "**Pick a member** or paste a Discord user ID, tick sections → **Give access**.",
+      "In the list: change the ticks → **Save**, or **Remove**."
+    ]]]
+  }
+};
+
+/** Text with `code` and **bold** → DOM nodes (our own content only). */
+function rich(text) {
+  return text.split(/(`[^`]+`|\*\*[^*]+\*\*)/).filter(Boolean).map(part =>
+    part.startsWith("`") ? h("code", {}, part.slice(1, -1))
+      : part.startsWith("**") ? h("b", {}, part.slice(2, -2))
+      : part);
+}
+
+function guideDialog(key) {
+  const guide = HELP[key];
+  if (!guide) return;
+  const d = dialog();
+  const body = h("div", { class: "guide-body" });
+  const tabsDef = [["features", "✨ What it can do"], ["discord", "💬 In Discord"], ["panel", "🖥️ In this panel"]];
+  const buttons = tabsDef.map(([k, label]) => h("button", { class: "btn secondary", onclick: () => show(k) }, label));
+  const show = k => {
+    buttons.forEach((b, i) => b.classList.toggle("active-tab", tabsDef[i][0] === k));
+    body.replaceChildren(...guide[k].map(([title, lines]) => h("div", { class: "guide-section" },
+      h("h3", {}, title), h("ul", {}, lines.map(line => h("li", {}, rich(line)))))));
+  };
+  d.classList.add("wide");
+  d.replaceChildren(
+    h("div", { class: "card-head" }, h("h2", {}, `❔ ${guide.title}`), h("button", { class: "btn ghost", onclick: () => d.close() }, "✕")),
+    h("div", { class: "row", style: "margin-bottom:12px" }, buttons), body);
+  d.onclose = () => d.classList.remove("wide");
+  show("features");
+  d.showModal();
+}
+
+/** Puts the ❔ Guide button into the page heading. */
+function addGuideButton(main, key) {
+  if (!HELP[key]) return;
+  const btn = h("button", { class: "btn secondary", onclick: () => guideDialog(key) }, "❔ Guide");
+  const first = main.firstElementChild;
+  if (first && first.classList.contains("card-head")) first.append(btn);
+  else if (first && first.tagName === "H1") {
+    const head = h("div", { class: "card-head" });
+    first.replaceWith(head);
+    head.append(first, btn);
+  } else main.prepend(h("div", { class: "row", style: "justify-content:flex-end" }, btn));
 }
 
 boot();

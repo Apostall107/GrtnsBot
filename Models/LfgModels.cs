@@ -39,6 +39,12 @@ public sealed class Slot
     public SlotRole? TakenAs { get; set; }
     /// <summary>Ник персонажа, с которым записался участник.</summary>
     public string? CharacterName { get; set; }
+    /// <summary>Класс персонажа — роль сервера (снимок на момент записи).</summary>
+    public ulong? ClassRoleId { get; set; }
+    /// <summary>Юникод-эмодзи роли класса, если у роли есть (для показа рядом с ником).</summary>
+    public string? ClassIcon { get; set; }
+    /// <summary>Заметка игрока о персонаже.</summary>
+    public string? Comment { get; set; }
     [JsonIgnore] public bool IsFree => UserId is null;
 
     public void Clear()
@@ -46,6 +52,9 @@ public sealed class Slot
         UserId = null;
         TakenAs = null;
         CharacterName = null;
+        ClassRoleId = null;
+        ClassIcon = null;
+        Comment = null;
     }
 }
 
@@ -54,6 +63,9 @@ public sealed class ReserveEntry
     public ulong UserId { get; set; }
     public SlotRole Role { get; set; }
     public string? CharacterName { get; set; }
+    public ulong? ClassRoleId { get; set; }
+    public string? ClassIcon { get; set; }
+    public string? Comment { get; set; }
     public DateTimeOffset JoinedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
@@ -177,10 +189,10 @@ public sealed class LfgGroup
 
         if (current.TakenAs == wanted) return null; // смена персонажа на той же роли
 
-        var snapshot = (current.UserId, current.TakenAs, current.CharacterName);
+        var snapshot = (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment);
         current.Clear();
         var fits = FindFreeSlot(wanted) >= 0;
-        (current.UserId, current.TakenAs, current.CharacterName) = snapshot;
+        (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment) = snapshot;
 
         return fits ? null : $"No free slots for {wanted.Emoji()} {wanted.Label()}.";
     }
@@ -201,7 +213,7 @@ public sealed class LfgGroup
             return null;
         }
 
-        var snapshot = current is null ? default : (current.UserId, current.TakenAs, current.CharacterName);
+        var snapshot = current is null ? default : (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment);
         current?.Clear();
 
         var index = FindFreeSlot(wanted);
@@ -217,7 +229,7 @@ public sealed class LfgGroup
         if (current is not null)
         {
             // Уже в группе: не выкидываем в резерв из-за смены роли
-            (current.UserId, current.TakenAs, current.CharacterName) = snapshot;
+            (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment) = snapshot;
             return $"No free slots for {wanted.Emoji()} {wanted.Label()}.";
         }
 
@@ -276,7 +288,10 @@ public sealed class LfgGroup
         {
             UserId = userId,
             Role = slot.TakenAs ?? slot.Role,
-            CharacterName = slot.CharacterName
+            CharacterName = slot.CharacterName,
+            ClassRoleId = slot.ClassRoleId,
+            ClassIcon = slot.ClassIcon,
+            Comment = slot.Comment
         });
         slot.Clear();
         return null;
@@ -305,6 +320,9 @@ public sealed class LfgGroup
         slot.UserId = entry.UserId;
         slot.TakenAs = entry.Role;
         slot.CharacterName = entry.CharacterName;
+        slot.ClassRoleId = entry.ClassRoleId;
+        slot.ClassIcon = entry.ClassIcon;
+        slot.Comment = entry.Comment;
         return null;
     }
 }

@@ -64,6 +64,7 @@ public static class PanelDefs
         "**How to sign up**\n" +
         "• Click a role button under the group post.\n" +
         "• Pick one of your saved characters or enter a new name — it will be saved for next time.\n" +
+        "• Under the reply pick your **class role** and add a **note** — shown next to / under your name in the post.\n" +
         "• Click the same role again to switch character, or another role to switch role.\n" +
         "• No free slot for your role? The grey role button puts you on the **reserve** list. " +
         "The organizer can move you into the group, and you'll get a DM.\n" +
@@ -74,7 +75,7 @@ public static class PanelDefs
         "• Group posts are removed automatically {hours} h after the start time " +
         "(or after creation if no time was set).\n" +
         "• 📋 **Invites** shows ready-to-copy `/invite Name` commands for everyone in the group (except you).\n\n" +
-        "**Characters:** `/character list`, `/character add`, `/character remove`",
+        "**Characters:** `/character list`, `/character add`, `/character class`, `/character note`, `/character remove`",
         [
             new("start", "“Create LFG” button", "Create LFG"),
             new("dmon", "“DMs on” button", "DMs on"),

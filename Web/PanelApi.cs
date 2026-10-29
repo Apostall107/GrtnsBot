@@ -205,14 +205,20 @@ public static partial class PanelApi
                     emoji = (s.TakenAs ?? s.Role).Emoji(),
                     slotRole = s.Role.Label(),
                     member = s.UserId is { } u ? Member(guild, u) : null,
-                    character = s.CharacterName
+                    character = s.CharacterName,
+                    classRole = s.ClassRoleId is { } cr ? Role(guild, cr) : null,
+                    classIcon = s.ClassIcon,
+                    comment = s.Comment
                 }),
                 reserve = x.Reserve.Select(r => new
                 {
                     role = r.Role.Label(),
                     emoji = r.Role.Emoji(),
                     member = Member(guild, r.UserId),
-                    character = r.CharacterName
+                    character = r.CharacterName,
+                    classRole = r.ClassRoleId is { } rr ? Role(guild, rr) : null,
+                    classIcon = r.ClassIcon,
+                    comment = r.Comment
                 })
             }));
         });
