@@ -10,11 +10,13 @@ public static class PanelPermissions
     public const string Tickets = "tickets";
     public const string Voice = "voice";
     public const string Texts = "texts";
+    /// <summary>Сообщения бота: панели и посты — просмотр, обновление, удаление.</summary>
+    public const string Posts = "posts";
     /// <summary>Управление доступом — только владелец, выдать нельзя.</summary>
     public const string Access = "access";
 
     /// <summary>Права, которые владелец может выдавать.</summary>
-    public static readonly string[] Grantable = [Lfg, Tickets, Voice, Texts];
+    public static readonly string[] Grantable = [Lfg, Tickets, Voice, Texts, Posts];
 }
 
 public sealed class WebGrant

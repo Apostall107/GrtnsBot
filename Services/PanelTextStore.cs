@@ -188,6 +188,18 @@ public sealed class PanelTextStore
         }
     }
 
+    /// <summary>Какой панелью является сообщение (null — не запомненная панель).</summary>
+    public string? KeyOf(ulong guildId, ulong messageId)
+    {
+        lock (_lock)
+        {
+            if (!_data.TryGetValue(guildId, out var g)) return null;
+            foreach (var (key, list) in g.Posted)
+                if (list.Any(p => p.MessageId == messageId)) return key;
+            return null;
+        }
+    }
+
     private GuildPanels Guild(ulong guildId)
     {
         if (!_data.TryGetValue(guildId, out var g)) _data[guildId] = g = new GuildPanels();

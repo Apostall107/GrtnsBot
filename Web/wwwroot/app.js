@@ -210,11 +210,12 @@ const allTabs = [
   ["tickets", "🎫", "Tickets", "tickets"],
   ["voice", "🔊", "Temp Voice", "voice"],
   ["texts", "📝", "Panel texts", "texts"],
+  ["posts", "📌", "Posts", "posts"],
   ["access", "🔑", "Access", "access"]
 ];
 const can = perm => !perm || (state.me && state.me.permissions.includes(perm));
 const visibleTabs = () => allTabs.filter(t => can(t[3]));
-const PERM_LABELS = { lfg: "📣 LFG", tickets: "🎫 Tickets", voice: "🔊 Temp Voice", texts: "📝 Panel texts" };
+const PERM_LABELS = { lfg: "📣 LFG", tickets: "🎫 Tickets", voice: "🔊 Temp Voice", texts: "📝 Panel texts", posts: "📌 Posts" };
 
 function renderLogin(message) {
   const params = new URLSearchParams(location.search);
@@ -307,7 +308,7 @@ function renderShell() {
     h("div", { class: "layout" }, nav, main));
 
   if (!state.guildId) { main.append(empty("The bot is not on any server yet.")); return; }
-  const page = { overview: pageOverview, lfg: pageLfg, tickets: pageTickets, voice: pageVoice, texts: pageTexts, access: pageAccess }[state.tab];
+  const page = { overview: pageOverview, lfg: pageLfg, tickets: pageTickets, voice: pageVoice, texts: pageTexts, posts: pagePosts, access: pageAccess }[state.tab];
   page(main);
 }
 
@@ -667,6 +668,121 @@ function textCard(p) {
       h("div", { class: "row" }, counter, p.placeholders ? h("span", { class: "muted small" }, `· ${p.placeholders}`) : null)),
     labelInputs.length ? h("div", { class: "grid2" }, labelInputs.map(x => x.el)) : null,
     h("div", { class: "row" }, save, reset));
+}
+
+// ================= Posts: panels and bot messages =================
+
+const KIND_LABELS = {
+  "panel:lfg": ["LFG panel", "ok"], "panel:tickets": ["Ticket panel", "ok"], "panel:rooms": ["Room panel", "ok"],
+  "lfg-group": ["LFG group", "wait"], "ticket": ["Ticket", "wait"], "other": ["Message", ""]
+};
+
+async function pagePosts(main) {
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "📌 Posts"),
+    h("button", { class: "btn secondary", onclick: refresh }, "🔄 Refresh")));
+
+  // --- Panels
+  const discover = h("button", { class: "btn secondary" }, "🔍 Find posted panels");
+  discover.addEventListener("click", async () => {
+    const res = await act(discover, () => gApi("POST", "/texts/discover"));
+    if (res === undefined) return;
+    const total = Object.values(res).reduce((a, b) => a + b, 0);
+    toast(total ? `Found ${total} panel message(s).` : "No new panels found.");
+    refresh();
+  });
+  const panelsBody = h("div", {}, h("div", { class: "muted" }, "Loading…"));
+  main.append(h("div", { class: "card" },
+    h("div", { class: "card-head" }, h("h2", {}, "Panels"), discover),
+    h("p", { class: "muted small" }, "Panel messages the bot knows about. Deleting removes the message in Discord."),
+    panelsBody));
+
+  // --- Bot messages in a channel
+  const chSel = channelSelect("text", "Choose a text channel…");
+  const limitSel = h("select", {}, [50, 100, 200, 500].map(n => h("option", { value: n, selected: n === 100 }, `last ${n} messages`)));
+  const loadBtn = h("button", { class: "btn" }, "Load");
+  const msgBody = h("div", {}, empty("Choose a channel to see the bot's messages there."));
+  loadBtn.addEventListener("click", () => {
+    if (!chSel.value) return toast("Choose a channel first.", "warn");
+    loadMessages(chSel.value, limitSel.value, msgBody, loadBtn);
+  });
+  main.append(h("div", { class: "card" },
+    h("div", { class: "card-head" }, h("h2", {}, "Bot messages in a channel")),
+    h("p", { class: "muted small" }, "Everything the bot posted: panels, LFG groups, reminders, ticket messages and so on. ",
+      "Deleting an LFG group post closes the group."),
+    h("div", { class: "row", style: "margin-bottom:12px" }, h("div", { class: "grow" }, chSel), limitSel, loadBtn),
+    msgBody));
+
+  try {
+    const panels = await gApi("GET", "/posts/panels");
+    panelsBody.replaceChildren(...panels.map(panelGroup));
+  } catch (e) { panelsBody.replaceChildren(empty(e.message)); }
+}
+
+function panelGroup(p) {
+  const upd = h("button", { class: "btn ghost" }, "↻ Update with current text");
+  upd.addEventListener("click", () => act(upd, () => gApi("POST", `/posts/panels/${p.key}/refresh`),
+    r => `Updated ${r.panelsUpdated} of ${r.panelsTotal}.`));
+  return h("div", { style: "margin-bottom:14px" },
+    h("div", { class: "row" }, h("h3", { style: "margin:0" }, p.name), h("span", { class: "muted small" }, `${p.messages.length} posted`),
+      p.messages.length ? upd : null),
+    p.messages.length ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
+      h("tbody", {}, p.messages.map(m => {
+        const del = h("button", { class: "btn danger" }, "Delete");
+        del.addEventListener("click", async () => {
+          if (!await confirmDialog(`Delete this ${p.name}?`, `The message in #${m.channel || "unknown"} will be deleted.`, "Delete")) return;
+          if (await act(del, () => gApi("POST", `/posts/channels/${m.channelId}/delete`, { messageIds: [m.messageId] }),
+            r => r.deleted ? "Panel deleted." : "The message was already gone.") !== undefined) refresh();
+        });
+        return h("tr", {},
+          h("td", {}, m.channel ? `#${m.channel}` : h("span", { class: "chip warn" }, "deleted channel")),
+          h("td", { class: "muted small" }, fmtDate(m.createdAt)),
+          h("td", { class: "actions" }, h("a", { class: "btn ghost", href: m.jumpUrl, target: "_blank", rel: "noopener" }, "Open"), " ", del));
+      })))) : h("div", { class: "empty small" }, "None known. Post it from the module tab or use “Find posted panels”."));
+}
+
+async function loadMessages(channelId, limit, body, btn) {
+  body.replaceChildren(h("div", { class: "muted" }, "Loading…"));
+  const list = await act(btn, () => gApi("GET", `/posts/channels/${channelId}/messages?limit=${limit}`));
+  if (list === undefined) { body.replaceChildren(empty("Couldn't load messages.")); return; }
+  if (!list.length) { body.replaceChildren(empty("The bot has no messages among the loaded ones.")); return; }
+
+  const checks = [];
+  const delSel = h("button", { class: "btn danger" }, "🗑️ Delete selected");
+  const all = h("input", { type: "checkbox", title: "Select all" });
+  all.addEventListener("change", () => checks.forEach(c => { c.cb.checked = all.checked; }));
+  delSel.addEventListener("click", async () => {
+    const ids = checks.filter(c => c.cb.checked).map(c => c.id);
+    if (!ids.length) return toast("Nothing selected.", "warn");
+    if (!await confirmDialog(`Delete ${ids.length} message(s)?`, "This can't be undone. LFG group posts close their groups.", "Delete")) return;
+    const res = await act(delSel, () => gApi("POST", `/posts/channels/${channelId}/delete`, { messageIds: ids }));
+    if (res === undefined) return;
+    toast(`Deleted ${res.deleted}${res.failed ? `, failed ${res.failed}` : ""}.`, res.failed ? "warn" : "ok");
+    loadMessages(channelId, limit, body, btn);
+  });
+
+  const rows = list.map(m => {
+    const cb = h("input", { type: "checkbox" });
+    checks.push({ cb, id: m.messageId });
+    const [label, cls] = KIND_LABELS[m.kind] || [m.kind, ""];
+    const del = h("button", { class: "btn ghost" }, "Delete");
+    del.addEventListener("click", async () => {
+      if (!await confirmDialog("Delete this message?", m.kind === "lfg-group" ? "The LFG group will be closed." : "This can't be undone.", "Delete")) return;
+      if (await act(del, () => gApi("POST", `/posts/channels/${channelId}/delete`, { messageIds: [m.messageId] }), "Deleted.") !== undefined)
+        loadMessages(channelId, limit, body, btn);
+    });
+    return h("tr", {},
+      h("td", {}, cb),
+      h("td", { class: "muted small", style: "white-space:nowrap" }, fmtDate(m.createdAt)),
+      h("td", {}, h("span", { class: `badge ${cls}` }, label)),
+      h("td", {}, m.title ? h("div", {}, m.title) : null, h("div", { class: "muted small" }, m.preview || "—")),
+      h("td", { class: "actions" }, h("a", { class: "btn ghost", href: m.jumpUrl, target: "_blank", rel: "noopener" }, "Open"), " ", del));
+  });
+
+  body.replaceChildren(
+    h("div", { class: "row", style: "margin-bottom:8px" }, h("span", { class: "muted small" }, `${list.length} bot message(s)`), delSel),
+    h("div", { class: "table-wrap" }, h("table", { class: "table" },
+      h("thead", {}, h("tr", {}, h("th", {}, all), h("th", {}, "Posted"), h("th", {}, "Type"), h("th", {}, "Content"), h("th", {}))),
+      h("tbody", {}, rows))));
 }
 
 // ================= Access (owner only) =================
