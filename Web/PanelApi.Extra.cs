@@ -56,58 +56,8 @@ public static partial class PanelApi
         g.MapPost("/groups/{groupId}/roster", async (ulong guildId, string groupId, RosterBody body, LfgStore lfg, LfgSignupService signup) =>
         {
             if (!lfg.Groups.TryGetValue(groupId, out var group) || group.GuildId != guildId) return Error("This group is no longer active.");
-            if (ParseId(body.UserId) is not { } userId) return Error("Unknown member.");
-
-            string? error;
-            Slot? promoted = null;
-            await group.Gate.WaitAsync();
-            try
-            {
-                switch (body.Action)
-                {
-                    case "toReserve":
-                        error = userId == group.OwnerId
-                            ? "The organizer can't be moved to the reserve."
-                            : group.MoveToReserve(userId);
-                        break;
-                    case "promote":
-                        error = group.Promote(userId, out promoted);
-                        break;
-                    case "removeReserve":
-                        error = group.RemoveFromReserve(userId);
-                        break;
-                    case "remove":
-                        error = group.Slots.Any(x => x.UserId == userId) ? group.Leave(userId) : "This member is no longer in the group.";
-                        break;
-                    case "character":
-                        var name = (body.Character ?? "").Trim();
-                        if (name.Length is 0 or > 32) { error = "The character name must be 1–32 characters."; break; }
-                        var slot = group.Slots.Find(x => x.UserId == userId);
-                        var reserve = group.FindReserve(userId);
-                        if (slot is not null) slot.CharacterName = name;
-                        else if (reserve is not null) reserve.CharacterName = name;
-                        error = slot is null && reserve is null ? "This member is no longer in the group." : null;
-                        if (error is null) signup.ApplyProfile(group, userId); // класс и заметка нового персонажа
-                        break;
-                    default:
-                        error = "Unknown action.";
-                        break;
-                }
-
-                if (error is null)
-                {
-                    lfg.SaveGroups();
-                    await signup.RefreshPostAsync(group);
-                }
-            }
-            finally
-            {
-                group.Gate.Release();
-            }
-
-            if (error is not null) return Error(error);
-            if (promoted is not null) await signup.NotifyPromotedAsync(group, userId, promoted);
-            return Results.Ok();
+            var error = await RosterAsync(group, body, lfg, signup, AdminRosterActions);
+            return error is null ? Results.Ok() : Error(error);
         });
 
         g.MapGet("/recurring", (ulong guildId, DiscordSocketClient client, RecurringLfgStore recurring, [FromServices] TimeService time) =>
@@ -190,6 +140,86 @@ public static partial class PanelApi
             recurring.Remove(id);
             return Results.Ok();
         });
+    }
+
+    /// <summary>Админ может всё; организатор на сайте — как в Discord (Manage): резерв туда-обратно.</summary>
+    private static readonly string[] AdminRosterActions = ["toReserve", "promote", "removeReserve", "remove", "character"];
+    private static readonly string[] OrganizerRosterActions = ["toReserve", "promote", "removeReserve"];
+
+    /// <summary>Изменение состава сбора: сохранить, обновить пост, ЛС переведённому из резерва. null — успех.</summary>
+    private static async Task<string?> RosterAsync(LfgGroup group, RosterBody body, LfgStore lfg, LfgSignupService signup, string[] allowed)
+    {
+        if (ParseId(body.UserId) is not { } userId) return "Unknown member.";
+        if (body.Action is null || !allowed.Contains(body.Action)) return "This action is not allowed.";
+
+        string? error;
+        Slot? promoted = null;
+        await group.Gate.WaitAsync();
+        try
+        {
+            switch (body.Action)
+            {
+                case "toReserve":
+                    error = userId == group.OwnerId
+                        ? "The organizer can't be moved to the reserve."
+                        : group.MoveToReserve(userId);
+                    break;
+                case "promote":
+                    error = group.Promote(userId, out promoted);
+                    break;
+                case "removeReserve":
+                    error = group.RemoveFromReserve(userId);
+                    break;
+                case "remove":
+                    error = group.Slots.Any(x => x.UserId == userId) ? group.Leave(userId) : "This member is no longer in the group.";
+                    break;
+                case "character":
+                    var name = (body.Character ?? "").Trim();
+                    if (name.Length is 0 or > 32) { error = "The character name must be 1–32 characters."; break; }
+                    var slot = group.Slots.Find(x => x.UserId == userId);
+                    var reserve = group.FindReserve(userId);
+                    if (slot is not null) slot.CharacterName = name;
+                    else if (reserve is not null) reserve.CharacterName = name;
+                    error = slot is null && reserve is null ? "This member is no longer in the group." : null;
+                    if (error is null) signup.ApplyProfile(group, userId); // класс и заметка нового персонажа
+                    break;
+                default:
+                    error = "Unknown action.";
+                    break;
+            }
+
+            if (error is null)
+            {
+                lfg.SaveGroups();
+                await signup.RefreshPostAsync(group);
+            }
+        }
+        finally
+        {
+            group.Gate.Release();
+        }
+
+        if (error is null && promoted is not null) await signup.NotifyPromotedAsync(group, userId, promoted);
+        return error;
+    }
+
+    /// <summary>Закрыть сбор и удалить пост с напоминанием.</summary>
+    private static async Task CloseGroupAsync(LfgGroup group, LfgStore lfg, LfgSignupService signup)
+    {
+        await group.Gate.WaitAsync();
+        try
+        {
+            if (lfg.Groups.TryRemove(group.Id, out _))
+            {
+                group.IsClosed = true;
+                lfg.SaveGroups();
+                await signup.DeleteMessagesAsync(group);
+            }
+        }
+        finally
+        {
+            group.Gate.Release();
+        }
     }
 
     /// <summary>Общая проверка формы сбора: канал, активность (с ролью) или своё название, слоты.</summary>
@@ -357,7 +387,11 @@ public static partial class PanelApi
         ("POST", "/me/characters", "lfg", "Added character (site)"),
         ("PUT", "/me/characters/{name}", "lfg", "Edited character class/note (site)"),
         ("DELETE", "/me/characters/{name}", "lfg", "Removed character (site)"),
-        ("PUT", "/me/dm", "lfg", "Changed LFG DMs (site)")
+        ("PUT", "/me/dm", "lfg", "Changed LFG DMs (site)"),
+        ("POST", "/me/create", "lfg", "Created LFG group (site)"),
+        ("POST", "/me/groups/{groupId}/roster", "lfg", "Organizer changed roster (site)"),
+        ("POST", "/me/groups/{groupId}/close", "lfg", "Organizer closed group (site)"),
+        ("POST", "/me/room", "voice", "Changed own room (site)")
     ];
 
     private static readonly JsonSerializerOptions AuditJson = new(JsonSerializerDefaults.Web);
