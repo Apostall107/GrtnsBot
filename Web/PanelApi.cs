@@ -5,6 +5,7 @@ using LfgBot.Models;
 using LfgBot.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Logging;
 
@@ -227,7 +228,9 @@ public static class PanelApi
             return Results.Ok();
         });
 
-        g.MapPost("/lfg/panel", (ulong guildId, ChannelBody body, DiscordSocketClient client, TimeService time) =>
+        g.MapPost("/lfg/panel", (ulong guildId, ChannelBody body, DiscordSocketClient client,
+            // [FromServices]: у TimeService есть метод TryParse, без атрибута minimal API пытается взять его из запроса
+            [FromServices] TimeService time) =>
         {
             var panel = LfgRenderer.Panel(time.AutoDeleteHours);
             return PostAsync(client, guildId, body.ChannelId, ch => ch.SendMessageAsync(embed: panel.Embed, components: panel.Components));
