@@ -128,7 +128,12 @@ Lfg__TimeZone=Europe/Kyiv
 | Команды срабатывают дважды | Бот запущен и на ПК, и на сервере — закрой бота на ПК |
 | `Permission denied` при записи данных | `chown -R greatnessbot:greatnessbot /opt/greatnessbot` и перезапуск |
 
-## 9. Удаление
+## 9. Веб-админка (сайт)
+
+Админ-панель в браузере с HTTPS и входом через Discord — см. **`WEB-PANEL.md`** (в `deploy/linux/`).
+Коротко: DuckDNS-домен → Redirect в Developer Portal → `sudo bash setup-web.sh`.
+
+## 10. Удаление
 
 ```bash
 systemctl disable --now greatnessbot

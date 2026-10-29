@@ -2,11 +2,14 @@ using Discord;
 using Discord.Interactions;
 using Discord.WebSocket;
 using LfgBot.Services;
+using LfgBot.Web;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
 
-var builder = Host.CreateApplicationBuilder(args);
+// WebApplication вместо обычного Host: в том же процессе работает веб-админка (папка Web/)
+var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddUserSecrets<Program>(optional: true);
 
 // Под systemd (Linux-сервер): логи в формате journald и корректная остановка службы.
@@ -47,4 +50,10 @@ builder.Services.AddHostedService<BotService>();
 builder.Services.AddHostedService<GroupCleanupService>();
 builder.Services.AddHostedService<TempVoiceService>();
 
-await builder.Build().RunAsync();
+// Веб-админка: вход через Discord, слушает только 127.0.0.1 (наружу — через Caddy с HTTPS)
+builder.AddWebPanel();
+
+var app = builder.Build();
+app.UseWebPanel();
+
+await app.RunAsync();
