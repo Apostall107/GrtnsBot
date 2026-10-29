@@ -275,39 +275,31 @@ public static partial class PanelApi
             }
         });
 
-        // Для создания сбора: активности и каналы, где и я, и бот можем писать (каналы с LFG-панелью — первыми)
-        g.MapGet("/create-options", (ulong guildId, ClaimsPrincipal user, DiscordSocketClient client, ActivityStore activities,
-            PanelTextStore panels) =>
+        // Для создания сбора: активности и канал, куда уйдёт пост (выбирает админ в LFG → Channel for groups)
+        g.MapGet("/create-options", (ulong guildId, DiscordSocketClient client, ActivityStore activities,
+            BotSettingsStore settings, PanelTextStore panels) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
-            var member = guild.GetUser(user.UserId()!.Value);
-            var lfgChannels = panels.GetPosted(guildId, "lfg").Select(p => p.ChannelId).ToHashSet();
+            var channel = LfgChannel(guild, settings, panels);
             return Results.Ok(new
             {
                 activities = activities.Get(guildId).Select(a => new { key = a.Key, name = a.Name, role = Role(guild, a.RoleId) }),
-                channels = guild.TextChannels
-                    .Where(c => c is not SocketVoiceChannel and not SocketThreadChannel)
-                    .Where(c =>
-                    {
-                        var bot = guild.CurrentUser.GetPermissions(c);
-                        var mine = member?.GetPermissions(c);
-                        return bot.ViewChannel && bot.SendMessages && bot.EmbedLinks && mine is { ViewChannel: true, SendMessages: true };
-                    })
-                    .OrderByDescending(c => lfgChannels.Contains(c.Id)).ThenBy(c => c.Position)
-                    .Select(c => new { id = c.Id.ToString(), name = c.Name, category = c.Category?.Name, canPost = true, lfg = lfgChannels.Contains(c.Id) })
+                channel = channel is null ? null : new { id = channel.Id.ToString(), name = channel.Name }
             });
         });
 
         // Создать сбор (как /lfg): организатор — я
         g.MapPost("/create", async (ulong guildId, LfgCreateBody body, ClaimsPrincipal user, DiscordSocketClient client,
-            ActivityStore activities, LfgPublisher publisher, [Microsoft.AspNetCore.Mvc.FromServices] TimeService time) =>
+            ActivityStore activities, LfgPublisher publisher, BotSettingsStore settings, PanelTextStore panels,
+            [Microsoft.AspNetCore.Mvc.FromServices] TimeService time) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var me = user.UserId()!.Value;
-            var (err, channelId, name, pingRole, slots) = ResolveLfgInput(guild, activities, body.ChannelId, body.ActivityKey, body.CustomName, body.Slots);
+            // Канал выбирает не участник, а админ — пост всегда уходит в канал для сборов
+            if (LfgChannel(guild, settings, panels) is not { } lfgChannel)
+                return Error("The channel for groups is not set yet. Ask an admin (LFG → Channel for groups).");
+            var (err, channelId, name, pingRole, slots) = ResolveLfgInput(guild, activities, lfgChannel.Id.ToString(), body.ActivityKey, body.CustomName, body.Slots);
             if (err is not null) return Error(err);
-            var perms = guild.GetUser(me)?.GetPermissions(guild.GetTextChannel(channelId)!);
-            if (perms is not { ViewChannel: true, SendMessages: true }) return Error("You can't write in that channel.");
 
             DateTimeOffset? startsAt = null;
             if (!string.IsNullOrWhiteSpace(body.Date) || !string.IsNullOrWhiteSpace(body.Time))
@@ -356,6 +348,13 @@ public static partial class PanelApi
             notify.SetEnabled(guildId, user.UserId()!.Value, body.Enabled);
             return Results.Ok();
         });
+    }
+
+    /// <summary>Канал для сборов с сайта: из настроек, иначе канал первой LFG-панели.</summary>
+    private static SocketTextChannel? LfgChannel(SocketGuild guild, BotSettingsStore settings, PanelTextStore panels)
+    {
+        if (settings.GetLfgChannel(guild.Id) is { } id && guild.GetTextChannel(id) is { } set) return set;
+        return panels.GetPosted(guild.Id, "lfg").Select(p => guild.GetTextChannel(p.ChannelId)).FirstOrDefault(c => c is not null);
     }
 
     /// <summary>Ответы бота с Discord-разметкой → обычный текст для уведомления на сайте.</summary>

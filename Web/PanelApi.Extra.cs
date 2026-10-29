@@ -60,6 +60,34 @@ public static partial class PanelApi
             return error is null ? Results.Ok() : Error(error);
         });
 
+        // Канал, куда уходят сборы, созданные участниками на сайте
+        g.MapGet("/channel", (ulong guildId, DiscordSocketClient client, BotSettingsStore settings, PanelTextStore panels) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            var current = LfgChannel(guild, settings, panels);
+            return Results.Ok(new
+            {
+                channelId = settings.GetLfgChannel(guildId)?.ToString(),
+                effective = current is null ? null : new { id = current.Id.ToString(), name = current.Name },
+                fromPanel = settings.GetLfgChannel(guildId) is null && current is not null
+            });
+        });
+
+        g.MapPut("/channel", (ulong guildId, ChannelBody body, DiscordSocketClient client, BotSettingsStore settings) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            if (ParseId(body.ChannelId) is { } id)
+            {
+                if (guild.GetTextChannel(id) is not { } channel) return Error("Text channel not found.");
+                var p = guild.CurrentUser.GetPermissions(channel);
+                if (!p.ViewChannel || !p.SendMessages || !p.EmbedLinks)
+                    return Error("I can't post there. Give the bot View Channel, Send Messages and Embed Links.");
+                settings.SetLfgChannel(guildId, id);
+            }
+            else settings.SetLfgChannel(guildId, null);
+            return Results.Ok();
+        });
+
         g.MapGet("/recurring", (ulong guildId, DiscordSocketClient client, RecurringLfgStore recurring, [FromServices] TimeService time) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
@@ -359,6 +387,7 @@ public static partial class PanelApi
         ("POST", "/lfg/groups/{groupId}/roster", "lfg", "Changed LFG roster"),
         ("POST", "/lfg/create", "lfg", "Created LFG group"),
         ("POST", "/lfg/panel", "lfg", "Posted LFG panel"),
+        ("PUT", "/lfg/channel", "lfg", "Set channel for groups"),
         ("POST", "/lfg/recurring", "lfg", "Added recurring LFG"),
         ("PUT", "/lfg/recurring/{id}", "lfg", "Edited recurring LFG"),
         ("DELETE", "/lfg/recurring/{id}", "lfg", "Removed recurring LFG"),
