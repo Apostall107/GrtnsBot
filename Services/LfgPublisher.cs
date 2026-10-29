@@ -22,7 +22,8 @@ public sealed class LfgPublisher(
     LfgStore store,
     CharacterStore characters,
     TimeService time,
-    LfgNotifier notifier)
+    LfgNotifier notifier,
+    LfgSignupService signup)
 {
     /// <summary>Публикует сбор. Возвращает сбор и ссылку на пост; бросает исключение, если в канал нельзя писать.</summary>
     public async Task<(LfgGroup Group, string JumpUrl, bool DmsStarted)> PublishAsync(LfgPublishRequest r)
@@ -45,7 +46,11 @@ public sealed class LfgPublisher(
             Reminded = !time.ReminderNeeded(r.StartsAt)
         };
         // Организатор участвует сам: слот 1 + последний использованный персонаж
-        if (r.SeatOwner) group.SeatOwner(characters.Get(r.GuildId, r.OwnerId).FirstOrDefault());
+        if (r.SeatOwner)
+        {
+            group.SeatOwner(characters.Get(r.GuildId, r.OwnerId).FirstOrDefault());
+            signup.ApplyProfile(group, r.OwnerId); // класс и заметка персонажа организатора
+        }
 
         var s = LfgRenderer.Group(group);
         string? content = null;

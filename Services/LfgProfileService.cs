@@ -1,0 +1,149 @@
+using Discord;
+using Discord.WebSocket;
+using LfgBot.Models;
+
+namespace LfgBot.Services;
+
+/// <summary>
+/// Профиль персонажа в сборе: класс (одна из ролей сервера, которые есть у игрока) и заметка.
+/// Меню показывается под ответом после записи; то же самое — командами /character class и /character note.
+/// </summary>
+public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store, CharacterStore characters, LfgSignupService signup)
+{
+    public const string NoClassValue = "0";
+
+    /// <summary>Роли игрока, которые можно выбрать классом (без @everyone и ролей ботов/интеграций), сверху — старшие.</summary>
+    public IReadOnlyList<SocketRole> ClassRoles(ulong guildId, ulong userId) =>
+        client.GetGuild(guildId)?.GetUser(userId) is { } member
+            ? member.Roles.Where(r => !r.IsEveryone && !r.IsManaged).OrderByDescending(r => r.Position).ToList()
+            : new List<SocketRole>();
+
+    /// <summary>Меню «класс» + кнопка «заметка» под ответом о записи. null — человека нет в сборе.</summary>
+    public MessageComponent? Controls(LfgGroup group, ulong userId)
+    {
+        var current = CurrentEntry(group, userId);
+        if (current is null) return null;
+
+        var builder = new ComponentBuilder();
+        var roles = ClassRoles(group.GuildId, userId);
+        if (roles.Count > 0)
+        {
+            var menu = new SelectMenuBuilder()
+                .WithCustomId($"lfgp:class:{group.Id}")
+                .WithPlaceholder($"🎭 Class role for {Trim(current.Value.Name ?? "this character", 60)}")
+                .AddOption("No class", NoClassValue, "Don't show a class role");
+            foreach (var role in roles.Take(24))
+            {
+                var option = new SelectMenuOptionBuilder()
+                    .WithLabel(Trim(role.Name, 100))
+                    .WithValue(role.Id.ToString())
+                    .WithDefault(current.Value.ClassRoleId == role.Id);
+                if (LfgSignupService.IconOf(role) is { } icon) option.WithEmote(new Emoji(icon));
+                menu.AddOption(option);
+            }
+            builder.WithSelectMenu(menu, row: 0);
+        }
+
+        builder.WithButton(string.IsNullOrEmpty(current.Value.Comment) ? "Add a note" : "Edit the note",
+            $"lfgp:note:{group.Id}", ButtonStyle.Secondary, new Emoji("💬"), row: 1);
+        return builder.Build();
+    }
+
+    /// <summary>Окно заметки с текущим текстом. null — человека нет в сборе.</summary>
+    public Modal? NoteModal(LfgGroup group, ulong userId)
+    {
+        if (CurrentEntry(group, userId) is not { } current) return null;
+        return new ModalBuilder()
+            .WithTitle("Character note")
+            .WithCustomId($"lfgp:notemodal:{group.Id}")
+            .AddTextInput("Note (empty = remove)", "note", TextInputStyle.Paragraph,
+                placeholder: "e.g. 2.1k gear, can lead, healer alt", maxLength: CharacterStore.MaxCommentLength,
+                required: false, value: current.Comment)
+            .Build();
+    }
+
+    public Task<string> SetClassAsync(string groupId, ulong userId, string value)
+    {
+        if (!store.Groups.TryGetValue(groupId, out var group)) return Task.FromResult("This group is no longer active.");
+
+        ulong? roleId = null;
+        if (value != NoClassValue)
+        {
+            if (!ulong.TryParse(value, out var id) || ClassRoles(group.GuildId, userId).All(r => r.Id != id))
+                return Task.FromResult("You don't have this role.");
+            roleId = id;
+        }
+
+        return UpdateAsync(group, userId, info => (true, roleId, false, null),
+            roleId is { } r ? $"🎭 Class set: <@&{r}>" : "🎭 Class removed.");
+    }
+
+    public Task<string> SetCommentAsync(string groupId, ulong userId, string? comment)
+    {
+        if (!store.Groups.TryGetValue(groupId, out var group)) return Task.FromResult("This group is no longer active.");
+        var text = string.IsNullOrWhiteSpace(comment) ? null : comment.Trim();
+        return UpdateAsync(group, userId, info => (false, null, true, text), text is null ? "💬 Note removed." : "💬 Note saved.");
+    }
+
+    /// <summary>
+    /// После /character class|note: обновить все активные сборы, где человек записан этим персонажем.
+    /// </summary>
+    public async Task<int> RefreshCharacterAsync(ulong guildId, ulong userId, string name)
+    {
+        var updated = 0;
+        foreach (var group in store.Groups.Values.Where(g => g.GuildId == guildId && !g.IsClosed).ToList())
+        {
+            await group.Gate.WaitAsync();
+            try
+            {
+                var entry = CurrentEntry(group, userId);
+                if (entry is null || !string.Equals(entry.Value.Name, name, StringComparison.OrdinalIgnoreCase)) continue;
+                signup.ApplyProfile(group, userId);
+                store.SaveGroups();
+                await signup.RefreshPostAsync(group);
+                updated++;
+            }
+            finally
+            {
+                group.Gate.Release();
+            }
+        }
+        return updated;
+    }
+
+    private async Task<string> UpdateAsync(LfgGroup group, ulong userId,
+        Func<CharacterInfo?, (bool SetClass, ulong? ClassRoleId, bool SetComment, string? Comment)> change, string okText)
+    {
+        string? name;
+        await group.Gate.WaitAsync();
+        try
+        {
+            if (CurrentEntry(group, userId) is not { } entry) return "You are not in this group anymore.";
+            name = entry.Name;
+            if (string.IsNullOrWhiteSpace(name)) return "Your signup has no character name.";
+
+            var (setClass, classRoleId, setComment, comment) = change(characters.GetInfo(group.GuildId, userId, name));
+            characters.SetInfo(group.GuildId, userId, name, setClass, classRoleId, setComment, comment);
+            signup.ApplyProfile(group, userId);
+            store.SaveGroups();
+            await signup.RefreshPostAsync(group);
+        }
+        finally
+        {
+            group.Gate.Release();
+        }
+
+        // Тот же персонаж может стоять и в других сборах
+        await RefreshCharacterAsync(group.GuildId, userId, name!);
+        return $"{okText} — for **{Format.Sanitize(name!)}**. It's saved for this character and shown in your groups.";
+    }
+
+    private static (string? Name, ulong? ClassRoleId, string? Comment)? CurrentEntry(LfgGroup group, ulong userId)
+    {
+        if (group.Slots.Find(s => s.UserId == userId) is { } slot) return (slot.CharacterName, slot.ClassRoleId, slot.Comment);
+        if (group.FindReserve(userId) is { } r) return (r.CharacterName, r.ClassRoleId, r.Comment);
+        return null;
+    }
+
+    private static string Trim(string text, int max) => text.Length <= max ? text : text[..(max - 1)] + "…";
+}

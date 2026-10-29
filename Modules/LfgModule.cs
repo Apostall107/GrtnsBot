@@ -8,7 +8,7 @@ using LfgBot.Services;
 namespace LfgBot.Modules;
 
 [RequireContext(ContextType.Guild)]
-public sealed class LfgModule(PanelService panels, LfgPublisher publisher, AuditLog audit, LfgStore store, ActivityStore activities, CharacterStore characters, TimeService time,
+public sealed class LfgModule(PanelService panels, LfgPublisher publisher, AuditLog audit, LfgProfileService profile, LfgStore store, ActivityStore activities, CharacterStore characters, TimeService time,
     LfgNotifyStore notifyPrefs, LfgNotifier notifier, LfgSignupService signup, BotOwner botOwner)
     : InteractionModuleBase<SocketInteractionContext>
 {
@@ -322,10 +322,12 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
 
         characters.Add(Context.Guild.Id, Context.User.Id, values[0]); // поднимает персонажа наверх списка
         var result = await JoinAsync(groupId, Enum.Parse<SlotRole>(role), values[0]);
+        var controls = ProfileControls(groupId);
         await Component.UpdateAsync(m =>
         {
-            m.Content = result;
-            m.Components = new ComponentBuilder().Build();
+            m.Content = result + (controls is null ? "" : ProfileHint);
+            m.Components = controls ?? new ComponentBuilder().Build();
+            m.AllowedMentions = AllowedMentions.None;
         });
     }
 
@@ -341,8 +343,16 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
 
         characters.Add(Context.Guild.Id, Context.User.Id, name);
         var result = await JoinAsync(groupId, Enum.Parse<SlotRole>(role), name);
-        await RespondAsync(result, ephemeral: true);
+        var controls = ProfileControls(groupId);
+        await RespondAsync(result + (controls is null ? "" : ProfileHint), components: controls, ephemeral: true,
+            allowedMentions: AllowedMentions.None);
     }
+
+    /// <summary>Под ответом о записи: выбрать класс-роль и добавить заметку к персонажу.</summary>
+    public const string ProfileHint = "\n-# Optional: pick your class role and add a note for this character below — they are shown in the group post.";
+
+    private MessageComponent? ProfileControls(string groupId) =>
+        store.Groups.TryGetValue(groupId, out var group) ? profile.Controls(group, Context.User.Id) : null;
 
     [ComponentInteraction("lfg:invites:*")]
     public async Task OnInvites(string groupId)

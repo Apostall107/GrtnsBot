@@ -9,7 +9,7 @@ namespace LfgBot.Services;
 /// Общая логика записи и обновления поста сбора: используется на сервере, из ЛС,
 /// в меню организатора и для напоминаний.
 /// </summary>
-public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store, ILogger<LfgSignupService> logger)
+public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store, CharacterStore characters, ILogger<LfgSignupService> logger)
 {
     /// <summary>Запись в слот или в резерв + сохранение + обновление поста.</summary>
     public async Task<string> JoinAsync(LfgGroup group, ulong userId, SlotRole role, string characterName)
@@ -19,6 +19,7 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
         {
             var error = group.TryJoin(userId, role, characterName, out var reserved);
             if (error is not null) return error;
+            ApplyProfile(group, userId);
 
             store.SaveGroups();
             await RefreshPostAsync(group);
@@ -38,6 +39,40 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
             group.Gate.Release();
         }
     }
+
+    /// <summary>
+    /// Подставляет в слот/резерв класс-роль и заметку выбранного персонажа (из /character или меню после записи).
+    /// Роль показывается, только если она всё ещё есть у игрока. Вызывать под group.Gate.
+    /// </summary>
+    public void ApplyProfile(LfgGroup group, ulong userId)
+    {
+        var slot = group.Slots.Find(s => s.UserId == userId);
+        var entry = slot is null ? group.FindReserve(userId) : null;
+        var name = slot?.CharacterName ?? entry?.CharacterName;
+        var info = characters.GetInfo(group.GuildId, userId, name);
+
+        var guild = client.GetGuild(group.GuildId);
+        var role = info?.ClassRoleId is { } roleId ? guild?.GetRole(roleId) : null;
+        if (role is not null && guild?.GetUser(userId) is { } member && member.Roles.All(r => r.Id != role.Id)) role = null;
+
+        var icon = IconOf(role);
+        if (slot is not null)
+        {
+            slot.ClassRoleId = role?.Id;
+            slot.ClassIcon = icon;
+            slot.Comment = info?.Comment;
+        }
+        else if (entry is not null)
+        {
+            entry.ClassRoleId = role?.Id;
+            entry.ClassIcon = icon;
+            entry.Comment = info?.Comment;
+        }
+    }
+
+    /// <summary>Юникод-эмодзи роли (иконка-эмодзи из настроек роли), если есть.</summary>
+    public static string? IconOf(IRole? role) =>
+        role?.Emoji is { } e && !string.IsNullOrWhiteSpace(e.Name) ? e.Name : null;
 
     /// <summary>Перерисовать пост сбора. Вызывать под group.Gate.</summary>
     public async Task RefreshPostAsync(LfgGroup group)

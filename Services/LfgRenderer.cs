@@ -195,16 +195,10 @@ public static class LfgRenderer
             sb.AppendLine($"🕒 Starts: {FormatTime(startsAt)}");
         sb.AppendLine($"Roster: **{g.FilledCount}/{g.Slots.Count}**");
         sb.AppendLine();
-        for (var i = 0; i < g.Slots.Count; i++)
-            sb.AppendLine(SlotLine(i, g.Slots[i]));
-
-        if (g.Reserve.Count > 0)
-        {
-            sb.AppendLine();
-            sb.AppendLine($"**Reserve ({g.Reserve.Count}):**");
-            foreach (var r in g.Reserve)
-                sb.AppendLine($"{r.Role.Emoji()} <@{r.UserId}> **{Format.Sanitize(r.CharacterName ?? "-")}**");
-        }
+        // Заметки к персонажам могут не влезть в лимит embed (4096) — тогда показываем без них
+        var roster = Roster(g, withComments: true);
+        if (sb.Length + roster.Length > 3900) roster = Roster(g, withComments: false);
+        sb.Append(roster);
 
         sb.AppendLine();
         sb.AppendLine($"-# Post will be removed <t:{g.ExpiresAt.ToUnixTimeSeconds()}:R>");
@@ -375,6 +369,38 @@ public static class LfgRenderer
 
     private static string SlotHead(int i, Slot s) => $"`{i + 1,2}.` {s.Role.Emoji()} **{s.Role.Label()}**";
 
+    private static string Roster(LfgGroup g, bool withComments)
+    {
+        var sb = new StringBuilder();
+        for (var i = 0; i < g.Slots.Count; i++)
+        {
+            sb.AppendLine(SlotLine(i, g.Slots[i]));
+            if (withComments && g.Slots[i].UserId is not null) AppendComment(sb, g.Slots[i].Comment);
+        }
+
+        if (g.Reserve.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"**Reserve ({g.Reserve.Count}):**");
+            foreach (var r in g.Reserve)
+            {
+                sb.AppendLine($"{r.Role.Emoji()} {ClassPrefix(r.ClassIcon, r.ClassRoleId)}<@{r.UserId}> **{Format.Sanitize(r.CharacterName ?? "-")}**");
+                if (withComments) AppendComment(sb, r.Comment);
+            }
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>Иконка класса перед ником: эмодзи роли, иначе упоминание роли (цветное имя, без пинга в embed).</summary>
+    private static string ClassPrefix(string? icon, ulong? roleId) =>
+        icon is not null ? $"{icon} " : roleId is { } id ? $"<@&{id}> " : "";
+
+    private static void AppendComment(StringBuilder sb, string? comment)
+    {
+        if (string.IsNullOrWhiteSpace(comment)) return;
+        sb.AppendLine($"-# 💬 {Format.Sanitize(comment.Replace("\n", " "))}");
+    }
+
     private static string SlotLine(int i, Slot s)
     {
         if (s.UserId is not { } userId) return $"{SlotHead(i, s)} — *open*";
@@ -383,6 +409,6 @@ public static class LfgRenderer
             ? $" ({t.Emoji()} {t.Label()})"
             : "";
         var character = s.CharacterName is { } name ? $" **{Format.Sanitize(name)}**" : "";
-        return $"{SlotHead(i, s)} — <@{userId}>{character}{takenAs}";
+        return $"{SlotHead(i, s)} — {ClassPrefix(s.ClassIcon, s.ClassRoleId)}<@{userId}>{character}{takenAs}";
     }
 }

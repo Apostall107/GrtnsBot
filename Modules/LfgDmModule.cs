@@ -10,7 +10,8 @@ namespace LfgBot.Modules;
 /// Запись в сбор прямо из ЛС-оповещения. Без RequireContext(Guild): кнопки нажимают в личке.
 /// Сервер берётся из самого сбора; записаться может только участник этого сервера.
 /// </summary>
-public sealed class LfgDmModule(LfgStore store, CharacterStore characters, LfgSignupService signup, LfgNotifyStore notifyPrefs)
+public sealed class LfgDmModule(LfgStore store, CharacterStore characters, LfgSignupService signup, LfgNotifyStore notifyPrefs,
+    LfgProfileService profile)
     : InteractionModuleBase<SocketInteractionContext>
 {
     private SocketMessageComponent Component => (SocketMessageComponent)Context.Interaction;
@@ -56,10 +57,12 @@ public sealed class LfgDmModule(LfgStore store, CharacterStore characters, LfgSi
 
         characters.Add(group.GuildId, Context.User.Id, values[0]);
         var result = await signup.JoinAsync(group, Context.User.Id, Enum.Parse<SlotRole>(role), values[0]);
+        var controls = profile.Controls(group, Context.User.Id);
         await Component.UpdateAsync(m =>
         {
-            m.Content = result;
-            m.Components = new ComponentBuilder().Build();
+            m.Content = result + (controls is null ? "" : LfgModule.ProfileHint);
+            m.Components = controls ?? new ComponentBuilder().Build();
+            m.AllowedMentions = AllowedMentions.None;
         });
     }
 
@@ -77,7 +80,9 @@ public sealed class LfgDmModule(LfgStore store, CharacterStore characters, LfgSi
 
         characters.Add(group.GuildId, Context.User.Id, name);
         var result = await signup.JoinAsync(group, Context.User.Id, Enum.Parse<SlotRole>(role), name);
-        await RespondAsync(result, ephemeral: true);
+        var controls = profile.Controls(group, Context.User.Id);
+        await RespondAsync(result + (controls is null ? "" : LfgModule.ProfileHint), components: controls, ephemeral: true,
+            allowedMentions: AllowedMentions.None);
     }
 
     // ================= Отписка прямо из ЛС =================
