@@ -171,37 +171,35 @@ public sealed class TempRoomManager(TempVoiceStore store, DiscordSocketClient cl
 
     // ---------- Панель управления ----------
 
-    public static (Embed Embed, MessageComponent Components) Panel()
+    /// <summary>Тексты по умолчанию — <see cref="PanelDefs.Rooms"/>, свои — из веб-админки (PanelTextStore).</summary>
+    public static (Embed Embed, MessageComponent Components) Panel(PanelText? text = null)
     {
+        var def = PanelDefs.Rooms;
         var embed = new EmbedBuilder()
-            .WithTitle("🎛️ Room controls")
+            .WithTitle(def.Title(text))
             .WithColor(Color.Teal)
-            .WithDescription(
-                "Use these while you are **in your temporary room**. Only the room owner can use them, except **Claim**.\n\n" +
-                "✏️ **Rename** · 👥 **Limit** (0 = no limit) · 🔒 **Lock / Unlock** — when locked, only people inside " +
-                "or permitted can join · 👑 **Claim** — take the room if the owner left\n" +
-                "✅ **Permit** a member to join even when locked · 🚫 **Kick** a member and block them from rejoining")
+            .WithDescription(def.Description(text))
             .Build();
 
         var permit = new SelectMenuBuilder()
             .WithCustomId("room:permit")
             .WithType(ComponentType.UserSelect)
-            .WithPlaceholder("✅ Permit a member")
+            .WithPlaceholder(def.Label(text, "permit"))
             .WithMinValues(1)
             .WithMaxValues(1);
 
         var kick = new SelectMenuBuilder()
             .WithCustomId("room:kick")
             .WithType(ComponentType.UserSelect)
-            .WithPlaceholder("🚫 Kick a member")
+            .WithPlaceholder(def.Label(text, "kick"))
             .WithMinValues(1)
             .WithMaxValues(1);
 
         var comps = new ComponentBuilder()
-            .WithButton("Rename", "room:rename", ButtonStyle.Secondary, new Emoji("✏️"), row: 0)
-            .WithButton("Limit", "room:limit", ButtonStyle.Secondary, new Emoji("👥"), row: 0)
-            .WithButton("Lock / Unlock", "room:lock", ButtonStyle.Secondary, new Emoji("🔒"), row: 0)
-            .WithButton("Claim", "room:claim", ButtonStyle.Primary, new Emoji("👑"), row: 0)
+            .WithButton(def.Label(text, "rename"), "room:rename", ButtonStyle.Secondary, new Emoji("✏️"), row: 0)
+            .WithButton(def.Label(text, "limit"), "room:limit", ButtonStyle.Secondary, new Emoji("👥"), row: 0)
+            .WithButton(def.Label(text, "lock"), "room:lock", ButtonStyle.Secondary, new Emoji("🔒"), row: 0)
+            .WithButton(def.Label(text, "claim"), "room:claim", ButtonStyle.Primary, new Emoji("👑"), row: 0)
             .WithSelectMenu(permit, row: 1)
             .WithSelectMenu(kick, row: 2)
             .Build();

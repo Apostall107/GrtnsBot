@@ -23,7 +23,8 @@ public sealed class AdminModule(
     TicketStore tickets,
     TicketMessageService ticketMessages,
     TempVoiceStore voice,
-    TempRoomManager rooms) : InteractionModuleBase<SocketInteractionContext>
+    TempRoomManager rooms,
+    PanelService panels) : InteractionModuleBase<SocketInteractionContext>
 {
     private const int MaxOptions = 25; // лимит пунктов в выпадающем списке
     private const string DefaultCreatorName = "➕ Create room";
@@ -108,8 +109,7 @@ public sealed class AdminModule(
             return;
         }
 
-        var panel = LfgRenderer.Panel(time.AutoDeleteHours);
-        await channel.SendMessageAsync(embed: panel.Embed, components: panel.Components);
+        await panels.PostAsync(channel, GuildId, "lfg");
         await ShowAsync(LfgTab("✅ LFG panel posted in this channel."));
     }
 
@@ -327,8 +327,7 @@ public sealed class AdminModule(
             return;
         }
 
-        var (embed, comps) = TicketRenderer.Panel();
-        await channel.SendMessageAsync(embed: embed, components: comps);
+        await panels.PostAsync(channel, GuildId, "tickets");
         await ShowAsync(TicketsTab("✅ Ticket panel posted in this channel."));
     }
 
@@ -628,8 +627,7 @@ public sealed class AdminModule(
             return;
         }
 
-        var (embed, comps) = TempRoomManager.Panel();
-        await channel.SendMessageAsync(embed: embed, components: comps);
+        await panels.PostAsync(channel, GuildId, "rooms");
         await ShowAsync(VoiceTab("✅ Room control panel posted in this channel."));
     }
 

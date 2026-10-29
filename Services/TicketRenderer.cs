@@ -9,24 +9,18 @@ public static class TicketRenderer
     public const string DefaultCategoryName = "Tickets";
 
     // ---------- Панель в канале ----------
-    public static (Embed Embed, MessageComponent Components) Panel()
+    /// <summary>Тексты по умолчанию — <see cref="PanelDefs.Tickets"/>, свои — из веб-админки (PanelTextStore).</summary>
+    public static (Embed Embed, MessageComponent Components) Panel(PanelText? text = null)
     {
+        var def = PanelDefs.Tickets;
         var embed = new EmbedBuilder()
-            .WithTitle("🎫 Applications & Tickets")
+            .WithTitle(def.Title(text))
             .WithColor(Color.Orange)
-            .WithDescription(
-                "**How to apply**\n" +
-                "1. Click **Create ticket**.\n" +
-                "2. Choose the project you are applying to (e.g. WWM, Aion 2). Only you can see this menu.\n" +
-                "3. The bot creates a private **text** and **voice** channel for you and the project leadership.\n" +
-                "4. Talk with the leadership there. When they **Approve** your application, " +
-                "you get the project role automatically and the ticket closes (you'll also get a DM).\n" +
-                "5. Anyone in the ticket can **Close** it — both channels are deleted.\n\n" +
-                "-# You can have one open ticket per project.")
+            .WithDescription(def.Description(text))
             .Build();
 
         var comps = new ComponentBuilder()
-            .WithButton("Create ticket", "ticket:start", ButtonStyle.Primary, new Emoji("🎫"))
+            .WithButton(def.Label(text, "start"), "ticket:start", ButtonStyle.Primary, new Emoji("🎫"))
             .Build();
 
         return (embed, comps);

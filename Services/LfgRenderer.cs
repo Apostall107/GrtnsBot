@@ -15,42 +15,20 @@ public static class LfgRenderer
     public const string NewCharacterValue = "__new";
 
     // ---------- Панель в канале ----------
-    public static Screen Panel(int autoDeleteHours)
+    /// <summary>Тексты по умолчанию — <see cref="PanelDefs.Lfg"/>, свои — из веб-админки (PanelTextStore).</summary>
+    public static Screen Panel(int autoDeleteHours, PanelText? text = null)
     {
+        var def = PanelDefs.Lfg;
         var embed = new EmbedBuilder()
-            .WithTitle("📣 Group & Raid Finder")
+            .WithTitle(def.Title(text))
             .WithColor(Color.Blue)
-            .WithDescription(
-                "**How to create a group**\n" +
-                "1. Click **Create LFG** — a menu only you can see will open.\n" +
-                "2. Choose the group size.\n" +
-                "3. Choose the activity. Members with its role will be pinged and get a DM " +
-                "(turn them on or off for yourself with the 🔔 / 🔕 buttons below or `/lfg-dm`). " +
-                "«Custom activity» lets you type a name, without a ping.\n" +
-                "4. Select slots and assign roles ⚔️ DD / 🛡️ Tank / 💚 Sup / 🎲 All, then click **Next**.\n" +
-                "5. Pick the start date and time (or «No time») and click **Publish**. " +
-                "You take slot 1 automatically with your last used character. " +
-                "Everyone sees the time in their own time zone.\n\n" +
-                "**How to sign up**\n" +
-                "• Click a role button under the group post.\n" +
-                "• Pick one of your saved characters or enter a new name — it will be saved for next time.\n" +
-                "• Click the same role again to switch character, or another role to switch role.\n" +
-                "• No free slot for your role? The grey role button puts you on the **reserve** list. " +
-                "The organizer can move you into the group, and you'll get a DM.\n" +
-                "• **Leave** frees your slot (or takes you off the reserve).\n" +
-                "• ⚙️ **Manage** — organizer only: swap members between the group and the reserve.\n" +
-                "• Everyone in the group gets a ⏰ reminder 10 minutes before the start.\n" +
-                "• **Close** — organizer only. Shows the invite list and deletes the group post.\n" +
-                $"• Group posts are removed automatically {autoDeleteHours} h after the start time " +
-                "(or after creation if no time was set).\n" +
-                "• 📋 **Invites** shows ready-to-copy `/invite Name` commands for everyone in the group (except you).\n\n" +
-                "**Characters:** `/character list`, `/character add`, `/character remove`")
+            .WithDescription(def.Description(text).Replace("{hours}", autoDeleteHours.ToString()))
             .Build();
 
         var comps = new ComponentBuilder()
-            .WithButton("Create LFG", "lfg:start", ButtonStyle.Success, new Emoji("📣"))
-            .WithButton("DMs on", "lfg:dmpref:on", ButtonStyle.Secondary, new Emoji("🔔"))
-            .WithButton("DMs off", "lfg:dmpref:off", ButtonStyle.Secondary, new Emoji("🔕"))
+            .WithButton(def.Label(text, "start"), "lfg:start", ButtonStyle.Success, new Emoji("📣"))
+            .WithButton(def.Label(text, "dmon"), "lfg:dmpref:on", ButtonStyle.Secondary, new Emoji("🔔"))
+            .WithButton(def.Label(text, "dmoff"), "lfg:dmpref:off", ButtonStyle.Secondary, new Emoji("🔕"))
             .Build();
 
         return new Screen(null, embed, comps);

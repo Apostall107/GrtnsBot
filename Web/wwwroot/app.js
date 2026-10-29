@@ -203,12 +203,18 @@ const state = {
   tab: store.get("gb.tab") || "overview"
 };
 
-const tabs = [
-  ["overview", "🏠", "Overview"],
-  ["lfg", "📣", "LFG"],
-  ["tickets", "🎫", "Tickets"],
-  ["voice", "🔊", "Temp Voice"]
+// [key, icon, label, required permission (null = everyone with access)]
+const allTabs = [
+  ["overview", "🏠", "Overview", null],
+  ["lfg", "📣", "LFG", "lfg"],
+  ["tickets", "🎫", "Tickets", "tickets"],
+  ["voice", "🔊", "Temp Voice", "voice"],
+  ["texts", "📝", "Panel texts", "texts"],
+  ["access", "🔑", "Access", "access"]
 ];
+const can = perm => !perm || (state.me && state.me.permissions.includes(perm));
+const visibleTabs = () => allTabs.filter(t => can(t[3]));
+const PERM_LABELS = { lfg: "📣 LFG", tickets: "🎫 Tickets", voice: "🔊 Temp Voice", texts: "📝 Panel texts" };
 
 function renderLogin(message) {
   const params = new URLSearchParams(location.search);
@@ -261,7 +267,7 @@ async function boot() {
 
   const saved = store.get("gb.guild");
   state.guildId = state.guilds.some(g => g.id === saved) ? saved : (state.guilds[0] && state.guilds[0].id) || null;
-  if (!tabs.some(t => t[0] === state.tab)) state.tab = "overview";
+  if (!visibleTabs().some(t => t[0] === state.tab)) state.tab = "overview";
   await selectGuild(state.guildId);
 }
 
@@ -285,7 +291,7 @@ function renderShell() {
     state.guilds.map(g => h("option", { value: g.id, selected: g.id === state.guildId }, g.name)));
   const connected = state.connection === "Connected";
 
-  const nav = h("nav", { class: "nav" }, tabs.map(([key, icon, label]) =>
+  const nav = h("nav", { class: "nav" }, visibleTabs().map(([key, icon, label]) =>
     h("button", { class: state.tab === key ? "active" : "", onclick: () => { state.tab = key; store.set("gb.tab", key); renderShell(); } }, icon, " ", label)));
 
   const main = h("main", { class: "main" });
@@ -301,7 +307,7 @@ function renderShell() {
     h("div", { class: "layout" }, nav, main));
 
   if (!state.guildId) { main.append(empty("The bot is not on any server yet.")); return; }
-  const page = { overview: pageOverview, lfg: pageLfg, tickets: pageTickets, voice: pageVoice }[state.tab];
+  const page = { overview: pageOverview, lfg: pageLfg, tickets: pageTickets, voice: pageVoice, texts: pageTexts, access: pageAccess }[state.tab];
   page(main);
 }
 
@@ -316,7 +322,7 @@ async function pageOverview(main) {
   main.append(holder);
   try {
     const o = await gApi("GET", "/overview");
-    const stat = (label, value, sub, tab) => h("div", { class: "stat", style: tab ? "cursor:pointer" : null,
+    const stat = (label, value, sub, tab) => (tab && !can(tab)) ? null : h("div", { class: "stat", style: tab ? "cursor:pointer" : null,
       onclick: tab ? () => { state.tab = tab; store.set("gb.tab", tab); renderShell(); } : null },
       h("div", { class: "label" }, label), h("div", { class: "value" }, value), h("div", { class: "sub" }, sub));
     holder.replaceChildren(
@@ -586,6 +592,162 @@ function roomRow(r) {
     h("td", {}, member(r.owner)),
     h("td", {}, r.inside.length ? r.inside.map(m => h("div", {}, member(m))) : h("span", { class: "muted" }, "nobody")),
     h("td", { class: "actions" }, owner, " ", del));
+}
+
+// ================= Panel texts =================
+
+async function pageTexts(main) {
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "📝 Panel texts"),
+    h("button", { class: "btn secondary", onclick: refresh }, "🔄 Refresh")));
+  main.append(h("p", { class: "muted" },
+    "Edit the text of the panels the bot posts. Saving updates the panels already posted on the server. ",
+    "Panels posted before this feature are unknown to the bot — click “Find posted panels” once to pick them up."));
+
+  const discover = h("button", { class: "btn secondary" }, "🔍 Find posted panels");
+  discover.addEventListener("click", async () => {
+    const res = await act(discover, () => gApi("POST", "/texts/discover"));
+    if (res === undefined) return;
+    const total = Object.values(res).reduce((a, b) => a + b, 0);
+    toast(total ? `Found ${total} panel message(s).` : "No new panels found (only the last 50 messages of each channel are checked).");
+    refresh();
+  });
+  main.append(h("div", { class: "row", style: "margin-bottom:16px" }, discover));
+
+  const holder = h("div", {}, h("div", { class: "muted" }, "Loading…"));
+  main.append(holder);
+  try {
+    const panels = await gApi("GET", "/texts");
+    holder.replaceChildren(...panels.map(textCard));
+  } catch (e) { holder.replaceChildren(empty(e.message)); }
+}
+
+function textCard(p) {
+  const title = h("input", { maxlength: String(p.maxTitle), placeholder: p.defaults.title, value: p.title || p.defaults.title });
+  const desc = h("textarea", { maxlength: String(p.maxDescription), style: "min-height:260px" });
+  desc.value = p.description || p.defaults.description;
+  const counter = h("span", { class: "muted small" }, `${desc.value.length}/${p.maxDescription}`);
+  desc.addEventListener("input", () => { counter.textContent = `${desc.value.length}/${p.maxDescription}`; });
+
+  const labelInputs = p.labels.map(l => {
+    const input = h("input", { maxlength: String(l.max), placeholder: l.default, value: l.value || l.default });
+    return { l, input, el: h("div", { class: "field" }, h("label", {}, l.name), input) };
+  });
+
+  const resultToast = (res, what) => {
+    if (!res) return;
+    toast(res.panelsTotal
+      ? `${what} Updated ${res.panelsUpdated} of ${res.panelsTotal} posted panel(s).`
+      : `${what} No posted panels to update yet — post the panel from its module tab.`,
+      res.panelsUpdated === res.panelsTotal ? "ok" : "warn");
+  };
+
+  const save = h("button", { class: "btn" }, "💾 Save & update panels");
+  save.addEventListener("click", async () => {
+    const labels = {};
+    for (const { l, input } of labelInputs) labels[l.id] = input.value;
+    const res = await act(save, () => gApi("PUT", `/texts/${p.key}`, { title: title.value, description: desc.value, labels }));
+    resultToast(res, "Saved.");
+  });
+  const reset = h("button", { class: "btn secondary" }, "↩️ Reset to default");
+  reset.addEventListener("click", async () => {
+    if (!await confirmDialog(`Reset ${p.name}?`, "The default text is restored and posted panels are updated.", "Reset", false)) return;
+    const res = await act(reset, () => gApi("DELETE", `/texts/${p.key}`));
+    if (res === undefined) return;
+    resultToast(res, "Reset.");
+    refresh();
+  });
+
+  const custom = p.title || p.description || p.labels.some(l => l.value);
+  return h("div", { class: "card" },
+    h("div", { class: "card-head" }, h("h2", {}, p.name),
+      custom ? h("span", { class: "badge wait" }, "custom") : h("span", { class: "badge ok" }, "default"),
+      h("span", { class: "muted small" }, `${p.posted} posted`)),
+    h("div", { class: "field" }, h("label", {}, "Title"), title),
+    h("div", { class: "field" }, h("label", {}, "Text (Discord markdown)"), desc,
+      h("div", { class: "row" }, counter, p.placeholders ? h("span", { class: "muted small" }, `· ${p.placeholders}`) : null)),
+    labelInputs.length ? h("div", { class: "grid2" }, labelInputs.map(x => x.el)) : null,
+    h("div", { class: "row" }, save, reset));
+}
+
+// ================= Access (owner only) =================
+
+async function pageAccess(main) {
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "🔑 Access"),
+    h("button", { class: "btn secondary", onclick: refresh }, "🔄 Refresh")));
+  main.append(h("p", { class: "muted" },
+    "Who can log in to this panel and which sections they see. Only you (the bot owner) can open this page. ",
+    "Changes apply immediately — no re-login needed."));
+
+  const holder = h("div", {}, h("div", { class: "muted" }, "Loading…"));
+  main.append(holder);
+
+  let data;
+  try { data = await api("GET", "/api/access"); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
+
+  const permChecks = (selected) => {
+    const boxes = data.permissions.map(p => {
+      const cb = h("input", { type: "checkbox", checked: selected.includes(p) });
+      return { p, cb, el: h("label", { class: "chip", style: "cursor:pointer" }, cb, PERM_LABELS[p] || p) };
+    });
+    return { el: h("div", {}, boxes.map(b => b.el)), value: () => boxes.filter(b => b.cb.checked).map(b => b.p) };
+  };
+
+  // --- Add person
+  let picked = null;
+  const who = h("span", { class: "muted" }, "nobody selected");
+  const pickBtn = h("button", { class: "btn secondary" }, "👤 Pick a member");
+  pickBtn.addEventListener("click", async () => {
+    const m = await pickMemberDialog("Give panel access to…");
+    if (!m) return;
+    picked = m.id;
+    idIn.value = "";
+    who.replaceChildren(member(m));
+  });
+  const idIn = h("input", { placeholder: "…or paste a Discord user ID", inputmode: "numeric", style: "width:240px" });
+  idIn.addEventListener("input", () => { picked = null; who.replaceChildren(document.createTextNode(idIn.value ? `ID ${idIn.value}` : "nobody selected")); });
+  const newPerms = permChecks(["lfg", "tickets", "voice"]);
+  const addBtn = h("button", { class: "btn" }, "➕ Give access");
+  addBtn.addEventListener("click", async () => {
+    const id = picked || idIn.value.trim();
+    if (!/^\d{15,21}$/.test(id)) return toast("Pick a member or paste a valid Discord user ID.", "warn");
+    const perms = newPerms.value();
+    if (!perms.length) return toast("Tick at least one section.", "warn");
+    if (await act(addBtn, () => api("PUT", `/api/access/${id}`, { permissions: perms }), "Access granted.") !== undefined) refresh();
+  });
+
+  const addCard = h("div", { class: "card" }, h("h3", {}, "Give access"),
+    h("div", { class: "row", style: "margin-bottom:10px" }, pickBtn, idIn, who),
+    h("div", { class: "field" }, h("label", {}, "Sections"), newPerms.el),
+    addBtn);
+
+  // --- List
+  const rows = data.grants.map(g => {
+    const perms = permChecks(g.permissions);
+    const save = h("button", { class: "btn secondary" }, "Save");
+    save.addEventListener("click", async () => {
+      const value = perms.value();
+      if (!value.length) return toast("No sections ticked — use Remove to take away access.", "warn");
+      await act(save, () => api("PUT", `/api/access/${g.user.id}`, { permissions: value }), "Saved.");
+    });
+    const rm = h("button", { class: "btn danger" }, "Remove");
+    rm.addEventListener("click", async () => {
+      if (!await confirmDialog(`Remove access for ${g.user.name}?`, "They won't be able to use the panel anymore.", "Remove")) return;
+      if (await act(rm, () => api("DELETE", `/api/access/${g.user.id}`), "Access removed.") !== undefined) refresh();
+    });
+    return h("tr", {},
+      h("td", {}, member(g.user), h("div", { class: "muted small" }, g.user.id)),
+      h("td", {}, perms.el),
+      h("td", { class: "muted small" }, new Date(g.grantedAt).toLocaleDateString()),
+      h("td", { class: "actions" }, save, " ", rm));
+  });
+
+  holder.replaceChildren(addCard,
+    h("div", { class: "card" }, h("div", { class: "card-head" }, h("h2", {}, "People with access")),
+      h("div", { class: "table-wrap" }, h("table", { class: "table" },
+        h("thead", {}, h("tr", {}, h("th", {}, "Member"), h("th", {}, "Sections"), h("th", {}, "Since"), h("th", {}))),
+        h("tbody", {},
+          h("tr", {}, h("td", {}, member(data.owner)), h("td", {}, h("span", { class: "badge ok" }, "owner · everything")), h("td", {}), h("td", {})),
+          rows)))));
 }
 
 boot();

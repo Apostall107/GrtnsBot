@@ -19,7 +19,7 @@ namespace LfgBot.Web;
 /// <summary>
 /// Веб-админка бота: ASP.NET Core в том же процессе, вход через Discord OAuth2.
 /// Слушает только Web:Urls (по умолчанию http://127.0.0.1:5080) — наружу её отдаёт Caddy с HTTPS.
-/// Доступ решает <see cref="PanelAccess"/> (сейчас — только владелец бота, Bot:OwnerId).
+/// Доступ решает <see cref="PanelAccess"/>: владелец бота и те, кому он выдал права в разделе Access.
 /// </summary>
 public static class WebPanel
 {
@@ -37,6 +37,7 @@ public static class WebPanel
         var loginConfigured = !string.IsNullOrWhiteSpace(config["Web:ClientId"]) &&
                               !string.IsNullOrWhiteSpace(config["Web:ClientSecret"]);
         services.AddSingleton(new WebPanelState(loginConfigured));
+        services.AddSingleton<WebAccessStore>();
         services.AddSingleton<PanelAccess>();
         services.AddSingleton<IAuthorizationHandler, PanelAccessHandler>();
 
@@ -191,12 +192,22 @@ public static class PanelClaims
 }
 
 /// <summary>
-/// Кто может пользоваться веб-админкой. Сейчас — только владелец бота (Bot:OwnerId).
-/// Сюда же позже добавятся права по ролям.
+/// Кто может пользоваться веб-админкой: владелец бота (Bot:OwnerId) — всё, включая раздел Access;
+/// остальные — только то, что владелец выдал в разделе Access (<see cref="WebAccessStore"/>).
+/// Проверка идёт на каждый запрос, поэтому отзыв прав действует сразу.
 /// </summary>
-public sealed class PanelAccess(BotOwner owner)
+public sealed class PanelAccess(BotOwner owner, WebAccessStore grants)
 {
-    public bool IsAllowed(ulong? userId) => userId is { } id && owner.Is(id);
+    private static readonly string[] OwnerPermissions = [.. PanelPermissions.Grantable, PanelPermissions.Access];
+
+    public bool IsOwner(ulong? userId) => userId is { } id && owner.Is(id);
+
+    public IReadOnlyList<string> Permissions(ulong? userId) =>
+        IsOwner(userId) ? OwnerPermissions : userId is { } id ? grants.GetPermissions(id) : Array.Empty<string>();
+
+    public bool IsAllowed(ulong? userId) => Permissions(userId).Count > 0;
+
+    public bool Has(ulong? userId, string permission) => Permissions(userId).Contains(permission);
 }
 
 public sealed class PanelAccessRequirement : IAuthorizationRequirement { }

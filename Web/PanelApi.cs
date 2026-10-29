@@ -5,8 +5,8 @@ using LfgBot.Models;
 using LfgBot.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace LfgBot.Web;
@@ -35,6 +35,8 @@ public static class PanelApi
             {
                 authenticated = true,
                 allowed = access.IsAllowed(id),
+                isOwner = access.IsOwner(id),
+                permissions = access.Permissions(id),
                 id = id?.ToString(),
                 name = user.FindFirst(ClaimTypes.Name)?.Value,
                 avatarUrl = avatar is null || id is null ? null : $"https://cdn.discordapp.com/avatars/{id}/{avatar}.png?size=64"
@@ -68,9 +70,12 @@ public static class PanelApi
 
         var guild = api.MapGroup("/guilds/{guildId}");
         MapCommon(guild);
-        MapLfg(guild);
-        MapTickets(guild);
-        MapVoice(guild);
+        // Каждый модуль — своя группа с проверкой права (владелец бота проходит всегда)
+        MapLfg(guild.MapGroup("/lfg").AddEndpointFilter(Require(PanelPermissions.Lfg)));
+        MapTickets(guild.MapGroup("/tickets").AddEndpointFilter(Require(PanelPermissions.Tickets)));
+        MapVoice(guild.MapGroup("/voice").AddEndpointFilter(Require(PanelPermissions.Voice)));
+        MapTexts(guild.MapGroup("/texts").AddEndpointFilter(Require(PanelPermissions.Texts)));
+        MapAccess(api.MapGroup("/access").AddEndpointFilter(Require(PanelPermissions.Access)));
     }
 
     // ================= Общее: сводка, роли, каналы, участники =================
@@ -149,7 +154,7 @@ public static class PanelApi
 
     private static void MapLfg(RouteGroupBuilder g)
     {
-        g.MapGet("/lfg/activities", (ulong guildId, DiscordSocketClient client, ActivityStore activities) =>
+        g.MapGet("/activities", (ulong guildId, DiscordSocketClient client, ActivityStore activities) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             return Results.Ok(activities.Get(guildId).Select(a => new
@@ -160,7 +165,7 @@ public static class PanelApi
             }));
         });
 
-        g.MapPost("/lfg/activities", (ulong guildId, ActivityBody body, DiscordSocketClient client, ActivityStore activities) =>
+        g.MapPost("/activities", (ulong guildId, ActivityBody body, DiscordSocketClient client, ActivityStore activities) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var name = (body.Name ?? "").Trim();
@@ -171,10 +176,10 @@ public static class PanelApi
             return error is null ? Results.Ok() : Error(error);
         });
 
-        g.MapDelete("/lfg/activities/{key}", (ulong guildId, string key, ActivityStore activities) =>
+        g.MapDelete("/activities/{key}", (ulong guildId, string key, ActivityStore activities) =>
             activities.Remove(guildId, key) is null ? Error("Activity not found.") : Results.Ok());
 
-        g.MapGet("/lfg/groups", (ulong guildId, DiscordSocketClient client, LfgStore lfg) =>
+        g.MapGet("/groups", (ulong guildId, DiscordSocketClient client, LfgStore lfg) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             return Results.Ok(ActiveGroups(lfg, guildId).Select(x => new
@@ -206,7 +211,7 @@ public static class PanelApi
             }));
         });
 
-        g.MapPost("/lfg/groups/{groupId}/close", async (ulong guildId, string groupId, LfgStore lfg, LfgSignupService signup) =>
+        g.MapPost("/groups/{groupId}/close", async (ulong guildId, string groupId, LfgStore lfg, LfgSignupService signup) =>
         {
             if (!lfg.Groups.TryGetValue(groupId, out var group) || group.GuildId != guildId)
                 return Error("This group is no longer active.");
@@ -228,20 +233,15 @@ public static class PanelApi
             return Results.Ok();
         });
 
-        g.MapPost("/lfg/panel", (ulong guildId, ChannelBody body, DiscordSocketClient client,
-            // [FromServices]: у TimeService есть метод TryParse, без атрибута minimal API пытается взять его из запроса
-            [FromServices] TimeService time) =>
-        {
-            var panel = LfgRenderer.Panel(time.AutoDeleteHours);
-            return PostAsync(client, guildId, body.ChannelId, ch => ch.SendMessageAsync(embed: panel.Embed, components: panel.Components));
-        });
+        g.MapPost("/panel", (ulong guildId, ChannelBody body, DiscordSocketClient client, PanelService panels) =>
+            PostAsync(client, guildId, body.ChannelId, ch => panels.PostAsync(ch, guildId, "lfg")));
     }
 
     // ================= Tickets =================
 
     private static void MapTickets(RouteGroupBuilder g)
     {
-        g.MapGet("/tickets/projects", (ulong guildId, DiscordSocketClient client, TicketStore tickets) =>
+        g.MapGet("/projects", (ulong guildId, DiscordSocketClient client, TicketStore tickets) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var open = tickets.GetTickets(guildId);
@@ -257,7 +257,7 @@ public static class PanelApi
             }));
         });
 
-        g.MapPost("/tickets/projects", (ulong guildId, ProjectBody body, DiscordSocketClient client, TicketStore tickets) =>
+        g.MapPost("/projects", (ulong guildId, ProjectBody body, DiscordSocketClient client, TicketStore tickets) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var name = (body.Name ?? "").Trim();
@@ -269,7 +269,7 @@ public static class PanelApi
             return error is null ? Results.Ok() : Error(error);
         });
 
-        g.MapPut("/tickets/projects/{key}", async (ulong guildId, string key, ProjectUpdateBody body, DiscordSocketClient client,
+        g.MapPut("/projects/{key}", async (ulong guildId, string key, ProjectUpdateBody body, DiscordSocketClient client,
             TicketStore tickets, TicketMessageService ticketMessages) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
@@ -305,10 +305,10 @@ public static class PanelApi
             });
         });
 
-        g.MapDelete("/tickets/projects/{key}", (ulong guildId, string key, TicketStore tickets) =>
+        g.MapDelete("/projects/{key}", (ulong guildId, string key, TicketStore tickets) =>
             tickets.RemoveProject(guildId, key) is null ? Error("Project not found.") : Results.Ok());
 
-        g.MapGet("/tickets/open", (ulong guildId, DiscordSocketClient client, TicketStore tickets) =>
+        g.MapGet("/open", (ulong guildId, DiscordSocketClient client, TicketStore tickets) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             return Results.Ok(tickets.GetTickets(guildId).OrderBy(t => t.CreatedAt).Select(t => new
@@ -324,7 +324,7 @@ public static class PanelApi
             }));
         });
 
-        g.MapPost("/tickets/open/{ticketId}/close", async (ulong guildId, string ticketId, DiscordSocketClient client, TicketStore tickets) =>
+        g.MapPost("/open/{ticketId}/close", async (ulong guildId, string ticketId, DiscordSocketClient client, TicketStore tickets) =>
         {
             var t = tickets.FindTicket(ticketId);
             if (t is null || t.GuildId != guildId) return Error("This ticket is already closed.");
@@ -336,18 +336,15 @@ public static class PanelApi
             return Results.Ok();
         });
 
-        g.MapPost("/tickets/panel", (ulong guildId, ChannelBody body, DiscordSocketClient client) =>
-        {
-            var (embed, comps) = TicketRenderer.Panel();
-            return PostAsync(client, guildId, body.ChannelId, ch => ch.SendMessageAsync(embed: embed, components: comps));
-        });
+        g.MapPost("/panel", (ulong guildId, ChannelBody body, DiscordSocketClient client, PanelService panels) =>
+            PostAsync(client, guildId, body.ChannelId, ch => panels.PostAsync(ch, guildId, "tickets")));
     }
 
     // ================= Temp Voice =================
 
     private static void MapVoice(RouteGroupBuilder g)
     {
-        g.MapGet("/voice/creators", (ulong guildId, DiscordSocketClient client, TempVoiceStore voice) =>
+        g.MapGet("/creators", (ulong guildId, DiscordSocketClient client, TempVoiceStore voice) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             return Results.Ok(voice.GetCreators(guildId).Select(c =>
@@ -366,7 +363,7 @@ public static class PanelApi
         });
 
         // Новый канал-создатель
-        g.MapPost("/voice/creators/new", async (ulong guildId, NewCreatorBody body, DiscordSocketClient client,
+        g.MapPost("/creators/new", async (ulong guildId, NewCreatorBody body, DiscordSocketClient client,
             TempVoiceStore voice, TempRoomManager rooms, ILoggerFactory logs) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
@@ -402,7 +399,7 @@ public static class PanelApi
         });
 
         // Существующий голосовой канал → создатель (или обновить настройки создателя)
-        g.MapPut("/voice/creators/{channelId}", async (ulong guildId, ulong channelId, CreatorBody body, DiscordSocketClient client,
+        g.MapPut("/creators/{channelId}", async (ulong guildId, ulong channelId, CreatorBody body, DiscordSocketClient client,
             TempVoiceStore voice, TempRoomManager rooms) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
@@ -423,12 +420,12 @@ public static class PanelApi
             return Results.Ok();
         });
 
-        g.MapDelete("/voice/creators/{channelId}", (ulong guildId, ulong channelId, TempVoiceStore voice) =>
+        g.MapDelete("/creators/{channelId}", (ulong guildId, ulong channelId, TempVoiceStore voice) =>
             voice.GetCreator(channelId)?.GuildId == guildId && voice.RemoveCreator(channelId)
                 ? Results.Ok()
                 : Error("That channel is not a 'join to create' channel."));
 
-        g.MapGet("/voice/rooms", (ulong guildId, DiscordSocketClient client, TempVoiceStore voice) =>
+        g.MapGet("/rooms", (ulong guildId, DiscordSocketClient client, TempVoiceStore voice) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             return Results.Ok(LiveRooms(guild, voice).Select(r => new
@@ -443,7 +440,7 @@ public static class PanelApi
             }));
         });
 
-        g.MapPost("/voice/rooms/{channelId}/delete", async (ulong guildId, ulong channelId, DiscordSocketClient client, TempVoiceStore voice) =>
+        g.MapPost("/rooms/{channelId}/delete", async (ulong guildId, ulong channelId, DiscordSocketClient client, TempVoiceStore voice) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             if (FindRoom(guild, voice, channelId) is not { } r) return Error("This room no longer exists.");
@@ -459,7 +456,7 @@ public static class PanelApi
             return Results.Ok();
         });
 
-        g.MapPost("/voice/rooms/{channelId}/owner", async (ulong guildId, ulong channelId, UserBody body, DiscordSocketClient client,
+        g.MapPost("/rooms/{channelId}/owner", async (ulong guildId, ulong channelId, UserBody body, DiscordSocketClient client,
             TempVoiceStore voice) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
@@ -482,12 +479,158 @@ public static class PanelApi
             return Results.Ok();
         });
 
-        g.MapPost("/voice/panel", (ulong guildId, ChannelBody body, DiscordSocketClient client) =>
+        g.MapPost("/panel", (ulong guildId, ChannelBody body, DiscordSocketClient client, PanelService panels) =>
+            PostAsync(client, guildId, body.ChannelId, ch => panels.PostAsync(ch, guildId, "rooms")));
+    }
+
+    // ================= Тексты панелей =================
+
+    private static void MapTexts(RouteGroupBuilder g)
+    {
+        g.MapGet("/", (ulong guildId, PanelTextStore texts) => Results.Ok(PanelDefs.All.Select(d =>
         {
-            var (embed, comps) = TempRoomManager.Panel();
-            return PostAsync(client, guildId, body.ChannelId, ch => ch.SendMessageAsync(embed: embed, components: comps));
+            var custom = texts.GetText(guildId, d.Key);
+            return new
+            {
+                key = d.Key,
+                name = d.Name,
+                placeholders = d.Placeholders,
+                maxTitle = PanelDef.MaxTitle,
+                maxDescription = PanelDef.MaxDescription,
+                defaults = new { title = d.DefaultTitle, description = d.DefaultDescription },
+                labels = d.Labels.Select(l => new
+                {
+                    id = l.Id,
+                    name = l.Name,
+                    @default = l.Default,
+                    max = l.MaxLength,
+                    value = custom is not null && custom.Labels.TryGetValue(l.Id, out var v) ? v : null
+                }),
+                title = custom?.Title,
+                description = custom?.Description,
+                posted = texts.GetPosted(guildId, d.Key).Count
+            };
+        })));
+
+        g.MapPut("/{key}", async (ulong guildId, string key, PanelTextBody body, PanelTextStore texts, PanelService panels) =>
+        {
+            if (PanelDefs.Find(key) is not { } def) return Error("Unknown panel.");
+
+            var title = Clean(body.Title, def.DefaultTitle);
+            var description = Clean(body.Description, def.DefaultDescription);
+            if (title is { Length: > PanelDef.MaxTitle }) return Error($"The title is limited to {PanelDef.MaxTitle} characters.");
+            if (description is { Length: > PanelDef.MaxDescription }) return Error($"The text is limited to {PanelDef.MaxDescription} characters.");
+
+            var labels = new Dictionary<string, string>();
+            foreach (var l in def.Labels)
+            {
+                var value = body.Labels is not null && body.Labels.TryGetValue(l.Id, out var v) ? Clean(v, l.Default) : null;
+                if (value is null) continue;
+                if (value.Length > l.MaxLength) return Error($"{l.Name}: up to {l.MaxLength} characters.");
+                labels[l.Id] = value;
+            }
+
+            var custom = title is null && description is null && labels.Count == 0
+                ? null
+                : new PanelText { Title = title, Description = description, Labels = labels };
+            texts.SetText(guildId, key, custom);
+
+            var (updated, total) = await panels.RefreshAsync(guildId, key);
+            return Results.Ok(new { panelsUpdated = updated, panelsTotal = total });
+        });
+
+        g.MapDelete("/{key}", async (ulong guildId, string key, PanelTextStore texts, PanelService panels) =>
+        {
+            if (PanelDefs.Find(key) is null) return Error("Unknown panel.");
+            texts.SetText(guildId, key, null);
+            var (updated, total) = await panels.RefreshAsync(guildId, key);
+            return Results.Ok(new { panelsUpdated = updated, panelsTotal = total });
+        });
+
+        // Найти панели, опубликованные до того, как бот начал их запоминать
+        g.MapPost("/discover", async (ulong guildId, DiscordSocketClient client, PanelService panels) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            return Results.Ok(await panels.DiscoverAsync(guild));
         });
     }
+
+    /// <summary>Пусто или совпадает с текстом по умолчанию — null (храним только отличия).</summary>
+    private static string? Clean(string? value, string @default)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var text = value.Replace("\r\n", "\n").Trim();
+        return text == @default ? null : text;
+    }
+
+    // ================= Доступ к панели (только владелец) =================
+
+    private static void MapAccess(RouteGroupBuilder g)
+    {
+        g.MapGet("/", (WebAccessStore grants, BotOwner owner, DiscordSocketClient client) => Results.Ok(new
+        {
+            permissions = PanelPermissions.Grantable,
+            owner = FindMember(client, owner.Id),
+            grants = grants.GetAll().OrderBy(x => x.Name).Select(x => new
+            {
+                user = FindMember(client, x.UserId, x.Name),
+                permissions = x.Permissions,
+                grantedAt = x.GrantedAt.ToUnixTimeMilliseconds()
+            })
+        }));
+
+        g.MapPut("/{userId}", async (ulong userId, AccessBody body, WebAccessStore grants, BotOwner owner, DiscordSocketClient client) =>
+        {
+            if (owner.Is(userId)) return Error("The bot owner always has full access.");
+
+            // Имя для списка: из кэша сервера или через REST (если человек не на сервере с ботом)
+            string? name = client.Guilds.Select(x => x.GetUser(userId)).FirstOrDefault(u => u is not null)?.DisplayName;
+            if (name is null)
+            {
+                try
+                {
+                    var user = await client.Rest.GetUserAsync(userId);
+                    if (user is null) return Error("Discord user not found — check the ID.");
+                    if (user.IsBot) return Error("Bots can't get panel access.");
+                    name = user.GlobalName ?? user.Username;
+                }
+                catch (Discord.Net.HttpException)
+                {
+                    return Error("Discord user not found — check the ID.");
+                }
+            }
+
+            var error = grants.Set(userId, name, body.Permissions ?? new List<string>());
+            return error is null ? Results.Ok() : Error(error);
+        });
+
+        g.MapDelete("/{userId}", (ulong userId, WebAccessStore grants) =>
+            grants.Remove(userId) ? Results.Ok() : Error("This person has no access."));
+    }
+
+    /// <summary>Участник любого сервера с ботом (для списка доступа).</summary>
+    private static object FindMember(DiscordSocketClient client, ulong id, string? fallbackName = null)
+    {
+        var user = client.Guilds.Select(x => x.GetUser(id)).FirstOrDefault(u => u is not null);
+        return new
+        {
+            id = id.ToString(),
+            name = user?.DisplayName ?? fallbackName ?? id.ToString(),
+            username = user?.Username,
+            avatarUrl = user?.GetDisplayAvatarUrl(size: 64),
+            onServer = user is not null
+        };
+    }
+
+    /// <summary>Фильтр группы: пускает только с правом <paramref name="permission"/>.</summary>
+    private static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<object?>> Require(string permission) =>
+        async (ctx, next) =>
+        {
+            var access = ctx.HttpContext.RequestServices.GetRequiredService<PanelAccess>();
+            if (!access.Has(ctx.HttpContext.User.UserId(), permission))
+                return Results.Json(new { error = "You don't have access to this section." }, statusCode: StatusCodes.Status403Forbidden);
+            return await next(ctx);
+        };
 
     // ================= Хелперы =================
 
@@ -585,3 +728,5 @@ public sealed record ChannelBody(string? ChannelId);
 public sealed record UserBody(string? UserId);
 public sealed record NewCreatorBody(string? Name, string? CategoryId, string? Template, int? Limit);
 public sealed record CreatorBody(string? Template, int? Limit);
+public sealed record PanelTextBody(string? Title, string? Description, Dictionary<string, string>? Labels);
+public sealed record AccessBody(List<string>? Permissions);

@@ -46,6 +46,8 @@ builder.Services.AddSingleton<CaptchaService>();
 builder.Services.AddSingleton<CaptchaVoiceGuard>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<CaptchaVoiceGuard>());
 builder.Services.AddSingleton<TicketMessageService>();
+builder.Services.AddSingleton<PanelTextStore>();
+builder.Services.AddSingleton<PanelService>();
 builder.Services.AddHostedService<BotService>();
 builder.Services.AddHostedService<GroupCleanupService>();
 builder.Services.AddHostedService<TempVoiceService>();
