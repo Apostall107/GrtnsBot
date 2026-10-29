@@ -188,3 +188,6 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top
 .login .logo { font-size: 42px; margin-bottom: 8px; }
 .login p { color: var(--muted); }
 .error-text { color: #f07a7d; }
+
+dialog.wide { width: min(760px, calc(100vw - 32px)); }
+.error-text.small { font-size: 12px; }

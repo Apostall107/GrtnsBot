@@ -8,7 +8,7 @@ using LfgBot.Services;
 namespace LfgBot.Modules;
 
 [RequireContext(ContextType.Guild)]
-public sealed class LfgModule(PanelService panels, LfgStore store, ActivityStore activities, CharacterStore characters, TimeService time,
+public sealed class LfgModule(PanelService panels, LfgPublisher publisher, AuditLog audit, LfgStore store, ActivityStore activities, CharacterStore characters, TimeService time,
     LfgNotifyStore notifyPrefs, LfgNotifier notifier, LfgSignupService signup, BotOwner botOwner)
     : InteractionModuleBase<SocketInteractionContext>
 {
@@ -265,38 +265,14 @@ public sealed class LfgModule(PanelService panels, LfgStore store, ActivityStore
             return;
         }
 
-        var group = new LfgGroup(d)
-        {
-            StartsAt = startsAt,
-            ExpiresAt = time.ExpiresAt(startsAt),
-            // Напоминание за 10 минут — только если до старта больше 10 минут
-            Reminded = startsAt is not { } start || start - DateTimeOffset.UtcNow <= TimeSpan.FromMinutes(10)
-        };
-        // Организатор участвует сам: слот 1 + последний использованный персонаж
-        group.SeatOwner(characters.Get(d.GuildId, d.OwnerId).FirstOrDefault());
-        var s = LfgRenderer.Group(group);
+        var (group, jumpUrl, dmsStarted) = await publisher.PublishAsync(new LfgPublishRequest(
+            d.GuildId, d.ChannelId, d.OwnerId, d.ActivityName ?? "Activity", d.PingRoleId,
+            d.Slots.Select(x => x.Role).ToList(), startsAt, d.NotifyByDm));
+        audit.FromDiscord(d.GuildId, Context.User, "lfg", "Created LFG group",
+            $"{group.ActivityName} · {group.Slots.Count} slots · {(startsAt is { } at ? at.ToString("u") : "no time")}");
 
-        string? content = null;
-        var allowed = AllowedMentions.None;
-        if (group.PingRoleId is { } roleId)
-        {
-            var when = group.StartsAt is { } t ? $" — <t:{t.ToUnixTimeSeconds()}:f>" : "";
-            content = $"<@&{roleId}> — LFG for **{group.ActivityName}**{when}!";
-            allowed = new AllowedMentions { RoleIds = [roleId] };
-        }
-
-        var message = await channel.SendMessageAsync(content, embed: s.Embed, components: s.Components,
-            allowedMentions: allowed);
-        group.MessageId = message.Id;
-        store.Groups[group.Id] = group;
-        store.SaveGroups();
-
-        var result = $"✅ Published: {message.GetJumpUrl()}";
-        if (d.NotifyByDm && group.PingRoleId is not null)
-        {
-            notifier.Start(group, message.GetJumpUrl());
-            result += "\n🔔 Sending DMs to members with the activity role…";
-        }
+        var result = $"✅ Published: {jumpUrl}";
+        if (dmsStarted) result += "\n🔔 Sending DMs to members with the activity role…";
 
         await ShowAsync(new Screen(result, null, new ComponentBuilder().Build()));
     }
@@ -445,6 +421,9 @@ public sealed class LfgModule(PanelService panels, LfgStore store, ActivityStore
                 await signup.RefreshPostAsync(group);
             }
             screen = LfgRenderer.Manage(group, error is null ? okText : $"⚠️ {error}");
+            if (error is null)
+                audit.FromDiscord(group.GuildId, Context.User, "lfg", "Changed LFG roster",
+                    $"{group.ActivityName}: {okText.Replace("<@", "@").Replace(">", "")}");
         }
         finally
         {
@@ -541,6 +520,7 @@ public sealed class LfgModule(PanelService panels, LfgStore store, ActivityStore
         {
             group.Gate.Release();
         }
+        audit.FromDiscord(group.GuildId, Context.User, "lfg", "Closed LFG group", group.ActivityName);
 
         // Список инвайтов остаётся в эфемерном сообщении, убираем только кнопки
         await Component.UpdateAsync(m =>

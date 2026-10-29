@@ -10,24 +10,46 @@ public sealed class TimeService
     private static readonly string[] TimeOnlyFormats = ["H:mm", "H.mm", "HHmm"];
     private static readonly string[] DateTimeFormats = ["d.M H:mm", "d.M H.mm", "d.M.yyyy H:mm", "d.M.yyyy H.mm"];
 
-    public TimeZoneInfo Zone { get; }
-    public string ZoneName { get; }
+    public TimeZoneInfo Zone { get; private set; } = TimeZoneInfo.Utc;
+    public string ZoneName { get; private set; } = "UTC";
 
-    public TimeService(IConfiguration config, ILogger<TimeService> logger)
+    /// <summary>Значения из appsettings.json — используются, если в настройках сайта поле пустое.</summary>
+    public string DefaultZoneId { get; }
+    public int DefaultAutoDeleteHours { get; }
+    public int DefaultReminderMinutes { get; }
+
+    private readonly ILogger<TimeService> _logger;
+
+    public TimeService(IConfiguration config, ILogger<TimeService> logger, BotSettingsStore settings)
     {
-        var id = config["Lfg:TimeZone"] ?? "Europe/Kyiv";
-        Zone = Resolve(id);
-        ZoneName = id;
-        AutoDeleteHours = config.GetValue("Lfg:AutoDeleteHours", 3);
-        if (Zone == TimeZoneInfo.Utc && id != "UTC")
-        {
-            logger.LogWarning("Time zone {Zone} not found, using UTC", id);
-            ZoneName = "UTC";
-        }
+        _logger = logger;
+        DefaultZoneId = config["Lfg:TimeZone"] ?? "Europe/Kyiv";
+        DefaultAutoDeleteHours = config.GetValue("Lfg:AutoDeleteHours", 3);
+        DefaultReminderMinutes = config.GetValue("Lfg:ReminderMinutes", 10);
+        Apply(settings.Get());
     }
 
+    /// <summary>Применяет настройки (веб-админка → Settings) поверх appsettings.json. Действует сразу.</summary>
+    public void Apply(BotSettings s)
+    {
+        var id = string.IsNullOrWhiteSpace(s.TimeZone) ? DefaultZoneId : s.TimeZone!;
+        var zone = Resolve(id);
+        if (zone == TimeZoneInfo.Utc && id != "UTC")
+        {
+            _logger.LogWarning("Time zone {Zone} not found, using UTC", id);
+            id = "UTC";
+        }
+        Zone = zone;
+        ZoneName = id;
+        AutoDeleteHours = Math.Clamp(s.AutoDeleteHours ?? DefaultAutoDeleteHours, 1, 72);
+        ReminderMinutes = Math.Clamp(s.ReminderMinutes ?? DefaultReminderMinutes, 0, 180);
+    }
+
+    /// <summary>Есть ли такой часовой пояс на сервере (для проверки ввода на сайте).</summary>
+    public static bool IsKnownZone(string id) => id == "UTC" || Resolve(id) != TimeZoneInfo.Utc;
+
     // Старые версии ICU/Windows знают Киев только как Europe/Kiev или FLE Standard Time
-    private static TimeZoneInfo Resolve(string id)
+    public static TimeZoneInfo Resolve(string id)
     {
         string[] candidates = id is "Europe/Kyiv" or "Europe/Kiev"
             ? ["Europe/Kyiv", "Europe/Kiev", "FLE Standard Time"]
@@ -47,7 +69,14 @@ public sealed class TimeService
     public int DefaultHour() => (LocalNow.Hour + 1) % 24;
 
     /// <summary>Через сколько часов после начала (или создания, если времени нет) удалять сбор.</summary>
-    public int AutoDeleteHours { get; private init; } = 3;
+    public int AutoDeleteHours { get; private set; } = 3;
+
+    /// <summary>За сколько минут до старта напоминать участникам (0 — не напоминать).</summary>
+    public int ReminderMinutes { get; private set; } = 10;
+
+    /// <summary>Нужно ли ещё напоминание для сбора с таким временем начала.</summary>
+    public bool ReminderNeeded(DateTimeOffset? startsAt) =>
+        ReminderMinutes > 0 && startsAt is { } start && start - DateTimeOffset.UtcNow > TimeSpan.FromMinutes(ReminderMinutes);
 
     public DateTimeOffset ExpiresAt(DateTimeOffset? startsAt) =>
         (startsAt ?? DateTimeOffset.UtcNow).AddHours(AutoDeleteHours);

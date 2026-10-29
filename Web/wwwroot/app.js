@@ -102,7 +102,11 @@ function empty(text) { return h("div", { class: "empty" }, text); }
 
 // ================= Dialogs =================
 
-const dialog = () => document.getElementById("dialog");
+/** A free <dialog>: the second one is used when a dialog opens on top of another (e.g. member picker in a form). */
+const dialog = () => {
+  const first = document.getElementById("dialog");
+  return first.open ? document.getElementById("dialog2") : first;
+};
 
 function confirmDialog(title, text, okLabel = "Confirm", danger = true) {
   return new Promise(resolve => {
@@ -115,6 +119,22 @@ function confirmDialog(title, text, okLabel = "Confirm", danger = true) {
         h("button", { class: `btn ${danger ? "danger" : ""}`, onclick: () => { d.close(); resolve(true); } }, okLabel)));
     d.onclose = () => resolve(false);
     d.showModal();
+  });
+}
+
+function promptDialog(title, initial) {
+  return new Promise(resolve => {
+    const d = dialog();
+    const input = h("input", { value: initial, maxlength: "32", style: "width:100%" });
+    const ok = () => { const v = input.value.trim(); d.close(); resolve(v || null); };
+    input.addEventListener("keydown", e => { if (e.key === "Enter") ok(); });
+    d.replaceChildren(h("h2", {}, title), input,
+      h("div", { class: "actions" },
+        h("button", { class: "btn secondary", onclick: () => { d.close(); resolve(null); } }, "Cancel"),
+        h("button", { class: "btn", onclick: ok }, "Save")));
+    d.onclose = () => resolve(null);
+    d.showModal();
+    input.focus();
   });
 }
 
@@ -211,11 +231,13 @@ const allTabs = [
   ["voice", "🔊", "Temp Voice", "voice"],
   ["texts", "📝", "Panel texts", "texts"],
   ["posts", "📌", "Posts", "posts"],
+  ["log", "📜", "Log", "log"],
+  ["settings", "⚙️", "Settings", "settings"],
   ["access", "🔑", "Access", "access"]
 ];
 const can = perm => !perm || (state.me && state.me.permissions.includes(perm));
 const visibleTabs = () => allTabs.filter(t => can(t[3]));
-const PERM_LABELS = { lfg: "📣 LFG", tickets: "🎫 Tickets", voice: "🔊 Temp Voice", texts: "📝 Panel texts", posts: "📌 Posts" };
+const PERM_LABELS = { lfg: "📣 LFG", tickets: "🎫 Tickets", voice: "🔊 Temp Voice", texts: "📝 Panel texts", posts: "📌 Posts", log: "📜 Log", settings: "⚙️ Settings" };
 
 function renderLogin(message) {
   const params = new URLSearchParams(location.search);
@@ -308,7 +330,7 @@ function renderShell() {
     h("div", { class: "layout" }, nav, main));
 
   if (!state.guildId) { main.append(empty("The bot is not on any server yet.")); return; }
-  const page = { overview: pageOverview, lfg: pageLfg, tickets: pageTickets, voice: pageVoice, texts: pageTexts, posts: pagePosts, access: pageAccess }[state.tab];
+  const page = { overview: pageOverview, lfg: pageLfg, tickets: pageTickets, voice: pageVoice, texts: pageTexts, posts: pagePosts, log: pageLog, settings: pageSettings, access: pageAccess }[state.tab];
   page(main);
 }
 
@@ -360,14 +382,23 @@ async function pageLfg(main) {
   main.append(h("div", { class: "grid2" }, actCard,
     postPanelCard("LFG panel", "Posts the message with the “Create LFG” button.", "/lfg/panel")));
 
+  // --- Create group + schedules
+  const createCard = h("div", { class: "card" }, h("div", { class: "card-head" }, h("h2", {}, "➕ Create a group")),
+    h("p", { class: "muted small" }, "Posted like a normal /lfg group. You are the organizer."));
+  const createBody = h("div", {}, h("div", { class: "muted" }, "Loading…"));
+  createCard.append(createBody);
+  const recCard = h("div", { class: "card" });
+  main.append(createCard, recCard);
+
   // --- Groups
   const groupsCard = h("div", { class: "card" }, h("div", { class: "card-head" }, h("h2", {}, "Active groups")));
   const groupsBody = h("div", {}, h("div", { class: "muted" }, "Loading…"));
   groupsCard.append(groupsBody);
   main.append(groupsCard);
 
+  let acts = [];
   try {
-    const acts = await gApi("GET", "/lfg/activities");
+    acts = await gApi("GET", "/lfg/activities");
     actBody.replaceChildren(acts.length ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
       h("thead", {}, h("tr", {}, h("th", {}, "Activity"), h("th", {}, "Ping role"), h("th", {}))),
       h("tbody", {}, acts.map(a => {
@@ -380,10 +411,172 @@ async function pageLfg(main) {
       })))) : empty("No activities yet."));
   } catch (e) { actBody.replaceChildren(empty(e.message)); }
 
+  // Create form
+  const form = lfgForm(acts, { mode: "once" });
+  const publish = h("button", { class: "btn" }, "📣 Publish");
+  publish.addEventListener("click", async () => {
+    const res = await act(publish, () => gApi("POST", "/lfg/create", form.value()));
+    if (res === undefined) return;
+    toast(res.dmsStarted ? "Group published. Sending DMs to the activity role…" : "Group published.");
+    refresh();
+  });
+  createBody.replaceChildren(form.el, h("div", { class: "row" }, publish));
+
+  // Schedules
+  renderRecurring(recCard, acts);
+
   try {
     const groups = await gApi("GET", "/lfg/groups");
     groupsBody.replaceChildren(groups.length ? h("div", { class: "grid2" }, groups.map(groupCard)) : empty("No active groups."));
   } catch (e) { groupsBody.replaceChildren(empty(e.message)); }
+}
+
+const SLOT_ROLES = [["Any", "🎲 All"], ["Dps", "⚔️ DD"], ["Tank", "🛡️ Tank"], ["Healer", "💚 Sup"]];
+const DAYS = [[1, "Mon"], [2, "Tue"], [3, "Wed"], [4, "Thu"], [5, "Fri"], [6, "Sat"], [0, "Sun"]];
+
+/** LFG form: channel, activity, slots + (once) date/time or (recurring) days/time/post-before. */
+function lfgForm(acts, opts) {
+  const v = opts.initial || {};
+  const channel = channelSelect("text", "Channel…");
+  if (v.channelId) channel.value = v.channelId;
+
+  const activity = h("select", {},
+    h("option", { value: "" }, "✏️ Custom activity (no ping)"),
+    acts.map(a => h("option", { value: a.key }, `${a.name}  ·  @${a.role.name}`)));
+  const custom = h("input", { placeholder: "Activity name", maxlength: "100" });
+  if (v.activity) {
+    const match = acts.find(a => a.name === v.activity);
+    if (match) activity.value = match.key; else custom.value = v.activity;
+  } else if (acts.length) activity.value = acts[0].key;
+  const syncCustom = () => { custom.style.display = activity.value ? "none" : ""; };
+  activity.addEventListener("change", syncCustom);
+  syncCustom();
+
+  // Slots
+  let slots = v.slots ? v.slots.slice() : ["Any", "Any", "Any", "Any"];
+  const size = h("select", {}, Array.from({ length: 24 }, (_, i) => i + 2).map(n => h("option", { value: n }, `${n} slots`)));
+  const slotBox = h("div", { class: "row", style: "gap:6px" });
+  const drawSlots = () => {
+    size.value = String(slots.length);
+    slotBox.replaceChildren(...slots.map((r, i) => {
+      const sel = h("select", { title: `Slot ${i + 1}` }, SLOT_ROLES.map(([val, label]) => h("option", { value: val }, `${i + 1}. ${label}`)));
+      sel.value = r;
+      sel.addEventListener("change", () => { slots[i] = sel.value; });
+      return sel;
+    }));
+  };
+  size.addEventListener("change", () => {
+    const n = Number(size.value);
+    slots = slots.slice(0, n);
+    while (slots.length < n) slots.push("Any");
+    drawSlots();
+  });
+  drawSlots();
+
+  const dm = h("input", { type: "checkbox", checked: v.notifyByDm ?? true });
+  const seat = h("input", { type: "checkbox", checked: v.seatOwner ?? true });
+
+  const fields = [
+    h("div", { class: "grid2" },
+      h("div", { class: "field" }, h("label", {}, "Channel"), channel),
+      h("div", { class: "field" }, h("label", {}, "Activity"), activity, custom)),
+    h("div", { class: "field" }, h("label", {}, "Slots"), h("div", { class: "row", style: "margin-bottom:6px" }, size), slotBox)
+  ];
+
+  let extra;
+  if (opts.mode === "once") {
+    const date = h("input", { type: "date" });
+    const time = h("input", { type: "time" });
+    fields.push(h("div", { class: "field" }, h("label", {}, "Start (server time zone, leave empty for no time)"),
+      h("div", { class: "row" }, date, time)));
+    extra = () => ({ date: date.value || null, time: time.value || null });
+  } else {
+    const days = DAYS.map(([d, label]) => {
+      const cb = h("input", { type: "checkbox", checked: (v.days || []).includes(d) });
+      return { d, cb, el: h("label", { class: "chip", style: "cursor:pointer" }, cb, label) };
+    });
+    const time = h("input", { type: "time", value: v.time || "20:00" });
+    const before = h("input", { type: "number", min: "0", max: "168", style: "width:90px", value: v.postHoursBefore ?? 24 });
+    const enabled = h("input", { type: "checkbox", checked: v.enabled ?? true });
+    let ownerId = v.owner ? v.owner.id : null;
+    const ownerView = h("span", {}, v.owner ? member(v.owner) : "you");
+    const ownerBtn = h("button", { class: "btn ghost", type: "button" }, "Change");
+    ownerBtn.addEventListener("click", async () => {
+      const m = await pickMemberDialog("Organizer of the scheduled groups");
+      if (m) { ownerId = m.id; ownerView.replaceChildren(member(m)); }
+    });
+    fields.push(
+      h("div", { class: "field" }, h("label", {}, "Days"), h("div", {}, days.map(x => x.el))),
+      h("div", { class: "row", style: "margin-bottom:12px" },
+        h("span", { class: "muted" }, "Starts at"), time, h("span", { class: "muted" }, "· post"), before, h("span", { class: "muted" }, "hours before")),
+      h("div", { class: "row", style: "margin-bottom:12px" }, h("span", { class: "muted" }, "Organizer:"), ownerView, ownerBtn),
+      h("label", { class: "row", style: "margin-bottom:8px" }, enabled, "Enabled"));
+    extra = () => ({
+      days: days.filter(x => x.cb.checked).map(x => x.d), time: time.value, postHoursBefore: Number(before.value || 0),
+      enabled: enabled.checked, ownerId
+    });
+  }
+
+  fields.push(h("div", { class: "row", style: "margin-bottom:12px" },
+    h("label", { class: "row" }, dm, "DM members with the activity role"),
+    h("label", { class: "row" }, seat, "Organizer takes slot 1")));
+
+  return {
+    el: h("div", {}, fields),
+    value: () => ({
+      channelId: channel.value || null, activityKey: activity.value || null, customName: activity.value ? null : custom.value,
+      slots: slots.slice(), notifyByDm: dm.checked, seatOwner: seat.checked, ...extra()
+    })
+  };
+}
+
+async function renderRecurring(card, acts) {
+  const add = h("button", { class: "btn" }, "➕ Add schedule");
+  add.addEventListener("click", () => recurringDialog(acts, null));
+  const body = h("div", {}, h("div", { class: "muted" }, "Loading…"));
+  card.replaceChildren(h("div", { class: "card-head" }, h("h2", {}, "🔁 Recurring groups"), add),
+    h("p", { class: "muted small" }, "Posted automatically on the chosen days, the set number of hours before the start."), body);
+
+  let list;
+  try { list = await gApi("GET", "/lfg/recurring"); } catch (e) { body.replaceChildren(empty(e.message)); return; }
+  if (!list.length) { body.replaceChildren(empty("No schedules yet.")); return; }
+
+  const dayNames = d => DAYS.filter(([n]) => d.includes(n)).map(([, l]) => l).join(", ");
+  body.replaceChildren(h("div", { class: "table-wrap" }, h("table", { class: "table" },
+    h("thead", {}, h("tr", {}, h("th", {}, "Activity"), h("th", {}, "When"), h("th", {}, "Next post"), h("th", {}, "Status"), h("th", {}))),
+    h("tbody", {}, list.map(r => {
+      const edit = h("button", { class: "btn secondary" }, "Edit");
+      edit.addEventListener("click", () => recurringDialog(acts, r));
+      const rm = h("button", { class: "btn ghost" }, "Delete");
+      rm.addEventListener("click", async () => {
+        if (!await confirmDialog(`Delete the ${r.activity} schedule?`, "Groups that are already posted stay.", "Delete")) return;
+        if (await act(rm, () => gApi("DELETE", `/lfg/recurring/${r.id}`), "Schedule deleted.") !== undefined) refresh();
+      });
+      return h("tr", {},
+        h("td", {}, r.activity, h("div", { class: "muted small" }, r.channel ? `#${r.channel}` : "deleted channel", ` · ${r.slots.length} slots`)),
+        h("td", {}, `${dayNames(r.days)} · ${r.time}`, h("div", { class: "muted small" }, `post ${r.postHoursBefore} h before`)),
+        h("td", { class: "small" }, r.enabled && r.nextPost ? fmtDate(r.nextPost) : "—",
+          r.nextStart ? h("div", { class: "muted small" }, `start ${fmtDate(r.nextStart)}`) : null),
+        h("td", {}, r.enabled ? h("span", { class: "badge ok" }, "on") : h("span", { class: "badge lock" }, "off"),
+          r.lastError ? h("div", { class: "error-text small", title: r.lastError }, "last post failed") : null),
+        h("td", { class: "actions" }, edit, " ", rm));
+    })))));
+}
+
+function recurringDialog(acts, r) {
+  const d = dialog();
+  const form = lfgForm(acts, { mode: "recurring", initial: r || {} });
+  const save = h("button", { class: "btn" }, r ? "💾 Save" : "➕ Add");
+  save.addEventListener("click", async () => {
+    const res = await act(save, () => r ? gApi("PUT", `/lfg/recurring/${r.id}`, form.value()) : gApi("POST", "/lfg/recurring", form.value()),
+      r ? "Schedule saved." : "Schedule added.");
+    if (res !== undefined) { d.close(); refresh(); }
+  });
+  d.classList.add("wide");
+  d.replaceChildren(h("h2", {}, r ? `Edit: ${r.activity}` : "New recurring group"), form.el,
+    h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), save));
+  d.onclose = () => d.classList.remove("wide");
+  d.showModal();
 }
 
 function groupCard(g) {
@@ -393,6 +586,15 @@ function groupCard(g) {
     if (await act(close, () => gApi("POST", `/lfg/groups/${encodeURIComponent(g.id)}/close`), "Group closed.") !== undefined) refresh();
   });
 
+  const roster = (action, m, okText, extra) => act(null,
+    () => gApi("POST", `/lfg/groups/${encodeURIComponent(g.id)}/roster`, { action, userId: m.id, ...(extra || {}) }), okText)
+    .then(r => { if (r !== undefined) refresh(); });
+  const tool = (icon, title, fn) => h("button", { class: "btn ghost", title, onclick: fn, style: "padding:2px 6px" }, icon);
+  const rename = (m, current) => async () => {
+    const name = await promptDialog(`Character of ${m.name}`, current || "");
+    if (name) roster("character", m, "Character changed.", { character: name });
+  };
+
   return h("div", { class: "card", style: "margin:0" },
     h("div", { class: "card-head" }, h("h3", {}, g.activity), h("span", { class: "badge ok" }, `${g.filled}/${g.size}`)),
     h("div", { class: "muted small" }, "Organizer: ", member(g.owner)),
@@ -401,10 +603,20 @@ function groupCard(g) {
     h("ul", { class: "slots" }, g.slots.map((s, i) => h("li", {},
       h("span", { class: "num" }, i + 1), h("span", {}, s.emoji),
       s.member ? member(s.member) : h("span", { class: "free" }, `free (${s.slotRole})`),
-      s.character ? h("span", { class: "char" }, s.character) : null))),
+      s.character ? h("span", { class: "char" }, s.character) : h("span", { class: "char" }),
+      s.member ? h("span", {},
+        tool("✏️", "Change character", rename(s.member, s.character)),
+        s.member.id !== g.owner.id ? tool("⬇️", "Move to reserve", () => roster("toReserve", s.member, "Moved to the reserve.")) : null,
+        s.member.id !== g.owner.id ? tool("✖️", "Remove from the group", async () => {
+          if (await confirmDialog(`Remove ${s.member.name}?`, "Their slot becomes free.", "Remove")) roster("remove", s.member, "Removed.");
+        }) : null) : null))),
     g.reserve.length ? h("div", { style: "margin-top:8px" }, h("div", { class: "muted small" }, `Reserve (${g.reserve.length})`),
       h("ul", { class: "slots" }, g.reserve.map(r => h("li", {}, h("span", {}, r.emoji), member(r.member),
-        r.character ? h("span", { class: "char" }, r.character) : null)))) : null,
+        h("span", { class: "char" }, r.character || ""),
+        h("span", {},
+          tool("⬆️", "Move into the group (sends a DM)", () => roster("promote", r.member, "Moved into the group, DM sent.")),
+          tool("✏️", "Change character", rename(r.member, r.character)),
+          tool("✖️", "Remove from the reserve", () => roster("removeReserve", r.member, "Removed from the reserve."))))))) : null,
     h("div", { class: "row", style: "margin-top:12px" },
       h("a", { class: "btn secondary", href: g.jumpUrl, target: "_blank", rel: "noopener" }, "Open in Discord"), close));
 }
@@ -783,6 +995,100 @@ async function loadMessages(channelId, limit, body, btn) {
     h("div", { class: "table-wrap" }, h("table", { class: "table" },
       h("thead", {}, h("tr", {}, h("th", {}, all), h("th", {}, "Posted"), h("th", {}, "Type"), h("th", {}, "Content"), h("th", {}))),
       h("tbody", {}, rows))));
+}
+
+// ================= Log =================
+
+const MODULE_LABELS = { lfg: "📣 LFG", tickets: "🎫 Tickets", voice: "🔊 Voice", texts: "📝 Texts", posts: "📌 Posts",
+  access: "🔑 Access", settings: "⚙️ Settings" };
+const SOURCE_LABELS = { web: "🌐 site", discord: "💬 Discord", system: "🤖 bot" };
+
+async function pageLog(main) {
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "📜 Log"),
+    h("button", { class: "btn secondary", onclick: refresh }, "🔄 Refresh")));
+  main.append(h("p", { class: "muted" }, "What was done on the site and in the bot: who, when and with what. The last 5000 actions are kept."));
+
+  const actor = h("select", {}, h("option", { value: "" }, "Everyone"));
+  const module = h("select", {}, h("option", { value: "" }, "All modules"),
+    Object.entries(MODULE_LABELS).map(([k, l]) => h("option", { value: k }, l)));
+  const q = h("input", { placeholder: "Search…", style: "width:200px" });
+  const tbody = h("tbody", {});
+  const more = h("button", { class: "btn secondary", style: "display:none" }, "Load more");
+  let skip = 0;
+  let actorsLoaded = false;
+
+  const load = async (reset) => {
+    if (reset) { skip = 0; tbody.replaceChildren(); }
+    const params = new URLSearchParams({ skip: String(skip), take: "100" });
+    if (actor.value) params.set("actor", actor.value);
+    if (module.value) params.set("module", module.value);
+    if (q.value.trim()) params.set("q", q.value.trim());
+    const res = await act(more, () => gApi("GET", `/log?${params}`));
+    if (res === undefined) return;
+    if (!actorsLoaded) {
+      actor.append(...res.actors.map(a => h("option", { value: a.id }, `${a.name} (${a.count})`)));
+      actorsLoaded = true;
+    }
+    skip += res.entries.length;
+    tbody.append(...res.entries.map(e => h("tr", {},
+      h("td", { class: "muted small", style: "white-space:nowrap" }, new Date(e.at).toLocaleString()),
+      h("td", {}, e.actorName, h("div", { class: "muted small" }, SOURCE_LABELS[e.source] || e.source)),
+      h("td", { class: "small" }, MODULE_LABELS[e.module] || e.module),
+      h("td", {}, e.action, e.details ? h("div", { class: "muted small", style: "word-break:break-word" }, e.details) : null))));
+    if (!tbody.children.length) tbody.append(h("tr", {}, h("td", { colspan: "4" }, empty("Nothing found."))));
+    more.style.display = res.more ? "" : "none";
+  };
+
+  let timer = 0;
+  actor.addEventListener("change", () => load(true));
+  module.addEventListener("change", () => load(true));
+  q.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => load(true), 300); });
+  more.addEventListener("click", () => load(false));
+
+  main.append(h("div", { class: "card" },
+    h("div", { class: "row", style: "margin-bottom:12px" }, actor, module, q),
+    h("div", { class: "table-wrap" }, h("table", { class: "table" },
+      h("thead", {}, h("tr", {}, h("th", {}, "When"), h("th", {}, "Who"), h("th", {}, "Module"), h("th", {}, "Action"))), tbody)),
+    h("div", { class: "row", style: "margin-top:12px" }, more)));
+  load(true);
+}
+
+// ================= Settings =================
+
+async function pageSettings(main) {
+  main.append(h("h1", {}, "⚙️ Settings"));
+  const holder = h("div", {}, h("div", { class: "muted" }, "Loading…"));
+  main.append(holder);
+
+  let s;
+  try { s = await api("GET", "/api/settings"); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
+
+  const zones = h("datalist", { id: "zones" }, s.zones.map(z => h("option", { value: z })));
+  const zone = h("input", { list: "zones", placeholder: s.defaults.timeZone, value: s.timeZone || "", style: "width:260px" });
+  const hours = h("input", { type: "number", min: "1", max: "72", placeholder: String(s.defaults.autoDeleteHours), value: s.autoDeleteHours ?? "", style: "width:120px" });
+  const reminder = h("input", { type: "number", min: "0", max: "180", placeholder: String(s.defaults.reminderMinutes), value: s.reminderMinutes ?? "", style: "width:120px" });
+  const save = h("button", { class: "btn" }, "💾 Save");
+  save.addEventListener("click", async () => {
+    const res = await act(save, () => api("PUT", "/api/settings", {
+      timeZone: zone.value.trim() || null,
+      autoDeleteHours: hours.value === "" ? null : Number(hours.value),
+      reminderMinutes: reminder.value === "" ? null : Number(reminder.value)
+    }));
+    if (res === undefined) return;
+    toast(`Saved: ${res.timeZone}, auto-delete ${res.autoDeleteHours} h, reminder ${res.reminderMinutes ? res.reminderMinutes + " min" : "off"}.`);
+    refresh();
+  });
+
+  holder.replaceChildren(h("div", { class: "card" },
+    h("p", { class: "muted small" }, "Empty field = the value from appsettings.json (shown as the placeholder). Changes apply immediately."),
+    zones,
+    h("div", { class: "field" }, h("label", {}, "Server time zone"), zone,
+      h("span", { class: "muted small" }, `Now: ${s.current.timeZone}. Used for LFG start times and recurring groups (IANA name, e.g. Europe/Kyiv).`)),
+    h("div", { class: "field" }, h("label", {}, "Delete LFG posts after (hours)"), hours,
+      h("span", { class: "muted small" }, `Now: ${s.current.autoDeleteHours} h after the start (or creation if no time). Applies to new groups.`)),
+    h("div", { class: "field" }, h("label", {}, "Reminder before the start (minutes, 0 = off)"), reminder,
+      h("span", { class: "muted small" }, `Now: ${s.current.reminderMinutes ? s.current.reminderMinutes + " min" : "off"}.`)),
+    save));
 }
 
 // ================= Access (owner only) =================

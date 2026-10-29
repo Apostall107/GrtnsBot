@@ -69,7 +69,7 @@ public static class PanelDefs
         "The organizer can move you into the group, and you'll get a DM.\n" +
         "• **Leave** frees your slot (or takes you off the reserve).\n" +
         "• ⚙️ **Manage** — organizer only: swap members between the group and the reserve.\n" +
-        "• Everyone in the group gets a ⏰ reminder 10 minutes before the start.\n" +
+        "• Everyone in the group gets a ⏰ reminder {reminder} minutes before the start.\n" +
         "• **Close** — organizer only. Shows the invite list and deletes the group post.\n" +
         "• Group posts are removed automatically {hours} h after the start time " +
         "(or after creation if no time was set).\n" +
@@ -81,7 +81,7 @@ public static class PanelDefs
             new("dmoff", "“DMs off” button", "DMs off")
         ],
         "lfg:start",
-        "{hours} = auto-delete hours");
+        "{hours} = auto-delete hours, {reminder} = reminder minutes");
 
     public static readonly PanelDef Tickets = new(
         "tickets", "Ticket panel",
