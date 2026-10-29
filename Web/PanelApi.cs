@@ -75,6 +75,7 @@ public static class PanelApi
         MapTickets(guild.MapGroup("/tickets").AddEndpointFilter(Require(PanelPermissions.Tickets)));
         MapVoice(guild.MapGroup("/voice").AddEndpointFilter(Require(PanelPermissions.Voice)));
         MapTexts(guild.MapGroup("/texts").AddEndpointFilter(Require(PanelPermissions.Texts)));
+        MapPosts(guild.MapGroup("/posts").AddEndpointFilter(Require(PanelPermissions.Posts)));
         MapAccess(api.MapGroup("/access").AddEndpointFilter(Require(PanelPermissions.Access)));
     }
 
@@ -563,6 +564,151 @@ public static class PanelApi
         return text == @default ? null : text;
     }
 
+    // ================= Сообщения бота: панели и посты =================
+
+    private static void MapPosts(RouteGroupBuilder g)
+    {
+        // Все запомненные панели с каналами
+        g.MapGet("/panels", (ulong guildId, DiscordSocketClient client, PanelTextStore texts) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            return Results.Ok(PanelDefs.All.Select(d => new
+            {
+                key = d.Key,
+                name = d.Name,
+                messages = texts.GetPosted(guildId, d.Key).Select(p => new
+                {
+                    channelId = p.ChannelId.ToString(),
+                    messageId = p.MessageId.ToString(),
+                    channel = guild.GetTextChannel(p.ChannelId)?.Name,
+                    createdAt = SnowflakeUtils.FromSnowflake(p.MessageId).ToUnixTimeMilliseconds(),
+                    jumpUrl = $"https://discord.com/channels/{guildId}/{p.ChannelId}/{p.MessageId}"
+                })
+            }));
+        });
+
+        // Перерисовать все панели типа текущим текстом
+        g.MapPost("/panels/{key}/refresh", async (ulong guildId, string key, PanelService panels) =>
+        {
+            if (PanelDefs.Find(key) is null) return Error("Unknown panel.");
+            var (updated, total) = await panels.RefreshAsync(guildId, key);
+            return Results.Ok(new { panelsUpdated = updated, panelsTotal = total });
+        });
+
+        // Последние сообщения бота в канале
+        g.MapGet("/channels/{channelId}/messages", async (ulong guildId, ulong channelId, int? limit, DiscordSocketClient client,
+            PanelTextStore texts, LfgStore lfg, TicketStore tickets) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            if (guild.GetTextChannel(channelId) is not { } channel) return Error("Text channel not found.");
+            var perms = guild.CurrentUser.GetPermissions(channel);
+            if (!perms.ViewChannel || !perms.ReadMessageHistory) return Error("I can't read the history of this channel.");
+
+            var take = Math.Clamp(limit ?? 100, 10, 500);
+            IEnumerable<IMessage> messages;
+            try
+            {
+                messages = await channel.GetMessagesAsync(take).FlattenAsync();
+            }
+            catch (Discord.Net.HttpException)
+            {
+                return Error("I can't read the history of this channel.");
+            }
+
+            var ticketChannels = tickets.GetTickets(guildId).Select(t => t.TextChannelId).ToHashSet();
+            return Results.Ok(messages
+                .Where(m => m.Author.Id == client.CurrentUser.Id)
+                .OrderByDescending(m => m.Timestamp)
+                .Select(m => new
+                {
+                    messageId = m.Id.ToString(),
+                    createdAt = m.Timestamp.ToUnixTimeMilliseconds(),
+                    kind = Classify(guildId, channelId, m, texts, lfg, ticketChannels),
+                    title = m.Embeds.FirstOrDefault()?.Title,
+                    preview = Preview(m),
+                    jumpUrl = $"https://discord.com/channels/{guildId}/{channelId}/{m.Id}"
+                }));
+        });
+
+        // Удалить сообщения бота (по одному или списком). Пост LFG-сбора закрывает сбор, панель забывается.
+        g.MapPost("/channels/{channelId}/delete", async (ulong guildId, ulong channelId, DeleteMessagesBody body, DiscordSocketClient client,
+            PanelTextStore texts, LfgStore lfg, LfgSignupService signup) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            if (guild.GetTextChannel(channelId) is not { } channel) return Error("Text channel not found.");
+            var ids = ParseIds(body.MessageIds).Take(100).ToList();
+            if (ids.Count == 0) return Error("Nothing selected.");
+
+            var deleted = 0;
+            var failed = 0;
+            foreach (var id in ids)
+            {
+                // Пост сбора — закрываем сбор, как кнопка Force close (удалит пост и напоминание)
+                var group = lfg.Groups.Values.FirstOrDefault(x => x.GuildId == guildId && x.MessageId == id);
+                if (group is not null)
+                {
+                    await group.Gate.WaitAsync();
+                    try
+                    {
+                        if (lfg.Groups.TryRemove(group.Id, out _))
+                        {
+                            group.IsClosed = true;
+                            lfg.SaveGroups();
+                            await signup.DeleteMessagesAsync(group);
+                        }
+                    }
+                    finally
+                    {
+                        group.Gate.Release();
+                    }
+                    deleted++;
+                    continue;
+                }
+
+                try
+                {
+                    if (await channel.GetMessageAsync(id) is { } message && message.Author.Id == client.CurrentUser.Id)
+                    {
+                        await message.DeleteAsync();
+                        deleted++;
+                    }
+                    else failed++;
+                }
+                catch (Discord.Net.HttpException)
+                {
+                    failed++;
+                }
+
+                if (texts.KeyOf(guildId, id) is { } key) texts.Untrack(guildId, key, id);
+            }
+
+            return Results.Ok(new { deleted, failed });
+        });
+    }
+
+    private static string Classify(ulong guildId, ulong channelId, IMessage m, PanelTextStore texts, LfgStore lfg, HashSet<ulong> ticketChannels)
+    {
+        if (texts.KeyOf(guildId, m.Id) is { } key) return $"panel:{key}";
+
+        var ids = m.Components.OfType<ActionRowComponent>().SelectMany(r => r.Components)
+            .Select(c => (c as ButtonComponent)?.CustomId ?? (c as SelectMenuComponent)?.CustomId)
+            .OfType<string>().ToList();
+        foreach (var def in PanelDefs.All)
+            if (ids.Contains(def.MarkerCustomId)) return $"panel:{def.Key}";
+
+        if (lfg.Groups.Values.Any(x => x.GuildId == guildId && (x.MessageId == m.Id || x.ReminderMessageId == m.Id)))
+            return "lfg-group";
+        if (ticketChannels.Contains(channelId)) return "ticket";
+        return "other";
+    }
+
+    private static string Preview(IMessage m)
+    {
+        var text = !string.IsNullOrWhiteSpace(m.Content) ? m.Content : m.Embeds.FirstOrDefault()?.Description ?? "";
+        text = text.Replace('\n', ' ').Trim();
+        return text.Length <= 160 ? text : text[..159] + "…";
+    }
+
     // ================= Доступ к панели (только владелец) =================
 
     private static void MapAccess(RouteGroupBuilder g)
@@ -730,3 +876,4 @@ public sealed record NewCreatorBody(string? Name, string? CategoryId, string? Te
 public sealed record CreatorBody(string? Template, int? Limit);
 public sealed record PanelTextBody(string? Title, string? Description, Dictionary<string, string>? Labels);
 public sealed record AccessBody(List<string>? Permissions);
+public sealed record DeleteMessagesBody(List<string>? MessageIds);
