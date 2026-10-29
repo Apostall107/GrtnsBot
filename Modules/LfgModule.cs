@@ -355,7 +355,13 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         store.Groups.TryGetValue(groupId, out var group) ? profile.Controls(group, Context.User.Id) : null;
 
     [ComponentInteraction("lfg:invites:*")]
-    public async Task OnInvites(string groupId)
+    public Task OnInvites(string groupId) => ShowInvitesAsync(groupId, withCommand: true);
+
+    /// <summary>Приглашение в данж: только ники, без /invite.</summary>
+    [ComponentInteraction("lfg:dungeon:*")]
+    public Task OnDungeonInvites(string groupId) => ShowInvitesAsync(groupId, withCommand: false);
+
+    private async Task ShowInvitesAsync(string groupId, bool withCommand)
     {
         if (!store.Groups.TryGetValue(groupId, out var group))
         {
@@ -365,7 +371,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
 
         Embed embed;
         await group.Gate.WaitAsync();
-        try { embed = LfgRenderer.Invites(group, Context.User.Id); }
+        try { embed = LfgRenderer.Invites(group, Context.User.Id, withCommand); }
         finally { group.Gate.Release(); }
 
         await RespondAsync(embed: embed, ephemeral: true);

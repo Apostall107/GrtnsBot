@@ -74,7 +74,8 @@ public static class PanelDefs
         "• **Close** — organizer only. Shows the invite list and deletes the group post.\n" +
         "• Group posts are removed automatically {hours} h after the start time " +
         "(or after creation if no time was set).\n" +
-        "• 📋 **Invites** shows ready-to-copy `/invite Name` commands for everyone in the group (except you).\n\n" +
+        "• 📋 **Invite to group** shows ready-to-copy `/invite Name` commands for everyone in the group (except you).\n" +
+        "• 🏰 **Invite to dungeon** shows just the character names, ready to copy into the dungeon invite.\n\n" +
         "**Characters:** `/character list`, `/character add`, `/character class`, `/character note`, `/character remove`",
         [
             new("start", "“Create LFG” button", "Create LFG"),

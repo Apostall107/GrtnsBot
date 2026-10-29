@@ -1215,7 +1215,7 @@ const HELP = {
         "Start time shown to everyone in their own time zone; ⏰ reminder before the start; the post is removed automatically after the start.",
         "**Characters**: members sign up with a saved character; each character can have a **class role** (one of the member's roles, shown next to the name) and a **note** (shown under the name).",
         "**Reserve** when the needed slots are full; the organizer moves people between the group and the reserve (with a DM).",
-        "📋 **Invites** — ready `/invite Name` commands for AION 2.",
+        "📋 **Invite to group** — ready `/invite Name` commands; 🏰 **Invite to dungeon** — just the names.",
         "From this panel: create groups, **recurring groups** posted on a schedule, edit the roster, force-close."
       ]]
     ],
@@ -1234,7 +1234,8 @@ const HELP = {
       ]],
       ["Organizer", [
         "⚙️ **Manage** — move members between the group and the reserve (moved-in members get a DM).",
-        "📋 **Invites** — `/invite` commands. **Close** — shows invites, then deletes the post."
+        "📋 **Invite to group** — `/invite` commands, 🏰 **Invite to dungeon** — plain names (anyone in the group can use both).",
+        "**Close** — shows the group invites, then deletes the post."
       ]],
       ["DMs and admin commands", [
         "🔔 / 🔕 under the panel or `/lfg-dm` — turn group DMs on or off for yourself.",

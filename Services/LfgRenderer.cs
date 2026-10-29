@@ -223,7 +223,8 @@ public static class LfgRenderer
 
         builder
             .WithButton("Leave", $"lfg:leave:{g.Id}", ButtonStyle.Secondary, disabled: g.IsClosed, row: 1)
-            .WithButton("Invites", $"lfg:invites:{g.Id}", ButtonStyle.Secondary, new Emoji("📋"), row: 1)
+            .WithButton("Invite to group", $"lfg:invites:{g.Id}", ButtonStyle.Secondary, new Emoji("📋"), row: 1)
+            .WithButton("Invite to dungeon", $"lfg:dungeon:{g.Id}", ButtonStyle.Secondary, new Emoji("🏰"), row: 1)
             .WithButton("Manage", $"lfg:manage:{g.Id}", ButtonStyle.Secondary, new Emoji("⚙️"), disabled: g.IsClosed, row: 1)
             .WithButton("Close", $"lfg:close:{g.Id}", ButtonStyle.Danger, disabled: g.IsClosed, row: 1);
 
@@ -310,7 +311,8 @@ public static class LfgRenderer
     private static string Trim(string value) => value.Length <= 100 ? value : value[..100];
 
     // ---------- Команды /invite для игры ----------
-    public static Embed Invites(LfgGroup g, ulong viewerId)
+    /// <param name="withCommand">true — «/invite Name» для приглашения в группу; false — только ники (приглашение в данж).</param>
+    public static Embed Invites(LfgGroup g, ulong viewerId, bool withCommand = true)
     {
         var sb = new StringBuilder();
         var count = 0;
@@ -328,17 +330,17 @@ public static class LfgRenderer
             count++;
             var role = s.TakenAs is { } t && t != SlotRole.Any ? t : s.Role;
             sb.AppendLine($"{role.Emoji()} <@{userId}>");
-            sb.AppendLine($"```\n/invite {name}\n```");
+            sb.AppendLine(withCommand ? $"```\n/invite {name}\n```" : $"```\n{name}\n```");
         }
 
         if (count == 0) sb.AppendLine("Nobody to invite yet.");
         if (withoutNick > 0) sb.AppendLine($"-# Without a character name: {withoutNick}");
 
         return new EmbedBuilder()
-            .WithTitle($"📋 Invites — {g.ActivityName}")
+            .WithTitle(withCommand ? $"📋 Group invites — {g.ActivityName}" : $"🏰 Dungeon invites — {g.ActivityName}")
             .WithDescription(sb.ToString())
             .WithColor(Color.Gold)
-            .WithFooter("Copy a line and paste it into the game chat")
+            .WithFooter(withCommand ? "Copy a line and paste it into the game chat" : "Copy a name into the dungeon invite field")
             .Build();
     }
 
