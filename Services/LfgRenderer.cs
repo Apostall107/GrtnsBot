@@ -16,13 +16,15 @@ public static class LfgRenderer
 
     // ---------- Панель в канале ----------
     /// <summary>Тексты по умолчанию — <see cref="PanelDefs.Lfg"/>, свои — из веб-админки (PanelTextStore).</summary>
-    public static Screen Panel(int autoDeleteHours, PanelText? text = null)
+    public static Screen Panel(int autoDeleteHours, PanelText? text = null, int reminderMinutes = 10)
     {
         var def = PanelDefs.Lfg;
         var embed = new EmbedBuilder()
             .WithTitle(def.Title(text))
             .WithColor(Color.Blue)
-            .WithDescription(def.Description(text).Replace("{hours}", autoDeleteHours.ToString()))
+            .WithDescription(def.Description(text)
+                .Replace("{hours}", autoDeleteHours.ToString())
+                .Replace("{reminder}", reminderMinutes.ToString()))
             .Build();
 
         var comps = new ComponentBuilder()

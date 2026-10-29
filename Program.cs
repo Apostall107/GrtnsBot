@@ -29,6 +29,8 @@ builder.Services.AddSingleton(sp => new InteractionService(
     sp.GetRequiredService<DiscordSocketClient>(),
     new InteractionServiceConfig { LogLevel = LogSeverity.Info, UseCompiledLambda = true }));
 
+builder.Services.AddSingleton<BotSettingsStore>();
+builder.Services.AddSingleton<AuditLog>();
 builder.Services.AddSingleton<LfgStore>();
 builder.Services.AddSingleton<ActivityStore>();
 builder.Services.AddSingleton<CharacterStore>();
@@ -48,8 +50,11 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<CaptchaVoiceGuard>
 builder.Services.AddSingleton<TicketMessageService>();
 builder.Services.AddSingleton<PanelTextStore>();
 builder.Services.AddSingleton<PanelService>();
+builder.Services.AddSingleton<LfgPublisher>();
+builder.Services.AddSingleton<RecurringLfgStore>();
 builder.Services.AddHostedService<BotService>();
 builder.Services.AddHostedService<GroupCleanupService>();
+builder.Services.AddHostedService<RecurringLfgService>();
 builder.Services.AddHostedService<TempVoiceService>();
 
 // Веб-админка: вход через Discord, слушает только 127.0.0.1 (наружу — через Caddy с HTTPS)

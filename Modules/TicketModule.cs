@@ -8,7 +8,7 @@ using LfgBot.Services;
 namespace LfgBot.Modules;
 
 [RequireContext(ContextType.Guild)]
-public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelService panels) : InteractionModuleBase<SocketInteractionContext>
+public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelService panels, AuditLog audit) : InteractionModuleBase<SocketInteractionContext>
 {
     // Защита от двойного клика: пока создаётся тикет, второй не создаём
     private static readonly ConcurrentDictionary<string, byte> Creating = new();
@@ -146,6 +146,7 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
             VoiceChannelId = voice.Id
         };
         store.AddTicket(ticket);
+        audit.FromDiscord(guild.Id, user, "tickets", "Opened ticket", project.Name);
 
         var (embeds, comps) = TicketRenderer.TicketMessage(ticket, project);
         var pings = $"<@{user.Id}> " + string.Join(" ", project.StaffRoleIds.Select(r => $"<@&{r}>"));
@@ -271,6 +272,8 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
         }
 
         var updated = store.UpdateTicket(ticketId, t => t.ApprovedBy = Context.User.Id) ?? ticket;
+        audit.FromDiscord(Context.Guild.Id, Context.User, "tickets", "Approved ticket",
+            $"{project.Name} · applicant {(Context.Guild.GetUser(ticket.UserId)?.DisplayName ?? ticket.UserId.ToString())}");
         var (embeds, comps) = TicketRenderer.TicketMessage(updated, project);
         await Component.ModifyOriginalResponseAsync(m =>
         {
@@ -373,6 +376,9 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
         });
 
         store.RemoveTicket(ticketId);
+        audit.FromDiscord(Context.Guild.Id, Context.User, "tickets", "Closed ticket",
+            $"{store.FindProject(ticket.GuildId, ticket.ProjectKey)?.Name ?? "Deleted project"} · applicant " +
+            (Context.Guild.GetUser(ticket.UserId)?.DisplayName ?? ticket.UserId.ToString()));
         await DeleteTicketChannelAsync(ticket, ticket.VoiceChannelId);
         await DeleteTicketChannelAsync(ticket, ticket.TextChannelId);
     }

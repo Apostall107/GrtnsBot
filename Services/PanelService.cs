@@ -15,7 +15,7 @@ public sealed class PanelService(DiscordSocketClient client, PanelTextStore stor
         var text = store.GetText(guildId, key);
         if (key == "lfg")
         {
-            var screen = LfgRenderer.Panel(time.AutoDeleteHours, text);
+            var screen = LfgRenderer.Panel(time.AutoDeleteHours, text, time.ReminderMinutes);
             return (screen.Embed!, screen.Components);
         }
 

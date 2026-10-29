@@ -16,7 +16,7 @@ namespace LfgBot.Web;
 /// с теми же хранилищами, что и бот, поэтому изменения сразу видны и в Discord.
 /// ID Discord отдаются строками: в JavaScript числа больше 2^53 теряют точность.
 /// </summary>
-public static class PanelApi
+public static partial class PanelApi
 {
     private const int MaxNameLength = 100;
     private const string DefaultCreatorName = "➕ Create room";
@@ -45,6 +45,8 @@ public static class PanelApi
 
         var api = app.MapGroup("/api")
             .RequireAuthorization(WebPanel.Policy)
+            // Журнал: каждое успешное изменение с сайта (см. PanelApi.Audit.cs)
+            .AddEndpointFilter(AuditFilter)
             .AddEndpointFilter(async (ctx, next) =>
             {
                 // Защита от CSRF: свой заголовок нельзя отправить с чужого сайта без CORS
@@ -75,6 +77,9 @@ public static class PanelApi
         MapTickets(guild.MapGroup("/tickets").AddEndpointFilter(Require(PanelPermissions.Tickets)));
         MapVoice(guild.MapGroup("/voice").AddEndpointFilter(Require(PanelPermissions.Voice)));
         MapTexts(guild.MapGroup("/texts").AddEndpointFilter(Require(PanelPermissions.Texts)));
+        MapLfgExtra(guild.MapGroup("/lfg").AddEndpointFilter(Require(PanelPermissions.Lfg)));
+        MapLog(guild.MapGroup("/log").AddEndpointFilter(Require(PanelPermissions.Log)));
+        MapSettings(api.MapGroup("/settings").AddEndpointFilter(Require(PanelPermissions.Settings)));
         MapPosts(guild.MapGroup("/posts").AddEndpointFilter(Require(PanelPermissions.Posts)));
         MapAccess(api.MapGroup("/access").AddEndpointFilter(Require(PanelPermissions.Access)));
     }

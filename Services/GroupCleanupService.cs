@@ -6,14 +6,15 @@ using Microsoft.Extensions.Logging;
 namespace LfgBot.Services;
 
 /// <summary>
-/// Раз в минуту: напоминание за 10 минут до старта и удаление просроченных сборов (ExpiresAt).
+/// Раз в минуту: напоминание за N минут до старта (Settings) и удаление просроченных сборов (ExpiresAt).
 /// </summary>
 public sealed class GroupCleanupService(
     LfgStore store,
     LfgSignupService signup,
+    TimeService time,
+    AuditLog audit,
     ILogger<GroupCleanupService> logger) : BackgroundService
 {
-    private static readonly TimeSpan ReminderBefore = TimeSpan.FromMinutes(10);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -23,9 +24,11 @@ public sealed class GroupCleanupService(
             while (await timer.WaitForNextTickAsync(stoppingToken))
             {
                 var now = DateTimeOffset.UtcNow;
+                // За сколько напоминать — из настроек (веб-админка → Settings), 0 = не напоминать
+                var reminderBefore = TimeSpan.FromMinutes(time.ReminderMinutes);
 
                 foreach (var group in store.Groups.Values
-                             .Where(g => !g.Reminded && g.StartsAt is { } st && now >= st - ReminderBefore && now < st)
+                             .Where(g => time.ReminderMinutes > 0 && !g.Reminded && g.StartsAt is { } st && now >= st - reminderBefore && now < st)
                              .ToList())
                 {
                     try
@@ -67,6 +70,7 @@ public sealed class GroupCleanupService(
             store.SaveGroups();
             await signup.DeleteMessagesAsync(group);
             logger.LogInformation("Expired group {GroupId} ({Activity}) deleted", group.Id, group.ActivityName);
+            audit.FromSystem(group.GuildId, "lfg", "LFG group expired", group.ActivityName);
         }
         finally
         {

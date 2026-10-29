@@ -24,7 +24,8 @@ public sealed class AdminModule(
     TicketMessageService ticketMessages,
     TempVoiceStore voice,
     TempRoomManager rooms,
-    PanelService panels) : InteractionModuleBase<SocketInteractionContext>
+    PanelService panels,
+    AuditLog audit) : InteractionModuleBase<SocketInteractionContext>
 {
     private const int MaxOptions = 25; // лимит пунктов в выпадающем списке
     private const string DefaultCreatorName = "➕ Create room";
@@ -277,6 +278,7 @@ public sealed class AdminModule(
             group.Gate.Release();
         }
 
+        audit.FromDiscord(GuildId, Context.User, "lfg", "Force-closed LFG group (/admin)", group.ActivityName);
         await ModifyAsync(GroupsScreen($"✅ **{group.ActivityName}** by <@{group.OwnerId}> closed, the post was deleted."));
     }
 
@@ -578,6 +580,7 @@ public sealed class AdminModule(
         }
 
         tickets.RemoveTicket(ticketId);
+        audit.FromDiscord(GuildId, Context.User, "tickets", "Force-closed ticket (/admin)", $"{ProjectName(t.ProjectKey)} · {MemberName(t.UserId)}");
         // Сначала обновляем панель: она может находиться в самом канале тикета
         await ShowAsync(TicketsListScreen($"✅ Ticket of <@{t.UserId}> ({ProjectName(t.ProjectKey)}) closed."));
         await DeleteGuildChannelAsync(t.VoiceChannelId);
