@@ -8,7 +8,7 @@ using LfgBot.Services;
 namespace LfgBot.Modules;
 
 [RequireContext(ContextType.Guild)]
-public sealed class LfgModule(LfgStore store, ActivityStore activities, CharacterStore characters, TimeService time,
+public sealed class LfgModule(PanelService panels, LfgStore store, ActivityStore activities, CharacterStore characters, TimeService time,
     LfgNotifyStore notifyPrefs, LfgNotifier notifier, LfgSignupService signup, BotOwner botOwner)
     : InteractionModuleBase<SocketInteractionContext>
 {
@@ -46,8 +46,7 @@ public sealed class LfgModule(LfgStore store, ActivityStore activities, Characte
             return;
         }
 
-        var panel = LfgRenderer.Panel(time.AutoDeleteHours);
-        await channel.SendMessageAsync(embed: panel.Embed, components: panel.Components);
+        await panels.PostAsync(channel, Context.Guild.Id, "lfg");
         await RespondAsync("Panel posted.", ephemeral: true);
     }
 

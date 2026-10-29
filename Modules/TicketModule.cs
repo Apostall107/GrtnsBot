@@ -8,7 +8,7 @@ using LfgBot.Services;
 namespace LfgBot.Modules;
 
 [RequireContext(ContextType.Guild)]
-public sealed class TicketModule(TicketStore store, BotOwner botOwner) : InteractionModuleBase<SocketInteractionContext>
+public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelService panels) : InteractionModuleBase<SocketInteractionContext>
 {
     // Защита от двойного клика: пока создаётся тикет, второй не создаём
     private static readonly ConcurrentDictionary<string, byte> Creating = new();
@@ -30,8 +30,7 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner) : Interac
             return;
         }
 
-        var (embed, comps) = TicketRenderer.Panel();
-        await channel.SendMessageAsync(embed: embed, components: comps);
+        await panels.PostAsync(channel, Context.Guild.Id, "tickets");
         await RespondAsync("Ticket panel posted.", ephemeral: true);
     }
 

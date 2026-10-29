@@ -7,7 +7,7 @@ namespace LfgBot.Modules;
 /// <summary>Команды владельца комнаты. Та же логика, что у кнопок панели (TempRoomManager).</summary>
 [Group("room", "Manage your temporary voice room")]
 [RequireContext(ContextType.Guild)]
-public sealed class TempVoiceRoomModule(TempRoomManager rooms) : InteractionModuleBase<SocketInteractionContext>
+public sealed class TempVoiceRoomModule(TempRoomManager rooms, PanelService panels) : InteractionModuleBase<SocketInteractionContext>
 {
     [SlashCommand("rename", "Rename your room")]
     public Task RenameAsync([Summary("name", "New name"), MaxLength(100)] string name) =>
@@ -37,7 +37,7 @@ public sealed class TempVoiceRoomModule(TempRoomManager rooms) : InteractionModu
     [SlashCommand("panel", "Show the room control panel")]
     public async Task PanelAsync()
     {
-        var (embed, comps) = TempRoomManager.Panel();
+        var (embed, comps) = panels.Build(Context.Guild.Id, "rooms");
         await RespondAsync(embed: embed, components: comps, ephemeral: true);
     }
 

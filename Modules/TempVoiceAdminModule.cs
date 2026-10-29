@@ -9,7 +9,7 @@ namespace LfgBot.Modules;
 [Group("tempvoice", "Set up auto-created voice rooms")]
 [RequireContext(ContextType.Guild)]
 [RequireBotAdmin]
-public sealed class TempVoiceAdminModule(TempVoiceStore store, TempRoomManager rooms)
+public sealed class TempVoiceAdminModule(TempVoiceStore store, TempRoomManager rooms, PanelService panels)
     : InteractionModuleBase<SocketInteractionContext>
 {
     [SlashCommand("create", "Create a new 'join to create' voice channel")]
@@ -82,8 +82,7 @@ public sealed class TempVoiceAdminModule(TempVoiceStore store, TempRoomManager r
             return;
         }
 
-        var (embed, comps) = TempRoomManager.Panel();
-        await Context.Channel.SendMessageAsync(embed: embed, components: comps);
+        await panels.PostAsync(Context.Channel, Context.Guild.Id, "rooms");
         await RespondAsync("Room control panel posted.", ephemeral: true);
     }
 
