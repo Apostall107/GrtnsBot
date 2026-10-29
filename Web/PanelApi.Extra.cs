@@ -306,7 +306,10 @@ public static partial class PanelApi
             if (body.AutoDeleteHours is < 1 or > 72) return Error("Auto-delete: 1–72 hours.");
             if (body.ReminderMinutes is < 0 or > 180) return Error("Reminder: 0–180 minutes (0 = off).");
 
-            var s = new BotSettings { TimeZone = zone, AutoDeleteHours = body.AutoDeleteHours, ReminderMinutes = body.ReminderMinutes };
+            var s = settings.Get(); // роли «участник» не трогаем
+            s.TimeZone = zone;
+            s.AutoDeleteHours = body.AutoDeleteHours;
+            s.ReminderMinutes = body.ReminderMinutes;
             settings.Save(s);
             time.Apply(s);
 
@@ -347,7 +350,14 @@ public static partial class PanelApi
         ("POST", "/posts/channels/{channelId}/delete", "posts", "Deleted bot messages"),
         ("PUT", "/access/{userId}", "access", "Set panel access"),
         ("DELETE", "/access/{userId}", "access", "Removed panel access"),
-        ("PUT", "/settings/", "settings", "Changed bot settings")
+        ("PUT", "/settings/", "settings", "Changed bot settings"),
+        ("PUT", "/member-roles/", "settings", "Set member roles"),
+        ("POST", "/me/groups/{groupId}/join", "lfg", "Signed up (site)"),
+        ("POST", "/me/groups/{groupId}/leave", "lfg", "Left group (site)"),
+        ("POST", "/me/characters", "lfg", "Added character (site)"),
+        ("PUT", "/me/characters/{name}", "lfg", "Edited character class/note (site)"),
+        ("DELETE", "/me/characters/{name}", "lfg", "Removed character (site)"),
+        ("PUT", "/me/dm", "lfg", "Changed LFG DMs (site)")
     ];
 
     private static readonly JsonSerializerOptions AuditJson = new(JsonSerializerDefaults.Web);

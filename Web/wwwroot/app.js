@@ -224,8 +224,11 @@ const state = {
 };
 
 // [key, icon, label, required permission (null = everyone with access)]
+// [key, icon, label, required permission] — "member": role «участник» on the selected server; "admin": any admin right
 const allTabs = [
-  ["overview", "🏠", "Overview", null],
+  ["play", "🎮", "Groups", "member"],
+  ["chars", "🧙", "My characters", "member"],
+  ["overview", "🏠", "Overview", "admin"],
   ["lfg", "📣", "LFG", "lfg"],
   ["tickets", "🎫", "Tickets", "tickets"],
   ["voice", "🔊", "Temp Voice", "voice"],
@@ -235,7 +238,16 @@ const allTabs = [
   ["settings", "⚙️", "Settings", "settings"],
   ["access", "🔑", "Access", "access"]
 ];
-const can = perm => !perm || (state.me && state.me.permissions.includes(perm));
+const currentGuild = () => state.guilds.find(g => g.id === state.guildId);
+const isAdmin = () => !!(state.me && state.me.isAdmin);
+const can = perm => {
+  if (!perm) return true;
+  if (!state.me) return false;
+  if (perm === "member") return !!(currentGuild() && currentGuild().isMember);
+  if (perm === "admin") return isAdmin();
+  return state.me.permissions.includes(perm);
+};
+const MEMBER_TABS = ["play", "chars"];
 const visibleTabs = () => allTabs.filter(t => can(t[3]));
 const PERM_LABELS = { lfg: "📣 LFG", tickets: "🎫 Tickets", voice: "🔊 Temp Voice", texts: "📝 Panel texts", posts: "📌 Posts", log: "📜 Log", settings: "⚙️ Settings" };
 
@@ -258,7 +270,7 @@ function renderDenied(me) {
     h("div", { class: "card login" },
       h("div", { class: "logo" }, "⛔"),
       h("h1", {}, "No access"),
-      h("p", {}, `You are logged in as ${me.name}, but this account can't use the admin panel.`),
+      h("p", {}, `You are logged in as ${me.name}, but this account has no access: you need the member role on the server or admin rights.`),
       h("button", { class: "btn secondary", onclick: logout }, "Log out")));
 }
 
@@ -290,7 +302,7 @@ async function boot() {
 
   const saved = store.get("gb.guild");
   state.guildId = state.guilds.some(g => g.id === saved) ? saved : (state.guilds[0] && state.guilds[0].id) || null;
-  if (!visibleTabs().some(t => t[0] === state.tab)) state.tab = "overview";
+  if (!visibleTabs().some(t => t[0] === state.tab)) state.tab = (visibleTabs()[0] || ["overview"])[0];
   await selectGuild(state.guildId);
 }
 
@@ -299,7 +311,7 @@ async function selectGuild(id) {
   if (id) store.set("gb.guild", id);
   state.roles = [];
   state.channels = { text: [], voice: [], categories: [] };
-  if (id) {
+  if (id && isAdmin()) {
     try {
       const [roles, channels] = await Promise.all([gApi("GET", "/roles"), gApi("GET", "/channels")]);
       state.roles = roles;
@@ -314,14 +326,20 @@ function renderShell() {
     state.guilds.map(g => h("option", { value: g.id, selected: g.id === state.guildId }, g.name)));
   const connected = state.connection === "Connected";
 
-  const nav = h("nav", { class: "nav" }, visibleTabs().map(([key, icon, label]) =>
-    h("button", { class: state.tab === key ? "active" : "", onclick: () => { state.tab = key; store.set("gb.tab", key); renderShell(); } }, icon, " ", label)));
+  if (!visibleTabs().some(t => t[0] === state.tab)) state.tab = (visibleTabs()[0] || ["overview"])[0];
+  const navButton = ([key, icon, label]) =>
+    h("button", { class: state.tab === key ? "active" : "", onclick: () => { state.tab = key; store.set("gb.tab", key); renderShell(); } }, icon, " ", label);
+  const memberTabs = visibleTabs().filter(t => MEMBER_TABS.includes(t[0]));
+  const adminTabs = visibleTabs().filter(t => !MEMBER_TABS.includes(t[0]));
+  const nav = h("nav", { class: "nav" },
+    memberTabs.length ? h("div", { class: "nav-section" }, "Member") : null, memberTabs.map(navButton),
+    adminTabs.length ? h("div", { class: "nav-section" }, "Admin") : null, adminTabs.map(navButton));
 
   const main = h("main", { class: "main" });
 
   document.getElementById("app").replaceChildren(
     h("header", { class: "topbar" },
-      h("div", { class: "brand" }, h("span", { class: `dot ${connected ? "ok" : "bad"}`, title: `Bot: ${state.connection || "unknown"}` }), "Greatness Bot · Admin"),
+      h("div", { class: "brand" }, h("span", { class: `dot ${connected ? "ok" : "bad"}`, title: `Bot: ${state.connection || "unknown"}` }), isAdmin() ? "Greatness Bot · Admin" : "Greatness Bot"),
       state.guilds.length ? guildSel : h("span", { class: "muted" }, "The bot is on no servers"),
       h("div", { class: "user" },
         state.me.avatarUrl ? h("img", { class: "avatar", src: state.me.avatarUrl, alt: "" }) : null,
@@ -329,8 +347,9 @@ function renderShell() {
         h("button", { class: "btn ghost", onclick: logout, title: "Log out" }, "Log out"))),
     h("div", { class: "layout" }, nav, main));
 
-  if (!state.guildId) { main.append(empty("The bot is not on any server yet.")); return; }
-  const page = { overview: pageOverview, lfg: pageLfg, tickets: pageTickets, voice: pageVoice, texts: pageTexts, posts: pagePosts, log: pageLog, settings: pageSettings, access: pageAccess }[state.tab];
+  if (!state.guildId) { main.append(empty("No servers available for your account.")); return; }
+  if (!visibleTabs().length) { main.append(empty("You have no sections on this server. Ask an admin for the member role.")); return; }
+  const page = { play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, tickets: pageTickets, voice: pageVoice, texts: pageTexts, posts: pagePosts, log: pageLog, settings: pageSettings, access: pageAccess }[state.tab];
   page(main);
   addGuideButton(main, state.tab);
 }
@@ -1100,6 +1119,138 @@ async function pageSettings(main) {
     h("div", { class: "field" }, h("label", {}, "Reminder before the start (minutes, 0 = off)"), reminder,
       h("span", { class: "muted small" }, `Now: ${s.current.reminderMinutes ? s.current.reminderMinutes + " min" : "off"}.`)),
     save));
+
+  // Member roles of the selected server
+  const card = h("div", { class: "card" }, h("h2", {}, "👥 Member roles"),
+    h("p", { class: "muted small" }, "Everyone with one of these roles on this server can log in and use the Member section (Groups, My characters). Admin sections still need rights from Access."));
+  holder.append(card);
+  try {
+    const current = await gApi("GET", "/member-roles");
+    const editor = roleListEditor(current);
+    const saveRoles = h("button", { class: "btn" }, "💾 Save member roles");
+    saveRoles.addEventListener("click", () => act(saveRoles, () => gApi("PUT", "/member-roles", { roleIds: editor.value() }), "Member roles saved."));
+    card.append(editor.el, h("div", { class: "row", style: "margin-top:12px" }, saveRoles));
+  } catch (e) { card.append(empty(e.message)); }
+}
+
+// ================= Member: groups =================
+
+const ROLE_CHOICES = [["Dps", "⚔️ DD"], ["Tank", "🛡️ Tank"], ["Healer", "💚 Sup"], ["Any", "🎲 All"]];
+
+async function pagePlay(main) {
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "🎮 Groups"), h("button", { class: "btn secondary", onclick: refresh }, "🔄 Refresh")));
+  const holder = h("div", {}, h("div", { class: "muted" }, "Loading…"));
+  main.append(holder);
+
+  let data;
+  try { data = await gApi("GET", "/me/groups"); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
+  holder.replaceChildren(data.groups.length
+    ? h("div", { class: "grid2" }, data.groups.map(g => playCard(g, data.characters)))
+    : h("div", { class: "card" }, empty("No active groups right now.")));
+}
+
+function playCard(g, characters) {
+  const roster = h("ul", { class: "slots" }, g.slots.map((s, i) => h("li", {},
+    h("span", { class: "num" }, i + 1), h("span", {}, s.emoji),
+    s.member ? h("span", {}, h("span", { class: "row", style: "gap:4px" }, classMark(s), member(s.member)),
+      s.comment ? h("div", { class: "muted small" }, `💬 ${s.comment}`) : null) : h("span", { class: "free" }, `free (${s.slotRole})`),
+    h("span", { class: "char" }, s.character || ""))));
+  const reserve = g.reserve.length ? h("div", { style: "margin-top:8px" }, h("div", { class: "muted small" }, `Reserve (${g.reserve.length})`),
+    h("ul", { class: "slots" }, g.reserve.map(r => h("li", {}, h("span", {}, r.emoji),
+      h("span", {}, h("span", { class: "row", style: "gap:4px" }, classMark(r), member(r.member)),
+        r.comment ? h("div", { class: "muted small" }, `💬 ${r.comment}`) : null),
+      h("span", { class: "char" }, r.character || ""))))) : null;
+
+  // Sign-up form: role + character (saved or new)
+  const free = v => g.canJoin[v] || (g.me && g.me.status === "group" && g.me.role === v);
+  const role = h("select", {}, ROLE_CHOICES.map(([v, l]) => h("option", { value: v }, free(v) ? l : `${l} (reserve)`)));
+  const charSel = h("select", {}, characters.map(c => h("option", { value: c }, c)), h("option", { value: "" }, "➕ New character…"));
+  const newChar = h("input", { placeholder: "Character name", maxlength: "32", style: "width:160px" });
+  const sync = () => { newChar.style.display = charSel.value ? "none" : ""; };
+  charSel.addEventListener("change", sync);
+  if (g.me) {
+    role.value = g.me.role;
+    if (g.me.character && characters.includes(g.me.character)) charSel.value = g.me.character;
+  }
+  sync();
+
+  const join = h("button", { class: "btn" }, g.me ? "🔁 Switch" : "✅ Sign up");
+  join.addEventListener("click", async () => {
+    const character = charSel.value || newChar.value.trim();
+    if (!character) return toast("Pick or enter a character.", "warn");
+    const res = await act(join, () => gApi("POST", `/me/groups/${encodeURIComponent(g.id)}/join`, { role: role.value, character }));
+    if (res === undefined) return;
+    toast(res.message);
+    refresh();
+  });
+  const leave = h("button", { class: "btn secondary" }, "Leave");
+  leave.addEventListener("click", async () => {
+    if (await act(leave, () => gApi("POST", `/me/groups/${encodeURIComponent(g.id)}/leave`), "You left the group.") !== undefined) refresh();
+  });
+
+  const status = g.me
+    ? h("span", { class: `badge ${g.me.status === "group" ? "ok" : "wait"}` }, g.me.status === "group" ? "you're in" : "reserve")
+    : null;
+
+  return h("div", { class: "card", style: "margin:0" },
+    h("div", { class: "card-head" }, h("h3", {}, g.activity), status, h("span", { class: "badge ok" }, `${g.filled}/${g.size}`)),
+    h("div", { class: "muted small" }, "Organizer: ", member(g.owner)),
+    h("div", { class: "muted small", style: "margin-bottom:8px" }, `Start: ${fmtDate(g.startsAt)}`, g.channel ? ` · #${g.channel}` : ""),
+    roster, reserve,
+    g.closed ? h("div", { class: "muted", style: "margin-top:10px" }, "Signups are closed.") :
+      h("div", { class: "row", style: "margin-top:12px" }, role, charSel, newChar, join, g.me ? leave : null),
+    h("div", { class: "row", style: "margin-top:8px" },
+      h("a", { class: "btn ghost", href: g.jumpUrl, target: "_blank", rel: "noopener" }, "Open in Discord")));
+}
+
+// ================= Member: characters =================
+
+async function pageChars(main) {
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "🧙 My characters"), h("button", { class: "btn secondary", onclick: refresh }, "🔄 Refresh")));
+  const holder = h("div", {}, h("div", { class: "muted" }, "Loading…"));
+  main.append(holder);
+
+  let data;
+  try { data = await gApi("GET", "/me/characters"); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
+
+  const dm = h("input", { type: "checkbox", checked: data.dmEnabled });
+  dm.addEventListener("change", () => act(null, () => gApi("PUT", "/me/dm", { enabled: dm.checked }),
+    dm.checked ? "Group DMs turned on." : "Group DMs turned off."));
+
+  const nameIn = h("input", { placeholder: "Character name", maxlength: "32" });
+  const add = h("button", { class: "btn" }, "➕ Add character");
+  add.addEventListener("click", async () => {
+    if (await act(add, () => gApi("POST", "/me/characters", { name: nameIn.value }), "Character added.") !== undefined) refresh();
+  });
+
+  const rows = data.characters.map(c => {
+    const cls = h("select", {}, h("option", { value: "" }, "No class"),
+      data.classRoles.map(r => h("option", { value: r.id }, `${r.icon ? r.icon + " " : ""}${r.name}`)));
+    if (c.classRole) cls.value = c.classRole.id;
+    const note = h("input", { maxlength: String(data.maxComment), placeholder: "Note, e.g. 2.1k gear, can lead", value: c.comment || "", style: "width:100%" });
+    const save = h("button", { class: "btn secondary" }, "Save");
+    save.addEventListener("click", () => act(save,
+      () => gApi("PUT", `/me/characters/${encodeURIComponent(c.name)}`, { classRoleId: cls.value || null, comment: note.value }),
+      r => r.groupsUpdated ? `Saved. Updated ${r.groupsUpdated} active group(s).` : "Saved."));
+    const rm = h("button", { class: "btn ghost" }, "Remove");
+    rm.addEventListener("click", async () => {
+      if (!await confirmDialog(`Remove ${c.name}?`, "The character, its class and note are deleted.", "Remove")) return;
+      if (await act(rm, () => gApi("DELETE", `/me/characters/${encodeURIComponent(c.name)}`), "Removed.") !== undefined) refresh();
+    });
+    return h("tr", {}, h("td", {}, h("b", {}, c.name)), h("td", {}, cls), h("td", { style: "min-width:220px" }, note),
+      h("td", { class: "actions" }, save, " ", rm));
+  });
+
+  holder.replaceChildren(
+    h("div", { class: "card" },
+      h("label", { class: "row" }, dm, "Get a DM when a group is posted for an activity whose role I have"),
+      h("p", { class: "muted small" }, "Same as 🔔 / 🔕 under the LFG panel or /lfg-dm.")),
+    h("div", { class: "card" },
+      h("p", { class: "muted small" }, "Class = one of your server roles, shown next to your name in group posts. The note is shown under your name. Both are saved per character."),
+      data.characters.length ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
+        h("thead", {}, h("tr", {}, h("th", {}, "Character"), h("th", {}, "Class"), h("th", {}, "Note"), h("th", {}))),
+        h("tbody", {}, rows))) : empty("No characters yet."),
+      h("div", { class: "row", style: "margin-top:12px" }, nameIn, add)));
 }
 
 // ================= Access (owner only) =================
@@ -1187,6 +1338,39 @@ async function pageAccess(main) {
 // Each guide: features / discord / panel → list of sections [title, [lines]]. `code` and **bold** are formatted.
 
 const HELP = {
+  play: {
+    title: "Groups",
+    features: [["What you can do here", [
+      "See all active groups on the server with their roster, class roles and notes.",
+      "Sign up with a role and a character, switch role or character, or leave — the Discord post updates at once.",
+      "A role marked **(reserve)** has no free slot: you'll be put on the reserve list."
+    ]]],
+    discord: [["The same in Discord", [
+      "Click a role button under the group post, then pick a character or **New character**.",
+      "Under the reply pick your class role and add a note. **Leave** frees your slot.",
+      "📋 **Invite to group** / 🏰 **Invite to dungeon** show the names for the game."
+    ]]],
+    panel: [["Using it", [
+      "In a group card choose the role and the character (or ➕ New character and type the name) → **Sign up**.",
+      "Already in? **Switch** changes role/character, **Leave** takes you out (the organizer can't leave — close the group in Discord)."
+    ]]]
+  },
+  chars: {
+    title: "My characters",
+    features: [["What you can do here", [
+      "Keep your list of characters for signups.",
+      "Give each character a **class** (one of your server roles) and a **note** — shown next to and under your name in group posts.",
+      "Turn group DMs on or off."
+    ]]],
+    discord: [["The same in Discord", [
+      "`/character list`, `/character add`, `/character class name role`, `/character note name text`, `/character remove`.",
+      "🔔 / 🔕 under the LFG panel or `/lfg-dm` for DMs."
+    ]]],
+    panel: [["Using it", [
+      "Pick the class and type the note → **Save**. Active groups where you play this character are updated.",
+      "**Add character** adds a new name; **Remove** deletes it with its class and note."
+    ]]]
+  },
   overview: {
     title: "Overview",
     features: [["The admin panel", [
@@ -1379,7 +1563,8 @@ const HELP = {
     title: "Access",
     features: [["What it can do", [
       "Only the bot owner sees this tab. Give people access to this panel — per section (LFG, Tickets, Temp Voice, Panel texts, Posts, Log, Settings).",
-      "Changes apply at once, no re-login needed. Access itself can't be given to anyone."
+      "Changes apply at once, no re-login needed. Access itself can't be given to anyone.",
+      "Server members with a **member role** (Settings → Member roles) don't need anything here — they see the Member section (Groups, My characters)."
     ]]],
     discord: [["In Discord", [
       "Panel access doesn't change anything in Discord. Discord admin commands depend on Manage Server or the bot admin roles (`/admin` → Bot admins)."
