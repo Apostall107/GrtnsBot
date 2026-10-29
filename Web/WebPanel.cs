@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Reflection;
 using System.Security.Claims;
 using System.Text.Json;
+using Discord.WebSocket;
 using LfgBot.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -192,22 +193,38 @@ public static class PanelClaims
 }
 
 /// <summary>
-/// Кто может пользоваться веб-админкой: владелец бота (Bot:OwnerId) — всё, включая раздел Access;
-/// остальные — только то, что владелец выдал в разделе Access (<see cref="WebAccessStore"/>).
-/// Проверка идёт на каждый запрос, поэтому отзыв прав действует сразу.
+/// Кто может пользоваться сайтом.
+/// Админ-разделы: владелец бота (всё, включая Access) и те, кому он выдал права в разделе Access (<see cref="WebAccessStore"/>).
+/// Раздел Member: у кого на сервере есть роль «участник» (Settings → Member roles), и владелец.
+/// Проверка идёт на каждый запрос, поэтому изменения действуют сразу.
 /// </summary>
-public sealed class PanelAccess(BotOwner owner, WebAccessStore grants)
+public sealed class PanelAccess(BotOwner owner, WebAccessStore grants, BotSettingsStore settings, DiscordSocketClient client)
 {
     private static readonly string[] OwnerPermissions = [.. PanelPermissions.Grantable, PanelPermissions.Access];
 
     public bool IsOwner(ulong? userId) => userId is { } id && owner.Is(id);
 
+    /// <summary>Админ-права (разделы). Пусто — не админ.</summary>
     public IReadOnlyList<string> Permissions(ulong? userId) =>
         IsOwner(userId) ? OwnerPermissions : userId is { } id ? grants.GetPermissions(id) : Array.Empty<string>();
 
-    public bool IsAllowed(ulong? userId) => Permissions(userId).Count > 0;
+    public bool IsAdmin(ulong? userId) => Permissions(userId).Count > 0;
 
     public bool Has(ulong? userId, string permission) => Permissions(userId).Contains(permission);
+
+    /// <summary>Участник сервера: есть одна из ролей «участник» (или владелец бота).</summary>
+    public bool IsMember(ulong? userId, ulong guildId)
+    {
+        if (userId is not { } id) return false;
+        if (owner.Is(id)) return client.GetGuild(guildId) is not null;
+        var roles = settings.GetMemberRoles(guildId);
+        return roles.Count > 0 && client.GetGuild(guildId)?.GetUser(id) is { } member && member.Roles.Any(r => roles.Contains(r.Id));
+    }
+
+    public IReadOnlyList<ulong> MemberGuilds(ulong? userId) =>
+        client.Guilds.Where(g => IsMember(userId, g.Id)).Select(g => g.Id).ToList();
+
+    public bool IsAllowed(ulong? userId) => IsAdmin(userId) || MemberGuilds(userId).Count > 0;
 }
 
 public sealed class PanelAccessRequirement : IAuthorizationRequirement { }

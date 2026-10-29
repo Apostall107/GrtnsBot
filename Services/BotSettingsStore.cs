@@ -9,6 +9,8 @@ public sealed class BotSettings
     public string? TimeZone { get; set; }
     public int? AutoDeleteHours { get; set; }
     public int? ReminderMinutes { get; set; }
+    /// <summary>Роли «участник» по серверам: у кого есть хоть одна — видит раздел Member на сайте.</summary>
+    public Dictionary<ulong, List<ulong>> MemberRoles { get; set; } = new();
 }
 
 /// <summary>data/settings.json — настройки бота из веб-админки.</summary>
@@ -34,8 +36,24 @@ public sealed class BotSettingsStore
             {
                 TimeZone = _data.TimeZone,
                 AutoDeleteHours = _data.AutoDeleteHours,
-                ReminderMinutes = _data.ReminderMinutes
+                ReminderMinutes = _data.ReminderMinutes,
+                MemberRoles = _data.MemberRoles.ToDictionary(x => x.Key, x => x.Value.ToList())
             };
+    }
+
+    public IReadOnlyList<ulong> GetMemberRoles(ulong guildId)
+    {
+        lock (_lock)
+            return _data.MemberRoles.TryGetValue(guildId, out var list) ? list.ToList() : [];
+    }
+
+    public void SetMemberRoles(ulong guildId, IEnumerable<ulong> roleIds)
+    {
+        var copy = Get();
+        var list = roleIds.Distinct().Take(10).ToList();
+        if (list.Count == 0) copy.MemberRoles.Remove(guildId);
+        else copy.MemberRoles[guildId] = list;
+        Save(copy);
     }
 
     public void Save(BotSettings settings)

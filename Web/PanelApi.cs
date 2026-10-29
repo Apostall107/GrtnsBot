@@ -36,7 +36,9 @@ public static partial class PanelApi
                 authenticated = true,
                 allowed = access.IsAllowed(id),
                 isOwner = access.IsOwner(id),
+                isAdmin = access.IsAdmin(id),
                 permissions = access.Permissions(id),
+                memberGuilds = access.MemberGuilds(id).Select(x => x.ToString()),
                 id = id?.ToString(),
                 name = user.FindFirst(ClaimTypes.Name)?.Value,
                 avatarUrl = avatar is null || id is null ? null : $"https://cdn.discordapp.com/avatars/{id}/{avatar}.png?size=64"
@@ -56,15 +58,19 @@ public static partial class PanelApi
                 return await next(ctx);
             });
 
-        api.MapGet("/guilds", (DiscordSocketClient client) => Results.Ok(new
+        // Админ видит все сервера бота, участник — только те, где у него роль «участник»
+        api.MapGet("/guilds", (ClaimsPrincipal user, PanelAccess access, DiscordSocketClient client) => Results.Ok(new
         {
             connection = client.ConnectionState.ToString(),
             latency = client.Latency,
             bot = client.CurrentUser is { } me ? new { id = me.Id.ToString(), name = me.Username, avatarUrl = me.GetAvatarUrl() } : null,
-            guilds = client.Guilds.OrderBy(g => g.Name).Select(g => new
+            guilds = client.Guilds
+                .Where(g => access.IsAdmin(user.UserId()) || access.IsMember(user.UserId(), g.Id))
+                .OrderBy(g => g.Name).Select(g => new
             {
                 id = g.Id.ToString(),
                 name = g.Name,
+                isMember = access.IsMember(user.UserId(), g.Id),
                 iconUrl = g.IconUrl,
                 members = g.MemberCount
             })
@@ -77,6 +83,8 @@ public static partial class PanelApi
         MapTickets(guild.MapGroup("/tickets").AddEndpointFilter(Require(PanelPermissions.Tickets)));
         MapVoice(guild.MapGroup("/voice").AddEndpointFilter(Require(PanelPermissions.Voice)));
         MapTexts(guild.MapGroup("/texts").AddEndpointFilter(Require(PanelPermissions.Texts)));
+        MapMember(guild.MapGroup("/me").AddEndpointFilter(RequireMember));
+        MapMemberRoles(guild.MapGroup("/member-roles").AddEndpointFilter(Require(PanelPermissions.Settings)));
         MapLfgExtra(guild.MapGroup("/lfg").AddEndpointFilter(Require(PanelPermissions.Lfg)));
         MapLog(guild.MapGroup("/log").AddEndpointFilter(Require(PanelPermissions.Log)));
         MapSettings(api.MapGroup("/settings").AddEndpointFilter(Require(PanelPermissions.Settings)));
@@ -88,7 +96,13 @@ public static partial class PanelApi
 
     private static void MapCommon(RouteGroupBuilder g)
     {
-        g.MapGet("/overview", (ulong guildId, DiscordSocketClient client, ActivityStore activities, LfgStore lfg,
+        // Общие данные сервера — только для админов (у участника свой раздел /me)
+        foreach (var endpoint in MapCommonEndpoints(g)) endpoint.AddEndpointFilter(RequireAnyAdmin);
+    }
+
+    private static IEnumerable<RouteHandlerBuilder> MapCommonEndpoints(RouteGroupBuilder g)
+    {
+        yield return g.MapGet("/overview", (ulong guildId, DiscordSocketClient client, ActivityStore activities, LfgStore lfg,
             TicketStore tickets, TempVoiceStore voice) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
@@ -101,7 +115,7 @@ public static partial class PanelApi
             });
         });
 
-        g.MapGet("/roles", (ulong guildId, DiscordSocketClient client) =>
+        yield return g.MapGet("/roles", (ulong guildId, DiscordSocketClient client) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             return Results.Ok(guild.Roles
@@ -110,7 +124,7 @@ public static partial class PanelApi
                 .Select(r => new { id = r.Id.ToString(), name = r.Name, color = r.Color.RawValue == 0 ? null : $"#{r.Color.RawValue:x6}" }));
         });
 
-        g.MapGet("/channels", (ulong guildId, DiscordSocketClient client) =>
+        yield return g.MapGet("/channels", (ulong guildId, DiscordSocketClient client) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var me = guild.CurrentUser;
@@ -140,7 +154,7 @@ public static partial class PanelApi
             return Results.Ok(new { text, voice = voiceChannels, categories });
         });
 
-        g.MapGet("/members", (ulong guildId, string? q, DiscordSocketClient client) =>
+        yield return g.MapGet("/members", (ulong guildId, string? q, DiscordSocketClient client) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var query = (q ?? "").Trim();
