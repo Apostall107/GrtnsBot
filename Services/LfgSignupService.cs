@@ -141,7 +141,7 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
                 var mentions = string.Join(" ", members.Select(id => $"<@{id}>"));
                 var message = await channel.SendMessageAsync(
                     $"⏰ **{Format.Sanitize(group.ActivityName)}** starts <t:{startsAt.ToUnixTimeSeconds()}:R>! {mentions}\n" +
-                    "-# Organizer: press 📋 Invites under the post for the /invite commands.",
+                    "-# Organizer: press 📋 Invite to group or 🏰 Invite to dungeon under the post.",
                     allowedMentions: new AllowedMentions { UserIds = members },
                     messageReference: new MessageReference(group.MessageId, failIfNotExists: false));
                 group.ReminderMessageId = message.Id;
