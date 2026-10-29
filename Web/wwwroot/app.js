@@ -404,8 +404,25 @@ async function pageLfg(main) {
   });
   actCard.append(actBody, h("div", { class: "row", style: "margin-top:12px" }, h("div", { class: "grow" }, nameIn), roleIn, addBtn));
 
+  // Channel for groups created by members on the site
+  const chCard = h("div", { class: "card" }, h("h3", {}, "Channel for groups"),
+    h("p", { class: "muted small" }, "Groups that members create on the site (Member → Groups) are always posted here — members can't pick the channel."));
+  const chSel = channelSelect("text", "Not set — use the LFG panel channel");
+  const chSave = h("button", { class: "btn" }, "💾 Save");
+  const chInfo = h("div", { class: "muted small", style: "margin-top:6px" });
+  chSave.addEventListener("click", async () => {
+    if (await act(chSave, () => gApi("PUT", "/lfg/channel", { channelId: chSel.value || null }), "Channel saved.") !== undefined) refresh();
+  });
+  chCard.append(h("div", { class: "row" }, h("div", { class: "grow" }, chSel), chSave), chInfo);
+  gApi("GET", "/lfg/channel").then(c => {
+    if (c.channelId) chSel.value = c.channelId;
+    chInfo.textContent = c.effective
+      ? `Now: #${c.effective.name}${c.fromPanel ? " (the LFG panel's channel)" : ""}`
+      : "Now: not set — members can't create groups until you pick a channel or post the LFG panel.";
+  }).catch(e => { chInfo.textContent = e.message; });
+
   main.append(h("div", { class: "grid2" }, actCard,
-    postPanelCard("LFG panel", "Posts the message with the “Create LFG” button.", "/lfg/panel")));
+    h("div", {}, postPanelCard("LFG panel", "Posts the message with the “Create LFG” button.", "/lfg/panel"), chCard)));
 
   // --- Schedules (creating one-off groups is in Member → Groups)
   const recCard = h("div", { class: "card" });
@@ -447,11 +464,11 @@ const DAYS = [[1, "Mon"], [2, "Tue"], [3, "Wed"], [4, "Thu"], [5, "Fri"], [6, "S
 /** LFG form: channel, activity, slots + (once) date/time or (recurring) days/time/post-before. */
 function lfgForm(acts, opts) {
   const v = opts.initial || {};
-  const channel = opts.channels
-    ? h("select", {}, h("option", { value: "" }, "Channel…"),
-        opts.channels.map(c => h("option", { value: c.id }, `#${c.name}${c.category ? `  ·  ${c.category}` : ""}${c.lfg ? "  ·  LFG panel" : ""}`)))
+  // Members don't choose the channel: the admin sets it (LFG → Channel for groups)
+  const channel = opts.fixedChannel
+    ? { value: opts.fixedChannel.id, el: h("div", { class: "muted", style: "padding:7px 0" }, `#${opts.fixedChannel.name}`) }
     : channelSelect("text", "Channel…");
-  if (opts.channels && !v.channelId && opts.channels.length) channel.value = opts.channels[0].id;
+  const channelEl = channel.el || channel;
   if (v.channelId) channel.value = v.channelId;
 
   const activity = h("select", {},
@@ -493,7 +510,7 @@ function lfgForm(acts, opts) {
 
   const fields = [
     h("div", { class: "grid2" },
-      h("div", { class: "field" }, h("label", {}, "Channel"), channel),
+      h("div", { class: "field" }, h("label", {}, opts.fixedChannel ? "Posted in" : "Channel"), channelEl),
       h("div", { class: "field" }, h("label", {}, "Activity"), activity, custom)),
     h("div", { class: "field" }, h("label", {}, "Slots"), h("div", { class: "row", style: "margin-bottom:6px" }, size), slotBox)
   ];
@@ -1224,8 +1241,8 @@ async function pagePlay(main) {
     createBody.replaceChildren(h("div", { class: "muted" }, "Loading…"));
     try {
       const opt = await gApi("GET", "/me/create-options");
-      if (!opt.channels.length) { createBody.replaceChildren(empty("There is no channel where both you and the bot can post.")); return; }
-      const form = lfgForm(opt.activities, { mode: "once", channels: opt.channels, hideSeat: true });
+      if (!opt.channel) { createBody.replaceChildren(empty("The channel for groups isn't set yet — ask an admin.")); return; }
+      const form = lfgForm(opt.activities, { mode: "once", fixedChannel: opt.channel, hideSeat: true });
       const publish = h("button", { class: "btn" }, "📣 Publish");
       publish.addEventListener("click", async () => {
         const res = await act(publish, () => gApi("POST", "/me/create", form.value()));
@@ -1487,7 +1504,7 @@ const HELP = {
         "Already in? **Switch** changes role/character, **Leave** takes you out."
       ]],
       ["Create and organize", [
-        "**➕ Create a group** — channel, activity, slots, date/time → **Publish**. You are the organizer and take slot 1.",
+        "**➕ Create a group** — activity, slots, date/time → **Publish**. It is posted in the server's LFG channel; you are the organizer and take slot 1.",
         "In your own groups: ⬇️ move a member to the reserve, ⬆️ move someone from the reserve into the group (they get a DM), ✖️ remove from the reserve, **Close group**."
       ]]
     ]
@@ -1565,7 +1582,8 @@ const HELP = {
       ]]
     ],
     panel: [
-      ["Activities & panel", [
+      ["Activities, panel & channel", [
+        "**Channel for groups** — where groups created by members on the site are posted (members can't choose). Empty = the LFG panel's channel.",
         "**Activities** — add a name + the role to ping, or remove one. Posted groups are not affected.",
         "**LFG panel** — pick a text channel and **Post** the message with the Create LFG button."
       ]],

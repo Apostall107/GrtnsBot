@@ -11,6 +11,8 @@ public sealed class BotSettings
     public int? ReminderMinutes { get; set; }
     /// <summary>Роли «участник» по серверам: у кого есть хоть одна — видит раздел Member на сайте.</summary>
     public Dictionary<ulong, List<ulong>> MemberRoles { get; set; } = new();
+    /// <summary>Канал для сборов, создаваемых участниками на сайте (по серверам).</summary>
+    public Dictionary<ulong, ulong> LfgChannels { get; set; } = new();
 }
 
 /// <summary>data/settings.json — настройки бота из веб-админки.</summary>
@@ -37,8 +39,23 @@ public sealed class BotSettingsStore
                 TimeZone = _data.TimeZone,
                 AutoDeleteHours = _data.AutoDeleteHours,
                 ReminderMinutes = _data.ReminderMinutes,
-                MemberRoles = _data.MemberRoles.ToDictionary(x => x.Key, x => x.Value.ToList())
+                MemberRoles = _data.MemberRoles.ToDictionary(x => x.Key, x => x.Value.ToList()),
+                LfgChannels = new Dictionary<ulong, ulong>(_data.LfgChannels)
             };
+    }
+
+    public ulong? GetLfgChannel(ulong guildId)
+    {
+        lock (_lock)
+            return _data.LfgChannels.TryGetValue(guildId, out var id) ? id : null;
+    }
+
+    public void SetLfgChannel(ulong guildId, ulong? channelId)
+    {
+        var copy = Get();
+        if (channelId is { } id) copy.LfgChannels[guildId] = id;
+        else copy.LfgChannels.Remove(guildId);
+        Save(copy);
     }
 
     public IReadOnlyList<ulong> GetMemberRoles(ulong guildId)
