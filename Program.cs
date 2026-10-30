@@ -60,6 +60,7 @@ builder.Services.AddSingleton<PanelService>();
 builder.Services.AddSingleton<LfgPublisher>();
 builder.Services.AddSingleton<RecurringLfgStore>();
 builder.Services.AddSingleton<AnnouncementStore>();
+builder.Services.AddSingleton<AnnouncementTemplateStore>();
 builder.Services.AddSingleton<AnnouncementService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<AnnouncementService>());
 builder.Services.AddHostedService<BotService>();

@@ -803,6 +803,8 @@ public static partial class PanelApi
         ("POST", "/announce/{id}/send-now", "posts", "Sent a scheduled post now"),
         ("DELETE", "/announce/{id}", "posts", "Cancelled / removed a post"),
         ("POST", "/announce/{id}/delete-messages", "posts", "Deleted a post's messages"),
+        ("PUT", "/announce/templates/{key}", "posts", "Saved a post template"),
+        ("DELETE", "/announce/templates/{key}", "posts", "Deleted a post template"),
         ("POST", "/lfg/classes/role-icons", "lfg", "Imported class icons from roles"),
         ("PUT", "/lfg/activities/{key}/project", "lfg", "Moved activity to a project"),
         ("PUT", "/lfg/activities/{key}", "lfg", "Edited activity"),
