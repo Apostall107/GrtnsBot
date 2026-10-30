@@ -1,6 +1,8 @@
 using System.Security.Cryptography;
 using System.Text.Json.Serialization;
 
+using LfgBot.Services;
+
 namespace LfgBot.Models;
 
 public enum SlotRole { Any, Dps, Tank, Healer }
@@ -214,13 +216,13 @@ public sealed class LfgGroup
     /// </summary>
     public string? CheckJoin(ulong userId, SlotRole wanted)
     {
-        if (IsClosed) return "Signups are closed.";
+        if (IsClosed) return Tx.Get(GuildId, "lfg.err.closed");
 
         var current = Slots.Find(s => s.UserId == userId);
         if (current is null)
         {
             if (FindFreeSlot(wanted) >= 0 || FindReserve(userId) is not null) return null;
-            return Reserve.Count >= MaxReserve ? "The reserve list is full." : null;
+            return Reserve.Count >= MaxReserve ? Tx.Get(GuildId, "lfg.err.reserveFull") : null;
         }
 
         if (current.TakenAs == wanted) return null; // смена персонажа на той же роли
@@ -230,7 +232,7 @@ public sealed class LfgGroup
         var fits = FindFreeSlot(wanted) >= 0;
         (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment, current.Gs) = snapshot;
 
-        return fits ? null : $"No free slots for {wanted.Emoji()} {wanted.Label()}.";
+        return fits ? null : Tx.Get(GuildId, "lfg.err.noSlots", ("role", $"{wanted.Emoji()} {wanted.Label()}"));
     }
 
     /// <summary>
@@ -241,7 +243,7 @@ public sealed class LfgGroup
     public string? TryJoin(ulong userId, SlotRole wanted, string characterName, out bool reserved, bool forceReserve = false)
     {
         reserved = false;
-        if (IsClosed) return "Signups are closed.";
+        if (IsClosed) return Tx.Get(GuildId, "lfg.err.closed");
 
         var current = Slots.Find(s => s.UserId == userId);
         if (current?.TakenAs == wanted)
@@ -255,7 +257,7 @@ public sealed class LfgGroup
             var existing = FindReserve(userId);
             if (existing is null)
             {
-                if (Reserve.Count >= MaxReserve) return "The reserve list is full.";
+                if (Reserve.Count >= MaxReserve) return Tx.Get(GuildId, "lfg.err.reserveFull");
                 Reserve.Add(new ReserveEntry { UserId = userId, Role = wanted, CharacterName = characterName });
             }
             else
@@ -284,14 +286,14 @@ public sealed class LfgGroup
         {
             // Уже в группе: не выкидываем в резерв из-за смены роли
             (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment, current.Gs) = snapshot;
-            return $"No free slots for {wanted.Emoji()} {wanted.Label()}.";
+            return Tx.Get(GuildId, "lfg.err.noSlots", ("role", $"{wanted.Emoji()} {wanted.Label()}"));
         }
 
         // Мест нет — в резерв (или обновить запись в резерве)
         var entry = FindReserve(userId);
         if (entry is null)
         {
-            if (Reserve.Count >= MaxReserve) return "The reserve list is full.";
+            if (Reserve.Count >= MaxReserve) return Tx.Get(GuildId, "lfg.err.reserveFull");
             Reserve.Add(new ReserveEntry { UserId = userId, Role = wanted, CharacterName = characterName });
         }
         else
@@ -324,7 +326,7 @@ public sealed class LfgGroup
             return null;
         }
 
-        return Reserve.RemoveAll(r => r.UserId == userId) > 0 ? null : "You are not in this group.";
+        return Reserve.RemoveAll(r => r.UserId == userId) > 0 ? null : Tx.Get(GuildId, "lfg.err.notInGroup");
     }
 
     /// <summary>
@@ -333,10 +335,10 @@ public sealed class LfgGroup
     /// </summary>
     public string? MoveToReserve(ulong userId)
     {
-        if (userId == OwnerId) return "You can't move yourself — use Leave.";
+        if (userId == OwnerId) return Tx.Get(GuildId, "lfg.err.moveSelf");
         var slot = Slots.Find(s => s.UserId == userId);
-        if (slot is null) return "This member is no longer in the group.";
-        if (Reserve.Count >= MaxReserve) return "The reserve list is full — remove someone from it first.";
+        if (slot is null) return Tx.Get(GuildId, "lfg.err.memberGone");
+        if (Reserve.Count >= MaxReserve) return Tx.Get(GuildId, "lfg.err.reserveFullManage");
 
         Reserve.Add(new ReserveEntry
         {
@@ -354,7 +356,7 @@ public sealed class LfgGroup
 
     /// <summary>Организатор убирает человека из резерва.</summary>
     public string? RemoveFromReserve(ulong userId) =>
-        Reserve.RemoveAll(r => r.UserId == userId) > 0 ? null : "This member is no longer in the reserve.";
+        Reserve.RemoveAll(r => r.UserId == userId) > 0 ? null : Tx.Get(GuildId, "lfg.err.reserveGone");
 
     /// <summary>
     /// Организатор переводит человека из резерва в группу: сначала подходящий по роли слот,
@@ -364,11 +366,11 @@ public sealed class LfgGroup
     {
         slot = null;
         var entry = FindReserve(userId);
-        if (entry is null) return "This member is no longer in the reserve.";
+        if (entry is null) return Tx.Get(GuildId, "lfg.err.reserveGone");
 
         var index = FindFreeSlot(entry.Role);
         if (index < 0) index = Slots.FindIndex(s => s.IsFree);
-        if (index < 0) return "No free slots — move someone to the reserve first.";
+        if (index < 0) return Tx.Get(GuildId, "lfg.err.noSlotsManage");
 
         Reserve.Remove(entry);
         slot = Slots[index];

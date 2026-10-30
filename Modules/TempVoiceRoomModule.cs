@@ -40,14 +40,14 @@ public sealed class TempVoiceRoomModule(TempRoomManager rooms, PanelService pane
         if (reset)
         {
             prefs.Set(Context.Guild.Id, Context.User.Id, null);
-            await RespondAsync("Your room defaults were reset.", ephemeral: true);
+            await RespondAsync(Tx.Get(Context.Guild.Id, "room.defaultsReset"), ephemeral: true);
             return;
         }
 
         var error = rooms.TryResolve(Context.Guild, Context.User, true, out var room);
         if (error is not null || room is null)
         {
-            await RespondAsync(error ?? "Join your temporary room first.", ephemeral: true, allowedMentions: AllowedMentions.None);
+            await RespondAsync(error ?? Tx.Get(Context.Guild.Id, "room.joinFirst"), ephemeral: true, allowedMentions: AllowedMentions.None);
             return;
         }
 
@@ -57,8 +57,8 @@ public sealed class TempVoiceRoomModule(TempRoomManager rooms, PanelService pane
             Limit = room.Channel.UserLimit ?? 0,
             Locked = room.Room.Locked
         });
-        await RespondAsync($"Saved: new rooms will be **{Format.Sanitize(room.Channel.Name)}**, limit {(room.Channel.UserLimit?.ToString() ?? "none")}" +
-                           (room.Room.Locked ? ", locked." : "."), ephemeral: true);
+        await RespondAsync(Tx.Get(Context.Guild.Id, room.Room.Locked ? "room.defaultsSavedLocked" : "room.defaultsSaved",
+            ("name", Format.Sanitize(room.Channel.Name)), ("limit", room.Channel.UserLimit?.ToString() ?? Tx.Get(Context.Guild.Id, "room.noLimit"))), ephemeral: true);
     }
 
     [SlashCommand("panel", "Show the room control panel")]

@@ -52,14 +52,15 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
         var current = CurrentEntry(group, userId);
         if (current is null) return null;
 
+        var gid = group.GuildId;
         var builder = new ComponentBuilder();
         var roles = ClassRoles(group.GuildId, userId, group.ProjectKey);
         if (roles.Count > 0)
         {
             var menu = new SelectMenuBuilder()
                 .WithCustomId($"lfgp:class:{group.Id}")
-                .WithPlaceholder($"🎭 Class role for {Trim(current.Value.Name ?? "this character", 60)}")
-                .AddOption("No class", NoClassValue, "Don't show a class role");
+                .WithPlaceholder(Tx.Clip(Tx.Get(gid, "lfg.profile.classPlaceholder", ("name", Trim(current.Value.Name ?? Tx.Get(gid, "lfg.profile.thisCharacter"), 60))), 150))
+                .AddOption(Tx.Get(gid, "lfg.profile.noClass"), NoClassValue, Tx.Get(gid, "lfg.profile.noClassOption"));
             foreach (var role in roles.Take(24))
             {
                 var option = new SelectMenuOptionBuilder()
@@ -72,7 +73,7 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
             builder.WithSelectMenu(menu, row: 0);
         }
 
-        builder.WithButton(string.IsNullOrEmpty(current.Value.Comment) ? "Note & GS" : "Edit note & GS",
+        builder.WithButton(Tx.Get(gid, string.IsNullOrEmpty(current.Value.Comment) ? "lfg.profile.note" : "lfg.profile.editNote"),
             $"lfgp:note:{group.Id}", ButtonStyle.Secondary, new Emoji("💬"), row: 1);
         return builder.Build();
     }
@@ -82,45 +83,48 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
     {
         if (CurrentEntry(group, userId) is not { } current) return null;
         var gs = characters.GetInfo(group.GuildId, userId, current.Name, signup.Scope(group))?.Gs;
+        var gid = group.GuildId;
         return new ModalBuilder()
-            .WithTitle("Character note & GS")
+            .WithTitle(Tx.Get(gid, "lfg.profile.modalTitle"))
             .WithCustomId($"lfgp:notemodal:{group.Id}")
-            .AddTextInput("GS (gear score, empty = remove)", "gs", TextInputStyle.Short,
-                placeholder: "e.g. 1450", maxLength: 6, required: false, value: gs?.ToString())
-            .AddTextInput("Note (empty = remove)", "note", TextInputStyle.Paragraph,
-                placeholder: "e.g. can lead, healer alt", maxLength: CharacterStore.MaxCommentLength,
+            .AddTextInput(Tx.Get(gid, "lfg.profile.gsLabel"), "gs", TextInputStyle.Short,
+                placeholder: Tx.Get(gid, "lfg.profile.gsHint"), maxLength: 6, required: false, value: gs?.ToString())
+            .AddTextInput(Tx.Get(gid, "lfg.profile.noteLabel"), "note", TextInputStyle.Paragraph,
+                placeholder: Tx.Get(gid, "lfg.profile.noteHint"), maxLength: CharacterStore.MaxCommentLength,
                 required: false, value: current.Comment)
             .Build();
     }
 
     public Task<string> SetClassAsync(string groupId, ulong userId, string value)
     {
-        if (!store.Groups.TryGetValue(groupId, out var group)) return Task.FromResult("This group is no longer active.");
+        if (!store.Groups.TryGetValue(groupId, out var group)) return Task.FromResult(Tx.Get(0, "lfg.gone"));
 
         ulong? roleId = null;
         if (value != NoClassValue)
         {
             if (!ulong.TryParse(value, out var id) || ClassRoles(group.GuildId, userId, group.ProjectKey).All(r => r.Id != id))
-                return Task.FromResult("This class is not available in this project.");
+                return Task.FromResult(Tx.Get(group.GuildId, "lfg.profile.classUnavailable"));
             roleId = id;
         }
 
         return UpdateAsync(group, userId, info => (true, roleId, false, null),
-            roleId is { } r ? $"🎭 Class set: <@&{r}>" : "🎭 Class removed.");
+            roleId is { } r ? Tx.Get(group.GuildId, "lfg.profile.classSet", ("role", $"<@&{r}>")) : Tx.Get(group.GuildId, "lfg.profile.classRemoved"));
     }
 
     public Task<string> SetCommentAsync(string groupId, ulong userId, string? comment, string? gsText = null)
     {
-        if (!store.Groups.TryGetValue(groupId, out var group)) return Task.FromResult("This group is no longer active.");
+        if (!store.Groups.TryGetValue(groupId, out var group)) return Task.FromResult(Tx.Get(0, "lfg.gone"));
         var text = string.IsNullOrWhiteSpace(comment) ? null : comment.Trim();
         int? gs = null;
         if (!string.IsNullOrWhiteSpace(gsText))
         {
-            if (!int.TryParse(gsText.Trim(), out var v) || v is < 0 or > 99999) return Task.FromResult("GS must be a number (0–99999).");
+            if (!int.TryParse(gsText.Trim(), out var v) || v is < 0 or > 99999) return Task.FromResult(Tx.Get(group.GuildId, "lfg.profile.badGs"));
             gs = v;
         }
         return UpdateAsync(group, userId, info => (false, null, true, text),
-            $"💬 Saved: note {(text is null ? "removed" : "set")}, GS {(gs?.ToString() ?? "removed")}",
+            Tx.Get(group.GuildId, "lfg.profile.saved",
+                ("note", Tx.Get(group.GuildId, text is null ? "lfg.profile.removed" : "lfg.profile.set")),
+                ("gs", gs?.ToString() ?? Tx.Get(group.GuildId, "lfg.profile.removed"))),
             name => characters.SetGs(group.GuildId, userId, name, gs, signup.Scope(group)));
     }
 
@@ -194,9 +198,9 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
         await group.Gate.WaitAsync();
         try
         {
-            if (CurrentEntry(group, userId) is not { } entry) return "You are not in this group anymore.";
+            if (CurrentEntry(group, userId) is not { } entry) return Tx.Get(group.GuildId, "lfg.profile.notInGroup");
             name = entry.Name;
-            if (string.IsNullOrWhiteSpace(name)) return "Your signup has no character name.";
+            if (string.IsNullOrWhiteSpace(name)) return Tx.Get(group.GuildId, "lfg.profile.noName");
 
             var scope = signup.Scope(group);
             var (setClass, classRoleId, setComment, comment) = change(characters.GetInfo(group.GuildId, userId, name, scope));
@@ -213,7 +217,7 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
 
         // Тот же персонаж может стоять и в других сборах
         await RefreshCharacterAsync(group.GuildId, userId, name!, signup.Scope(group));
-        return $"{okText} — for **{Format.Sanitize(name!)}**. It's saved for this character and shown in your groups.";
+        return Tx.Get(group.GuildId, "lfg.profile.done", ("result", okText), ("name", Format.Sanitize(name!)));
     }
 
     private static (string? Name, ulong? ClassRoleId, string? Comment)? CurrentEntry(LfgGroup group, ulong userId)

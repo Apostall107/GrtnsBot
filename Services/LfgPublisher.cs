@@ -67,7 +67,7 @@ public sealed class LfgPublisher(
         if (group.PingRoleId is { } roleId)
         {
             var when = group.StartsAt is { } t ? $" — <t:{t.ToUnixTimeSeconds()}:f>" : "";
-            content = $"<@&{roleId}> — LFG for **{group.ActivityName}**{when}!";
+            content = Tx.Get(group.GuildId, "lfg.post.ping", ("role", $"<@&{roleId}>"), ("activity", group.ActivityName), ("when", when));
             allowed = new AllowedMentions { RoleIds = [roleId] };
         }
 

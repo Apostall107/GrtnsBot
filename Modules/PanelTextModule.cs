@@ -30,6 +30,8 @@ public sealed class PanelTextModule(PanelTextStore store, PanelService panels) :
                 maxLength: PanelDef.MaxTitle, required: false, value: title)
             .AddTextInput("Text (Discord markdown, # headings work)", "text", TextInputStyle.Paragraph,
                 maxLength: PanelDef.MaxDescription, required: false, value: def.Description(text))
+            .AddTextInput("Stripe color (#rrggbb, empty = default)", "color", TextInputStyle.Short,
+                placeholder: $"#{def.DefaultColor:x6}", maxLength: 7, required: false, value: text?.Color)
             .Build();
         await RespondWithModalAsync(modal);
     }
@@ -53,9 +55,20 @@ public sealed class PanelTextModule(PanelTextStore store, PanelService panels) :
         var title = string.IsNullOrWhiteSpace(modal.Title_) || modal.Title_.Trim() == PanelDef.NoTitle ? PanelDef.NoTitle : Clean(modal.Title_, def.DefaultTitle);
         var description = Clean(modal.Text, def.DefaultDescription);
         var labels = current?.Labels ?? new Dictionary<string, string>();
-        store.SetText(Context.Guild.Id, panel, title is null && description is null && labels.Count == 0
+        var colorText = ((Discord.WebSocket.SocketModal)Context.Interaction).Data.Components.FirstOrDefault(c => c.CustomId == "color")?.Value?.Trim();
+        string? color = null;
+        if (!string.IsNullOrEmpty(colorText))
+        {
+            if (Tx.ParseColor(colorText) is not { } parsed)
+            {
+                await FollowupAsync("Color: use the #rrggbb format, e.g. #f39c12.", ephemeral: true);
+                return;
+            }
+            color = parsed.RawValue == def.DefaultColor ? null : $"#{parsed.RawValue:x6}";
+        }
+        store.SetText(Context.Guild.Id, panel, title is null && description is null && labels.Count == 0 && color is null
             ? null
-            : new PanelText { Title = title, Description = description, Labels = labels });
+            : new PanelText { Title = title, Description = description, Color = color, Labels = labels });
         var (updated, total) = await panels.RefreshAsync(Context.Guild.Id, panel);
         await FollowupAsync(total > 0
             ? $"Saved. Updated {updated} of {total} posted {def.Name}(s)."

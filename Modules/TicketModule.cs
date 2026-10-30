@@ -10,8 +10,9 @@ namespace LfgBot.Modules;
 [RequireContext(ContextType.Guild)]
 public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelService panels, AuditLog audit, TicketService tickets) : InteractionModuleBase<SocketInteractionContext>
 {
-    private const string NoAccessText =
-        "I can't access this channel. Give the bot **View Channel**, **Send Messages** and **Embed Links** here.";
+    private string NoAccessText => T("lfg.noAccess");
+
+    private string T(string key, params (string Name, object? Value)[] args) => Tx.Get(Context.Guild?.Id ?? 0, key, args);
 
     private SocketMessageComponent Component => (SocketMessageComponent)Context.Interaction;
 
@@ -37,12 +38,12 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
         var projects = store.GetProjects(Context.Guild.Id);
         if (projects.Count == 0)
         {
-            await RespondAsync("No projects yet. A moderator can add them with `/ticket-project add`.", ephemeral: true);
+            await RespondAsync(T("ticket.noProjects"), ephemeral: true);
             return;
         }
 
-        await RespondAsync("Choose the project you are applying to:",
-            components: TicketRenderer.ProjectPicker(projects), ephemeral: true);
+        await RespondAsync(T("ticket.pick"),
+            components: TicketRenderer.ProjectPicker(Context.Guild.Id, projects), ephemeral: true);
     }
 
     // ================= Создание тикета =================
@@ -53,20 +54,20 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
         var project = store.FindProject(Context.Guild.Id, values[0]);
         if (project is null)
         {
-            await RespondAsync("This project no longer exists.", ephemeral: true);
+            await RespondAsync(T("ticket.projectGone"), ephemeral: true);
             return;
         }
 
         if (tickets.OpenTicket(Context.Guild, Context.User.Id, project) is { } open)
         {
-            await RespondAsync($"You already have an open {project.Name} ticket: <#{open.TextChannelId}>", ephemeral: true);
+            await RespondAsync(T("ticket.alreadyOpen", ("project", project.Name), ("channel", $"<#{open.TextChannelId}>")), ephemeral: true);
             return;
         }
 
         // Анкета включена — сначала окно с вопросами, тикет создаётся после отправки
         if (project.FormEnabled && project.Questions.Count > 0)
         {
-            await RespondWithModalAsync(TicketRenderer.FormModal(project));
+            await RespondWithModalAsync(TicketRenderer.FormModal(Context.Guild.Id, project));
             return;
         }
 
@@ -74,7 +75,7 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
         var (ticket, error) = await tickets.CreateAsync(Context.Guild, (IGuildUser)Context.User, project, [], "discord");
         await Component.ModifyOriginalResponseAsync(m =>
         {
-            m.Content = ticket is not null ? $"✅ Ticket created: <#{ticket.TextChannelId}>" : $"❌ {error}";
+            m.Content = ticket is not null ? T("ticket.created", ("channel", $"<#{ticket.TextChannelId}>")) : $"❌ {error}";
             m.Components = new ComponentBuilder().Build();
         });
     }
@@ -85,7 +86,7 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
         var project = store.FindProject(Context.Guild.Id, projectKey);
         if (project is null)
         {
-            await RespondAsync("This project no longer exists.", ephemeral: true);
+            await RespondAsync(T("ticket.projectGone"), ephemeral: true);
             return;
         }
 
@@ -100,7 +101,7 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
 
         await DeferAsync(ephemeral: true);
         var (ticket, error) = await tickets.CreateAsync(Context.Guild, (IGuildUser)Context.User, project, answers, "discord");
-        await FollowupAsync(ticket is not null ? $"✅ Ticket created: <#{ticket.TextChannelId}>" : $"❌ {error}", ephemeral: true);
+        await FollowupAsync(ticket is not null ? T("ticket.created", ("channel", $"<#{ticket.TextChannelId}>")) : $"❌ {error}", ephemeral: true);
     }
 
     // ================= Approve =================
@@ -111,33 +112,33 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
         var ticket = FindOwnTicket(ticketId);
         if (ticket is null)
         {
-            await RespondAsync("This ticket is no longer active.", ephemeral: true);
+            await RespondAsync(T("ticket.gone"), ephemeral: true);
             return;
         }
 
         var project = store.FindProject(ticket.GuildId, ticket.ProjectKey);
         if (project is null)
         {
-            await RespondAsync("This project was deleted.", ephemeral: true);
+            await RespondAsync(T("ticket.projectDeleted"), ephemeral: true);
             return;
         }
 
         if (!IsStaff(project))
         {
-            await RespondAsync($"Only {project.Name} leadership can approve applications.", ephemeral: true);
+            await RespondAsync(T("ticket.onlyStaffApprove", ("project", project.Name)), ephemeral: true);
             return;
         }
 
         if (ticket.ApprovedBy is not null)
         {
-            await RespondAsync("This application is already approved.", ephemeral: true);
+            await RespondAsync(T("ticket.alreadyApproved"), ephemeral: true);
             return;
         }
 
         var roleIds = project.MemberRoleIds.ToList();
         if (roleIds.Count == 0)
         {
-            await RespondAsync("This project has no roles to give. Add one with `/ticket-project member-role-add`.", ephemeral: true);
+            await RespondAsync(T("ticket.noRoles"), ephemeral: true);
             return;
         }
 
@@ -146,7 +147,7 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
         var applicant = await Context.Client.Rest.GetGuildUserAsync(ticket.GuildId, ticket.UserId);
         if (applicant is null)
         {
-            await FollowupAsync("The applicant has left the server.", ephemeral: true);
+            await FollowupAsync(T("ticket.applicantLeft"), ephemeral: true);
             return;
         }
 
@@ -166,9 +167,7 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
 
         if (failed.Count == roleIds.Count)
         {
-            await FollowupAsync(
-                $"I couldn't give {Mentions(failed)}. Make sure I have **Manage Roles** and my role is **above** them " +
-                "in Server Settings → Roles.", ephemeral: true, allowedMentions: AllowedMentions.None);
+            await FollowupAsync(T("ticket.rolesFailed", ("roles", Mentions(failed))), ephemeral: true, allowedMentions: AllowedMentions.None);
             return;
         }
 
@@ -183,19 +182,18 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
         });
 
         var granted = roleIds.Except(failed).ToList();
-        await FollowupAsync($"🎉 <@{ticket.UserId}> approved by <@{Context.User.Id}> — {Mentions(granted)} granted.",
+        await FollowupAsync(T("ticket.approvedMsg", ("applicant", $"<@{ticket.UserId}>"), ("by", $"<@{Context.User.Id}>"), ("roles", Mentions(granted))),
             allowedMentions: new AllowedMentions { UserIds = [ticket.UserId] });
 
         // Не все роли выдались — тикет не закрываем, чтобы руководство могло исправить и выдать вручную
         if (failed.Count > 0)
         {
-            await FollowupAsync($"⚠️ Couldn't give {Mentions(failed)} — move my role above them in Server Settings → Roles. " +
-                                "The ticket stays open; close it when the roles are sorted out.",
+            await FollowupAsync(T("ticket.rolesPartlyFailed", ("roles", Mentions(failed))),
                 ephemeral: true, allowedMentions: AllowedMentions.None);
             return;
         }
 
-        await FollowupAsync($"🔒 This ticket will close in {(int)ApproveCloseDelay.TotalSeconds} seconds.");
+        await FollowupAsync(T("ticket.closingIn", ("seconds", (int)ApproveCloseDelay.TotalSeconds)));
         await NotifyApprovedAsync(applicant, project, granted);
         _ = CloseAfterDelayAsync(updated, Context.User, "approved", null);
     }
@@ -209,9 +207,8 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
         var roles = string.Join(", ", roleIds.Select(id => Context.Guild.GetRole(id)?.Name ?? "role").Select(Format.Sanitize));
         try
         {
-            await applicant.SendMessageAsync(
-                $"✅ Your application to **{Format.Sanitize(project.Name)}** on **{Format.Sanitize(Context.Guild.Name)}** " +
-                $"was approved. You got: **{roles}**.");
+            await applicant.SendMessageAsync(T("ticket.dm.approved", ("project", Format.Sanitize(project.Name)),
+                ("server", Format.Sanitize(Context.Guild.Name)), ("roles", roles)));
         }
         catch (Discord.Net.HttpException)
         {
@@ -241,15 +238,15 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
     {
         if (FindOwnTicket(ticketId) is null)
         {
-            await RespondAsync("This ticket is no longer active.", ephemeral: true);
+            await RespondAsync(T("ticket.gone"), ephemeral: true);
             return;
         }
 
         var buttons = new ComponentBuilder()
-            .WithButton("Close ticket", $"ticket:closeok:{ticketId}", ButtonStyle.Danger, new Emoji("🗑️"))
+            .WithButton(T("ticket.close.confirm"), $"ticket:closeok:{ticketId}", ButtonStyle.Danger, new Emoji("🗑️"))
             .Build();
 
-        await RespondAsync("Close this ticket? Both the text and voice channels will be deleted.",
+        await RespondAsync(T("ticket.close.question"),
             components: buttons, ephemeral: true);
     }
 
@@ -261,7 +258,7 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
         {
             await Component.UpdateAsync(m =>
             {
-                m.Content = "This ticket is already closed.";
+                m.Content = T("ticket.close.already");
                 m.Components = new ComponentBuilder().Build();
             });
             return;
@@ -269,7 +266,7 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
 
         await Component.UpdateAsync(m =>
         {
-            m.Content = "Closing…";
+            m.Content = T("ticket.close.closing");
             m.Components = new ComponentBuilder().Build();
         });
 
@@ -288,20 +285,20 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
         var project = ticket is null ? null : store.FindProject(ticket.GuildId, ticket.ProjectKey);
         if (ticket is null || project is null)
         {
-            await RespondAsync("This ticket is no longer active.", ephemeral: true);
+            await RespondAsync(T("ticket.gone"), ephemeral: true);
             return;
         }
         if (!IsStaff(project))
         {
-            await RespondAsync($"Only {project.Name} leadership can deny applications.", ephemeral: true);
+            await RespondAsync(T("ticket.onlyStaffDeny", ("project", project.Name)), ephemeral: true);
             return;
         }
         if (ticket.ApprovedBy is not null)
         {
-            await RespondAsync("This application is already approved.", ephemeral: true);
+            await RespondAsync(T("ticket.alreadyApproved"), ephemeral: true);
             return;
         }
-        await RespondWithModalAsync(TicketRenderer.DenyModal(ticket.Id));
+        await RespondWithModalAsync(TicketRenderer.DenyModal(Context.Guild.Id, ticket.Id));
     }
 
     [ModalInteraction("ticket:denyok:*")]
@@ -311,16 +308,16 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
         var project = ticket is null ? null : store.FindProject(ticket.GuildId, ticket.ProjectKey);
         if (ticket is null || project is null || !IsStaff(project))
         {
-            await RespondAsync("This ticket is no longer active.", ephemeral: true);
+            await RespondAsync(T("ticket.gone"), ephemeral: true);
             return;
         }
 
         var reason = ((SocketModal)Context.Interaction).Data.Components.FirstOrDefault(c => c.CustomId == "reason")?.Value?.Trim();
         if (string.IsNullOrWhiteSpace(reason)) reason = null;
 
-        await RespondAsync($"❌ <@{ticket.UserId}>'s application was denied by <@{Context.User.Id}>." +
-                           (reason is null ? "" : $"\n**Reason:** {Format.Sanitize(reason)}") +
-                           $"\n🔒 This ticket will close in {(int)ApproveCloseDelay.TotalSeconds} seconds.",
+        await RespondAsync(T("ticket.deniedMsg", ("applicant", $"<@{ticket.UserId}>"), ("by", $"<@{Context.User.Id}>")) +
+                           (reason is null ? "" : "\n" + T("ticket.reason", ("reason", Format.Sanitize(reason)))) +
+                           "\n" + T("ticket.closingIn", ("seconds", (int)ApproveCloseDelay.TotalSeconds)),
             allowedMentions: new AllowedMentions { UserIds = [ticket.UserId] });
         audit.FromDiscord(Context.Guild.Id, Context.User, "tickets", "Denied ticket",
             $"{project.Name} · applicant {(Context.Guild.GetUser(ticket.UserId)?.DisplayName ?? ticket.UserId.ToString())}" +

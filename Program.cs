@@ -56,6 +56,7 @@ builder.Services.AddSingleton<TicketMessageService>();
 builder.Services.AddSingleton<TicketArchiveStore>();
 builder.Services.AddSingleton<TicketService>();
 builder.Services.AddSingleton<PanelTextStore>();
+builder.Services.AddSingleton<BotTextStore>();
 builder.Services.AddSingleton<PanelService>();
 builder.Services.AddSingleton<LfgPublisher>();
 builder.Services.AddSingleton<RecurringLfgStore>();
@@ -73,6 +74,9 @@ builder.Services.AddHostedService<TempVoiceService>();
 builder.AddWebPanel();
 
 var app = builder.Build();
+// Статические хранилища текстов (Tx, PanelDefs.Label) — создать до первых сообщений
+app.Services.GetRequiredService<PanelTextStore>();
+app.Services.GetRequiredService<BotTextStore>();
 app.UseWebPanel();
 
 await app.RunAsync();

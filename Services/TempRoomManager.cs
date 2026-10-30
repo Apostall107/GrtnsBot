@@ -59,10 +59,10 @@ public sealed class TempRoomManager(TempVoiceStore store, DiscordSocketClient cl
         var channel = guild.GetUser(user.Id)?.VoiceChannel ?? (user as SocketGuildUser)?.VoiceChannel;
         var stored = channel is null ? null : store.GetRoom(channel.Id);
         if (channel is null || stored is null || stored.GuildId != guild.Id)
-            return "Join your temporary room first.";
+            return Tx.Get(guild.Id, "room.joinFirst");
 
         if (ownerOnly && stored.OwnerId != user.Id && !botOwner.Is(user.Id))
-            return $"Only the room owner <@{stored.OwnerId}> can do this. If they left, use **Claim**.";
+            return Tx.Get(guild.Id, "room.onlyOwner", ("owner", $"<@{stored.OwnerId}>"));
 
         room = new RoomRef(channel, stored);
         return null;
@@ -71,16 +71,18 @@ public sealed class TempRoomManager(TempVoiceStore store, DiscordSocketClient cl
     public async Task<string> RenameAsync(RoomRef r, string name)
     {
         name = name.Trim();
-        if (name.Length is 0 or > 100) return "Name must be 1–100 characters.";
+        var gid = r.Channel.Guild.Id;
+        if (name.Length is 0 or > 100) return Tx.Get(gid, "room.badName");
         await r.Channel.ModifyAsync(p => p.Name = name);
-        return $"Renamed to **{Format.Sanitize(name)}**. (Discord allows 2 renames per 10 minutes.)";
+        return Tx.Get(gid, "room.renamed", ("name", Format.Sanitize(name)));
     }
 
     public async Task<string> LimitAsync(RoomRef r, int limit)
     {
-        if (limit is < 0 or > 99) return "Limit must be from 0 to 99 (0 = no limit).";
+        var gid = r.Channel.Guild.Id;
+        if (limit is < 0 or > 99) return Tx.Get(gid, "room.badLimit");
         await r.Channel.ModifyAsync(p => p.UserLimit = limit == 0 ? (int?)null : limit);
-        return limit == 0 ? "User limit removed." : $"User limit set to **{limit}**.";
+        return limit == 0 ? Tx.Get(gid, "room.limitRemoved") : Tx.Get(gid, "room.limitSet", ("limit", limit));
     }
 
     public async Task<string> LockAsync(RoomRef r)
@@ -105,7 +107,7 @@ public sealed class TempRoomManager(TempVoiceStore store, DiscordSocketClient cl
         }
 
         store.UpdateRoom(channel.Id, room => room.Locked = true);
-        return "🔒 Room locked. Permit someone to let them in.";
+        return Tx.Get(channel.Guild.Id, "room.locked");
     }
 
     public async Task<string> UnlockAsync(RoomRef r)
@@ -122,26 +124,27 @@ public sealed class TempRoomManager(TempVoiceStore store, DiscordSocketClient cl
         }
 
         store.UpdateRoom(channel.Id, room => room.Locked = false);
-        return "🔓 Room unlocked.";
+        return Tx.Get(channel.Guild.Id, "room.unlocked");
     }
 
     public async Task<string> PermitAsync(RoomRef r, ulong targetId)
     {
         var target = await GetMemberAsync(r.Channel.Guild, targetId);
-        if (target is null) return "That member is not on this server.";
+        if (target is null) return Tx.Get(r.Channel.Guild.Id, "room.notMember");
 
         var current = r.Channel.GetPermissionOverwrite(target) ?? OverwritePermissions.InheritAll;
         await r.Channel.AddPermissionOverwriteAsync(target, current.Modify(viewChannel: PermValue.Allow, connect: PermValue.Allow));
-        return $"<@{targetId}> can now join your room.";
+        return Tx.Get(r.Channel.Guild.Id, "room.permitted", ("user", $"<@{targetId}>"));
     }
 
     public async Task<string> KickAsync(RoomRef r, ulong targetId, ulong callerId)
     {
-        if (targetId == callerId) return "You can't kick yourself.";
-        if (targetId == client.CurrentUser.Id) return "You can't kick the bot.";
+        var gid = r.Channel.Guild.Id;
+        if (targetId == callerId) return Tx.Get(gid, "room.kickSelf");
+        if (targetId == client.CurrentUser.Id) return Tx.Get(gid, "room.kickBot");
 
         var target = await GetMemberAsync(r.Channel.Guild, targetId);
-        if (target is null) return "That member is not on this server.";
+        if (target is null) return Tx.Get(gid, "room.notMember");
 
         var current = r.Channel.GetPermissionOverwrite(target) ?? OverwritePermissions.InheritAll;
         await r.Channel.AddPermissionOverwriteAsync(target, current.Modify(connect: PermValue.Deny));
@@ -150,20 +153,21 @@ public sealed class TempRoomManager(TempVoiceStore store, DiscordSocketClient cl
         if (r.Channel.ConnectedUsers.Any(u => u.Id == targetId))
             await target.ModifyAsync(p => p.ChannelId = new Optional<ulong?>(null));
 
-        return $"<@{targetId}> was kicked from your room.";
+        return Tx.Get(gid, "room.kicked", ("user", $"<@{targetId}>"));
     }
 
     public async Task<string> ClaimAsync(RoomRef r, IUser caller)
     {
-        if (r.Room.OwnerId == caller.Id) return "You already own this room.";
+        var gid = r.Channel.Guild.Id;
+        if (r.Room.OwnerId == caller.Id) return Tx.Get(gid, "room.alreadyOwner");
         if (r.Channel.ConnectedUsers.Any(u => u.Id == r.Room.OwnerId))
-            return $"The owner <@{r.Room.OwnerId}> is still here.";
+            return Tx.Get(gid, "room.ownerHere", ("owner", $"<@{r.Room.OwnerId}>"));
 
         if (await client.Rest.GetUserAsync(r.Room.OwnerId) is { } oldOwner)
             await r.Channel.RemovePermissionOverwriteAsync(oldOwner);
         await r.Channel.AddPermissionOverwriteAsync(caller, TempVoiceService.OwnerPermissions);
         store.UpdateRoom(r.Channel.Id, room => room.OwnerId = caller.Id);
-        return "👑 You are now the owner of this room.";
+        return Tx.Get(gid, "room.claimed");
     }
 
     private async Task<IGuildUser?> GetMemberAsync(SocketGuild guild, ulong userId) =>
@@ -177,7 +181,7 @@ public sealed class TempRoomManager(TempVoiceStore store, DiscordSocketClient cl
         var def = PanelDefs.Rooms;
         var embed = new EmbedBuilder()
             .WithTitle(def.Title(text))
-            .WithColor(Color.Teal)
+            .WithColor(def.Color(text))
             .WithDescription(def.Description(text))
             .Build();
 

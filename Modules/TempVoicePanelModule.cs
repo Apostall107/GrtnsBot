@@ -13,7 +13,13 @@ public sealed class TempVoicePanelModule(TempRoomManager rooms, TempVoiceStore s
     public async Task OnRename()
     {
         if (await ResolveAsync() is null) return;
-        await RespondWithModalAsync<RoomRenameModal>("room:rename-modal");
+        var gid = Context.Guild.Id;
+        await RespondWithModalAsync(new ModalBuilder()
+            .WithTitle(Tx.Get(gid, "room.renameTitle"))
+            .WithCustomId("room:rename-modal")
+            .AddTextInput(Tx.Get(gid, "room.renameLabel"), "name", TextInputStyle.Short,
+                placeholder: Tx.Get(gid, "room.renameHint"), maxLength: 100, required: true)
+            .Build());
     }
 
     [ModalInteraction("room:rename-modal")]
@@ -23,14 +29,20 @@ public sealed class TempVoicePanelModule(TempRoomManager rooms, TempVoiceStore s
     public async Task OnLimit()
     {
         if (await ResolveAsync() is null) return;
-        await RespondWithModalAsync<RoomLimitModal>("room:limit-modal");
+        var gid = Context.Guild.Id;
+        await RespondWithModalAsync(new ModalBuilder()
+            .WithTitle(Tx.Get(gid, "room.limitTitle"))
+            .WithCustomId("room:limit-modal")
+            .AddTextInput(Tx.Get(gid, "room.limitLabel"), "limit", TextInputStyle.Short,
+                placeholder: "0–99", maxLength: 2, required: true)
+            .Build());
     }
 
     [ModalInteraction("room:limit-modal")]
     public Task OnLimitSubmitted(RoomLimitModal modal) =>
         RunAsync(r => int.TryParse(modal.Limit.Trim(), out var limit)
             ? rooms.LimitAsync(r, limit)
-            : Task.FromResult("Enter a number from 0 to 99."));
+            : Task.FromResult(Tx.Get(Context.Guild.Id, "room.badLimit")));
 
     [ComponentInteraction("room:lock")]
     public Task OnLockToggle() =>

@@ -21,7 +21,7 @@ public static class LfgRenderer
         var def = PanelDefs.Lfg;
         var embed = new EmbedBuilder()
             .WithTitle(def.Title(text))
-            .WithColor(Color.Blue)
+            .WithColor(def.Color(text))
             .WithDescription(def.Description(text)
                 .Replace("{hours}", autoDeleteHours.ToString())
                 .Replace("{reminder}", reminderMinutes.ToString()))
@@ -39,11 +39,12 @@ public static class LfgRenderer
     // ---------- Шаг 1: размер ----------
     public static Screen SizeStep(LfgDraft d, IReadOnlyList<LfgTemplate>? templates = null)
     {
+        var gid = d.GuildId;
         var menu = new SelectMenuBuilder()
             .WithCustomId($"lfg:size:{d.Id}")
-            .WithPlaceholder("How many players?");
+            .WithPlaceholder(Tx.Get(gid, "lfg.wiz.sizePlaceholder"));
         for (var i = MinSize; i <= MaxSize; i++)
-            menu.AddOption($"{i} players", i.ToString());
+            menu.AddOption(Tx.Get(gid, "lfg.wiz.sizeOption", ("n", i)), i.ToString());
 
         var builder = new ComponentBuilder();
         var row = 0;
@@ -52,76 +53,75 @@ public static class LfgRenderer
         {
             var tpl = new SelectMenuBuilder()
                 .WithCustomId($"lfg:tpl:{d.Id}")
-                .WithPlaceholder("📋 Use a template");
+                .WithPlaceholder(Tx.Get(gid, "lfg.wiz.tplPlaceholder"));
             foreach (var t in templates.Take(LfgTemplateStore.MaxInMenu))
             {
                 var roles = string.Join("/", t.Slots.Select(r => r.Label()));
-                var desc = $"{t.Slots.Count} slots: {roles}";
+                var desc = Tx.Get(gid, "lfg.wiz.tplOption", ("count", t.Slots.Count), ("roles", roles));
                 tpl.AddOption(Trim(t.Name), t.Key, Trim(desc), new Emoji("📋"));
             }
             builder.WithSelectMenu(tpl, row: row++);
         }
 
         builder.WithSelectMenu(menu, row: row++)
-            .WithButton("Cancel", $"lfg:cancel:{d.Id}", ButtonStyle.Secondary, row: row);
+            .WithButton(Tx.Get(gid, "lfg.wiz.cancel"), $"lfg:cancel:{d.Id}", ButtonStyle.Secondary, row: row);
 
-        var text = templates is { Count: > 0 }
-            ? "**Step 1/4** — pick a template (activity, slots and requirements in one go) or choose the group size."
-            : "**Step 1/4** — choose the group size.";
+        var text = templates is { Count: > 0 } ? Tx.Get(gid, "lfg.wiz.step1Templates") : Tx.Get(gid, "lfg.wiz.step1");
         return new Screen(text, null, builder.Build());
     }
 
     // ---------- Шаг 2: активность ----------
     public static Screen ActivityStep(LfgDraft d, IReadOnlyList<Activity> activities)
     {
+        var gid = d.GuildId;
         var menu = new SelectMenuBuilder()
             .WithCustomId($"lfg:act:{d.Id}")
-            .WithPlaceholder("Choose a dungeon / activity");
+            .WithPlaceholder(Tx.Get(gid, "lfg.wiz.actPlaceholder"));
 
+        var actDesc = Tx.Get(gid, "lfg.wiz.actOption");
         foreach (var a in activities.Take(ActivityStore.MaxInMenu))
-            menu.AddOption(a.Name, a.Key, "Pings the linked role");
+            menu.AddOption(a.Name, a.Key, actDesc.Length == 0 ? null : actDesc);
 
-        menu.AddOption("Custom activity", CustomActivityValue, "Enter a name manually, no ping", new Emoji("✏️"));
+        menu.AddOption(Tx.Get(gid, "lfg.wiz.custom"), CustomActivityValue, Tx.Get(gid, "lfg.wiz.customOption"), new Emoji("✏️"));
 
         var comps = new ComponentBuilder()
             .WithSelectMenu(menu, row: 0)
-            .WithButton("Cancel", $"lfg:cancel:{d.Id}", ButtonStyle.Secondary, row: 1)
+            .WithButton(Tx.Get(gid, "lfg.wiz.cancel"), $"lfg:cancel:{d.Id}", ButtonStyle.Secondary, row: 1)
             .Build();
 
-        var hint = activities.Count == 0
-            ? "\n-# No activities yet — an admin can add them with `/activity add`."
-            : "";
-        return new Screen($"**Step 2/4** — group of {d.Slots.Count}. Choose the activity.{hint}", null, comps);
+        var hint = activities.Count == 0 ? Tx.Line(gid, "lfg.wiz.noActivities") : "";
+        return new Screen(Tx.Get(gid, "lfg.wiz.step2", ("size", d.Slots.Count)) + hint, null, comps);
     }
 
     // ---------- Шаг 3: роли слотов ----------
     public static Screen SlotStep(LfgDraft d)
     {
+        var gid = d.GuildId;
         var sb = new StringBuilder();
-        sb.AppendLine(d.PingRoleId is { } roleId ? $"Ping: <@&{roleId}>" : "Ping: *none (custom activity)*");
+        sb.AppendLine(d.PingRoleId is { } roleId ? Tx.Get(gid, "lfg.wiz.ping", ("role", $"<@&{roleId}>")) : Tx.Get(gid, "lfg.wiz.noPing"));
         sb.AppendLine();
         for (var i = 0; i < d.Slots.Count; i++)
         {
             var marker = d.Selected.Contains(i) ? "▸ " : "";
-            var you = i == 0 ? $" — <@{d.OwnerId}> *(you)*" : "";
+            var you = i == 0 ? $" — <@{d.OwnerId}> {Tx.Get(gid, "lfg.wiz.you")}" : "";
             sb.AppendLine($"{marker}{SlotHead(i, d.Slots[i])}{you}");
         }
 
         var embed = new EmbedBuilder()
             .WithTitle(d.ActivityName)
             .WithDescription(sb.ToString())
-            .WithColor(Color.DarkBlue)
+            .WithColor(Tx.Color(gid, "color.lfg.draft"))
             .Build();
 
         var menu = new SelectMenuBuilder()
             .WithCustomId($"lfg:slots:{d.Id}")
-            .WithPlaceholder("Select slots, then click a role")
+            .WithPlaceholder(Tx.Get(gid, "lfg.wiz.slotsPlaceholder"))
             .WithMinValues(1)
             .WithMaxValues(d.Slots.Count);
         for (var i = 0; i < d.Slots.Count; i++)
         {
             var s = d.Slots[i];
-            menu.AddOption($"Slot {i + 1}: {s.Role.Label()}", i.ToString(),
+            menu.AddOption(Tx.Get(gid, "lfg.wiz.slotOption", ("n", i + 1), ("role", s.Role.Label())), i.ToString(),
                 emote: new Emoji(s.Role.Emoji()), isDefault: d.Selected.Contains(i));
         }
 
@@ -132,12 +132,10 @@ public static class LfgRenderer
                 new Emoji(role.Emoji()), disabled: noSelection, row: 1);
 
         builder
-            .WithButton("Next", $"lfg:next:{d.Id}", ButtonStyle.Success, new Emoji("➡️"), row: 2)
-            .WithButton("Cancel", $"lfg:cancel:{d.Id}", ButtonStyle.Danger, row: 2);
+            .WithButton(Tx.Get(gid, "lfg.wiz.next"), $"lfg:next:{d.Id}", ButtonStyle.Success, new Emoji("➡️"), row: 2)
+            .WithButton(Tx.Get(gid, "lfg.wiz.cancel"), $"lfg:cancel:{d.Id}", ButtonStyle.Danger, row: 2);
 
-        return new Screen(
-            "**Step 3/4** — select slots in the list and click a role. All slots are «All» by default. Slot 1 is yours.",
-            embed, builder.Build());
+        return new Screen(Tx.Get(gid, "lfg.wiz.step3"), embed, builder.Build());
     }
 
     // ---------- Шаг 4: время ----------
@@ -146,26 +144,27 @@ public static class LfgRenderer
 
     public static Screen TimeStep(LfgDraft d, DateOnly today, DateTimeOffset? startsAt, string zoneName, string? warning = null)
     {
+        var gid = d.GuildId;
         var dateMenu = new SelectMenuBuilder()
             .WithCustomId($"lfg:date:{d.Id}")
-            .WithPlaceholder("Date");
+            .WithPlaceholder(Tx.Get(gid, "lfg.wiz.datePlaceholder"));
         for (var i = 0; i < DateDaysAhead; i++)
         {
             var date = today.AddDays(i);
-            var label = i switch { 0 => "Today", 1 => "Tomorrow", _ => date.ToString("dddd", En) };
+            var label = i switch { 0 => Tx.Get(gid, "lfg.wiz.today"), 1 => Tx.Get(gid, "lfg.wiz.tomorrow"), _ => date.ToString("dddd", En) };
             dateMenu.AddOption(label, date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                 date.ToString("ddd, dd.MM.yyyy", En), isDefault: d.EventDate == date);
         }
 
         var hourMenu = new SelectMenuBuilder()
             .WithCustomId($"lfg:hour:{d.Id}")
-            .WithPlaceholder("Hour");
+            .WithPlaceholder(Tx.Get(gid, "lfg.wiz.hourPlaceholder"));
         for (var h = 0; h < 24; h++)
             hourMenu.AddOption($"{h:00}:xx", h.ToString(), isDefault: d.EventHour == h);
 
         var minuteMenu = new SelectMenuBuilder()
             .WithCustomId($"lfg:min:{d.Id}")
-            .WithPlaceholder("Minutes");
+            .WithPlaceholder(Tx.Get(gid, "lfg.wiz.minutePlaceholder"));
         for (var m = 0; m < 60; m += 5)
             minuteMenu.AddOption($":{m:00}", m.ToString(), isDefault: d.HasTime && d.EventMinute == m);
 
@@ -173,35 +172,34 @@ public static class LfgRenderer
             .WithSelectMenu(dateMenu, row: 0)
             .WithSelectMenu(hourMenu, row: 1)
             .WithSelectMenu(minuteMenu, row: 2)
-            .WithButton("Type manually", $"lfg:timemodal:{d.Id}", ButtonStyle.Secondary, new Emoji("✏️"), row: 3)
-            .WithButton("No time", $"lfg:notime:{d.Id}", ButtonStyle.Secondary, disabled: !d.HasTime, row: 3)
-            .WithButton("Back", $"lfg:back:{d.Id}", ButtonStyle.Secondary, new Emoji("⬅️"), row: 3)
-            .WithButton("Publish", $"lfg:publish:{d.Id}", ButtonStyle.Success, new Emoji("📣"), row: 3)
-            .WithButton("Cancel", $"lfg:cancel:{d.Id}", ButtonStyle.Danger, row: 3);
+            .WithButton(Tx.Get(gid, "lfg.wiz.typeTime"), $"lfg:timemodal:{d.Id}", ButtonStyle.Secondary, new Emoji("✏️"), row: 3)
+            .WithButton(Tx.Get(gid, "lfg.wiz.noTime"), $"lfg:notime:{d.Id}", ButtonStyle.Secondary, disabled: !d.HasTime, row: 3)
+            .WithButton(Tx.Get(gid, "lfg.wiz.back"), $"lfg:back:{d.Id}", ButtonStyle.Secondary, new Emoji("⬅️"), row: 3)
+            .WithButton(Tx.Get(gid, "lfg.wiz.publish"), $"lfg:publish:{d.Id}", ButtonStyle.Success, new Emoji("📣"), row: 3)
+            .WithButton(Tx.Get(gid, "lfg.wiz.cancel"), $"lfg:cancel:{d.Id}", ButtonStyle.Danger, row: 3);
 
         // ЛС-рассылка есть только у активностей с ролью
         if (d.PingRoleId is not null)
-            builder.WithButton(d.NotifyByDm ? "DM role members: ON" : "DM role members: OFF", $"lfg:dm:{d.Id}",
+            builder.WithButton(Tx.Get(gid, d.NotifyByDm ? "lfg.wiz.dmOn" : "lfg.wiz.dmOff"), $"lfg:dm:{d.Id}",
                 d.NotifyByDm ? ButtonStyle.Success : ButtonStyle.Secondary,
                 new Emoji(d.NotifyByDm ? "🔔" : "🔕"), row: 4);
         // Голосовая комната сбора — только если включить
-        builder.WithButton(d.CreateVoice ? "Voice room: ON" : "Voice room: OFF", $"lfg:dvoice:{d.Id}",
+        builder.WithButton(Tx.Get(gid, d.CreateVoice ? "lfg.wiz.voiceOn" : "lfg.wiz.voiceOff"), $"lfg:dvoice:{d.Id}",
             d.CreateVoice ? ButtonStyle.Success : ButtonStyle.Secondary, new Emoji("🔊"), row: 4);
 
         var comps = builder.Build();
 
         var sb = new StringBuilder();
-        sb.AppendLine($"**Step 4/4** — start time in the server time zone (`{zoneName}`).");
-        sb.AppendLine("-# Everyone will see the time converted to their own time zone.");
+        sb.AppendLine(Tx.Get(gid, "lfg.wiz.step4", ("zone", zoneName)));
         sb.AppendLine(startsAt is { } st
-            ? $"Selected: {FormatTime(st)}"
-            : "Selected: *no time*");
+            ? Tx.Get(gid, "lfg.wiz.selected", ("time", FormatTime(st)))
+            : Tx.Get(gid, "lfg.wiz.selectedNone"));
         if (d.RequiredRoleIds.Count > 0 || d.MinGs is not null)
         {
             var req = new List<string>();
             if (d.RequiredRoleIds.Count > 0) req.Add(string.Join(" / ", d.RequiredRoleIds.Select(id => $"<@&{id}>")));
             if (d.MinGs is { } gs) req.Add($"GS {gs}+");
-            sb.AppendLine($"📋 Requirements: {string.Join(" · ", req)} — others go to the reserve");
+            sb.AppendLine(Tx.Get(gid, "lfg.wiz.requirements", ("list", string.Join(" · ", req))));
         }
         if (warning is not null) sb.AppendLine($"⚠️ {warning}");
 
@@ -217,29 +215,34 @@ public static class LfgRenderer
     // ---------- Опубликованный сбор ----------
     public static Screen Group(LfgGroup g)
     {
+        var gid = g.GuildId;
         var sb = new StringBuilder();
-        sb.AppendLine($"Organizer: <@{g.OwnerId}>");
+        sb.AppendLine(Tx.Get(gid, "lfg.post.organizer", ("user", $"<@{g.OwnerId}>")));
         if (g.StartsAt is { } startsAt)
-            sb.AppendLine($"🕒 Starts: {FormatTime(startsAt)}");
-        sb.AppendLine($"Roster: **{g.FilledCount}/{g.Slots.Count}**");
-        if (Requirements(g) is { } req) sb.AppendLine($"📋 Requirements: {req}");
-        if (g.VoiceChannelId is { } voice) sb.AppendLine($"🔊 Voice room: <#{voice}>");
+            sb.AppendLine(Tx.Get(gid, "lfg.post.starts", ("time", FormatTime(startsAt))));
+        sb.AppendLine(Tx.Get(gid, "lfg.post.roster", ("filled", g.FilledCount), ("total", g.Slots.Count)));
+        if (Requirements(g) is { } req) sb.AppendLine(Tx.Get(gid, "lfg.post.requirements", ("list", req)));
+        if (g.VoiceChannelId is { } voice) sb.AppendLine(Tx.Get(gid, "lfg.post.voice", ("channel", $"<#{voice}>")));
         sb.AppendLine();
         // Заметки к персонажам в посте не показываются — их видит владелец при выборе персонажа
         sb.Append(Roster(g, withComments: false));
 
-        sb.AppendLine();
-        sb.AppendLine($"-# Post will be removed <t:{g.ExpiresAt.ToUnixTimeSeconds()}:R>");
+        var expires = Tx.Get(gid, "lfg.post.expires", ("time", $"<t:{g.ExpiresAt.ToUnixTimeSeconds()}:R>"));
+        if (expires.Length > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine(expires);
+        }
 
-        var (status, color) = g.IsClosed ? ("🔒 Signups closed", Color.DarkGrey)
-            : g.IsFull ? ("✅ Group is full", Color.Green)
-            : ("📝 Recruiting", Color.Blue);
+        var (status, color) = g.IsClosed ? (Tx.Get(gid, "lfg.post.closed"), Tx.Color(gid, "color.lfg.closed"))
+            : g.IsFull ? (Tx.Get(gid, "lfg.post.full"), Tx.Color(gid, "color.lfg.full"))
+            : (Tx.Get(gid, "lfg.post.recruiting"), Tx.Color(gid, "color.lfg.recruiting"));
 
         var embed = new EmbedBuilder()
             .WithTitle(g.ActivityName)
             .WithDescription(sb.ToString())
             .WithColor(color)
-            .WithFooter($"{status} • ID {g.Id}")
+            .WithFooter(Tx.Get(gid, "lfg.post.footer", ("status", status), ("id", g.Id)))
             .Build();
 
         var builder = new ComponentBuilder();
@@ -269,9 +272,10 @@ public static class LfgRenderer
     public static Screen CharacterPicker(LfgGroup g, SlotRole role, IReadOnlyList<(string Name, string? Note, string? Icon)> characters,
         string prefix = "lfg")
     {
+        var gid = g.GuildId;
         var menu = new SelectMenuBuilder()
             .WithCustomId($"{prefix}:char:{g.Id}:{role}")
-            .WithPlaceholder("Choose a character");
+            .WithPlaceholder(Tx.Get(gid, "lfg.sign.charPlaceholder"));
 
         foreach (var c in characters.Take(CharacterStore.MaxPerUser))
         {
@@ -281,10 +285,10 @@ public static class LfgRenderer
             menu.AddOption(option);
         }
 
-        menu.AddOption("New character", NewCharacterValue, "Enter a name manually", new Emoji("➕"));
+        menu.AddOption(Tx.Get(gid, "lfg.sign.newChar"), NewCharacterValue, Tx.Get(gid, "lfg.sign.newCharOption"), new Emoji("➕"));
 
         return new Screen(
-            $"Signing up for **{Format.Sanitize(g.ActivityName)}** as {role.Emoji()} **{role.Label()}**. Which character?",
+            Tx.Get(gid, "lfg.sign.which", ("activity", Format.Sanitize(g.ActivityName)), ("role", $"{role.Emoji()} **{role.Label()}**")),
             null,
             new ComponentBuilder().WithSelectMenu(menu).Build());
     }
@@ -292,12 +296,13 @@ public static class LfgRenderer
     // ---------- Меню организатора ----------
     public static Screen Manage(LfgGroup g, string? note = null)
     {
+        var gid = g.GuildId;
+        var noName = Tx.Get(gid, "lfg.manage.noName");
         var sb = new StringBuilder();
         if (note is not null) sb.AppendLine(note);
-        sb.AppendLine($"**Manage {Format.Sanitize(g.ActivityName)}** — free slots: **{g.Slots.Count(s => s.IsFree)}**, " +
-                      $"reserve: **{g.Reserve.Count}**.");
-        sb.AppendLine("-# Move someone to the reserve to free a slot, then move a member from the reserve into it. " +
-                      "Members moved into the group get a DM.");
+        sb.AppendLine(Tx.Get(gid, "lfg.manage.head", ("activity", Format.Sanitize(g.ActivityName)),
+            ("free", g.Slots.Count(s => s.IsFree)), ("reserve", g.Reserve.Count)));
+        if (Tx.Get(gid, "lfg.manage.hint") is { Length: > 0 } hint) sb.AppendLine(hint);
 
         var builder = new ComponentBuilder();
         var row = 0;
@@ -310,12 +315,12 @@ public static class LfgRenderer
         {
             var toReserve = new SelectMenuBuilder()
                 .WithCustomId($"lfg:mreserve:{g.Id}")
-                .WithPlaceholder("🔽 Move from the group to the reserve");
+                .WithPlaceholder(Tx.Get(gid, "lfg.manage.toReserve"));
             foreach (var (slot, index) in members)
             {
                 var role = slot.TakenAs ?? slot.Role;
-                toReserve.AddOption(Trim($"{index + 1}. {slot.CharacterName ?? "no name"}"), slot.UserId!.Value.ToString(),
-                    $"Slot {index + 1} · {role.Label()}", new Emoji(role.Emoji()));
+                toReserve.AddOption(Trim($"{index + 1}. {slot.CharacterName ?? noName}"), slot.UserId!.Value.ToString(),
+                    Trim(Tx.Get(gid, "lfg.manage.slotOption", ("n", index + 1), ("role", role.Label()))), new Emoji(role.Emoji()));
             }
             builder.WithSelectMenu(toReserve, row++);
         }
@@ -324,15 +329,15 @@ public static class LfgRenderer
         {
             var promote = new SelectMenuBuilder()
                 .WithCustomId($"lfg:mpromote:{g.Id}")
-                .WithPlaceholder("⬆️ Move from the reserve into the group");
+                .WithPlaceholder(Tx.Get(gid, "lfg.manage.promote"));
             var remove = new SelectMenuBuilder()
                 .WithCustomId($"lfg:mremove:{g.Id}")
-                .WithPlaceholder("✖️ Remove from the reserve");
+                .WithPlaceholder(Tx.Get(gid, "lfg.manage.remove"));
 
             foreach (var (entry, index) in g.Reserve.Select((e, i) => (e, i)))
             {
-                var label = Trim($"#{index + 1} {entry.CharacterName ?? "no name"}");
-                var description = $"Wants {entry.Role.Label()}";
+                var label = Trim($"#{index + 1} {entry.CharacterName ?? noName}");
+                var description = Trim(Tx.Get(gid, "lfg.manage.wants", ("role", entry.Role.Label())));
                 promote.AddOption(label, entry.UserId.ToString(), description, new Emoji(entry.Role.Emoji()));
                 remove.AddOption(label, entry.UserId.ToString(), description, new Emoji(entry.Role.Emoji()));
             }
@@ -347,31 +352,54 @@ public static class LfgRenderer
         {
             var attend = new SelectMenuBuilder()
                 .WithCustomId($"lfg:attend:{g.Id}")
-                .WithPlaceholder("✅ Attendance: who came?")
+                .WithPlaceholder(Tx.Get(gid, "lfg.manage.attendance"))
                 .WithMinValues(0)
                 .WithMaxValues(seated.Count);
             foreach (var s in seated)
-                attend.AddOption(Trim(s.CharacterName ?? "no name"), s.UserId!.Value.ToString(),
-                    s.Attended switch { true => "came", false => "didn't come", _ => "not marked" },
+                attend.AddOption(Trim(s.CharacterName ?? noName), s.UserId!.Value.ToString(),
+                    Trim(Tx.Get(gid, s.Attended switch { true => "lfg.manage.came", false => "lfg.manage.noShow", _ => "lfg.manage.notMarked" })),
                     new Emoji((s.TakenAs ?? s.Role).Emoji()), isDefault: s.Attended == true);
             builder.WithSelectMenu(attend, row++);
-            sb.AppendLine("-# Attendance: select everyone who came — the others are marked as no-show.");
+            if (Tx.Get(gid, "lfg.manage.attendanceHint") is { Length: > 0 } ah) sb.AppendLine(ah);
         }
 
-        builder.WithButton("Change time", $"lfg:resched:{g.Id}", ButtonStyle.Secondary, new Emoji("🕒"), row: Math.Min(row, 4));
+        builder.WithButton(Tx.Get(gid, "lfg.manage.changeTime"), $"lfg:resched:{g.Id}", ButtonStyle.Secondary, new Emoji("🕒"), row: Math.Min(row, 4));
 
         if (members.Count == 0 && g.Reserve.Count == 0)
-            sb.AppendLine("Nobody to manage yet.");
+            sb.AppendLine(Tx.Get(gid, "lfg.manage.nobody"));
 
         return new Screen(sb.ToString(), null, builder.Build());
     }
 
     private static string Trim(string value) => value.Length <= 100 ? value : value[..100];
 
+    // ---------- Окна (тексты из Bot texts; разбираются классами *Modal по id полей) ----------
+    public static Modal CharacterModal(ulong gid, string customId) => new ModalBuilder()
+        .WithTitle(Tx.Get(gid, "lfg.sign.charTitle"))
+        .WithCustomId(customId)
+        .AddTextInput(Tx.Get(gid, "lfg.sign.charLabel"), "name", TextInputStyle.Short,
+            placeholder: Tx.Get(gid, "lfg.sign.charHint"), maxLength: CharacterStore.MaxNameLength, required: true)
+        .Build();
+
+    public static Modal CustomActivityModal(ulong gid, string customId) => new ModalBuilder()
+        .WithTitle(Tx.Get(gid, "lfg.wiz.customTitle"))
+        .WithCustomId(customId)
+        .AddTextInput(Tx.Get(gid, "lfg.wiz.customLabel"), "name", TextInputStyle.Short,
+            placeholder: Tx.Get(gid, "lfg.wiz.customHint"), maxLength: 100, required: true)
+        .Build();
+
+    public static Modal TimeModal(ulong gid, string customId) => new ModalBuilder()
+        .WithTitle(Tx.Get(gid, "lfg.wiz.timeTitle"))
+        .WithCustomId(customId)
+        .AddTextInput(Tx.Get(gid, "lfg.wiz.timeLabel"), "when", TextInputStyle.Short,
+            placeholder: Tx.Get(gid, "lfg.wiz.timeHint"), maxLength: 20, required: true)
+        .Build();
+
     // ---------- Команды /invite для игры ----------
     /// <param name="withCommand">true — «/invite Name» для приглашения в группу; false — только ники (приглашение в данж).</param>
     public static Embed Invites(LfgGroup g, ulong viewerId, bool withCommand = true)
     {
+        var gid = g.GuildId;
         var sb = new StringBuilder();
         var count = 0;
         var withoutNick = 0;
@@ -391,39 +419,40 @@ public static class LfgRenderer
             sb.AppendLine(withCommand ? $"```\n/invite {name}\n```" : $"```\n{name}\n```");
         }
 
-        if (count == 0) sb.AppendLine("Nobody to invite yet.");
-        if (withoutNick > 0) sb.AppendLine($"-# Without a character name: {withoutNick}");
+        if (count == 0) sb.AppendLine(Tx.Get(gid, "lfg.invites.nobody"));
+        if (withoutNick > 0 && Tx.Get(gid, "lfg.invites.noName", ("count", withoutNick)) is { Length: > 0 } nn) sb.AppendLine(nn);
 
         return new EmbedBuilder()
-            .WithTitle(withCommand ? $"📋 Group invites — {g.ActivityName}" : $"🏰 Dungeon invites — {g.ActivityName}")
+            .WithTitle(Tx.Get(gid, withCommand ? "lfg.invites.groupTitle" : "lfg.invites.dungeonTitle", ("activity", g.ActivityName)))
             .WithDescription(sb.ToString())
-            .WithColor(Color.Gold)
-            .WithFooter(withCommand ? "Copy a line and paste it into the game chat" : "Copy a name into the dungeon invite field")
+            .WithColor(Tx.Color(gid, "color.lfg.invites"))
+            .WithFooter(Tx.Get(gid, withCommand ? "lfg.invites.groupFooter" : "lfg.invites.dungeonFooter"))
             .Build();
     }
 
     // ---------- ЛС-оповещение о новом сборе ----------
     public static Embed DmNotice(LfgGroup g, string guildName)
     {
+        var gid = g.GuildId;
         var sb = new StringBuilder();
-        sb.AppendLine($"<@{g.OwnerId}> started a group on **{Format.Sanitize(guildName)}**.");
+        sb.AppendLine(Tx.Get(gid, "lfg.dm.started", ("user", $"<@{g.OwnerId}>"), ("server", Format.Sanitize(guildName))));
         if (g.StartsAt is { } startsAt)
-            sb.AppendLine($"🕒 Starts: {FormatTime(startsAt)}");
-        sb.AppendLine($"Roster: **{g.FilledCount}/{g.Slots.Count}**");
+            sb.AppendLine(Tx.Get(gid, "lfg.post.starts", ("time", FormatTime(startsAt))));
+        sb.AppendLine(Tx.Get(gid, "lfg.post.roster", ("filled", g.FilledCount), ("total", g.Slots.Count)));
 
         var open = g.Slots.Where(s => s.IsFree)
             .GroupBy(s => s.Role)
             .Select(gr => $"{gr.Key.Emoji()} {gr.Key.Label()} ×{gr.Count()}")
             .ToList();
         sb.AppendLine(open.Count > 0
-            ? $"Open slots: {string.Join(", ", open)}"
-            : "The group is full — you can still join the reserve.");
+            ? Tx.Get(gid, "lfg.dm.openSlots", ("list", string.Join(", ", open)))
+            : Tx.Get(gid, "lfg.dm.full"));
 
         return new EmbedBuilder()
-            .WithTitle($"📣 LFG: {g.ActivityName}")
+            .WithTitle(Tx.Get(gid, "lfg.dm.title", ("activity", g.ActivityName)))
             .WithDescription(sb.ToString())
-            .WithColor(Color.Blue)
-            .WithFooter("Sign up right here with the role buttons. Don't want these DMs? Press \"DMs off\" on the LFG panel.")
+            .WithColor(Tx.Color(gid, "color.lfg.dm"))
+            .WithFooter(Tx.Get(gid, "lfg.dm.footer"))
             .Build();
     }
 
@@ -434,14 +463,14 @@ public static class LfgRenderer
         var sb = new StringBuilder();
         for (var i = 0; i < g.Slots.Count; i++)
         {
-            sb.AppendLine(SlotLine(i, g.Slots[i]));
+            sb.AppendLine(SlotLine(g.GuildId, i, g.Slots[i]));
             if (withComments && g.Slots[i].UserId is not null) AppendComment(sb, g.Slots[i].Comment);
         }
 
         if (g.Reserve.Count > 0)
         {
             sb.AppendLine();
-            sb.AppendLine($"**Reserve ({g.Reserve.Count}):**");
+            sb.AppendLine(Tx.Get(g.GuildId, "lfg.post.reserve", ("count", g.Reserve.Count)));
             foreach (var r in g.Reserve)
             {
                 sb.AppendLine($"{r.Role.Emoji()} <@{r.UserId}>{ClassIcon(r.ClassIcon)} **{Format.Sanitize(r.CharacterName ?? "-")}**{GsText(r.Gs)}");
@@ -460,9 +489,9 @@ public static class LfgRenderer
         sb.AppendLine($"-# 💬 {Format.Sanitize(comment.Replace("\n", " "))}");
     }
 
-    private static string SlotLine(int i, Slot s)
+    private static string SlotLine(ulong gid, int i, Slot s)
     {
-        if (s.UserId is not { } userId) return $"{SlotHead(i, s)} — *open*";
+        if (s.UserId is not { } userId) return $"{SlotHead(i, s)} — {Tx.Get(gid, "lfg.post.open")}";
 
         var takenAs = s.Role == SlotRole.Any && s.TakenAs is { } t && t != SlotRole.Any
             ? $" ({t.Emoji()} {t.Label()})"
@@ -480,6 +509,6 @@ public static class LfgRenderer
         var parts = new List<string>();
         if (g.RequiredRoleIds.Count > 0) parts.Add(string.Join(" / ", g.RequiredRoleIds.Select(id => $"<@&{id}>")));
         if (g.MinGs is { } min) parts.Add($"GS {min}+");
-        return parts.Count == 0 ? null : string.Join(" · ", parts) + " — others go to the reserve";
+        return parts.Count == 0 ? null : string.Join(" · ", parts);
     }
 }

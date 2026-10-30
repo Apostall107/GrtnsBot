@@ -10,7 +10,9 @@ namespace LfgBot.Modules;
 public sealed class CaptchaModule(CaptchaService captcha, CaptchaStore store, CaptchaVoiceGuard voiceGuard)
     : InteractionModuleBase<SocketInteractionContext>
 {
-    private const string ExpiredText = "This verification has expired. Run your command again.";
+    private ulong Gid => Context.Interaction.GuildId ?? 0;
+
+    private string ExpiredText => Tx.Get(Gid, "captcha.expired");
 
     [ComponentInteraction("captcha:enter")]
     public async Task OnEnter()
@@ -28,14 +30,19 @@ public sealed class CaptchaModule(CaptchaService captcha, CaptchaStore store, Ca
             return;
         }
 
-        await RespondWithModalAsync<CaptchaModal>("captcha:submit");
+        await RespondWithModalAsync(new ModalBuilder()
+            .WithTitle(Tx.Get(Gid, "captcha.modalTitle"))
+            .WithCustomId("captcha:submit")
+            .AddTextInput(Tx.Get(Gid, "captcha.modalLabel"), "code", TextInputStyle.Paragraph,
+                placeholder: Tx.Get(Gid, "captcha.modalHint"), minLength: 1, maxLength: 250, required: true)
+            .Build());
     }
 
     [ComponentInteraction("captcha:new")]
     public async Task OnNewPicture()
     {
         var component = (SocketMessageComponent)Context.Interaction;
-        if (captcha.Regenerate(Context.User.Id) is not { } msg)
+        if (captcha.Regenerate(Context.User.Id, null, Gid) is not { } msg)
         {
             await component.UpdateAsync(m =>
             {
@@ -68,22 +75,22 @@ public sealed class CaptchaModule(CaptchaService captcha, CaptchaStore store, Ca
         {
             case CaptchaResult.Passed:
                 await RespondAsync(settings.ValidityMinutes <= 0
-                    ? "✅ Verified. Run your command again."
-                    : $"✅ Verified for {settings.ValidityMinutes} min. Run your command again.", ephemeral: true);
+                    ? Tx.Get(Gid, "captcha.passed")
+                    : Tx.Get(Gid, "captcha.passedFor", ("minutes", settings.ValidityMinutes)), ephemeral: true);
                 break;
 
             case CaptchaResult.Wrong or CaptchaResult.TimedOut
                 when captcha.Regenerate(userId, result == CaptchaResult.TimedOut
-                    ? "⏰ Time ran out — that counted as a wrong attempt. Try the new picture."
-                    : "❌ Wrong code. Try the new picture.") is { } msg:
+                    ? Tx.Get(Gid, "captcha.timedOut")
+                    : Tx.Get(Gid, "captcha.wrong"), Gid) is { } msg:
                 using (msg.File)
                     await RespondWithFileAsync(msg.File, embed: msg.Embed, components: msg.Components, ephemeral: true);
                 break;
 
             case CaptchaResult.Failed:
                 var until = captcha.BlockedUntil(userId);
-                var text = "⛔ No attempts left." +
-                           (until is { } u ? $" You can use the bot again <t:{u.ToUnixTimeSeconds()}:R>." : "");
+                var text = Tx.Get(Gid, "captcha.failed") +
+                           (until is { } u ? " " + Tx.Get(Gid, "captcha.again", ("time", $"<t:{u.ToUnixTimeSeconds()}:R>")) : "");
                 await RespondAsync(text, ephemeral: true);
                 if (settings.TimeoutOnFail && Context.Guild?.GetUser(userId) is { } member)
                     await voiceGuard.PunishAsync(member, TimeSpan.FromMinutes(Math.Max(1, settings.BlockMinutes)));

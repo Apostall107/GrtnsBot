@@ -29,7 +29,7 @@ public sealed class CharacterModule(CharacterStore store, LfgProfileService prof
         {
             var list = store.Get(Context.Guild.Id, Context.User.Id, scope);
             if (list.Count == 0) continue;
-            sb.AppendLine(title is null ? "**Your characters:**" : $"**{Format.Sanitize(title)}:**");
+            sb.AppendLine(title is null ? T("char.listTitle") : T("char.listProject", ("project", Format.Sanitize(title))));
             foreach (var name in list)
             {
                 var info = store.GetInfo(Context.Guild.Id, Context.User.Id, name, scope);
@@ -42,10 +42,10 @@ public sealed class CharacterModule(CharacterStore store, LfgProfileService prof
 
         if (sb.Length == 0)
         {
-            await RespondAsync("No saved characters. They are added when you sign up for a group or via `/character add`.", ephemeral: true);
+            await RespondAsync(T("char.none"), ephemeral: true);
             return;
         }
-        sb.AppendLine("-# `/character class`, `/character gs`, `/character note` — add `project:` for another game.");
+        if (T("char.listHint") is { Length: > 0 } hint) sb.AppendLine(hint);
         await RespondAsync(sb.ToString(), ephemeral: true, allowedMentions: AllowedMentions.None);
     }
 
@@ -56,7 +56,7 @@ public sealed class CharacterModule(CharacterStore store, LfgProfileService prof
     {
         if (await ScopeAsync(project) is not { } scope) return;
         store.Add(Context.Guild.Id, Context.User.Id, name, scope.Value);
-        await RespondAsync($"Added: **{Format.Sanitize(name.Trim())}**{scope.Label}", ephemeral: true);
+        await RespondAsync(T("char.added", ("name", Format.Sanitize(name.Trim())), ("project", scope.Label)), ephemeral: true);
     }
 
     [SlashCommand("class", "Set the class of a character (one of the project's classes); empty = remove")]
@@ -69,7 +69,7 @@ public sealed class CharacterModule(CharacterStore store, LfgProfileService prof
 
         if (role is not null && profiles.ClassRoles(Context.Guild.Id, Context.User.Id, scope.ProjectKey).All(r => r.Id != role.Id))
         {
-            await RespondAsync("This class is not available in this project (see LFG → Classes on the site).", ephemeral: true);
+            await RespondAsync(T("char.classUnavailable"), ephemeral: true);
             return;
         }
 
@@ -77,8 +77,8 @@ public sealed class CharacterModule(CharacterStore store, LfgProfileService prof
         store.SetInfo(Context.Guild.Id, Context.User.Id, exact, true, role?.Id, false, null, scope.Value);
         var groups = await profiles.RefreshCharacterAsync(Context.Guild.Id, Context.User.Id, exact, scope.Value);
         audit.FromDiscord(Context.Guild.Id, Context.User, "lfg", "Set character class", $"{exact}: {role?.Name ?? "none"}");
-        await FollowupAsync((role is null ? $"Class removed from **{Format.Sanitize(exact)}**." : $"**{Format.Sanitize(exact)}** — class <@&{role.Id}>.") +
-                            (groups > 0 ? $" Updated {groups} active group(s)." : ""),
+        await FollowupAsync((role is null ? T("char.classRemoved", ("name", Format.Sanitize(exact))) : T("char.classSet", ("name", Format.Sanitize(exact)), ("role", $"<@&{role.Id}>"))) +
+                            Updated(groups),
             ephemeral: true, allowedMentions: AllowedMentions.None);
     }
 
@@ -92,7 +92,7 @@ public sealed class CharacterModule(CharacterStore store, LfgProfileService prof
 
         store.SetInfo(Context.Guild.Id, Context.User.Id, exact, false, null, true, text, scope.Value);
         audit.FromDiscord(Context.Guild.Id, Context.User, "lfg", "Set character note", $"{exact}: {text ?? "removed"}");
-        await RespondAsync(string.IsNullOrWhiteSpace(text) ? $"Note removed from **{Format.Sanitize(exact)}**." : $"Note saved for **{Format.Sanitize(exact)}**.",
+        await RespondAsync(T(string.IsNullOrWhiteSpace(text) ? "char.noteRemoved" : "char.noteSaved", ("name", Format.Sanitize(exact))),
             ephemeral: true);
     }
 
@@ -104,7 +104,7 @@ public sealed class CharacterModule(CharacterStore store, LfgProfileService prof
     {
         if (gs is < 0 or > 99999)
         {
-            await RespondAsync("GS must be 0–99999.", ephemeral: true);
+            await RespondAsync(T("char.badGs"), ephemeral: true);
             return;
         }
         if (await ScopeAsync(project) is not { } scope || await ExactAsync(name, scope.Value) is not { } exact) return;
@@ -113,8 +113,8 @@ public sealed class CharacterModule(CharacterStore store, LfgProfileService prof
         store.SetGs(Context.Guild.Id, Context.User.Id, exact, gs, scope.Value);
         var groups = await profiles.RefreshCharacterAsync(Context.Guild.Id, Context.User.Id, exact, scope.Value);
         audit.FromDiscord(Context.Guild.Id, Context.User, "lfg", "Set character GS", $"{exact}: {gs?.ToString() ?? "removed"}");
-        await FollowupAsync((gs is null ? $"GS removed from **{Format.Sanitize(exact)}**." : $"**{Format.Sanitize(exact)}** — GS {gs}.") +
-                            (groups > 0 ? $" Updated {groups} active group(s)." : ""), ephemeral: true);
+        await FollowupAsync((gs is null ? T("char.gsRemoved", ("name", Format.Sanitize(exact))) : T("char.gsSet", ("name", Format.Sanitize(exact)), ("gs", gs))) +
+                            Updated(groups), ephemeral: true);
     }
 
     [SlashCommand("rename", "Rename a character (class, note, GS and active groups keep it)")]
@@ -134,8 +134,7 @@ public sealed class CharacterModule(CharacterStore store, LfgProfileService prof
         var clean = newName.Replace("`", "").Trim();
         var groups = await profiles.RenameInGroupsAsync(Context.Guild.Id, Context.User.Id, exact, clean, scope.Value);
         audit.FromDiscord(Context.Guild.Id, Context.User, "lfg", "Renamed character", $"{exact} → {clean}");
-        await FollowupAsync($"**{Format.Sanitize(exact)}** → **{Format.Sanitize(clean)}**." +
-                            (groups > 0 ? $" Updated {groups} active group(s)." : ""), ephemeral: true);
+        await FollowupAsync(T("char.renamed", ("old", Format.Sanitize(exact)), ("new", Format.Sanitize(clean))) + Updated(groups), ephemeral: true);
     }
 
     [SlashCommand("remove", "Remove a character")]
@@ -145,7 +144,7 @@ public sealed class CharacterModule(CharacterStore store, LfgProfileService prof
     {
         if (await ScopeAsync(project) is not { } scope) return;
         var removed = store.Remove(Context.Guild.Id, Context.User.Id, name, scope.Value);
-        await RespondAsync(removed ? $"Removed: **{Format.Sanitize(name)}**" : "Character not found.", ephemeral: true);
+        await RespondAsync(removed ? T("char.removed", ("name", Format.Sanitize(name))) : T("char.notFound"), ephemeral: true);
     }
 
     /// <summary>Проект из опции → ключ хранения. null — ответ с ошибкой уже отправлен (нет такого проекта или нет его роли).</summary>
@@ -154,12 +153,12 @@ public sealed class CharacterModule(CharacterStore store, LfgProfileService prof
         var project = projects.Effective(Context.Guild.Id, string.IsNullOrWhiteSpace(projectKey) ? null : projectKey);
         if (!string.IsNullOrWhiteSpace(projectKey) && projects.Find(Context.Guild.Id, projectKey) is null)
         {
-            await RespondAsync("Unknown project — pick one from the list.", ephemeral: true);
+            await RespondAsync(T("char.unknownProject"), ephemeral: true);
             return null;
         }
         if (!LfgProjectStore.CanUse(Context.Guild.GetUser(Context.User.Id), project))
         {
-            await RespondAsync($"Characters of **{project!.Name}** need {string.Join(" or ", project.RoleIds.Select(id => $"<@&{id}>"))}.",
+            await RespondAsync(T("char.projectRole", ("project", project!.Name), ("roles", string.Join(T("lfg.or"), project.RoleIds.Select(id => $"<@&{id}>")))),
                 ephemeral: true, allowedMentions: AllowedMentions.None);
             return null;
         }
@@ -170,9 +169,13 @@ public sealed class CharacterModule(CharacterStore store, LfgProfileService prof
     {
         var exact = store.Get(Context.Guild.Id, Context.User.Id, scope)
             .FirstOrDefault(n => n.Equals(name.Trim(), StringComparison.OrdinalIgnoreCase));
-        if (exact is null) await RespondAsync("Character not found — add it with `/character add` first.", ephemeral: true);
+        if (exact is null) await RespondAsync(T("char.notFoundAdd"), ephemeral: true);
         return exact;
     }
+
+    private string T(string key, params (string Name, object? Value)[] args) => Tx.Get(Context.Guild.Id, key, args);
+
+    private string Updated(int groups) => groups > 0 ? T("char.updatedGroups", ("count", groups)) : "";
 }
 
 /// <summary>Проекты, роли которых есть у игрока.</summary>
