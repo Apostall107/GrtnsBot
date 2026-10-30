@@ -421,6 +421,39 @@ async function pageAnnounce(main) {
   text.addEventListener("input", syncCounter);
   syncCounter();
   const pings = h("input", { type: "checkbox" });
+
+  // Whom to ping: @everyone/@here, roles, people — a mention line at the top of the post
+  const ping = { everyone: "", roles: [], users: [] };
+  const everyoneSel = h("select", {}, h("option", { value: "" }, "No @everyone"), h("option", { value: "everyone" }, "@everyone"), h("option", { value: "here" }, "@here"));
+  everyoneSel.addEventListener("change", () => { ping.everyone = everyoneSel.value; });
+  const pingChips = h("div", { style: "margin-bottom:6px" });
+  const drawPing = () => {
+    everyoneSel.value = ping.everyone;
+    const chips = [
+      ...ping.roles.map((r, i) => roleChip(r, () => { ping.roles.splice(i, 1); drawPing(); })),
+      ...ping.users.map((m, i) => h("span", { class: "chip" }, `@${m.name}`, h("button", { title: "Remove", onclick: async () => {
+        if (await confirmDialog(`Don't ping ${m.name}?`, "Removed from the ping list.", "Remove")) { ping.users.splice(i, 1); drawPing(); }
+      } }, "×")))];
+    pingChips.replaceChildren(...(chips.length ? chips : [h("span", { class: "muted small" }, "Nobody — add roles or people below.")]));
+  };
+  const addRoles = h("button", { class: "btn secondary", type: "button" }, "➕ Roles…");
+  addRoles.addEventListener("click", async () => {
+    const picked = await pickRolesDialog("Roles to ping", ping.roles.map(r => r.id));
+    if (picked) { ping.roles.push(...picked); drawPing(); }
+  });
+  const addUser = h("button", { class: "btn secondary", type: "button" }, "➕ Person…");
+  addUser.addEventListener("click", async () => {
+    const m = await pickMemberDialog("Person to ping");
+    if (m && !ping.users.some(u => u.id === m.id)) { ping.users.push(m); drawPing(); }
+  });
+  const setPing = p => {
+    ping.everyone = p.pingEveryone || "";
+    ping.roles = (p.pingRoles || []).slice();
+    ping.users = (p.pingUsers || []).slice();
+    drawPing();
+  };
+  drawPing();
+  const pingBody = () => ({ pingEveryone: ping.everyone || null, pingRoleIds: ping.roles.map(r => r.id), pingUserIds: ping.users.map(u => u.id) });
   const when = h("select", {}, h("option", { value: "now" }, "Send now"), h("option", { value: "later" }, "📅 Schedule"));
   const date = h("input", { type: "date" });
   const time = h("input", { type: "time" });
@@ -450,7 +483,7 @@ async function pageAnnounce(main) {
     if (!channel.value) return toast("Choose a channel first.", "warn");
     const later = editing || when.value === "later";
     if (later && (!date.value || !time.value)) return toast("Pick the date and time.", "warn");
-    const preview = await act(go, () => gApi("POST", "/announce/preview", { content: text.value }));
+    const preview = await act(go, () => gApi("POST", "/announce/preview", { content: text.value, ...pingBody() }));
     if (!preview) return;
     const chName = channel.selectedOptions[0].textContent.split("  ·  ")[0];
     const whenText = later ? `on ${date.value} at ${time.value}` : "now";
@@ -458,7 +491,7 @@ async function pageAnnounce(main) {
       const d = dialog();
       d.classList.add("wide");
       d.replaceChildren(h("h2", {}, `${editing ? "Save" : later ? "Schedule" : "Send"}: ${preview.count} message${preview.count > 1 ? "s" : ""} → ${chName}`),
-        h("p", { class: "muted small" }, `${preview.length} characters · ${whenText} · pings ${pings.checked ? "ON" : "off"}. `,
+        h("p", { class: "muted small" }, `${preview.length} characters · ${whenText} · ping: ${[ping.everyone && "@" + ping.everyone, ...ping.roles.map(r => "@" + r.name), ...ping.users.map(u => "@" + u.name)].filter(Boolean).join(", ") || "nobody"}${pings.checked ? " + all mentions in the text" : ""}. `,
           preview.count > 1 ? "The text is longer than Discord allows (2000) — it is split at paragraphs/lines; code blocks are kept whole." : ""),
         h("div", { class: "guide-body" }, preview.blocks.map((b, i) => h("div", { class: "card", style: "padding:10px;margin-bottom:8px" },
           h("div", { class: "muted small", style: "margin-bottom:4px" }, `Message ${i + 1}/${preview.count} · ${b.length} characters`),
@@ -471,7 +504,7 @@ async function pageAnnounce(main) {
     });
     if (!ok) return;
     const body = { channelId: channel.value, content: text.value, allowMentions: pings.checked,
-      date: later ? date.value : null, time: later ? time.value : null };
+      date: later ? date.value : null, time: later ? time.value : null, ...pingBody() };
     const res = editing
       ? await act(go, () => gApi("PUT", `/announce/${editing}`, body), "Scheduled post saved.")
       : await act(go, () => gApi("POST", "/announce", body), r => r.scheduled ? "Post scheduled." : `Sent — ${r.sent} message(s).`);
@@ -481,17 +514,78 @@ async function pageAnnounce(main) {
     refresh();
   });
 
+  // Templates: save the form (channel, text, pings) and load it later
+  let templates = [];
+  try { templates = await gApi("GET", "/announce/templates"); } catch { /* shown below */ }
+  let currentTpl = null;
+  const tplSel = h("select", {}, h("option", { value: "" }, templates.length ? "📄 Load a template…" : "No templates yet"),
+    templates.map(t => h("option", { value: t.key }, t.name)));
+  tplSel.disabled = !templates.length;
+  const applyTemplate = t => {
+    currentTpl = t;
+    if (t.channelId) channel.value = t.channelId;
+    text.value = t.content;
+    pings.checked = t.allowMentions;
+    setPing(t);
+    syncCounter();
+  };
+  tplSel.addEventListener("change", () => {
+    const t = templates.find(x => x.key === tplSel.value);
+    if (t) { applyTemplate(t); toast(`Template «${t.name}» loaded.`); }
+  });
+  const tplBody = name => ({ name, channelId: channel.value || null, content: text.value, allowMentions: pings.checked, ...pingBody() });
+  const saveTpl = h("button", { class: "btn secondary", type: "button" }, "💾 Save as template");
+  saveTpl.addEventListener("click", async () => {
+    if (!text.value.trim()) return toast("Write the text first.", "warn");
+    // Loaded template: update it or save a new one
+    if (currentTpl && await confirmDialog(`Update the template «${currentTpl.name}»?`, "Cancel = save as a new template.", "Update", false)) {
+      if (await act(saveTpl, () => gApi("PUT", `/announce/templates/${currentTpl.key}`, tplBody(currentTpl.name)), "Template updated.") !== undefined) refresh();
+      return;
+    }
+    const name = await promptDialog("Template name", currentTpl ? `${currentTpl.name} (copy)` : "");
+    if (!name) return;
+    if (await act(saveTpl, () => gApi("PUT", "/announce/templates/new", tplBody(name)), "Template saved.") !== undefined) refresh();
+  });
+
   main.append(h("div", { class: "card" }, h("div", { class: "card-head" }, title, cancelEdit),
     h("p", { class: "muted small" }, "The bot posts your text in a channel (or a voice channel's chat). Longer than 2000 characters — split into several messages automatically. You see the preview and confirm before anything is sent."),
+    h("div", { class: "row", style: "margin-bottom:12px" }, h("div", { class: "grow" }, tplSel), saveTpl),
     h("div", { class: "field" }, h("label", {}, "Channel"), channel),
     h("div", { class: "field" }, h("label", {}, "Text"), text, counter),
-    h("label", { class: "row", style: "margin-bottom:10px" }, pings, "Ping mentions (@everyone, @roles, @users) — off: mentions are shown but nobody is notified"),
+    h("div", { class: "field" }, h("label", {}, "🔔 Ping (a line with mentions at the top of the post)"), pingChips,
+      h("div", { class: "row" }, everyoneSel, addRoles, addUser)),
+    h("label", { class: "row", style: "margin-bottom:10px" }, pings, "Also ping mentions written in the text — off: they are shown but nobody is notified"),
     h("div", { class: "row", style: "margin-bottom:12px" }, when, whenBox),
     h("div", { class: "row" }, go)));
 
+  const tplCard = h("div", { class: "card" }, h("h2", {}, "📄 Templates"),
+    h("p", { class: "muted small" }, "Saved channel + text + pings. Fill the form and press 💾 Save as template; load one with 📄 Load a template."),
+    templates.length ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
+      h("thead", {}, h("tr", {}, h("th", {}, "Name"), h("th", {}, "Channel"), h("th", {}, "Text"), h("th", {}))),
+      h("tbody", {}, templates.map(t => {
+        const use = h("button", { class: "btn secondary", onclick: () => { applyTemplate(t); tplSel.value = t.key; window.scrollTo({ top: 0, behavior: "smooth" }); } }, "Use");
+        const rename = h("button", { class: "btn ghost", title: "Rename" }, "✏️");
+        rename.addEventListener("click", async () => {
+          const name = await promptDialog("Rename template", t.name);
+          if (!name || name === t.name) return;
+          if (await act(rename, () => gApi("PUT", `/announce/templates/${t.key}`, {
+            name, channelId: t.channelId, content: t.content, allowMentions: t.allowMentions,
+            pingEveryone: t.pingEveryone, pingRoleIds: t.pingRoles.map(r => r.id), pingUserIds: t.pingUsers.map(u => u.id)
+          }), "Template renamed.") !== undefined) refresh();
+        });
+        const del = h("button", { class: "btn ghost" }, "Delete");
+        del.addEventListener("click", async () => {
+          if (!await confirmDialog(`Delete the template «${t.name}»?`, "Posts already sent or scheduled are not affected.", "Delete")) return;
+          if (await act(del, () => gApi("DELETE", `/announce/templates/${t.key}`), "Template deleted.") !== undefined) refresh();
+        });
+        return h("tr", {}, h("td", {}, h("b", {}, t.name)),
+          h("td", {}, t.channel ? `# ${t.channel}` : h("span", { class: "muted small" }, "any")),
+          h("td", { class: "small" }, t.content.length > 90 ? t.content.slice(0, 90) + "…" : t.content),
+          h("td", { class: "actions" }, use, " ", rename, " ", del));
+      })))) : empty("No templates yet."));
   const schedCard = h("div", { class: "card" }, h("h2", {}, "📅 Scheduled"), h("div", { class: "muted" }, "Loading…"));
   const sentCard = h("div", { class: "card" }, h("h2", {}, "🗂️ Sent"), h("div", { class: "muted" }, "Loading…"));
-  main.append(schedCard, sentCard);
+  main.append(tplCard, schedCard, sentCard);
 
   let data;
   try { data = await gApi("GET", "/announce"); } catch (e) { schedCard.replaceChildren(h("h2", {}, "📅 Scheduled"), empty(e.message)); return; }
@@ -501,6 +595,7 @@ async function pageAnnounce(main) {
     channel.value = p.channelId;
     text.value = p.content;
     pings.checked = p.allowMentions;
+    setPing(p);
     syncCounter();
     if (edit) {
       editing = p.id;
@@ -2466,14 +2561,16 @@ const HELP = {
       "Longer than Discord's 2000 characters — split automatically into several messages (at paragraphs, lines, sentences; code blocks stay whole). Up to 20000 characters.",
       "**Preview & confirm**: you see every message before anything is sent.",
       "**📅 Schedule**: send at a date and time (server time zone); edit, send now or cancel a scheduled post.",
-      "**Pings** are off by default: mentions are shown but nobody is notified; tick «Ping mentions» to notify.",
+      "**🔔 Ping**: pick @everyone / @here, roles and people — a mention line is added at the top and only they are notified. Mentions inside the text don't ping unless you tick «Also ping mentions written in the text».",
+      "**📄 Templates**: save channel + text + pings and reuse them.",
       "**Sent** list: open in Discord, ↩️ reuse the text, delete the messages in Discord. Every action is in the Log."
     ]]],
     discord: [["In Discord", [
       "Posts are sent as the bot. To edit a sent post: delete its messages here and send a corrected one."
     ]]],
     panel: [["Using it", [
-      "Pick the channel, write the text (Markdown works), choose **Send now** or **📅 Schedule** → **👁 Preview & send** → check the messages → **✅ Send** / **📅 Schedule**.",
+      "Optionally **📄 Load a template**. Pick the channel, write the text (Markdown works), add whom to **🔔 ping**, choose **Send now** or **📅 Schedule** → **👁 Preview & send** → check the messages → **✅ Send** / **📅 Schedule**.",
+      "**💾 Save as template** stores the form (for a loaded template — update it or save a copy). **📄 Templates**: Use, ✏️ rename, Delete.",
       "**📅 Scheduled**: ✏️ Edit (loads it into the form → Preview & save), **Send now**, **Cancel** (asks first).",
       "**🗂️ Sent**: **Open**, **↩️ Reuse**, **Delete messages** (in Discord), **Remove** (only from this list).",
       "Access: the owner gives the ✍️ **Announcements** right in Access."

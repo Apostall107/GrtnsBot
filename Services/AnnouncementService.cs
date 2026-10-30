@@ -26,6 +26,114 @@ public sealed class Announcement
     public DateTimeOffset? SentAt { get; set; }
     public List<ulong> MessageIds { get; set; } = [];
     public string? Error { get; set; }
+    /// <summary>Кого пинговать: роли, люди, everyone/here — строкой в начале поста.</summary>
+    public List<ulong> PingRoleIds { get; set; } = [];
+    public List<ulong> PingUserIds { get; set; } = [];
+    /// <summary>"everyone", "here" или null.</summary>
+    public string? PingEveryone { get; set; }
+
+    /// <summary>Текст поста со строкой пингов в начале.</summary>
+    public string FullText() => AnnouncementText.Compose(Content, PingRoleIds, PingUserIds, PingEveryone);
+
+    /// <summary>Какие упоминания реально пингуют: выбранные + (если включено) все из текста.</summary>
+    public AllowedMentions Mentions() => AllowMentions
+        ? AllowedMentions.All
+        : new AllowedMentions
+        {
+            RoleIds = PingRoleIds.ToList(),
+            UserIds = PingUserIds.ToList(),
+            AllowedTypes = PingEveryone is null ? AllowedMentionTypes.None : AllowedMentionTypes.Everyone
+        };
+}
+
+public static class AnnouncementText
+{
+    public static string Compose(string content, IEnumerable<ulong> roleIds, IEnumerable<ulong> userIds, string? everyone)
+    {
+        var parts = new List<string>();
+        if (everyone is "everyone" or "here") parts.Add($"@{everyone}");
+        parts.AddRange(roleIds.Select(id => $"<@&{id}>"));
+        parts.AddRange(userIds.Select(id => $"<@{id}>"));
+        return parts.Count == 0 ? content.Trim() : string.Join(" ", parts) + "\n" + content.Trim();
+    }
+}
+
+/// <summary>Шаблон поста: название + канал, текст и пинги.</summary>
+public sealed class AnnouncementTemplate
+{
+    public string Key { get; set; } = IdGen.New();
+    public ulong GuildId { get; set; }
+    public string Name { get; set; } = "";
+    public ulong? ChannelId { get; set; }
+    public string Content { get; set; } = "";
+    public bool AllowMentions { get; set; }
+    public List<ulong> PingRoleIds { get; set; } = [];
+    public List<ulong> PingUserIds { get; set; } = [];
+    public string? PingEveryone { get; set; }
+}
+
+/// <summary>data/announcement-templates.json</summary>
+public sealed class AnnouncementTemplateStore
+{
+    public const int MaxPerGuild = 50;
+
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    private readonly object _lock = new();
+    private readonly string _path;
+    private readonly List<AnnouncementTemplate> _data;
+
+    public AnnouncementTemplateStore(IConfiguration config)
+    {
+        _path = config["Storage:AnnouncementTemplatesPath"] ?? "data/announcement-templates.json";
+        _data = File.Exists(_path)
+            ? JsonSerializer.Deserialize<List<AnnouncementTemplate>>(File.ReadAllText(_path)) ?? []
+            : [];
+    }
+
+    public IReadOnlyList<AnnouncementTemplate> Get(ulong guildId)
+    {
+        lock (_lock) return _data.Where(t => t.GuildId == guildId).OrderBy(t => t.Name).Select(Clone).ToList();
+    }
+
+    /// <summary>Добавить или заменить (по Key). null — успех.</summary>
+    public string? Save(AnnouncementTemplate template)
+    {
+        lock (_lock)
+        {
+            if (_data.Any(t => t.GuildId == template.GuildId && t.Key != template.Key &&
+                               t.Name.Equals(template.Name, StringComparison.OrdinalIgnoreCase)))
+                return $"Template \"{template.Name}\" already exists.";
+            var i = _data.FindIndex(t => t.Key == template.Key && t.GuildId == template.GuildId);
+            if (i >= 0) _data[i] = template;
+            else
+            {
+                if (_data.Count(t => t.GuildId == template.GuildId) >= MaxPerGuild) return $"Limit of {MaxPerGuild} templates reached.";
+                _data.Add(template);
+            }
+            Save();
+            return null;
+        }
+    }
+
+    public bool Remove(ulong guildId, string key)
+    {
+        lock (_lock)
+        {
+            if (_data.RemoveAll(t => t.GuildId == guildId && t.Key == key) == 0) return false;
+            Save();
+            return true;
+        }
+    }
+
+    private static AnnouncementTemplate Clone(AnnouncementTemplate t) =>
+        JsonSerializer.Deserialize<AnnouncementTemplate>(JsonSerializer.Serialize(t))!;
+
+    private void Save()
+    {
+        var dir = Path.GetDirectoryName(Path.GetFullPath(_path));
+        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+        File.WriteAllText(_path, JsonSerializer.Serialize(_data, JsonOptions));
+    }
 }
 
 /// <summary>Разбивка текста на сообщения Discord (до 2000 символов): по абзацам, строкам, предложениям, словам; блоки кода не рвутся.</summary>
@@ -220,10 +328,10 @@ public sealed class AnnouncementService(
             error = "The channel no longer exists.";
         else
         {
-            var mentions = post.AllowMentions ? AllowedMentions.All : AllowedMentions.None;
+            var mentions = post.Mentions();
             try
             {
-                foreach (var block in PostSplitter.Split(post.Content))
+                foreach (var block in PostSplitter.Split(post.FullText()))
                 {
                     var message = await channel.SendMessageAsync(block, allowedMentions: mentions);
                     sent.Add(message.Id);
