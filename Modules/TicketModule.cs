@@ -80,7 +80,7 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
     }
 
     [ModalInteraction("ticket:form:*")]
-    public async Task OnFormSubmitted(string projectKey)
+    public async Task OnFormSubmitted(string projectKey, TicketFormModal _)
     {
         var project = store.FindProject(Context.Guild.Id, projectKey);
         if (project is null)
@@ -305,7 +305,7 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
     }
 
     [ModalInteraction("ticket:denyok:*")]
-    public async Task OnDenyConfirmed(string ticketId)
+    public async Task OnDenyConfirmed(string ticketId, TicketDenyModal _)
     {
         var ticket = FindOwnTicket(ticketId);
         var project = ticket is null ? null : store.FindProject(ticket.GuildId, ticket.ProjectKey);
@@ -374,4 +374,28 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
             return null;
         }
     }
+}
+
+// Discord.Net registers a [ModalInteraction] handler only when it takes an IModal parameter.
+// The windows themselves are built in TicketRenderer; the fields are read from the raw submission.
+
+/// <summary>Окно причины отказа (TicketRenderer.DenyModal).</summary>
+public sealed class TicketDenyModal : IModal
+{
+    public string Title => "Deny the application";
+
+    [ModalTextInput("reason", TextInputStyle.Paragraph)]
+    public string? Reason { get; set; }
+}
+
+/// <summary>Анкета проекта (TicketRenderer.FormModal), поля q0..q4 — каких нет, остаются пустыми.</summary>
+public sealed class TicketFormModal : IModal
+{
+    public string Title => "Application";
+
+    [ModalTextInput("q0")] public string? Q0 { get; set; }
+    [ModalTextInput("q1")] public string? Q1 { get; set; }
+    [ModalTextInput("q2")] public string? Q2 { get; set; }
+    [ModalTextInput("q3")] public string? Q3 { get; set; }
+    [ModalTextInput("q4")] public string? Q4 { get; set; }
 }
