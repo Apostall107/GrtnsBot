@@ -1080,3 +1080,53 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 /* Text contrast: secondary text a notch brighter */
 :root { --text-secondary: #ADB5C7; }
 .muted { color: var(--text-secondary); }
+
+/* =====================================================================
+   Readability & separation v3
+   ===================================================================== */
+
+/* Text: brighter, a bit heavier and larger — Inter at 400 on dark glass looked thin */
+:root {
+  --text-primary: #F5F7FC;
+  --text-secondary: #BCC4D6;
+  --fs-body: 14.5px;
+  --fs-small: 13px;
+}
+html, body { font-weight: 450; letter-spacing: .003em; }
+.muted, .small, .field > label, .table th, .stat .label, .stat .sub, .select-group, .section-label { font-weight: 500; }
+.muted.small, p.muted { line-height: 1.55; }
+b, strong, h1, h2, h3, .select-option.selected { font-weight: 650; }
+.table td { color: var(--text-primary); }
+.table th { color: #AEB7CA; font-size: 12.5px; }
+input::placeholder, textarea::placeholder { color: #7D8699; font-weight: 450; }
+.chip { color: #E6E9F2; font-weight: 500; background: rgba(255, 255, 255, .08); border-color: rgba(255, 255, 255, .14); }
+
+/* Cards: stand off the background — lighter glass, visible edge, deeper shadow */
+.card, .stat, .quick-action {
+  background-color: rgba(28, 34, 52, .66);
+  border: 1px solid rgba(255, 255, 255, .11);
+  border-top-color: rgba(255, 255, 255, .17);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07), 0 0 0 1px rgba(0, 0, 0, .35), 0 14px 34px rgba(0, 0, 0, .45);
+}
+.card .card, .stats.compact .stat, .char-card, .empty-state, .group-join, .slot.taken {
+  background-color: rgba(10, 13, 20, .55); border-color: rgba(255, 255, 255, .09);
+}
+.card > .card-head:first-child:has(h2.with-icon), .card > .card-head:first-child:has(h3.with-icon) {
+  background: linear-gradient(180deg, rgba(255, 255, 255, .05), rgba(255, 255, 255, .015));
+  border-bottom-color: rgba(255, 255, 255, .09);
+}
+.table td, .table th { border-bottom-color: rgba(255, 255, 255, .08); }
+.table tbody tr:hover { background: rgba(255, 255, 255, .03); }
+
+/* Inputs: clearly darker than the card they sit in, with a visible edge */
+input, select, textarea, .select-trigger { border-color: rgba(255, 255, 255, .14); }
+input, textarea { background: rgba(6, 8, 13, .78); }
+
+/* Tabs: no surrounding box (it looked like a stray block) */
+.tabs { padding: 0; background: none; border: 0; }
+
+/* Sidebar can never be scrolled sideways (that hid the icons) */
+.nav { overflow-x: clip; }
+.nav .nav-item:hover .icon { transform: none; }
+.nav .nav-item { color: #C3CADA; font-weight: 500; }
+.nav-section { color: #98A2B8; }
