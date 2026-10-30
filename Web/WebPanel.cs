@@ -40,6 +40,7 @@ public static class WebPanel
                               !string.IsNullOrWhiteSpace(config["Web:ClientSecret"]);
         services.AddSingleton(new WebPanelState(loginConfigured));
         services.AddHttpClient();
+        services.AddHttpContextAccessor();
         services.AddSingleton<WebAccessStore>();
         services.AddSingleton<PanelAccess>();
         services.AddSingleton<IAuthorizationHandler, PanelAccessHandler>();
@@ -245,15 +246,27 @@ public static class PanelClaims
 /// Раздел Member: у кого на сервере есть роль «участник» (Settings → Member roles), и владелец.
 /// Проверка идёт на каждый запрос, поэтому изменения действуют сразу.
 /// </summary>
-public sealed class PanelAccess(BotOwner owner, WebAccessStore grants, BotSettingsStore settings, DiscordSocketClient client)
+public sealed class PanelAccess(BotOwner owner, WebAccessStore grants, BotSettingsStore settings, DiscordSocketClient client,
+    IHttpContextAccessor http)
 {
     private static readonly string[] OwnerPermissions = [.. PanelPermissions.Grantable, PanelPermissions.Access];
 
+    /// <summary>Заголовок, которым владелец включает «вид обычного участника».</summary>
+    public const string ViewAsHeader = "X-View-As";
+
     public bool IsOwner(ulong? userId) => userId is { } id && owner.Is(id);
+
+    /// <summary>
+    /// Владелец смотрит сайт как обычный участник: на запросы с заголовком X-View-As: member у него нет админ-прав
+    /// (и на сервере, не только в интерфейсе). Действует только для владельца.
+    /// </summary>
+    public bool ViewingAsMember(ulong? userId) =>
+        IsOwner(userId) && http.HttpContext?.Request.Headers[ViewAsHeader].ToString() == "member";
 
     /// <summary>Админ-права (разделы). Пусто — не админ.</summary>
     public IReadOnlyList<string> Permissions(ulong? userId) =>
-        IsOwner(userId) ? OwnerPermissions : userId is { } id ? grants.GetPermissions(id) : Array.Empty<string>();
+        ViewingAsMember(userId) ? Array.Empty<string>()
+        : IsOwner(userId) ? OwnerPermissions : userId is { } id ? grants.GetPermissions(id) : Array.Empty<string>();
 
     public bool IsAdmin(ulong? userId) => Permissions(userId).Count > 0;
 

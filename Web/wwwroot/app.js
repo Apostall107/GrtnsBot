@@ -29,6 +29,8 @@ class ApiError extends Error {
 
 async function api(method, path, body) {
   const opts = { method, headers: { "X-Panel": "1" }, credentials: "same-origin" };
+  // Owner only: «view as member» — the server then answers as for a normal member
+  if (store.get("gb.viewAs") === "member") opts.headers["X-View-As"] = "member";
   if (body !== undefined) {
     opts.headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(body);
@@ -988,8 +990,16 @@ function renderShell() {
   // ----- Header: menu (mobile), brand, server, bot status, account menu
   const guildSel = h("select", { "aria-label": "Server", onchange: e => selectGuild(e.target.value) },
     state.guilds.map(g => h("option", { value: g.id, selected: g.id === state.guildId }, g.name)));
+  // Owner: switch between the full view and the view of a normal member
+  const viewAs = state.me.isOwner ? (() => {
+    const sw = h("input", { type: "checkbox", class: "switch", checked: !!state.me.viewAsMember, "aria-label": "View as member" });
+    sw.addEventListener("change", () => { store.set("gb.viewAs", sw.checked ? "member" : ""); state.tab = "home"; store.set("gb.tab", "home"); boot(); });
+    return h("label", { class: "menu-item view-as" }, icon("eye", 16), h("span", { style: "flex:1" }, "View as member"), sw);
+  })() : null;
   const userPop = h("div", { class: "user-pop", style: "display:none" },
-    h("div", { class: "who" }, h("b", {}, state.me.name), h("span", { class: "muted small" }, isAdmin() ? "Admin access" : "Member")),
+    h("div", { class: "who" }, h("b", {}, state.me.name),
+      h("span", { class: "muted small" }, state.me.viewAsMember ? "Owner · viewing as member" : state.me.isOwner ? "Owner" : isAdmin() ? "Admin access" : "Member")),
+    viewAs,
     h("button", { class: "menu-item danger", onclick: logout }, icon("log-out", 16), "Log out"));
   const userBtn = h("button", { class: "user-button", "aria-haspopup": "menu", "aria-expanded": "false" },
     state.me.avatarUrl ? h("img", { class: "avatar", src: state.me.avatarUrl, alt: "" }) : h("span", { class: "avatar" }),
@@ -1329,7 +1339,9 @@ async function pageOverview(main) {
       sectionLabel("Bot"),
       h("div", { class: "card" }, cardHead("bot", "Bot status"),
         h("div", { class: "row" },
-          h("span", { class: `status-pill ${connected ? "ok" : "bad"}` }, h("span", { class: "dot" }), connected ? "Connected to Discord" : (state.connection || "Offline")),
+          state.me.viewAsMember ? h("button", { class: "view-as-pill", title: "Back to my own view",
+        onclick: () => { store.set("gb.viewAs", ""); boot(); } }, icon("eye", 14), "Member view", icon("x", 13)) : null,
+      h("span", { class: `status-pill ${connected ? "ok" : "bad"}` }, h("span", { class: "dot" }), connected ? "Connected to Discord" : (state.connection || "Offline")),
           state.bot ? h("span", { class: "chip" }, icon("bot", 13), state.bot.name) : null),
         h("p", { class: "muted small", style: "margin-top:12px" }, "Changes made here apply immediately — the panel uses the same data as the bot in Discord.")),
       sectionLabel("Sections"),
