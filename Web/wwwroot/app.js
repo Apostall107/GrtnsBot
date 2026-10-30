@@ -434,9 +434,153 @@ function enhanceNumber(input) {
     h("button", { type: "button", tabindex: "-1", "aria-label": "Decrease", onclick: step(-1) }, icon("chevron-down", 12))));
 }
 
+// ================= Date & time pickers (glass popups instead of the browser's) =================
+
+/** Keeps the hidden native input as the value holder: .value works, programmatic sets update the label. */
+function hookValue(input, sync) {
+  const d = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+  Object.defineProperty(input, "value", { configurable: true, get() { return d.get.call(this); }, set(v) { d.set.call(this, v); sync(); } });
+}
+function setInputValue(input, v) {
+  input.value = v;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+/** A floating glass popup under an anchor; returns close(). */
+function popover(anchor, content, onClose) {
+  const host = anchor.closest("dialog[open]") || document.body;
+  const box = h("div", { class: "select-pop picker-pop" }, content);
+  host.append(box);
+  const place = () => {
+    const r = anchor.getBoundingClientRect();
+    const below = window.innerHeight - r.bottom - 12;
+    box.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - box.offsetWidth - 8))}px`;
+    if (below < box.offsetHeight && r.top > below) { box.style.top = ""; box.style.bottom = `${window.innerHeight - r.top + 6}px`; }
+    else { box.style.bottom = ""; box.style.top = `${r.bottom + 6}px`; }
+  };
+  place();
+  const outside = e => { if (!box.contains(e.target) && !anchor.contains(e.target)) close(); };
+  const key = e => { if (e.key === "Escape") { close(); anchor.focus(); e.stopPropagation(); } };
+  setTimeout(() => document.addEventListener("mousedown", outside, true));
+  window.addEventListener("scroll", place, true);
+  box.addEventListener("keydown", key);
+  anchor.classList.add("open");
+  function close() {
+    box.remove();
+    anchor.classList.remove("open");
+    document.removeEventListener("mousedown", outside, true);
+    window.removeEventListener("scroll", place, true);
+    if (onClose) onClose();
+  }
+  return { box, close };
+}
+
+const pad2 = n => String(n).padStart(2, "0");
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+function enhanceDate(input) {
+  if (input.dataset.enhanced) return;
+  input.dataset.enhanced = "1";
+  const wrap = h("span", { class: "select picker" });
+  if (input.style.cssText) { wrap.style.cssText = input.style.cssText; input.style.cssText = ""; }
+  const label = h("span", { class: "select-label" });
+  const trigger = h("button", { type: "button", class: "select-trigger" }, icon("calendar", 16, "picker-icon"), label);
+  input.parentNode.insertBefore(wrap, input);
+  wrap.append(input, trigger);
+  input.tabIndex = -1;
+  const sync = () => {
+    const v = input.value;
+    if (v) {
+      const [y, m, d] = v.split("-").map(Number);
+      label.textContent = new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+    } else label.textContent = "Pick a date";
+    wrap.classList.toggle("placeholder", !v);
+  };
+  hookValue(input, sync);
+  sync();
+
+  trigger.addEventListener("click", () => {
+    const today = new Date();
+    const sel = input.value ? input.value.split("-").map(Number) : null;
+    let y = sel ? sel[0] : today.getFullYear(), m = sel ? sel[1] - 1 : today.getMonth();
+    const grid = h("div", { class: "cal-grid" });
+    const title = h("b", {});
+    const draw = () => {
+      title.textContent = `${MONTHS[m]} ${y}`;
+      const first = (new Date(y, m, 1).getDay() + 6) % 7; // Monday first
+      const days = new Date(y, m + 1, 0).getDate();
+      const cells = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map(d => h("span", { class: "cal-dow" }, d));
+      for (let i = 0; i < first; i++) cells.push(h("span", {}));
+      for (let d = 1; d <= days; d++) {
+        const isToday = d === today.getDate() && m === today.getMonth() && y === today.getFullYear();
+        const isSel = sel && sel[0] === y && sel[1] - 1 === m && sel[2] === d;
+        const past = new Date(y, m, d) < new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        cells.push(h("button", { type: "button", class: `cal-day${isToday ? " today" : ""}${isSel ? " selected" : ""}${past ? " past" : ""}`,
+          onclick: () => { setInputValue(input, `${y}-${pad2(m + 1)}-${pad2(d)}`); pop.close(); trigger.focus(); } }, d));
+      }
+      grid.replaceChildren(...cells);
+    };
+    const nav = dir => () => { m += dir; if (m < 0) { m = 11; y--; } if (m > 11) { m = 0; y++; } draw(); };
+    const pop = popover(trigger, h("div", { class: "cal" },
+      h("div", { class: "cal-head" },
+        h("button", { type: "button", class: "btn ghost icon-only sm", "aria-label": "Previous month", onclick: nav(-1) }, icon("arrow-left", 16)),
+        title,
+        h("button", { type: "button", class: "btn ghost icon-only sm", "aria-label": "Next month", onclick: nav(1) }, icon("arrow-right", 16))),
+      grid,
+      h("div", { class: "cal-foot" },
+        h("button", { type: "button", class: "btn ghost sm", onclick: () => { setInputValue(input, ""); pop.close(); } }, "Clear"),
+        h("button", { type: "button", class: "btn secondary sm", onclick: () => {
+          setInputValue(input, `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`); pop.close();
+        } }, "Today"))));
+    draw();
+  });
+}
+
+function enhanceTime(input) {
+  if (input.dataset.enhanced) return;
+  input.dataset.enhanced = "1";
+  const wrap = h("span", { class: "select picker" });
+  if (input.style.cssText) { wrap.style.cssText = input.style.cssText; input.style.cssText = ""; }
+  // Typing works too: the visible field is a text box with HH:MM
+  const text = h("input", { class: "time-text", placeholder: "--:--", maxlength: "5", inputmode: "numeric", "aria-label": "Time" });
+  const btn = h("button", { type: "button", class: "time-btn", "aria-label": "Pick time" }, icon("clock", 16));
+  input.parentNode.insertBefore(wrap, input);
+  wrap.append(input, h("span", { class: "select-trigger time-field" }, text, btn));
+  input.tabIndex = -1;
+  const sync = () => { if (document.activeElement !== text) text.value = input.value || ""; wrap.classList.toggle("placeholder", !input.value); };
+  hookValue(input, sync);
+  sync();
+  const commit = () => {
+    const m = /^(\d{1,2})[:.\s]?(\d{2})$/.exec(text.value.trim());
+    if (!text.value.trim()) setInputValue(input, "");
+    else if (m && +m[1] < 24 && +m[2] < 60) setInputValue(input, `${pad2(+m[1])}:${m[2]}`);
+    text.value = input.value;
+  };
+  text.addEventListener("blur", commit);
+  text.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); commit(); } });
+
+  const field = wrap.querySelector(".time-field");
+  btn.addEventListener("click", () => {
+    let [hh, mm] = (input.value || "20:00").split(":").map(Number);
+    const col = (count, stepVal, cur, onPick) => h("div", { class: "time-col" }, Array.from({ length: count }, (_, i) => i * stepVal).map(v =>
+      h("button", { type: "button", class: `time-cell${v === cur ? " selected" : ""}`, onclick: e => { onPick(v); [...e.target.parentNode.children].forEach(c => c.classList.toggle("selected", c === e.target)); } }, pad2(v))));
+    const apply = () => setInputValue(input, `${pad2(hh)}:${pad2(mm)}`);
+    const hours = col(24, 1, hh, v => { hh = v; apply(); });
+    const mins = col(12, 5, mm - mm % 5, v => { mm = v; apply(); });
+    const pop = popover(field, h("div", { class: "time-pop" },
+      h("div", { class: "time-cols" }, h("div", {}, h("div", { class: "cal-dow" }, "Hour"), hours), h("div", {}, h("div", { class: "cal-dow" }, "Min"), mins)),
+      h("div", { class: "cal-foot" },
+        h("button", { type: "button", class: "btn ghost sm", onclick: () => { setInputValue(input, ""); pop.close(); } }, "Clear"),
+        h("button", { type: "button", class: "btn sm", onclick: () => { apply(); pop.close(); } }, "Done"))));
+    setTimeout(() => pop.box.querySelectorAll(".time-cell.selected").forEach(c => c.scrollIntoView({ block: "center" })));
+  });
+}
+
 function enhanceControls(root) {
   for (const sel of root.querySelectorAll("select:not([data-enhanced])")) enhanceSelect(sel);
   for (const n of root.querySelectorAll("input[type=number]:not([data-enhanced])")) enhanceNumber(n);
+  for (const d of root.querySelectorAll("input[type=date]:not([data-enhanced])")) enhanceDate(d);
+  for (const t of root.querySelectorAll("input[type=time]:not([data-enhanced])")) enhanceTime(t);
 }
 
 /** Card headings: a leading emoji (or a known title) becomes a tone icon chip. */
@@ -2392,21 +2536,10 @@ async function pagePosts(main) {
     h("p", { class: "muted small" }, "Panel messages the bot knows about. Deleting removes the message in Discord."),
     panelsBody));
 
-  // --- Bot messages in a channel
-  const chSel = channelSelect("text", "Choose a text channel…");
-  const limitSel = h("select", {}, [50, 100, 200, 500].map(n => h("option", { value: n, selected: n === 100 }, `last ${n} messages`)));
-  const loadBtn = h("button", { class: "btn" }, "Load");
-  const msgBody = h("div", {}, empty("Choose a channel to see the bot's messages there."));
-  loadBtn.addEventListener("click", () => {
-    if (!chSel.value) return toast("Choose a channel first.", "warn");
-    loadMessages(chSel.value, limitSel.value, msgBody, loadBtn);
-  });
-  main.append(h("div", { class: "card" },
-    h("div", { class: "card-head" }, h("h2", {}, "Bot messages in a channel")),
-    h("p", { class: "muted small" }, "Everything the bot posted: panels, LFG groups, reminders, ticket messages and so on. ",
-      "Deleting an LFG group post closes the group."),
-    h("div", { class: "row", style: "margin-bottom:12px" }, h("div", { class: "grow" }, chSel), limitSel, loadBtn),
-    msgBody));
+  // --- Bot messages: only channels where the bot has posted; All or a chosen channel
+  const msgCard = h("div", { class: "card" });
+  main.append(msgCard);
+  renderBotMessages(msgCard);
 
   try {
     const panels = await gApi("GET", "/posts/panels");
@@ -2436,48 +2569,89 @@ function panelGroup(p) {
       })))) : h("div", { class: "empty small" }, "None known. Post it from the module tab or use “Find posted panels”."));
 }
 
-async function loadMessages(channelId, limit, body, btn) {
-  body.replaceChildren(h("div", { class: "muted" }, "Loading…"));
-  const list = await act(btn, () => gApi("GET", `/posts/channels/${channelId}/messages?limit=${limit}`));
-  if (list === undefined) { body.replaceChildren(empty("Couldn't load messages.")); return; }
-  if (!list.length) { body.replaceChildren(empty("The bot has no messages among the loaded ones.")); return; }
+/** Bot messages card: channel chips (only channels with the bot's messages), All = every one of them. */
+async function renderBotMessages(card, refreshScan = false) {
+  const head = cardHead("message-square-text", "Bot messages");
+  const rescan = h("button", { class: "btn secondary" }, icon("refresh-cw", 15), "Rescan");
+  rescan.addEventListener("click", () => renderBotMessages(card, true));
+  head.append(rescan);
+  card.replaceChildren(head,
+    h("p", { class: "muted small" }, "Channels where the bot has messages (the last 50 messages of each channel are checked). Deleting an LFG group post closes the group."),
+    h("div", { class: "muted" }, "Looking for the bot's messages…"));
+  let channels;
+  try { channels = await gApi("GET", `/posts/channels${refreshScan ? "?refresh=true" : ""}`); }
+  catch (e) { card.replaceChildren(head, empty(e.message)); return; }
+  if (!channels.length) { card.replaceChildren(head, emptyState("message-square-text", "No bot messages found", "The bot hasn't posted in the channels it can read.")); return; }
+
+  let current = store.get("gb.msgChannel") || "all";
+  if (current !== "all" && !channels.some(c => c.id === current)) current = "all";
+  const total = channels.reduce((a, c) => a + c.count, 0);
+  const body = h("div", {});
+  const chips = h("div", { class: "filter-chips" });
+  const drawChips = () => chips.replaceChildren(...
+    [{ id: "all", name: "All channels", count: total }, ...channels].map(c => h("button", {
+      class: `filter-chip${c.id === current ? " active" : ""}`, title: c.category || "",
+      onclick: () => { current = c.id; store.set("gb.msgChannel", c.id); drawChips(); load(); }
+    }, c.id === "all" ? icon("layers", 14) : icon(c.voice ? "volume-2" : "hash", 14), c.name, h("span", { class: "count" }, c.count))));
+  const load = () => loadMessages(current === "all" ? channels : channels.filter(c => c.id === current), body, load);
+  drawChips();
+  card.replaceChildren(head,
+    h("p", { class: "muted small" }, "Channels where the bot has messages (the last 50 messages of each channel are checked). Deleting an LFG group post closes the group."),
+    chips, body);
+  load();
+}
+
+async function loadMessages(channels, body, reload) {
+  body.replaceChildren(skeletonLines(3));
+  const lists = await Promise.all(channels.map(c => gApi("GET", `/posts/channels/${c.id}/messages?limit=100`)
+    .then(list => list.map(m => ({ ...m, channelId: c.id, channel: c })))
+    .catch(() => [])));
+  const list = lists.flat().sort((a, b) => b.createdAt - a.createdAt);
+  if (!list.length) { body.replaceChildren(empty("No bot messages here any more.")); return; }
+  const many = channels.length > 1;
 
   const checks = [];
-  const delSel = h("button", { class: "btn danger" }, "🗑️ Delete selected");
-  const all = h("input", { type: "checkbox", title: "Select all" });
+  const delSel = h("button", { class: "btn danger" }, icon("trash-2", 15), "Delete selected");
+  const all = h("input", { type: "checkbox", title: "Select all", "aria-label": "Select all" });
   all.addEventListener("change", () => checks.forEach(c => { c.cb.checked = all.checked; }));
   delSel.addEventListener("click", async () => {
-    const ids = checks.filter(c => c.cb.checked).map(c => c.id);
-    if (!ids.length) return toast("Nothing selected.", "warn");
-    if (!await confirmDialog(`Delete ${ids.length} message(s)?`, "This can't be undone. LFG group posts close their groups.", "Delete")) return;
-    const res = await act(delSel, () => gApi("POST", `/posts/channels/${channelId}/delete`, { messageIds: ids }));
-    if (res === undefined) return;
-    toast(`Deleted ${res.deleted}${res.failed ? `, failed ${res.failed}` : ""}.`, res.failed ? "warn" : "ok");
-    loadMessages(channelId, limit, body, btn);
+    const picked = checks.filter(c => c.cb.checked);
+    if (!picked.length) return toast("Nothing selected.", "warn");
+    if (!await confirmDialog(`Delete ${picked.length} message(s)?`, "This can't be undone. LFG group posts close their groups.", "Delete")) return;
+    const byChannel = {};
+    for (const c of picked) (byChannel[c.channelId] = byChannel[c.channelId] || []).push(c.id);
+    let deleted = 0, failed = 0;
+    for (const [ch, ids] of Object.entries(byChannel)) {
+      const res = await act(delSel, () => gApi("POST", `/posts/channels/${ch}/delete`, { messageIds: ids }));
+      if (res) { deleted += res.deleted; failed += res.failed; }
+    }
+    toast(`Deleted ${deleted}${failed ? `, failed ${failed}` : ""}.`, failed ? "warn" : "ok");
+    reload();
   });
 
   const rows = list.map(m => {
-    const cb = h("input", { type: "checkbox" });
-    checks.push({ cb, id: m.messageId });
+    const cb = h("input", { type: "checkbox", "aria-label": "Select" });
+    checks.push({ cb, id: m.messageId, channelId: m.channelId });
     const [label, cls] = KIND_LABELS[m.kind] || [m.kind, ""];
     const del = h("button", { class: "btn ghost" }, "Delete");
     del.addEventListener("click", async () => {
       if (!await confirmDialog("Delete this message?", m.kind === "lfg-group" ? "The LFG group will be closed." : "This can't be undone.", "Delete")) return;
-      if (await act(del, () => gApi("POST", `/posts/channels/${channelId}/delete`, { messageIds: [m.messageId] }), "Deleted.") !== undefined)
-        loadMessages(channelId, limit, body, btn);
+      if (await act(del, () => gApi("POST", `/posts/channels/${m.channelId}/delete`, { messageIds: [m.messageId] }), "Deleted.") !== undefined) reload();
     });
     return h("tr", {},
-      h("td", {}, cb),
+      h("td", {}, h("label", { class: "row-check" }, cb)),
       h("td", { class: "muted small", style: "white-space:nowrap" }, fmtDate(m.createdAt)),
+      many ? h("td", { class: "small" }, `${m.channel.voice ? "🔊" : "#"} ${m.channel.name}`) : null,
       h("td", {}, h("span", { class: `badge ${cls}` }, label)),
       h("td", {}, m.title ? h("div", {}, m.title) : null, h("div", { class: "muted small" }, m.preview || "—")),
       h("td", { class: "actions" }, h("a", { class: "btn ghost", href: m.jumpUrl, target: "_blank", rel: "noopener" }, "Open"), " ", del));
   });
 
   body.replaceChildren(
-    h("div", { class: "row", style: "margin-bottom:8px" }, h("span", { class: "muted small" }, `${list.length} bot message(s)`), delSel),
+    h("div", { class: "row", style: "margin:12px 0 8px" }, h("span", { class: "muted small" }, `${list.length} bot message(s)`), h("span", { style: "flex:1" }), delSel),
     h("div", { class: "table-wrap" }, h("table", { class: "table" },
-      h("thead", {}, h("tr", {}, h("th", {}, all), h("th", {}, "Posted"), h("th", {}, "Type"), h("th", {}, "Content"), h("th", {}))),
+      h("thead", {}, h("tr", {}, h("th", {}, h("label", { class: "row-check" }, all)), h("th", {}, "Posted"), many ? h("th", {}, "Channel") : null,
+        h("th", {}, "Type"), h("th", {}, "Content"), h("th", {}))),
       h("tbody", {}, rows))));
 }
 
