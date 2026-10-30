@@ -91,6 +91,7 @@ public static partial class PanelApi
         // Часовой пояс, автоудаление, напоминание — это настройки LFG: на сайте они во вкладке LFG (право LFG)
         MapSettings(guild.MapGroup("/lfg/settings").AddEndpointFilter(Require(PanelPermissions.Lfg)));
         MapPosts(guild.MapGroup("/posts").AddEndpointFilter(Require(PanelPermissions.Posts)));
+        MapAnnounce(guild.MapGroup("/announce").AddEndpointFilter(Require(PanelPermissions.Announce)));
         MapBackup(api.MapGroup("/backup").AddEndpointFilter(Require(PanelPermissions.Access)));
         MapAccess(api.MapGroup("/access").AddEndpointFilter(Require(PanelPermissions.Access)));
     }
