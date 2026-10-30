@@ -213,3 +213,9 @@ select { max-width: 100%; text-overflow: ellipsis; }
 .question-row { margin-bottom: 6px; gap: 6px; }
 .question-row input[type=checkbox] { margin: 0; }
 .form-editor { border: 1px dashed var(--line); border-radius: 8px; padding: 10px; }
+
+/* Bot avatar: favicon, top bar, login */
+.brand-logo { position: relative; display: inline-flex; }
+.brand-logo img { width: 28px; height: 28px; border-radius: 50%; }
+.brand-logo .dot { position: absolute; right: -2px; bottom: -2px; border: 2px solid var(--panel); width: 11px; height: 11px; }
+.logo-img { width: 72px; height: 72px; border-radius: 50%; margin-bottom: 8px; }
