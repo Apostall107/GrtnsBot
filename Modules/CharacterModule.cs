@@ -22,10 +22,10 @@ public sealed class CharacterModule(CharacterStore store, LfgProfileService prof
         var all = projects.GetProjects(Context.Guild.Id);
         // Без проектов — один общий список
         var scopes = all.Count == 0
-            ? new List<(string? Scope, string? Title)> { (null, null) }
-            : all.Select(p => (projects.Scope(Context.Guild.Id, p.Key), (string?)p.Name)).ToList();
+            ? new List<(string? Scope, string? Title, string? Key)> { (null, null, null) }
+            : all.Select(p => (projects.Scope(Context.Guild.Id, p.Key), (string?)p.Name, (string?)p.Key)).ToList();
 
-        foreach (var (scope, title) in scopes)
+        foreach (var (scope, title, key) in scopes)
         {
             var list = store.Get(Context.Guild.Id, Context.User.Id, scope);
             if (list.Count == 0) continue;
@@ -33,7 +33,7 @@ public sealed class CharacterModule(CharacterStore store, LfgProfileService prof
             foreach (var name in list)
             {
                 var info = store.GetInfo(Context.Guild.Id, Context.User.Id, name, scope);
-                var icon = profiles.Icon(Context.Guild.Id, info?.ClassRoleId is { } r ? Context.Guild.GetRole(r) : null);
+                var icon = profiles.Icon(Context.Guild.Id, info?.ClassRoleId is { } r ? Context.Guild.GetRole(r) : null, key);
                 var gsText = info?.Gs is { } g ? $" · GS {g}" : "";
                 sb.AppendLine($"• {(icon is null ? "" : icon + " ")}**{Format.Sanitize(name)}**{gsText}");
                 if (!string.IsNullOrWhiteSpace(info?.Comment)) sb.AppendLine($"-# 💬 {Format.Sanitize(info.Comment)}");
@@ -67,7 +67,7 @@ public sealed class CharacterModule(CharacterStore store, LfgProfileService prof
     {
         if (await ScopeAsync(project) is not { } scope || await ExactAsync(name, scope.Value) is not { } exact) return;
 
-        if (role is not null && profiles.ClassRoles(Context.Guild.Id, Context.User.Id).All(r => r.Id != role.Id))
+        if (role is not null && profiles.ClassRoles(Context.Guild.Id, Context.User.Id, scope.ProjectKey).All(r => r.Id != role.Id))
         {
             await RespondAsync("You can only pick a class role you have (see LFG → Classes on the site).", ephemeral: true);
             return;
@@ -128,7 +128,7 @@ public sealed class CharacterModule(CharacterStore store, LfgProfileService prof
     }
 
     /// <summary>Проект из опции → ключ хранения. null — ответ с ошибкой уже отправлен (нет такого проекта или нет его роли).</summary>
-    private async Task<(string? Value, string Label)?> ScopeAsync(string? projectKey)
+    private async Task<(string? Value, string Label, string? ProjectKey)?> ScopeAsync(string? projectKey)
     {
         var project = projects.Effective(Context.Guild.Id, string.IsNullOrWhiteSpace(projectKey) ? null : projectKey);
         if (!string.IsNullOrWhiteSpace(projectKey) && projects.Find(Context.Guild.Id, projectKey) is null)
@@ -142,7 +142,7 @@ public sealed class CharacterModule(CharacterStore store, LfgProfileService prof
                 ephemeral: true, allowedMentions: AllowedMentions.None);
             return null;
         }
-        return (projects.Scope(Context.Guild.Id, project?.Key), project is null ? "" : $" ({Format.Sanitize(project.Name)})");
+        return (projects.Scope(Context.Guild.Id, project?.Key), project is null ? "" : $" ({Format.Sanitize(project.Name)})", project?.Key);
     }
 
     private async Task<string?> ExactAsync(string name, string? scope)

@@ -184,19 +184,30 @@ public static partial class PanelApi
             {
                 key = a.Key,
                 name = a.Name,
-                role = Role(guild, a.RoleId)
+                role = Role(guild, a.RoleId),
+                projectKey = a.ProjectKey
             }));
         });
 
-        g.MapPost("/activities", (ulong guildId, ActivityBody body, DiscordSocketClient client, ActivityStore activities) =>
+        g.MapPost("/activities", (ulong guildId, ActivityBody body, DiscordSocketClient client, ActivityStore activities, LfgProjectStore projects) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var name = (body.Name ?? "").Trim();
             if (name.Length is 0 or > MaxNameLength) return Error($"The name must be 1–{MaxNameLength} characters.");
             if (ParseId(body.RoleId) is not { } roleId || guild.GetRole(roleId) is null) return Error("Pick a role to ping.");
+            var projectKey = string.IsNullOrWhiteSpace(body.ProjectKey) ? null : body.ProjectKey;
+            if (projectKey is not null && projects.Find(guildId, projectKey) is null) return Error("Project not found.");
 
-            var error = activities.Add(guildId, name, roleId);
+            var error = activities.Add(guildId, name, roleId, projectKey);
             return error is null ? Results.Ok() : Error(error);
+        });
+
+        // Активность → проект (пусто — общая для всех проектов)
+        g.MapPut("/activities/{key}/project", (ulong guildId, string key, LfgPanelProjectBody body, ActivityStore activities, LfgProjectStore projects) =>
+        {
+            var projectKey = string.IsNullOrWhiteSpace(body.ProjectKey) ? null : body.ProjectKey;
+            if (projectKey is not null && projects.Find(guildId, projectKey) is null) return Error("Project not found.");
+            return activities.SetProject(guildId, key, projectKey) ? Results.Ok() : Error("Activity not found.");
         });
 
         g.MapDelete("/activities/{key}", (ulong guildId, string key, ActivityStore activities) =>
@@ -959,7 +970,7 @@ public static partial class PanelApi
     }
 }
 
-public sealed record ActivityBody(string? Name, string? RoleId);
+public sealed record ActivityBody(string? Name, string? RoleId, string? ProjectKey = null);
 public sealed record ProjectBody(string? Name, string? MemberRoleId);
 public sealed record ProjectUpdateBody(List<string>? StaffRoleIds, List<string>? MemberRoleIds, string? CategoryId, string? CustomText,
     bool? FormEnabled = null, List<QuestionBody>? Questions = null, int? AutoCloseDays = null);

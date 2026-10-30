@@ -87,6 +87,8 @@ public sealed class Activity
     public string Key { get; set; } = IdGen.New();
     public string Name { get; set; } = "";
     public ulong RoleId { get; set; }
+    /// <summary>Проект (игра). null — активность доступна во всех проектах.</summary>
+    public string? ProjectKey { get; set; }
 }
 
 /// <summary>Черновик сбора, пока организатор проходит шаги в эфемерном сообщении.</summary>

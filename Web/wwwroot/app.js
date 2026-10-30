@@ -393,18 +393,30 @@ async function pageOverview(main) {
 async function pageLfg(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "📣 LFG"), h("button", { class: "btn secondary", onclick: refresh }, "🔄 Refresh")));
 
+  // Projects (games): activities and classes can belong to a project
+  let lfgProjects = { projects: [], panels: [] };
+  try { lfgProjects = await gApi("GET", "/lfg/projects"); } catch { /* shown in the card */ }
+  const projOptions = (sel, value) => {
+    const el = h("select", {}, h("option", { value: "" }, "🌐 All projects"), lfgProjects.projects.map(p => h("option", { value: p.key }, `🎮 ${p.name}`)));
+    el.value = value || "";
+    return el;
+  };
+
   // --- Activities
   const actCard = h("div", { class: "card" }, h("div", { class: "card-head" }, h("h2", {}, "Activities")),
-    h("p", { class: "muted small" }, "Members with the role are pinged and get a DM when a group for the activity is posted."));
+    h("p", { class: "muted small" }, "Members with the role are pinged and get a DM when a group for the activity is posted. ",
+      "An activity of a project is offered only in that project's groups; «All projects» — everywhere."));
   const actBody = h("div", {}, h("div", { class: "muted" }, "Loading…"));
   const nameIn = h("input", { placeholder: "Activity name, e.g. Fire Temple", maxlength: "100" });
   const roleIn = roleSelect("Role to ping…");
+  const projIn = lfgProjects.projects.length ? projOptions() : null;
   const addBtn = h("button", { class: "btn" }, "➕ Add");
   addBtn.addEventListener("click", async () => {
-    const ok = await act(addBtn, () => gApi("POST", "/lfg/activities", { name: nameIn.value, roleId: roleIn.value }), "Activity added.");
+    const ok = await act(addBtn, () => gApi("POST", "/lfg/activities",
+      { name: nameIn.value, roleId: roleIn.value, projectKey: projIn ? projIn.value || null : null }), "Activity added.");
     if (ok !== undefined) refresh();
   });
-  actCard.append(actBody, h("div", { class: "row", style: "margin-top:12px" }, h("div", { class: "grow" }, nameIn), roleIn, addBtn));
+  actCard.append(actBody, h("div", { class: "row", style: "margin-top:12px" }, h("div", { class: "grow" }, nameIn), roleIn, projIn, addBtn));
 
   // Channel for groups created by members on the site
   const chCard = h("div", { class: "card" }, h("h3", {}, "Channel for groups"),
@@ -440,22 +452,23 @@ async function pageLfg(main) {
   try {
     acts = await gApi("GET", "/lfg/activities");
     actBody.replaceChildren(acts.length ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
-      h("thead", {}, h("tr", {}, h("th", {}, "Activity"), h("th", {}, "Ping role"), h("th", {}))),
+      h("thead", {}, h("tr", {}, h("th", {}, "Activity"), h("th", {}, "Ping role"), lfgProjects.projects.length ? h("th", {}, "Project") : null, h("th", {}))),
       h("tbody", {}, acts.map(a => {
+        const proj = lfgProjects.projects.length ? projOptions(null, a.projectKey) : null;
+        if (proj) proj.addEventListener("change", () => act(proj,
+          () => gApi("PUT", `/lfg/activities/${encodeURIComponent(a.key)}/project`, { projectKey: proj.value || null }), "Activity moved."));
         const rm = h("button", { class: "btn ghost" }, "Remove");
         rm.addEventListener("click", async () => {
           if (!await confirmDialog(`Remove ${a.name}?`, "Groups that are already posted are not affected.", "Remove")) return;
           if (await act(rm, () => gApi("DELETE", `/lfg/activities/${encodeURIComponent(a.key)}`), "Activity removed.") !== undefined) refresh();
         });
-        return h("tr", {}, h("td", {}, a.name), h("td", {}, roleChip(a.role)), h("td", { class: "actions" }, rm));
+        return h("tr", {}, h("td", {}, a.name), h("td", {}, roleChip(a.role)), proj ? h("td", {}, proj) : null, h("td", { class: "actions" }, rm));
       })))) : empty("No activities yet."));
   } catch (e) { actBody.replaceChildren(empty(e.message)); }
 
   // Schedules
   let templates = [];
   try { templates = await gApi("GET", "/lfg/templates"); } catch { /* shown in the card */ }
-  let lfgProjects = { projects: [], panels: [] };
-  try { lfgProjects = await gApi("GET", "/lfg/projects"); } catch { /* shown in the card */ }
   const projCard = h("div", { class: "card" });
   const classCard = h("div", { class: "card" });
   main.insertBefore(projCard, recCard);
@@ -464,7 +477,7 @@ async function pageLfg(main) {
   main.insertBefore(lfgSettingsCard, projCard);
   renderLfgSettings(lfgSettingsCard);
   renderProjects(projCard, lfgProjects);
-  renderClasses(classCard);
+  renderClasses(classCard, lfgProjects.projects);
   renderRecurring(recCard, acts, templates, lfgProjects.projects);
   const tplCard = h("div", { class: "card" });
   const statsCard = h("div", { class: "card" });
@@ -499,6 +512,12 @@ function lfgForm(acts, opts) {
     : null;
   if (projectSel) {
     projectSel.value = v.projectKey || (opts.projects.find(p => p.isDefault) || opts.projects[0]).key;
+    fillActivities(projectSel.value);
+    if (!v.activityKey && !v.activity) {
+      const first = [...activity.options].find(o => o.value);
+      if (first) activity.value = first.value;
+    }
+    projectSel.addEventListener("change", () => { fillActivities(projectSel.value); syncCustom(); });
     if (opts.fixedChannel) {
       // The post goes to the channel of the project's LFG panel
       const syncChannel = () => {
@@ -519,9 +538,16 @@ function lfgForm(acts, opts) {
   const voice = h("input", { type: "checkbox", checked: !!v.createVoice });
   const nameIn = h("input", { placeholder: "Template name, e.g. Dungeon 4: Tank/Sup/DD/DD", maxlength: "80", value: v.name || "" });
 
-  const activity = h("select", {},
-    h("option", { value: "" }, "✏️ Custom activity (no ping)"),
-    acts.map(a => h("option", { value: a.key }, `${a.name}  ·  @${a.role.name}`)));
+  const activity = h("select", {});
+  // Only activities of the chosen project (+ the ones for all projects)
+  const fillActivities = projectKey => {
+    const keep = activity.value;
+    activity.replaceChildren(h("option", { value: "" }, "✏️ Custom activity (no ping)"),
+      ...acts.filter(a => !projectKey || !a.projectKey || a.projectKey === projectKey)
+        .map(a => h("option", { value: a.key }, `${a.name}  ·  @${a.role.name}`)));
+    if ([...activity.options].some(o => o.value === keep)) activity.value = keep;
+  };
+  fillActivities(null);
   const custom = h("input", { placeholder: "Activity name", maxlength: "100" });
   if (v.activityKey !== undefined) {
     activity.value = v.activityKey || "";
@@ -788,10 +814,17 @@ function projectDialog(p) {
   d.showModal();
 }
 
-async function renderClasses(card) {
+async function renderClasses(card, projectList = [], projectKey = store.get("gb.classProject") || "") {
+  if (projectKey && !projectList.some(p => p.key === projectKey)) projectKey = "";
   card.replaceChildren(h("h2", {}, "🎭 Classes"), h("div", { class: "muted" }, "Loading…"));
   let data;
-  try { data = await gApi("GET", "/lfg/classes"); } catch (e) { card.replaceChildren(h("h2", {}, "🎭 Classes"), empty(e.message)); return; }
+  const q = projectKey ? `?project=${encodeURIComponent(projectKey)}` : "";
+  try { data = await gApi("GET", `/lfg/classes${q}`); } catch (e) { card.replaceChildren(h("h2", {}, "🎭 Classes"), empty(e.message)); return; }
+  // Common classes + each project's own (a project without its own uses the common list)
+  const tabs = projectList.length ? h("div", { class: "row", style: "margin-bottom:10px" },
+    [["", "🌐 Common"], ...projectList.map(p => [p.key, `🎮 ${p.name}`])].map(([k, label]) =>
+      h("button", { class: `btn secondary${k === projectKey ? " active-tab" : ""}`,
+        onclick: () => { store.set("gb.classProject", k); renderClasses(card, projectList, k); } }, label))) : null;
   let rows = data.classes.map(c => ({ roleId: c.role.id, role: c.role, icon: c.icon }));
   const list = h("div", {});
   const preview = icon => classMark({ classIcon: icon }) || h("span", { class: "muted small" }, "—");
@@ -814,11 +847,12 @@ async function renderClasses(card) {
     draw();
   });
   const save = h("button", { class: "btn" }, "💾 Save classes");
-  save.addEventListener("click", () => act(save, () => gApi("PUT", "/lfg/classes", { classes: rows.map(r => ({ roleId: r.roleId, icon: r.icon })) }),
+  save.addEventListener("click", () => act(save, () => gApi("PUT", `/lfg/classes${q}`, { classes: rows.map(r => ({ roleId: r.roleId, icon: r.icon })) }),
     "Classes saved. New signups use the icons; existing posts update when someone changes their class."));
   draw();
-  card.replaceChildren(h("h2", {}, "🎭 Classes"),
+  card.replaceChildren(h("h2", {}, "🎭 Classes"), tabs,
     h("p", { class: "muted small" }, "Roles that count as classes and their icon shown next to the player's name. If the list is not empty, players can only pick these roles as their class. ",
+      projectKey ? "This project's own classes — if empty, the common list is used." : "Common classes — used by every project that has no classes of its own. ",
       "Use a unicode emoji or a server emoji (upload class icons as server emojis, then pick them here)."),
     list, h("div", { class: "row", style: "margin-top:8px" }, addSel, save));
 }
@@ -2127,7 +2161,8 @@ const HELP = {
       ]],
       ["Projects & classes", [
         "**🎮 Projects** — name + required role(s), one is the default (older characters belong to it). Link each LFG panel to its project.",
-        "**🎭 Classes** — add class roles and set an icon for each (emoji or server emoji)."
+        "**🎭 Classes** — common list and per project (a project without its own uses the common list): class roles and an icon for each.",
+        "**Activities** can belong to a project (offered only in its groups) or to «All projects»."
       ]],
       ["Templates & statistics", [
         "**📋 Templates** — name, activity, slots, required role, minimum GS. Shown in /lfg Step 1 and in Create a group.",

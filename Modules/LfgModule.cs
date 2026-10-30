@@ -90,7 +90,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         d.Slots = Enumerable.Range(0, size).Select(_ => new Slot()).ToList();
         d.Selected.Clear();
 
-        await ShowAsync(LfgRenderer.ActivityStep(d, activities.Get(d.GuildId)));
+        await ShowAsync(LfgRenderer.ActivityStep(d, activities.ForProject(d.GuildId, d.ProjectKey)));
     }
 
     [ComponentInteraction("lfg:tpl:*")]

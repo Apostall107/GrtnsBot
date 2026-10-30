@@ -114,19 +114,23 @@ public static partial class PanelApi
         });
 
         // ----- Классы: какие роли — классы и их иконки (эмодзи или эмодзи сервера) -----
-        g.MapGet("/classes", (ulong guildId, DiscordSocketClient client, LfgProjectStore projects) =>
+        // ?project=key — классы проекта; без project — общие (действуют в проектах без своих классов)
+        g.MapGet("/classes", (ulong guildId, string? project, DiscordSocketClient client, LfgProjectStore projects) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            var key = string.IsNullOrWhiteSpace(project) ? null : project;
             return Results.Ok(new
             {
-                classes = projects.ClassIcons(guildId).Select(kv => new { role = Role(guild, kv.Key), icon = kv.Value }),
+                classes = projects.ClassIcons(guildId, key).Select(kv => new { role = Role(guild, kv.Key), icon = kv.Value }),
                 emojis = guild.Emotes.OrderBy(e => e.Name).Select(e => new { name = e.Name, code = $"<{(e.Animated ? "a" : "")}:{e.Name}:{e.Id}>", url = e.Url })
             });
         });
 
-        g.MapPut("/classes", (ulong guildId, ClassIconsBody body, DiscordSocketClient client, LfgProjectStore projects) =>
+        g.MapPut("/classes", (ulong guildId, string? project, ClassIconsBody body, DiscordSocketClient client, LfgProjectStore projects) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            var key = string.IsNullOrWhiteSpace(project) ? null : project;
+            if (key is not null && projects.Find(guildId, key) is null) return Error("Project not found.");
             var map = new Dictionary<ulong, string>();
             foreach (var c in body.Classes ?? [])
             {
@@ -135,7 +139,7 @@ public static partial class PanelApi
                 if (icon.Length > 80) return Error("Icon is too long.");
                 map[id] = icon;
             }
-            projects.SetClassIcons(guildId, map);
+            projects.SetClassIcons(guildId, key, map);
             return Results.Ok();
         });
 
@@ -625,6 +629,7 @@ public static partial class PanelApi
         ("DELETE", "/lfg/projects/{key}", "lfg", "Removed LFG project"),
         ("PUT", "/lfg/panels/{messageId}/project", "lfg", "Linked LFG panel to a project"),
         ("PUT", "/lfg/classes", "lfg", "Saved class icons"),
+        ("PUT", "/lfg/activities/{key}/project", "lfg", "Moved activity to a project"),
         ("POST", "/lfg/mirror", "lfg", "Duplicated LFG post"),
         ("DELETE", "/lfg/templates/{key}", "lfg", "Removed LFG template"),
         ("POST", "/lfg/groups/{groupId}/time", "lfg", "Changed LFG time"),

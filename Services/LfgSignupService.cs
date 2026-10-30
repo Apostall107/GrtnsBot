@@ -62,7 +62,7 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
         var role = info?.ClassRoleId is { } roleId ? guild?.GetRole(roleId) : null;
         if (role is not null && guild?.GetUser(userId) is { } member && member.Roles.All(r => r.Id != role.Id)) role = null;
 
-        var icon = projects.ClassIcon(group.GuildId, role);
+        var icon = projects.ClassIcon(group.GuildId, role, group.ProjectKey);
         if (slot is not null)
         {
             slot.ClassRoleId = role?.Id;

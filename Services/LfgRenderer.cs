@@ -78,7 +78,7 @@ public static class LfgRenderer
             .WithCustomId($"lfg:act:{d.Id}")
             .WithPlaceholder("Choose a dungeon / activity");
 
-        foreach (var a in activities.Take(ActivityStore.MaxPerGuild))
+        foreach (var a in activities.Take(ActivityStore.MaxInMenu))
             menu.AddOption(a.Name, a.Key, "Pings the linked role");
 
         menu.AddOption("Custom activity", CustomActivityValue, "Enter a name manually, no ping", new Emoji("✏️"));
