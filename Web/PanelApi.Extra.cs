@@ -115,15 +115,78 @@ public static partial class PanelApi
 
         // ----- Классы: какие роли — классы и их иконки (эмодзи или эмодзи сервера) -----
         // ?project=key — классы проекта; без project — общие (действуют в проектах без своих классов)
-        g.MapGet("/classes", (ulong guildId, string? project, DiscordSocketClient client, LfgProjectStore projects) =>
+        g.MapGet("/classes", async (ulong guildId, string? project, DiscordSocketClient client, LfgProjectStore projects) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var key = string.IsNullOrWhiteSpace(project) ? null : project;
+            var emojis = guild.Emotes.OrderBy(e => e.Name)
+                .Select(e => new EmojiDto(e.Name, $"<{(e.Animated ? "a" : "")}:{e.Name}:{e.Id}>", e.Url, false)).ToList();
+            try
+            {
+                // Эмодзи приложения (бота) — сюда попадают и иконки, взятые из ролей
+                foreach (var e in (await client.GetApplicationEmotesAsync()).OrderBy(e => e.Name))
+                    emojis.Add(new EmojiDto(e.Name, $"<{(e.Animated ? "a" : "")}:{e.Name}:{e.Id}>", e.Url, true));
+            }
+            catch (Exception)
+            {
+                // нет доступа к эмодзи приложения — показываем только серверные
+            }
             return Results.Ok(new
             {
-                classes = projects.ClassIcons(guildId, key).Select(kv => new { role = Role(guild, kv.Key), icon = kv.Value }),
-                emojis = guild.Emotes.OrderBy(e => e.Name).Select(e => new { name = e.Name, code = $"<{(e.Animated ? "a" : "")}:{e.Name}:{e.Id}>", url = e.Url })
+                classes = projects.ClassIcons(guildId, key).Select(kv => new
+                {
+                    role = Role(guild, kv.Key),
+                    icon = kv.Value,
+                    roleIcon = RoleIcon(guild.GetRole(kv.Key))
+                }),
+                roleIcons = guild.Roles.Where(r => RoleIcon(r) is not null).ToDictionary(r => r.Id.ToString(), r => RoleIcon(r)),
+                emojis
             });
+        });
+
+        // Иконки ролей → иконки классов. Эмодзи-иконка роли берётся как есть,
+        // картинка-иконка загружается в эмодзи приложения бота (cls_<роль>) — их можно показывать в постах.
+        g.MapPost("/classes/role-icons", async (ulong guildId, ClassRoleIconsBody body, DiscordSocketClient client,
+            IHttpClientFactory http) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            IReadOnlyCollection<Emote> appEmotes;
+            try { appEmotes = await client.GetApplicationEmotesAsync(); }
+            catch (Exception) { appEmotes = []; }
+
+            var icons = new Dictionary<string, string>();
+            var skipped = new List<string>();
+            foreach (var raw in (body.RoleIds ?? []).Distinct().Take(50))
+            {
+                if (ParseId(raw) is not { } id || guild.GetRole(id) is not { } role) continue;
+                if (!string.IsNullOrEmpty(role.Emoji?.Name))
+                {
+                    icons[raw] = role.Emoji.Name;
+                    continue;
+                }
+                if (string.IsNullOrEmpty(role.Icon))
+                {
+                    skipped.Add($"@{role.Name}: no role icon");
+                    continue;
+                }
+                var name = EmoteName(role);
+                try
+                {
+                    var emote = appEmotes.FirstOrDefault(e => e.Name == name);
+                    if (emote is null)
+                    {
+                        var bytes = await http.CreateClient().GetByteArrayAsync(role.GetIconUrl());
+                        using var stream = new MemoryStream(bytes);
+                        emote = await client.CreateApplicationEmoteAsync(name, new Image(stream));
+                    }
+                    icons[raw] = $"<:{emote.Name}:{emote.Id}>";
+                }
+                catch (Exception ex)
+                {
+                    skipped.Add($"@{role.Name}: {ex.Message}");
+                }
+            }
+            return Results.Ok(new { icons, skipped });
         });
 
         g.MapPut("/classes", (ulong guildId, string? project, ClassIconsBody body, DiscordSocketClient client, LfgProjectStore projects) =>
@@ -326,6 +389,25 @@ public static partial class PanelApi
     }
 
     /// <summary>Админ может всё; организатор на сайте — как в Discord (Manage): резерв туда-обратно.</summary>
+    /// <summary>Иконка роли: эмодзи или картинка (null — у роли нет иконки).</summary>
+    private static object? RoleIcon(SocketRole? role)
+    {
+        if (role is null) return null;
+        if (!string.IsNullOrEmpty(role.Emoji?.Name)) return new { emoji = role.Emoji.Name, url = (string?)null };
+        if (!string.IsNullOrEmpty(role.Icon)) return new { emoji = (string?)null, url = role.GetIconUrl() };
+        return null;
+    }
+
+    /// <summary>Имя эмодзи приложения для иконки роли: cls_имя_хеш (2–32 символа, буквы/цифры/_). Новая иконка роли — новое эмодзи.</summary>
+    private static string EmoteName(SocketRole role)
+    {
+        var clean = new string(role.Name.Where(c => c is (>= 'a' and <= 'z') or (>= 'A' and <= 'Z') or (>= '0' and <= '9') or '_').ToArray());
+        if (clean.Length == 0) clean = role.Id.ToString()[^6..];
+        if (clean.Length > 18) clean = clean[..18];
+        var hash = role.Icon.Length > 6 ? role.Icon[..6] : role.Icon;
+        return $"cls_{clean}_{hash}";
+    }
+
     private static readonly string[] AdminRosterActions = ["toReserve", "promote", "removeReserve", "remove", "character"];
     private static readonly string[] OrganizerRosterActions = ["toReserve", "promote", "removeReserve"];
 
@@ -629,6 +711,7 @@ public static partial class PanelApi
         ("DELETE", "/lfg/projects/{key}", "lfg", "Removed LFG project"),
         ("PUT", "/lfg/panels/{messageId}/project", "lfg", "Linked LFG panel to a project"),
         ("PUT", "/lfg/classes", "lfg", "Saved class icons"),
+        ("POST", "/lfg/classes/role-icons", "lfg", "Imported class icons from roles"),
         ("PUT", "/lfg/activities/{key}/project", "lfg", "Moved activity to a project"),
         ("POST", "/lfg/mirror", "lfg", "Duplicated LFG post"),
         ("DELETE", "/lfg/templates/{key}", "lfg", "Removed LFG template"),
@@ -782,6 +865,8 @@ public sealed record LfgProjectBody(string? Name, List<string>? RoleIds, bool Is
 public sealed record LfgPanelProjectBody(string? ProjectKey);
 public sealed record ClassIconBody(string? RoleId, string? Icon);
 public sealed record ClassIconsBody(List<ClassIconBody>? Classes);
+public sealed record ClassRoleIconsBody(List<string>? RoleIds);
+public sealed record EmojiDto(string Name, string Code, string Url, bool App);
 public sealed record TemplateBody(string? Name, string? ActivityKey, string? CustomActivity, List<string>? Slots,
     List<string>? RequiredRoleIds, int? MinGs);
 public sealed record TimeBody(string? Date, string? Time);

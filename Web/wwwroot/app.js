@@ -825,26 +825,54 @@ async function renderClasses(card, projectList = [], projectKey = store.get("gb.
     [["", "🌐 Common"], ...projectList.map(p => [p.key, `🎮 ${p.name}`])].map(([k, label]) =>
       h("button", { class: `btn secondary${k === projectKey ? " active-tab" : ""}`,
         onclick: () => { store.set("gb.classProject", k); renderClasses(card, projectList, k); } }, label))) : null;
+  const roleIcons = data.roleIcons || {};
   let rows = data.classes.map(c => ({ roleId: c.role.id, role: c.role, icon: c.icon }));
   const list = h("div", {});
   const preview = icon => classMark({ classIcon: icon }) || h("span", { class: "muted small" }, "—");
+  // The role's own icon (Discord role settings → Role icon)
+  const roleIconEl = ri => ri.url ? h("img", { src: ri.url, alt: "", style: "width:18px;height:18px" }) : h("span", {}, ri.emoji);
+  // Role icon → class icon: an emoji is used as is, an image is uploaded as the bot's emoji
+  const importIcons = async (btn, targets) => {
+    if (!targets.length) { toast("These roles have no role icon in Discord.", "warn"); return; }
+    const res = await act(btn, () => gApi("POST", "/lfg/classes/role-icons", { roleIds: targets.map(r => r.roleId) }));
+    if (!res) return;
+    let n = 0;
+    for (const r of targets) if (res.icons[r.roleId]) { r.icon = res.icons[r.roleId]; n++; }
+    draw();
+    toast(n ? `Icons taken from ${n} role(s) — press Save classes.` : "Nothing imported.", n ? "ok" : "warn");
+    if (res.skipped.length) toast(`Skipped: ${res.skipped.join("; ")}`, "warn");
+  };
   const draw = () => {
     list.replaceChildren(...rows.map((r, i) => {
-      const icon = h("input", { value: r.icon || "", placeholder: "🛡️ or <:name:id>", style: "width:180px" });
+      const icon = h("input", { value: r.icon || "", placeholder: "emoji or <:name:id>", style: "width:180px" });
       const prev = h("span", {}, preview(r.icon));
       icon.addEventListener("input", () => { r.icon = icon.value; prev.replaceChildren(preview(icon.value)); });
-      const pick = h("select", {}, h("option", { value: "" }, "server emoji…"), data.emojis.map(e => h("option", { value: e.code }, `:${e.name}:`)));
+      const pick = h("select", {}, h("option", { value: "" }, "pick emoji…"),
+        data.emojis.map(e => h("option", { value: e.code }, `:${e.name}:${e.app ? "  (bot)" : ""}`)));
       pick.addEventListener("change", () => { if (pick.value) { r.icon = icon.value = pick.value; prev.replaceChildren(preview(pick.value)); } });
-      return h("div", { class: "row question-row" }, roleChip(r.role), prev, icon, pick,
+      const ri = roleIcons[r.roleId];
+      const useRole = ri ? h("button", { class: "btn secondary", title: "Use this role's icon from Discord" }, roleIconEl(ri), "Role icon") : null;
+      if (useRole) useRole.addEventListener("click", () => importIcons(useRole, [r]));
+      return h("div", { class: "row question-row" }, roleChip(r.role), prev, icon, pick, useRole,
         h("button", { class: "btn ghost", onclick: () => { rows.splice(i, 1); draw(); } }, "✖"));
     }));
   };
   const addSel = roleSelect("+ Add class role…");
   addSel.addEventListener("change", () => {
     const role = state.roles.find(r => r.id === addSel.value);
-    if (role && !rows.some(r => r.roleId === role.id)) rows.push({ roleId: role.id, role: { ...role, exists: true }, icon: "" });
+    if (role && !rows.some(r => r.roleId === role.id)) {
+      const ri = roleIcons[role.id];
+      rows.push({ roleId: role.id, role: { ...role, exists: true }, icon: ri && ri.emoji ? ri.emoji : "" });
+    }
     addSel.value = "";
     draw();
+  });
+  const fromRoles = h("button", { class: "btn secondary", title: "Fill empty icons with the roles' own icons from Discord (if none are empty — all)" }, "🎨 Use role icons");
+  // Empty icons first; if none are empty — all rows whose role has an icon
+  fromRoles.addEventListener("click", () => {
+    const withIcon = rows.filter(r => roleIcons[r.roleId]);
+    const emptyOnes = withIcon.filter(r => !r.icon);
+    importIcons(fromRoles, emptyOnes.length ? emptyOnes : withIcon);
   });
   const save = h("button", { class: "btn" }, "💾 Save classes");
   save.addEventListener("click", () => act(save, () => gApi("PUT", `/lfg/classes${q}`, { classes: rows.map(r => ({ roleId: r.roleId, icon: r.icon })) }),
@@ -853,8 +881,8 @@ async function renderClasses(card, projectList = [], projectKey = store.get("gb.
   card.replaceChildren(h("h2", {}, "🎭 Classes"), tabs,
     h("p", { class: "muted small" }, "Roles that count as classes and their icon shown next to the player's name. If the list is not empty, players can only pick these roles as their class. ",
       projectKey ? "This project's own classes — if empty, the common list is used." : "Common classes — used by every project that has no classes of its own. ",
-      "Use a unicode emoji or a server emoji (upload class icons as server emojis, then pick them here)."),
-    list, h("div", { class: "row", style: "margin-top:8px" }, addSel, save));
+      "Use a unicode emoji, a server emoji, or 🎨 Use role icons — the roles' own icons from Discord (image icons are uploaded as the bot's emojis, no server emoji slots used)."),
+    list, h("div", { class: "row", style: "margin-top:8px" }, addSel, fromRoles, save));
 }
 
 // ----- LFG templates (admin) -----
@@ -2161,7 +2189,7 @@ const HELP = {
       ]],
       ["Projects & classes", [
         "**🎮 Projects** — name + required role(s), one is the default (older characters belong to it). Link each LFG panel to its project.",
-        "**🎭 Classes** — common list and per project (a project without its own uses the common list): class roles and an icon for each.",
+        "**🎭 Classes** — common list and per project (a project without its own uses the common list): class roles and an icon for each. **🎨 Use role icons** takes the roles' own icons from Discord (image icons become the bot's emojis).",
         "**Activities** can belong to a project (offered only in its groups) or to «All projects»."
       ]],
       ["Templates & statistics", [
