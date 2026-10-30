@@ -653,6 +653,7 @@ public static partial class PanelApi
         ("PUT", "/access/{userId}", "access", "Set panel access"),
         ("DELETE", "/access/{userId}", "access", "Removed panel access"),
         ("PUT", "/settings/", "settings", "Changed bot settings"),
+        ("PUT", "/lfg/settings/", "lfg", "Changed LFG settings (time zone, auto-delete, reminder)"),
         ("POST", "/backup/restore", "settings", "Uploaded a data backup"),
         ("PUT", "/member-roles/", "settings", "Set member roles"),
         ("POST", "/me/groups/{groupId}/join", "lfg", "Signed up (site)"),

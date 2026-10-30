@@ -460,6 +460,9 @@ async function pageLfg(main) {
   const classCard = h("div", { class: "card" });
   main.insertBefore(projCard, recCard);
   main.insertBefore(classCard, recCard);
+  const lfgSettingsCard = h("div", { class: "card" });
+  main.insertBefore(lfgSettingsCard, projCard);
+  renderLfgSettings(lfgSettingsCard);
   renderProjects(projCard, lfgProjects);
   renderClasses(classCard);
   renderRecurring(recCard, acts, templates, lfgProjects.projects);
@@ -696,6 +699,42 @@ function recurringDialog(acts, r, templates = [], projects = []) {
     h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), save));
   d.onclose = () => d.classList.remove("wide");
   d.showModal();
+}
+
+/** LFG settings: time zone, auto-delete, reminder (moved from Settings). */
+async function renderLfgSettings(card) {
+  card.replaceChildren(h("h2", {}, "⚙️ LFG settings"), h("div", { class: "muted" }, "Loading…"));
+  let s;
+  try { s = await gApi("GET", "/lfg/settings"); } catch (e) { card.replaceChildren(h("h2", {}, "⚙️ LFG settings"), empty(e.message)); return; }
+
+  const zones = h("datalist", { id: "zones" }, s.zones.map(z => h("option", { value: z })));
+  const zone = h("input", { list: "zones", placeholder: s.defaults.timeZone, value: s.timeZone || "", style: "width:260px" });
+  const hours = h("input", { type: "number", min: "1", max: "72", placeholder: String(s.defaults.autoDeleteHours), value: s.autoDeleteHours ?? "", style: "width:120px" });
+  const reminder = h("input", { type: "number", min: "0", max: "180", placeholder: String(s.defaults.reminderMinutes), value: s.reminderMinutes ?? "", style: "width:120px" });
+  const save = h("button", { class: "btn" }, "💾 Save");
+  save.addEventListener("click", async () => {
+    const res = await act(save, () => gApi("PUT", "/lfg/settings", {
+      timeZone: zone.value.trim() || null,
+      autoDeleteHours: hours.value === "" ? null : Number(hours.value),
+      reminderMinutes: reminder.value === "" ? null : Number(reminder.value)
+    }));
+    if (res === undefined) return;
+    toast(`Saved: ${res.timeZone}, auto-delete ${res.autoDeleteHours} h, reminder ${res.reminderMinutes ? res.reminderMinutes + " min" : "off"}.`);
+    refresh();
+  });
+
+  card.replaceChildren(h("h2", {}, "⚙️ LFG settings"),
+    h("p", { class: "muted small" }, "Empty field = the value from appsettings.json (shown as the placeholder). Changes apply immediately."),
+    zones,
+    h("div", { class: "grid2" },
+      h("div", { class: "field" }, h("label", {}, "Server time zone"), zone,
+        h("span", { class: "muted small" }, `Now: ${s.current.timeZone}. Used for start times and recurring groups (IANA name, e.g. Europe/Kyiv).`)),
+      h("div", {},
+        h("div", { class: "field" }, h("label", {}, "Delete LFG posts after (hours)"), hours,
+          h("span", { class: "muted small" }, `Now: ${s.current.autoDeleteHours} h after the start (or creation if no time). Applies to new groups.`)),
+        h("div", { class: "field" }, h("label", {}, "Reminder before the start (minutes, 0 = off)"), reminder,
+          h("span", { class: "muted small" }, `Now: ${s.current.reminderMinutes ? s.current.reminderMinutes + " min" : "off"}.`)))),
+    save);
 }
 
 // ----- LFG projects (games) & classes (admin) -----
@@ -1484,38 +1523,9 @@ async function pageLog(main) {
 
 async function pageSettings(main) {
   main.append(h("h1", {}, "⚙️ Settings"));
-  const holder = h("div", {}, h("div", { class: "muted" }, "Loading…"));
+  const holder = h("div", {});
   main.append(holder);
-
-  let s;
-  try { s = await api("GET", "/api/settings"); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
-
-  const zones = h("datalist", { id: "zones" }, s.zones.map(z => h("option", { value: z })));
-  const zone = h("input", { list: "zones", placeholder: s.defaults.timeZone, value: s.timeZone || "", style: "width:260px" });
-  const hours = h("input", { type: "number", min: "1", max: "72", placeholder: String(s.defaults.autoDeleteHours), value: s.autoDeleteHours ?? "", style: "width:120px" });
-  const reminder = h("input", { type: "number", min: "0", max: "180", placeholder: String(s.defaults.reminderMinutes), value: s.reminderMinutes ?? "", style: "width:120px" });
-  const save = h("button", { class: "btn" }, "💾 Save");
-  save.addEventListener("click", async () => {
-    const res = await act(save, () => api("PUT", "/api/settings", {
-      timeZone: zone.value.trim() || null,
-      autoDeleteHours: hours.value === "" ? null : Number(hours.value),
-      reminderMinutes: reminder.value === "" ? null : Number(reminder.value)
-    }));
-    if (res === undefined) return;
-    toast(`Saved: ${res.timeZone}, auto-delete ${res.autoDeleteHours} h, reminder ${res.reminderMinutes ? res.reminderMinutes + " min" : "off"}.`);
-    refresh();
-  });
-
-  holder.replaceChildren(h("div", { class: "card" },
-    h("p", { class: "muted small" }, "Empty field = the value from appsettings.json (shown as the placeholder). Changes apply immediately."),
-    zones,
-    h("div", { class: "field" }, h("label", {}, "Server time zone"), zone,
-      h("span", { class: "muted small" }, `Now: ${s.current.timeZone}. Used for LFG start times and recurring groups (IANA name, e.g. Europe/Kyiv).`)),
-    h("div", { class: "field" }, h("label", {}, "Delete LFG posts after (hours)"), hours,
-      h("span", { class: "muted small" }, `Now: ${s.current.autoDeleteHours} h after the start (or creation if no time). Applies to new groups.`)),
-    h("div", { class: "field" }, h("label", {}, "Reminder before the start (minutes, 0 = off)"), reminder,
-      h("span", { class: "muted small" }, `Now: ${s.current.reminderMinutes ? s.current.reminderMinutes + " min" : "off"}.`)),
-    save));
+  holder.append(h("p", { class: "muted" }, "Time zone, auto-delete and reminder of LFG groups are in LFG → LFG settings."));
 
   // Backup (owner only)
   if (can("access")) {
@@ -2112,6 +2122,9 @@ const HELP = {
       ["Creating groups", [
         "One-off groups are created in **Member → Groups → Create a group** (as an admin you are a member too)."
       ]],
+      ["LFG settings", [
+        "**⚙️ LFG settings** — server time zone (start times, recurring groups), delete posts after N hours, reminder N minutes before the start (0 = off)."
+      ]],
       ["Projects & classes", [
         "**🎮 Projects** — name + required role(s), one is the default (older characters belong to it). Link each LFG panel to its project.",
         "**🎭 Classes** — add class roles and set an icon for each (emoji or server emoji)."
@@ -2244,9 +2257,7 @@ const HELP = {
   settings: {
     title: "Settings",
     features: [["What you can change", [
-      "Server **time zone** — used for LFG start times and recurring groups.",
-      "After how many hours LFG posts are deleted (counted from the start, or creation without a time).",
-      "How many minutes before the start the reminder is sent (0 = off).",
+      "Time zone, auto-delete and reminder of LFG groups are in **LFG → LFG settings**.",
       "**Member roles** — who sees the Member section.",
       "**💾 Backup** (owner): download all data as a .zip or restore it (the bot restarts)."
     ]]],
