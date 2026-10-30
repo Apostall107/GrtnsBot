@@ -22,11 +22,11 @@ public sealed class PanelTextModule(PanelTextStore store, PanelService panels) :
             return;
         }
         var text = store.GetText(Context.Guild.Id, panel);
-        var title = string.IsNullOrWhiteSpace(text?.Title) ? def.DefaultTitle : text!.Title!;
+        var title = string.IsNullOrWhiteSpace(text?.Title) ? def.DefaultTitle : text!.Title == PanelDef.NoTitle ? "" : text.Title!;
         var modal = new ModalBuilder()
             .WithTitle($"Text — {def.Name}")
             .WithCustomId($"paneltext:save:{panel}")
-            .AddTextInput("Title (plain text, - = no title)", "title", TextInputStyle.Short,
+            .AddTextInput("Title (plain text, empty = no title)", "title", TextInputStyle.Short,
                 maxLength: PanelDef.MaxTitle, required: false, value: title)
             .AddTextInput("Text (Discord markdown, # headings work)", "text", TextInputStyle.Paragraph,
                 maxLength: PanelDef.MaxDescription, required: false, value: def.Description(text))
@@ -50,7 +50,7 @@ public sealed class PanelTextModule(PanelTextStore store, PanelService panels) :
             return t == @default ? null : t;
         }
         var current = store.GetText(Context.Guild.Id, panel);
-        var title = Clean(modal.Title_, def.DefaultTitle);
+        var title = string.IsNullOrWhiteSpace(modal.Title_) || modal.Title_.Trim() == PanelDef.NoTitle ? PanelDef.NoTitle : Clean(modal.Title_, def.DefaultTitle);
         var description = Clean(modal.Text, def.DefaultDescription);
         var labels = current?.Labels ?? new Dictionary<string, string>();
         store.SetText(Context.Guild.Id, panel, title is null && description is null && labels.Count == 0
