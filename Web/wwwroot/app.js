@@ -910,7 +910,7 @@ function renderProjects(card, data) {
         if (!await confirmDialog(`Delete the project ${p.name}?`, "Its groups and characters stay in the data, but the project can't be chosen anymore.", "Delete")) return;
         if (await act(rm, () => gApi("DELETE", `/lfg/projects/${p.key}`), "Project deleted.") !== undefined) refresh();
       });
-      return h("tr", {}, h("td", {}, h("b", {}, p.name), p.isDefault ? h("span", { class: "badge ok", style: "margin-left:6px" }, "default") : null),
+      return h("tr", {}, h("td", {}, h("b", {}, p.name), p.isDefault ? h("span", { class: "badge ok", style: "margin-left:6px", title: "Holds the characters, groups and panels made before projects" }, "default") : null),
         h("td", {}, p.roles.length ? p.roles.map(r => roleChip(r)) : h("span", { class: "muted small" }, "open to everyone")),
         h("td", { class: "actions" }, edit, " ", rm));
     })))) : empty("No projects yet — everything uses one shared character list."),
@@ -923,16 +923,15 @@ function projectDialog(p) {
   const d = dialog();
   const name = h("input", { maxlength: "60", placeholder: "e.g. Aion 2", value: p ? p.name : "" });
   const roles = roleListEditor(p ? p.roles : []);
-  const def = h("input", { type: "checkbox", checked: p ? p.isDefault : false });
   const save = h("button", { class: "btn" }, p ? "💾 Save" : "➕ Add");
   save.addEventListener("click", async () => {
-    if (await act(save, () => gApi("PUT", `/lfg/projects/${p ? p.key : "new"}`, { name: name.value, roleIds: roles.value(), isDefault: def.checked }),
+    if (await act(save, () => gApi("PUT", `/lfg/projects/${p ? p.key : "new"}`, { name: name.value, roleIds: roles.value() }),
       "Project saved.") !== undefined) { d.close(); refresh(); }
   });
   d.replaceChildren(h("h2", {}, p ? `Edit project: ${p.name}` : "New project"),
     h("div", { class: "field" }, h("label", {}, "Name"), name),
     h("div", { class: "field" }, h("label", {}, "Required role (any of) — empty = everyone"), roles.el),
-    h("label", { class: "row", style: "margin-bottom:6px" }, def, "Default project (older characters and panels without a project)"),
+    p && p.isDefault ? h("p", { class: "muted small" }, "⭐ Default project: it holds the characters, groups and panels made before projects. It stays the default (it can be renamed).") : null,
     h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), save));
   d.showModal();
 }
