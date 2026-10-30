@@ -818,7 +818,7 @@ public static partial class PanelApi
                 else if (!string.IsNullOrWhiteSpace(raw))
                 {
                     value = raw.Replace("\r\n", "\n");
-                    if (value.Trim() == Tx.Empty && !def.Optional) return Error($"{def.Name}: this text can't be empty.");
+                    if (value.Trim() == Tx.Empty && !def.Optional) return Error($"{def.Name}: can't be hidden — Discord needs a text here (button, menu, window or a whole message).");
                     if (value.Length > def.Max) return Error($"{def.Name}: up to {def.Max} characters.");
                 }
                 values[key] = value == def.Default ? null : value;

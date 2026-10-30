@@ -53,12 +53,12 @@ public static class TicketRenderer
     {
         var gid = t.GuildId;
         var sb = new StringBuilder();
-        sb.AppendLine(Tx.Get(gid, "ticket.msg.applicant", ("user", $"<@{t.UserId}>")));
-        sb.AppendLine(Tx.Get(gid, "ticket.msg.voice", ("channel", $"<#{t.VoiceChannelId}>")));
+        sb.AppendText(Tx.Get(gid, "ticket.msg.applicant", ("user", $"<@{t.UserId}>")));
+        sb.AppendText(Tx.Get(gid, "ticket.msg.voice", ("channel", $"<#{t.VoiceChannelId}>")));
         if (p is { StaffRoleIds.Count: > 0 })
-            sb.AppendLine(Tx.Get(gid, "ticket.msg.leadership", ("roles", string.Join(", ", p.StaffRoleIds.Select(r => $"<@&{r}>")))));
+            sb.AppendText(Tx.Get(gid, "ticket.msg.leadership", ("roles", string.Join(", ", p.StaffRoleIds.Select(r => $"<@&{r}>")))));
         if (p is { MemberRoleIds.Count: > 0 })
-            sb.AppendLine(Tx.Get(gid, "ticket.msg.roles", ("roles", string.Join(", ", p.MemberRoleIds.Select(r => $"<@&{r}>")))));
+            sb.AppendText(Tx.Get(gid, "ticket.msg.roles", ("roles", string.Join(", ", p.MemberRoleIds.Select(r => $"<@&{r}>")))));
         var status = t.ApprovedBy is { } by
             ? Tx.Get(gid, "ticket.msg.approved", ("user", $"<@{by}>"))
             : Tx.Get(gid, "ticket.msg.howTo");

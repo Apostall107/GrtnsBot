@@ -60,6 +60,13 @@ public static class Tx
     public static string Clip(string value, int max) => value.Length <= max ? value : value[..max];
 }
 
+public static class TextLines
+{
+    /// <summary>Строка в embed: пустую (текст скрыт через "-") пропускаем.</summary>
+    public static System.Text.StringBuilder AppendText(this System.Text.StringBuilder sb, string text) =>
+        text.Length == 0 ? sb : sb.AppendLine(text);
+}
+
 /// <summary>Свои тексты бота по серверам (data/bot-texts.json): ключ → текст. Храним только отличия от текста по умолчанию.</summary>
 public sealed class BotTextStore
 {
