@@ -89,6 +89,7 @@ public static partial class PanelApi
         MapLog(guild.MapGroup("/log").AddEndpointFilter(Require(PanelPermissions.Log)));
         MapSettings(api.MapGroup("/settings").AddEndpointFilter(Require(PanelPermissions.Settings)));
         MapPosts(guild.MapGroup("/posts").AddEndpointFilter(Require(PanelPermissions.Posts)));
+        MapBackup(api.MapGroup("/backup").AddEndpointFilter(Require(PanelPermissions.Access)));
         MapAccess(api.MapGroup("/access").AddEndpointFilter(Require(PanelPermissions.Access)));
     }
 
@@ -213,6 +214,8 @@ public static partial class PanelApi
                 filled = x.FilledCount,
                 size = x.Slots.Count,
                 jumpUrl = LfgSignupService.JumpUrl(x),
+                started = x.StartsAt is null || x.StartsAt <= DateTimeOffset.UtcNow,
+                requirements = x.HasRequirements ? new { roles = x.RequiredRoleIds.Select(id => Role(guild, id)), minGs = x.MinGs } : null,
                 slots = x.Slots.Select(s => new
                 {
                     role = (s.TakenAs ?? s.Role).Label(),
@@ -222,7 +225,9 @@ public static partial class PanelApi
                     character = s.CharacterName,
                     classRole = s.ClassRoleId is { } cr ? Role(guild, cr) : null,
                     classIcon = s.ClassIcon,
-                    comment = s.Comment
+                    comment = s.Comment,
+                    gs = s.Gs,
+                    attended = s.Attended
                 }),
                 reserve = x.Reserve.Select(r => new
                 {
@@ -232,7 +237,8 @@ public static partial class PanelApi
                     character = r.CharacterName,
                     classRole = r.ClassRoleId is { } rr ? Role(guild, rr) : null,
                     classIcon = r.ClassIcon,
-                    comment = r.Comment
+                    comment = r.Comment,
+                    gs = r.Gs
                 })
             }));
         });
@@ -248,6 +254,7 @@ public static partial class PanelApi
                 if (lfg.Groups.TryRemove(groupId, out _))
                 {
                     group.IsClosed = true;
+                    lfg.RecordClosed(group, "force-closed");
                     lfg.SaveGroups();
                     await signup.DeleteMessagesAsync(group); // пост и напоминание
                 }
@@ -279,6 +286,12 @@ public static partial class PanelApi
                 memberRoles = p.MemberRoleIds.Select(id => Role(guild, id)),
                 category = p.CategoryId is { } c ? new { id = c.ToString(), name = guild.GetCategoryChannel(c)?.Name } : null,
                 customText = p.CustomText,
+                formEnabled = p.FormEnabled,
+                questions = p.Questions.Select(q => new
+                {
+                    id = q.Id, label = q.Label, placeholder = q.Placeholder, @long = q.Long, required = q.Required, maxLength = q.MaxLength
+                }),
+                autoCloseDays = p.AutoCloseDays,
                 open = open.Count(t => t.ProjectKey == p.Key)
             }));
         });
@@ -309,6 +322,32 @@ public static partial class PanelApi
             if (text is { Length: > TicketRenderer.MaxCustomTextLength })
                 return Error($"The ticket text is limited to {TicketRenderer.MaxCustomTextLength} characters.");
 
+            // Анкета: до 5 вопросов (лимит окна Discord), подпись до 45 символов
+            List<TicketQuestion>? questions = null;
+            if (body.Questions is not null)
+            {
+                if (body.Questions.Count > TicketQuestion.MaxQuestions) return Error($"Up to {TicketQuestion.MaxQuestions} questions (Discord form limit).");
+                questions = [];
+                foreach (var q in body.Questions)
+                {
+                    var label = (q.Label ?? "").Trim();
+                    if (label.Length is 0 or > TicketQuestion.MaxLabel) return Error($"Question text: 1–{TicketQuestion.MaxLabel} characters.");
+                    var placeholder = string.IsNullOrWhiteSpace(q.Placeholder) ? null : q.Placeholder.Trim();
+                    if (placeholder is { Length: > TicketQuestion.MaxPlaceholder }) return Error($"Hint: up to {TicketQuestion.MaxPlaceholder} characters.");
+                    questions.Add(new TicketQuestion
+                    {
+                        Id = string.IsNullOrWhiteSpace(q.Id) ? IdGen.New() : q.Id,
+                        Label = label,
+                        Placeholder = placeholder,
+                        Long = q.Long,
+                        Required = q.Required,
+                        MaxLength = Math.Clamp(q.MaxLength ?? (q.Long ? 1000 : 200), 1, 4000)
+                    });
+                }
+            }
+            if (body.FormEnabled == true && (questions ?? existing.Questions).Count == 0) return Error("Add at least one question to enable the form.");
+            if (body.AutoCloseDays is < 2 or > 90) return Error("Auto-close: 2–90 days (empty = off).");
+
             var textChanged = text != existing.CustomText;
             tickets.UpdateProject(guildId, key, p =>
             {
@@ -316,6 +355,9 @@ public static partial class PanelApi
                 p.MemberRoleIds = members;
                 p.CategoryId = category;
                 p.CustomText = text;
+                if (body.FormEnabled is { } fe) p.FormEnabled = fe;
+                if (questions is not null) p.Questions = questions;
+                p.AutoCloseDays = body.AutoCloseDays;
             });
 
             // Свой текст поменялся — перерисовываем уже открытые тикеты проекта
@@ -350,15 +392,37 @@ public static partial class PanelApi
             }));
         });
 
-        g.MapPost("/open/{ticketId}/close", async (ulong guildId, string ticketId, DiscordSocketClient client, TicketStore tickets) =>
+        // Архив закрытых тикетов с поиском
+        g.MapGet("/archive", (ulong guildId, string? outcome, string? q, int? skip, int? take, TicketArchiveStore archive) =>
+        {
+            var size = Math.Clamp(take ?? 50, 10, 200);
+            var list = archive.Query(guildId, outcome, q, null, Math.Max(0, skip ?? 0), size + 1);
+            return Results.Ok(new
+            {
+                more = list.Count > size,
+                entries = list.Take(size).Select(e => new
+                {
+                    id = e.Id,
+                    project = e.Project,
+                    userId = e.UserId.ToString(),
+                    userName = e.UserName,
+                    openedAt = e.OpenedAt.ToUnixTimeMilliseconds(),
+                    closedAt = e.ClosedAt.ToUnixTimeMilliseconds(),
+                    outcome = e.Outcome,
+                    byName = e.ByName,
+                    reason = e.Reason,
+                    answers = e.Answers.Select(a => new { question = a.Question, answer = a.Answer })
+                })
+            });
+        });
+
+        g.MapPost("/open/{ticketId}/close", async (ulong guildId, string ticketId, ClaimsPrincipal user, DiscordSocketClient client,
+            TicketStore tickets, TicketService service) =>
         {
             var t = tickets.FindTicket(ticketId);
             if (t is null || t.GuildId != guildId) return Error("This ticket is already closed.");
-
-            tickets.RemoveTicket(ticketId);
-            var guild = client.GetGuild(guildId);
-            await DeleteChannelAsync(guild, t.VoiceChannelId);
-            await DeleteChannelAsync(guild, t.TextChannelId);
+            var by = user.UserId() is { } uid ? client.GetUser(uid) : null;
+            await service.CloseAsync(t, "closed", by, "Force-closed on the site");
             return Results.Ok();
         });
 
@@ -678,6 +742,7 @@ public static partial class PanelApi
                         if (lfg.Groups.TryRemove(group.Id, out _))
                         {
                             group.IsClosed = true;
+                            lfg.RecordClosed(group, "force-closed");
                             lfg.SaveGroups();
                             await signup.DeleteMessagesAsync(group);
                         }
@@ -894,7 +959,9 @@ public static partial class PanelApi
 
 public sealed record ActivityBody(string? Name, string? RoleId);
 public sealed record ProjectBody(string? Name, string? MemberRoleId);
-public sealed record ProjectUpdateBody(List<string>? StaffRoleIds, List<string>? MemberRoleIds, string? CategoryId, string? CustomText);
+public sealed record ProjectUpdateBody(List<string>? StaffRoleIds, List<string>? MemberRoleIds, string? CategoryId, string? CustomText,
+    bool? FormEnabled = null, List<QuestionBody>? Questions = null, int? AutoCloseDays = null);
+public sealed record QuestionBody(string? Id, string? Label, string? Placeholder, bool Long, bool Required, int? MaxLength);
 public sealed record ChannelBody(string? ChannelId);
 public sealed record UserBody(string? UserId);
 public sealed record NewCreatorBody(string? Name, string? CategoryId, string? Template, int? Limit);

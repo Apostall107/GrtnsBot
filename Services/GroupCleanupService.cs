@@ -67,6 +67,7 @@ public sealed class GroupCleanupService(
         {
             if (!store.Groups.TryRemove(group.Id, out _)) return; // уже закрыт вручную
             group.IsClosed = true;
+            store.RecordClosed(group, "expired");
             store.SaveGroups();
             await signup.DeleteMessagesAsync(group);
             logger.LogInformation("Expired group {GroupId} ({Activity}) deleted", group.Id, group.ActivityName);

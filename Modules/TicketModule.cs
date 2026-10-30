@@ -8,11 +8,8 @@ using LfgBot.Services;
 namespace LfgBot.Modules;
 
 [RequireContext(ContextType.Guild)]
-public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelService panels, AuditLog audit) : InteractionModuleBase<SocketInteractionContext>
+public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelService panels, AuditLog audit, TicketService tickets) : InteractionModuleBase<SocketInteractionContext>
 {
-    // Защита от двойного клика: пока создаётся тикет, второй не создаём
-    private static readonly ConcurrentDictionary<string, byte> Creating = new();
-
     private const string NoAccessText =
         "I can't access this channel. Give the bot **View Channel**, **Send Messages** and **Embed Links** here.";
 
@@ -60,146 +57,50 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
             return;
         }
 
-        var lockKey = $"{Context.Guild.Id}:{Context.User.Id}:{project.Key}";
-        if (!Creating.TryAdd(lockKey, 0))
+        if (tickets.OpenTicket(Context.Guild, Context.User.Id, project) is { } open)
         {
-            await RespondAsync("Your ticket is already being created…", ephemeral: true);
+            await RespondAsync($"You already have an open {project.Name} ticket: <#{open.TextChannelId}>", ephemeral: true);
             return;
         }
 
-        try
+        // Анкета включена — сначала окно с вопросами, тикет создаётся после отправки
+        if (project.FormEnabled && project.Questions.Count > 0)
         {
-            var existing = store.FindOpenTicket(Context.Guild.Id, Context.User.Id, project.Key);
-            if (existing is not null)
-            {
-                if (Context.Guild.GetTextChannel(existing.TextChannelId) is not null)
-                {
-                    await RespondAsync($"You already have an open {project.Name} ticket: <#{existing.TextChannelId}>",
-                        ephemeral: true);
-                    return;
-                }
-
-                store.RemoveTicket(existing.Id); // каналы удалили вручную — тикет устарел
-            }
-
-            await DeferAsync(ephemeral: true);
-
-            string result;
-            try
-            {
-                var ticket = await CreateTicketAsync(project);
-                result = $"✅ Ticket created: <#{ticket.TextChannelId}>";
-            }
-            catch (Discord.Net.HttpException ex)
-            {
-                result = "❌ I couldn't create the ticket channels. Give the bot **Manage Channels** and **Manage Roles** " +
-                         $"(Discord error: {ex.DiscordCode?.ToString() ?? ex.HttpCode.ToString()}).";
-            }
-
-            await Component.ModifyOriginalResponseAsync(m =>
-            {
-                m.Content = result;
-                m.Components = new ComponentBuilder().Build();
-            });
+            await RespondWithModalAsync(TicketRenderer.FormModal(project));
+            return;
         }
-        finally
-        {
-            Creating.TryRemove(lockKey, out _);
-        }
-    }
 
-    private async Task<Ticket> CreateTicketAsync(TicketProject project)
-    {
-        var guild = Context.Guild;
-        var user = (IGuildUser)Context.User;
-        var categoryId = await EnsureCategoryAsync(project);
-        var overwrites = new Optional<IEnumerable<Overwrite>>(BuildOverwrites(project, user.Id));
-
-        var text = await guild.CreateTextChannelAsync(TicketRenderer.TextChannelName(project, user), p =>
+        await DeferAsync(ephemeral: true);
+        var (ticket, error) = await tickets.CreateAsync(Context.Guild, (IGuildUser)Context.User, project, [], "discord");
+        await Component.ModifyOriginalResponseAsync(m =>
         {
-            p.CategoryId = categoryId;
-            p.PermissionOverwrites = overwrites;
-            p.Topic = $"{project.Name} application — {user.Username}";
+            m.Content = ticket is not null ? $"✅ Ticket created: <#{ticket.TextChannelId}>" : $"❌ {error}";
+            m.Components = new ComponentBuilder().Build();
         });
+    }
 
-        IVoiceChannel voice;
-        try
+    [ModalInteraction("ticket:form:*")]
+    public async Task OnFormSubmitted(string projectKey)
+    {
+        var project = store.FindProject(Context.Guild.Id, projectKey);
+        if (project is null)
         {
-            voice = await guild.CreateVoiceChannelAsync(TicketRenderer.VoiceChannelName(project, user), p =>
+            await RespondAsync("This project no longer exists.", ephemeral: true);
+            return;
+        }
+
+        var data = ((SocketModal)Context.Interaction).Data.Components;
+        var answers = project.Questions.Take(TicketQuestion.MaxQuestions)
+            .Select((q, i) => new TicketAnswer
             {
-                p.CategoryId = categoryId;
-                p.PermissionOverwrites = overwrites;
-            });
-        }
-        catch
-        {
-            await text.DeleteAsync(); // не оставляем полутикет
-            throw;
-        }
+                Question = q.Label,
+                Answer = data.FirstOrDefault(c => c.CustomId == $"q{i}")?.Value ?? ""
+            })
+            .ToList();
 
-        var ticket = new Ticket
-        {
-            GuildId = guild.Id,
-            ProjectKey = project.Key,
-            UserId = user.Id,
-            TextChannelId = text.Id,
-            VoiceChannelId = voice.Id
-        };
-        store.AddTicket(ticket);
-        audit.FromDiscord(guild.Id, user, "tickets", "Opened ticket", project.Name);
-
-        var (embeds, comps) = TicketRenderer.TicketMessage(ticket, project);
-        var pings = $"<@{user.Id}> " + string.Join(" ", project.StaffRoleIds.Select(r => $"<@&{r}>"));
-        var message = await text.SendMessageAsync(pings, embeds: embeds, components: comps,
-            allowedMentions: new AllowedMentions { UserIds = [user.Id], RoleIds = project.StaffRoleIds.ToList() });
-        store.UpdateTicket(ticket.Id, t => t.MessageId = message.Id);
-
-        return ticket;
-    }
-
-    /// <summary>Категория проекта, иначе общая «Tickets» (создаётся скрытой при первом тикете).</summary>
-    private async Task<ulong?> EnsureCategoryAsync(TicketProject project)
-    {
-        if (project.CategoryId is { } id && Context.Guild.GetCategoryChannel(id) is not null)
-            return id;
-
-        var existing = Context.Guild.CategoryChannels.FirstOrDefault(c =>
-            c.Name.Equals(TicketRenderer.DefaultCategoryName, StringComparison.OrdinalIgnoreCase));
-        if (existing is not null) return existing.Id;
-
-        var hidden = new Overwrite[]
-        {
-            new(Context.Guild.EveryoneRole.Id, PermissionTarget.Role,
-                OverwritePermissions.InheritAll.Modify(viewChannel: PermValue.Deny)),
-            new(Context.Client.CurrentUser.Id, PermissionTarget.User,
-                OverwritePermissions.InheritAll.Modify(viewChannel: PermValue.Allow, manageChannel: PermValue.Allow))
-        };
-        var created = await Context.Guild.CreateCategoryChannelAsync(TicketRenderer.DefaultCategoryName,
-            p => p.PermissionOverwrites = new Optional<IEnumerable<Overwrite>>(hidden));
-        return created.Id;
-    }
-
-    /// <summary>Канал видят только заявитель, руководство проекта и сам бот.</summary>
-    private List<Overwrite> BuildOverwrites(TicketProject project, ulong applicantId)
-    {
-        var member = OverwritePermissions.InheritAll.Modify(
-            viewChannel: PermValue.Allow,
-            sendMessages: PermValue.Allow,
-            readMessageHistory: PermValue.Allow,
-            attachFiles: PermValue.Allow,
-            embedLinks: PermValue.Allow,
-            connect: PermValue.Allow,
-            speak: PermValue.Allow);
-
-        var overwrites = new List<Overwrite>
-        {
-            new(Context.Guild.EveryoneRole.Id, PermissionTarget.Role,
-                OverwritePermissions.InheritAll.Modify(viewChannel: PermValue.Deny)),
-            new(Context.Client.CurrentUser.Id, PermissionTarget.User, member.Modify(manageChannel: PermValue.Allow)),
-            new(applicantId, PermissionTarget.User, member)
-        };
-        overwrites.AddRange(project.StaffRoleIds.Select(roleId => new Overwrite(roleId, PermissionTarget.Role, member)));
-        return overwrites;
+        await DeferAsync(ephemeral: true);
+        var (ticket, error) = await tickets.CreateAsync(Context.Guild, (IGuildUser)Context.User, project, answers, "discord");
+        await FollowupAsync(ticket is not null ? $"✅ Ticket created: <#{ticket.TextChannelId}>" : $"❌ {error}", ephemeral: true);
     }
 
     // ================= Approve =================
@@ -296,7 +197,7 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
 
         await FollowupAsync($"🔒 This ticket will close in {(int)ApproveCloseDelay.TotalSeconds} seconds.");
         await NotifyApprovedAsync(applicant, project, granted);
-        _ = CloseAfterDelayAsync(updated);
+        _ = CloseAfterDelayAsync(updated, Context.User, "approved", null);
     }
 
     /// <summary>Сколько ждать после Approve перед удалением каналов — чтобы все успели увидеть сообщение.</summary>
@@ -318,15 +219,12 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
         }
     }
 
-    private async Task CloseAfterDelayAsync(Ticket ticket)
+    private async Task CloseAfterDelayAsync(Ticket ticket, IUser by, string outcome, string? reason)
     {
         try
         {
             await Task.Delay(ApproveCloseDelay);
-            if (store.FindTicket(ticket.Id) is null) return; // уже закрыли вручную
-            store.RemoveTicket(ticket.Id);
-            await DeleteTicketChannelAsync(ticket, ticket.VoiceChannelId);
-            await DeleteTicketChannelAsync(ticket, ticket.TextChannelId);
+            await tickets.CloseAsync(ticket, outcome, by, reason); // в архив + удалить каналы
         }
         catch (Exception)
         {
@@ -375,12 +273,60 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
             m.Components = new ComponentBuilder().Build();
         });
 
-        store.RemoveTicket(ticketId);
         audit.FromDiscord(Context.Guild.Id, Context.User, "tickets", "Closed ticket",
             $"{store.FindProject(ticket.GuildId, ticket.ProjectKey)?.Name ?? "Deleted project"} · applicant " +
             (Context.Guild.GetUser(ticket.UserId)?.DisplayName ?? ticket.UserId.ToString()));
-        await DeleteTicketChannelAsync(ticket, ticket.VoiceChannelId);
-        await DeleteTicketChannelAsync(ticket, ticket.TextChannelId);
+        await tickets.CloseAsync(ticket, "closed", Context.User, null);
+    }
+
+    // ================= Deny =================
+
+    [ComponentInteraction("ticket:deny:*")]
+    public async Task OnDeny(string ticketId)
+    {
+        var ticket = FindOwnTicket(ticketId);
+        var project = ticket is null ? null : store.FindProject(ticket.GuildId, ticket.ProjectKey);
+        if (ticket is null || project is null)
+        {
+            await RespondAsync("This ticket is no longer active.", ephemeral: true);
+            return;
+        }
+        if (!IsStaff(project))
+        {
+            await RespondAsync($"Only {project.Name} leadership can deny applications.", ephemeral: true);
+            return;
+        }
+        if (ticket.ApprovedBy is not null)
+        {
+            await RespondAsync("This application is already approved.", ephemeral: true);
+            return;
+        }
+        await RespondWithModalAsync(TicketRenderer.DenyModal(ticket.Id));
+    }
+
+    [ModalInteraction("ticket:denyok:*")]
+    public async Task OnDenyConfirmed(string ticketId)
+    {
+        var ticket = FindOwnTicket(ticketId);
+        var project = ticket is null ? null : store.FindProject(ticket.GuildId, ticket.ProjectKey);
+        if (ticket is null || project is null || !IsStaff(project))
+        {
+            await RespondAsync("This ticket is no longer active.", ephemeral: true);
+            return;
+        }
+
+        var reason = ((SocketModal)Context.Interaction).Data.Components.FirstOrDefault(c => c.CustomId == "reason")?.Value?.Trim();
+        if (string.IsNullOrWhiteSpace(reason)) reason = null;
+
+        await RespondAsync($"❌ <@{ticket.UserId}>'s application was denied by <@{Context.User.Id}>." +
+                           (reason is null ? "" : $"\n**Reason:** {Format.Sanitize(reason)}") +
+                           $"\n🔒 This ticket will close in {(int)ApproveCloseDelay.TotalSeconds} seconds.",
+            allowedMentions: new AllowedMentions { UserIds = [ticket.UserId] });
+        audit.FromDiscord(Context.Guild.Id, Context.User, "tickets", "Denied ticket",
+            $"{project.Name} · applicant {(Context.Guild.GetUser(ticket.UserId)?.DisplayName ?? ticket.UserId.ToString())}" +
+            (reason is null ? "" : $" · {reason}"));
+        await tickets.NotifyDeniedAsync(ticket, project, reason);
+        _ = CloseAfterDelayAsync(ticket, Context.User, "denied", reason);
     }
 
     // ================= Хелперы =================

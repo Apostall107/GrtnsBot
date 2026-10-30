@@ -79,6 +79,12 @@ public static partial class PanelApi
                         jumpUrl = LfgSignupService.JumpUrl(x),
                         closed = x.IsClosed,
                         isOrganizer = x.OwnerId == me,
+                        requirements = x.HasRequirements ? new
+                        {
+                            roles = x.RequiredRoleIds.Select(id => Role(guild, id)),
+                            minGs = x.MinGs
+                        } : null,
+                        started = x.StartsAt is null || x.StartsAt <= DateTimeOffset.UtcNow,
                         canJoin = SlotRoleExtensions.All.ToDictionary(r => r.ToString(), r => x.CanJoinAs(r)),
                         me = mySlot is not null
                             ? new { status = "group", role = (mySlot.TakenAs ?? mySlot.Role).ToString(), character = mySlot.CharacterName }
@@ -93,7 +99,9 @@ public static partial class PanelApi
                             character = s.CharacterName,
                             classRole = s.ClassRoleId is { } cr ? Role(guild, cr) : null,
                             classIcon = s.ClassIcon,
-                            comment = s.Comment
+                            comment = s.Comment,
+                            gs = s.Gs,
+                            attended = s.Attended
                         }),
                         reserve = x.Reserve.Select(r => new
                         {
@@ -102,7 +110,8 @@ public static partial class PanelApi
                             character = r.CharacterName,
                             classRole = r.ClassRoleId is { } rr ? Role(guild, rr) : null,
                             classIcon = r.ClassIcon,
-                            comment = r.Comment
+                            comment = r.Comment,
+                            gs = r.Gs
                         })
                     };
                 })
@@ -178,7 +187,8 @@ public static partial class PanelApi
                     {
                         name,
                         classRole = info?.ClassRoleId is { } id ? Role(guild, id) : null,
-                        comment = info?.Comment
+                        comment = info?.Comment,
+                        gs = info?.Gs
                     };
                 }),
                 maxCharacters = CharacterStore.MaxPerUser,
@@ -205,7 +215,9 @@ public static partial class PanelApi
             if (roleId is { } r && profiles.ClassRoles(guildId, me).All(x => x.Id != r)) return Error("You don't have this role.");
             if (body.Comment is { Length: > CharacterStore.MaxCommentLength }) return Error($"Note: up to {CharacterStore.MaxCommentLength} characters.");
 
+            if (body.Gs is < 0 or > 99999) return Error("GS: 0–99999.");
             characters.SetInfo(guildId, me, exact, true, roleId, true, body.Comment);
+            characters.SetGs(guildId, me, exact, body.Gs is > 0 ? body.Gs : null);
             var groups = await profiles.RefreshCharacterAsync(guildId, me, exact);
             return Results.Ok(new { groupsUpdated = groups });
         });
@@ -275,15 +287,35 @@ public static partial class PanelApi
             }
         });
 
+        // Мои настройки временной комнаты по умолчанию
+        g.MapGet("/room-prefs", (ulong guildId, ClaimsPrincipal user, RoomPrefsStore prefs) =>
+        {
+            var p = prefs.Get(guildId, user.UserId()!.Value);
+            return Results.Ok(new { name = p?.Name, limit = p?.Limit, locked = p?.Locked ?? false });
+        });
+
+        g.MapPut("/room-prefs", (ulong guildId, RoomPrefsBody body, ClaimsPrincipal user, RoomPrefsStore prefs) =>
+        {
+            var name = string.IsNullOrWhiteSpace(body.Name) ? null : body.Name.Trim();
+            if (name is { Length: > 100 }) return Error("Room name: up to 100 characters.");
+            if (body.Limit is < 0 or > 99) return Error("Limit: 0–99 (0 = no limit).");
+            prefs.Set(guildId, user.UserId()!.Value, new RoomPrefs { Name = name, Limit = body.Limit, Locked = body.Locked });
+            return Results.Ok();
+        });
+
         // Для создания сбора: активности и канал, куда уйдёт пост (выбирает админ в LFG → Channel for groups)
         g.MapGet("/create-options", (ulong guildId, DiscordSocketClient client, ActivityStore activities,
-            BotSettingsStore settings, PanelTextStore panels) =>
+            BotSettingsStore settings, PanelTextStore panels, LfgTemplateStore templates) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var channel = LfgChannel(guild, settings, panels);
             return Results.Ok(new
             {
                 activities = activities.Get(guildId).Select(a => new { key = a.Key, name = a.Name, role = Role(guild, a.RoleId) }),
+                templates = TemplatesDto(guild, templates),
+                // Роли для требований сбора (организатор выбирает, какие нужны)
+                roles = guild.Roles.Where(r => !r.IsEveryone && !r.IsManaged).OrderByDescending(r => r.Position)
+                    .Select(r => new { id = r.Id.ToString(), name = r.Name, color = r.Color.RawValue == 0 ? null : $"#{r.Color.RawValue:x6}" }),
                 channel = channel is null ? null : new { id = channel.Id.ToString(), name = channel.Name }
             });
         });
@@ -316,7 +348,8 @@ public static partial class PanelApi
             try
             {
                 var (group, jumpUrl, dms) = await publisher.PublishAsync(new LfgPublishRequest(
-                    guildId, channelId, me, name!, pingRole, slots!, startsAt, body.NotifyByDm, true));
+                    guildId, channelId, me, name!, pingRole, slots!, startsAt, body.NotifyByDm, true,
+                    Requirements(guild, body.RequiredRoleIds), body.MinGs is > 0 and <= 99999 ? body.MinGs : null));
                 return Results.Ok(new { id = group.Id, jumpUrl, dmsStarted = dms });
             }
             catch (Exception ex) when (ex is InvalidOperationException or Discord.Net.HttpException)
@@ -335,12 +368,90 @@ public static partial class PanelApi
             return error is null ? Results.Ok() : Error(error);
         });
 
+        g.MapPost("/groups/{groupId}/time", (ulong guildId, string groupId, TimeBody body, ClaimsPrincipal user, DiscordSocketClient client,
+            LfgStore lfg, LfgSignupService signup, [Microsoft.AspNetCore.Mvc.FromServices] TimeService time) =>
+            RescheduleEndpointAsync(guildId, groupId, body, user, client, lfg, signup, time, organizerOnly: true));
+
+        g.MapPost("/groups/{groupId}/attendance", (ulong guildId, string groupId, AttendanceBody body, ClaimsPrincipal user,
+            LfgStore lfg, LfgSignupService signup) =>
+            AttendanceAsync(guildId, groupId, body, lfg, signup, user.UserId()));
+
+        // Моя статистика по сборам
+        g.MapGet("/stats", (ulong guildId, ClaimsPrincipal user, LfgHistoryStore history) =>
+        {
+            var me = user.UserId()!.Value;
+            var list = history.Get(guildId, null);
+            var mine = LfgStats.Players(list).FirstOrDefault(p => p.UserId == me);
+            return Results.Ok(new
+            {
+                groups = mine?.Groups ?? 0,
+                organized = mine?.Organized ?? 0,
+                attended = mine?.Attended ?? 0,
+                noShows = mine?.NoShows ?? 0,
+                reliability = mine?.Reliability,
+                recent = list.Where(e => e.OwnerId == me || e.Members.Any(m => m.UserId == me))
+                    .OrderByDescending(e => e.ClosedAt).Take(10)
+                    .Select(e => new
+                    {
+                        activity = e.Activity,
+                        at = (e.StartsAt ?? e.ClosedAt).ToUnixTimeMilliseconds(),
+                        organizer = e.OwnerId == me,
+                        attended = e.Members.FirstOrDefault(m => m.UserId == me)?.Attended
+                    })
+            });
+        });
+
         g.MapPost("/groups/{groupId}/close", async (ulong guildId, string groupId, ClaimsPrincipal user, LfgStore lfg, LfgSignupService signup) =>
         {
             if (!lfg.Groups.TryGetValue(groupId, out var group) || group.GuildId != guildId) return Error("This group is no longer active.");
             if (group.OwnerId != user.UserId()) return Error("Only the organizer can close this group.");
             await CloseGroupAsync(group, lfg, signup);
             return Results.Ok();
+        });
+
+        // Подать заявку с сайта: проекты (с анкетой) и мои открытые заявки
+        g.MapGet("/tickets/projects", (ulong guildId, ClaimsPrincipal user, DiscordSocketClient client, TicketStore tickets) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            var me = user.UserId()!.Value;
+            return Results.Ok(tickets.GetProjects(guildId).Select(p =>
+            {
+                var open = tickets.FindOpenTicket(guildId, me, p.Key);
+                return new
+                {
+                    key = p.Key,
+                    name = p.Name,
+                    openTicketUrl = open is not null && guild.GetTextChannel(open.TextChannelId) is not null
+                        ? $"https://discord.com/channels/{guildId}/{open.TextChannelId}" : null,
+                    questions = p.FormEnabled
+                        ? p.Questions.Take(TicketQuestion.MaxQuestions).Select(q => new
+                        {
+                            id = q.Id, label = q.Label, placeholder = q.Placeholder, @long = q.Long, required = q.Required, maxLength = q.MaxLength
+                        })
+                        : null
+                };
+            }));
+        });
+
+        g.MapPost("/tickets", async (ulong guildId, ApplyBody body, ClaimsPrincipal user, DiscordSocketClient client,
+            TicketStore tickets, TicketService service) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            if (guild.GetUser(user.UserId()!.Value) is not { } member) return Error("You are not on this server.");
+            if (tickets.FindProject(guildId, body.ProjectKey ?? "") is not { } project) return Error("This project no longer exists.");
+
+            var answers = project.FormEnabled
+                ? project.Questions.Take(TicketQuestion.MaxQuestions).Select(q => new TicketAnswer
+                {
+                    Question = q.Label,
+                    Answer = body.Answers is not null && body.Answers.TryGetValue(q.Id, out var a) ? a ?? "" : ""
+                }).ToList()
+                : new List<TicketAnswer>();
+
+            var (ticket, error) = await service.CreateAsync(guild, member, project, answers, "web");
+            return ticket is null
+                ? Error(StripMarkdown(error ?? "Couldn't create the ticket."))
+                : Results.Ok(new { jumpUrl = $"https://discord.com/channels/{guildId}/{ticket.TextChannelId}" });
         });
 
         g.MapPut("/dm", (ulong guildId, DmBody body, ClaimsPrincipal user, LfgNotifyStore notify) =>
@@ -364,6 +475,8 @@ public static partial class PanelApi
 public sealed record MemberRolesBody(List<string>? RoleIds);
 public sealed record JoinBody(string? Role, string? Character);
 public sealed record CharacterBody(string? Name);
-public sealed record CharacterProfileBody(string? ClassRoleId, string? Comment);
+public sealed record CharacterProfileBody(string? ClassRoleId, string? Comment, int? Gs = null);
 public sealed record DmBody(bool Enabled);
+public sealed record RoomPrefsBody(string? Name, int? Limit, bool Locked);
+public sealed record ApplyBody(string? ProjectKey, Dictionary<string, string?>? Answers);
 public sealed record RoomActionBody(string? Action, string? Name, int? Limit);

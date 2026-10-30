@@ -7,7 +7,7 @@ namespace LfgBot.Modules;
 /// <summary>Команды владельца комнаты. Та же логика, что у кнопок панели (TempRoomManager).</summary>
 [Group("room", "Manage your temporary voice room")]
 [RequireContext(ContextType.Guild)]
-public sealed class TempVoiceRoomModule(TempRoomManager rooms, PanelService panels) : InteractionModuleBase<SocketInteractionContext>
+public sealed class TempVoiceRoomModule(TempRoomManager rooms, PanelService panels, RoomPrefsStore prefs) : InteractionModuleBase<SocketInteractionContext>
 {
     [SlashCommand("rename", "Rename your room")]
     public Task RenameAsync([Summary("name", "New name"), MaxLength(100)] string name) =>
@@ -33,6 +33,33 @@ public sealed class TempVoiceRoomModule(TempRoomManager rooms, PanelService pane
 
     [SlashCommand("claim", "Become the owner of this room if the owner has left")]
     public Task ClaimAsync() => RunAsync(r => rooms.ClaimAsync(r, Context.User), ownerOnly: false);
+
+    [SlashCommand("defaults", "Save the current name, limit and lock of your room as defaults for new rooms")]
+    public async Task DefaultsAsync([Summary("reset", "Forget my defaults")] bool reset = false)
+    {
+        if (reset)
+        {
+            prefs.Set(Context.Guild.Id, Context.User.Id, null);
+            await RespondAsync("Your room defaults were reset.", ephemeral: true);
+            return;
+        }
+
+        var error = rooms.TryResolve(Context.Guild, Context.User, true, out var room);
+        if (error is not null || room is null)
+        {
+            await RespondAsync(error ?? "Join your temporary room first.", ephemeral: true, allowedMentions: AllowedMentions.None);
+            return;
+        }
+
+        prefs.Set(Context.Guild.Id, Context.User.Id, new RoomPrefs
+        {
+            Name = room.Channel.Name,
+            Limit = room.Channel.UserLimit ?? 0,
+            Locked = room.Room.Locked
+        });
+        await RespondAsync($"Saved: new rooms will be **{Format.Sanitize(room.Channel.Name)}**, limit {(room.Channel.UserLimit?.ToString() ?? "none")}" +
+                           (room.Room.Locked ? ", locked." : "."), ephemeral: true);
+    }
 
     [SlashCommand("panel", "Show the room control panel")]
     public async Task PanelAsync()

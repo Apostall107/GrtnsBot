@@ -14,7 +14,9 @@ public sealed record LfgPublishRequest(
     IReadOnlyList<SlotRole> Slots,
     DateTimeOffset? StartsAt,
     bool NotifyByDm,
-    bool SeatOwner = true);
+    bool SeatOwner = true,
+    IReadOnlyList<ulong>? RequiredRoleIds = null,
+    int? MinGs = null);
 
 /// <summary>Публикация сбора: пост с пингом роли, сохранение, ЛС участникам с ролью активности.</summary>
 public sealed class LfgPublisher(
@@ -35,7 +37,9 @@ public sealed class LfgPublisher(
         {
             ActivityName = r.ActivityName,
             PingRoleId = r.PingRoleId,
-            Slots = r.Slots.Select(role => new Slot { Role = role }).ToList()
+            Slots = r.Slots.Select(role => new Slot { Role = role }).ToList(),
+            RequiredRoleIds = r.RequiredRoleIds?.ToList() ?? [],
+            MinGs = r.MinGs
         };
 
         var group = new LfgGroup(draft)

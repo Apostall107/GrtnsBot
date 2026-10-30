@@ -31,12 +31,15 @@ builder.Services.AddSingleton(sp => new InteractionService(
 
 builder.Services.AddSingleton<BotSettingsStore>();
 builder.Services.AddSingleton<AuditLog>();
+builder.Services.AddSingleton<LfgHistoryStore>();
 builder.Services.AddSingleton<LfgStore>();
+builder.Services.AddSingleton<LfgTemplateStore>();
 builder.Services.AddSingleton<ActivityStore>();
 builder.Services.AddSingleton<CharacterStore>();
 builder.Services.AddSingleton<TimeService>();
 builder.Services.AddSingleton<TicketStore>();
 builder.Services.AddSingleton<TempVoiceStore>();
+builder.Services.AddSingleton<RoomPrefsStore>();
 builder.Services.AddSingleton<TempRoomManager>();
 builder.Services.AddSingleton<LfgNotifyStore>();
 builder.Services.AddSingleton<LfgNotifier>();
@@ -49,6 +52,8 @@ builder.Services.AddSingleton<CaptchaService>();
 builder.Services.AddSingleton<CaptchaVoiceGuard>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<CaptchaVoiceGuard>());
 builder.Services.AddSingleton<TicketMessageService>();
+builder.Services.AddSingleton<TicketArchiveStore>();
+builder.Services.AddSingleton<TicketService>();
 builder.Services.AddSingleton<PanelTextStore>();
 builder.Services.AddSingleton<PanelService>();
 builder.Services.AddSingleton<LfgPublisher>();
@@ -56,6 +61,7 @@ builder.Services.AddSingleton<RecurringLfgStore>();
 builder.Services.AddHostedService<BotService>();
 builder.Services.AddHostedService<GroupCleanupService>();
 builder.Services.AddHostedService<RecurringLfgService>();
+builder.Services.AddHostedService<TicketAutoCloseService>();
 builder.Services.AddHostedService<TempVoiceService>();
 
 // Веб-админка: вход через Discord, слушает только 127.0.0.1 (наружу — через Caddy с HTTPS)

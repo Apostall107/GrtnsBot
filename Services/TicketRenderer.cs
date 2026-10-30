@@ -58,7 +58,7 @@ public static class TicketRenderer
         sb.AppendLine();
         sb.AppendLine(t.ApprovedBy is { } by
             ? $"✅ **Approved** by <@{by}>"
-            : "Leadership can **Approve** this application — the role is given and the ticket closes. " +
+            : "Leadership can **Approve** (the role is given and the ticket closes) or **Deny** (with a reason sent to the applicant). " +
               "Anyone here can **Close** the ticket.");
 
         var embed = new EmbedBuilder()
@@ -70,6 +70,13 @@ public static class TicketRenderer
             .Build();
 
         var embeds = new List<Embed> { embed };
+        if (t.Answers.Count > 0)
+        {
+            var form = new EmbedBuilder().WithTitle("📝 Application form").WithColor(Color.Blue);
+            foreach (var a in t.Answers.Take(25))
+                form.AddField(Clip(a.Question, 256), Clip(a.Answer, 1024));
+            embeds.Add(form.Build());
+        }
         if (!string.IsNullOrWhiteSpace(p?.CustomText))
             embeds.Add(new EmbedBuilder()
                 .WithDescription(ApplyPlaceholders(p.CustomText, t, p))
@@ -79,11 +86,40 @@ public static class TicketRenderer
         var comps = new ComponentBuilder()
             .WithButton("Approve", $"ticket:approve:{t.Id}", ButtonStyle.Success, new Emoji("✅"),
                 disabled: t.ApprovedBy is not null)
+            .WithButton("Deny", $"ticket:deny:{t.Id}", ButtonStyle.Secondary, new Emoji("❌"),
+                disabled: t.ApprovedBy is not null)
             .WithButton("Close", $"ticket:close:{t.Id}", ButtonStyle.Danger, new Emoji("🔒"))
             .Build();
 
         return (embeds.ToArray(), comps);
     }
+
+    private static string Clip(string text, int max) =>
+        string.IsNullOrWhiteSpace(text) ? "—" : text.Length <= max ? text : text[..(max - 1)] + "…";
+
+    /// <summary>Окно анкеты проекта (вопросы → поля q0..q4).</summary>
+    public static Modal FormModal(TicketProject p)
+    {
+        var title = $"Application — {p.Name}";
+        var modal = new ModalBuilder()
+            .WithTitle(title.Length <= 45 ? title : title[..45])
+            .WithCustomId($"ticket:form:{p.Key}");
+        for (var i = 0; i < Math.Min(p.Questions.Count, TicketQuestion.MaxQuestions); i++)
+        {
+            var q = p.Questions[i];
+            modal.AddTextInput(q.Label, $"q{i}", q.Long ? TextInputStyle.Paragraph : TextInputStyle.Short,
+                placeholder: q.Placeholder, maxLength: Math.Clamp(q.MaxLength, 1, 4000), required: q.Required);
+        }
+        return modal.Build();
+    }
+
+    /// <summary>Окно причины отказа.</summary>
+    public static Modal DenyModal(string ticketId) => new ModalBuilder()
+        .WithTitle("Deny the application")
+        .WithCustomId($"ticket:denyok:{ticketId}")
+        .AddTextInput("Reason (sent to the applicant)", "reason", TextInputStyle.Paragraph,
+            placeholder: "Optional", maxLength: 500, required: false)
+        .Build();
 
     private static string ApplyPlaceholders(string text, Ticket t, TicketProject p)
     {
