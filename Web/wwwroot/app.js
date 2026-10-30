@@ -2557,7 +2557,8 @@ function textCard(p) {
       labelsOnly ? null : h("span", { class: "muted small" }, `${p.posted} posted`)),
     labelsOnly ? h("p", { class: "muted small" }, p.key === "lfgpost"
       ? "Buttons under every LFG group post. Saving updates the active groups." : "Buttons in every ticket message. Saving updates the open tickets.") : null,
-    labelsOnly ? null : h("div", { class: "field" }, h("label", {}, "Title"), title),
+    labelsOnly ? null : h("div", { class: "field" }, h("label", {}, "Title"), title,
+      h("span", { class: "muted small" }, "Plain text — Discord doesn't apply markdown in titles. Put headings (# , ## , -# ) at the start of the text instead; type - here for no title.")),
     labelsOnly ? null : h("div", { class: "field" }, h("label", {}, "Text (Discord markdown)"), desc,
       h("div", { class: "row" }, counter, p.placeholders ? h("span", { class: "muted small" }, `· ${p.placeholders}`) : null)),
     labelInputs.length ? h("div", { class: "grid2" }, labelInputs.map(x => x.el)) : null,
