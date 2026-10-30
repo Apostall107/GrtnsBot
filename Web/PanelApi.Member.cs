@@ -266,6 +266,21 @@ public static partial class PanelApi
             return characters.Remove(guildId, user.UserId()!.Value, name, scope.Value) ? Results.Ok() : Error("Character not found.");
         });
 
+        // Сводка сервера для главной участника (только числа, без подробностей)
+        g.MapGet("/summary", (ulong guildId, DiscordSocketClient client, LfgStore lfg, TicketStore tickets, TempVoiceStore voice) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            var groups = ActiveGroups(lfg, guildId);
+            return Results.Ok(new
+            {
+                server = new { id = guild.Id.ToString(), name = guild.Name, iconUrl = guild.IconUrl, members = guild.MemberCount },
+                activeGroups = groups.Count,
+                recruiting = groups.Count(x => !x.IsFull),
+                openTickets = tickets.GetTickets(guildId).Count,
+                voiceRooms = LiveRooms(guild, voice).Count
+            });
+        });
+
         // Главная участника: мои сборы, мои заявки (тикеты), моя голосовая комната
         g.MapGet("/home", (ulong guildId, ClaimsPrincipal user, DiscordSocketClient client, LfgStore lfg, TicketStore tickets,
             TempVoiceStore voice) =>
