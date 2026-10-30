@@ -435,7 +435,7 @@ async function pageLfg(main) {
       : "Now: not set — members can't create groups until you pick a channel or post the LFG panel.";
   }).catch(e => { chInfo.textContent = e.message; });
 
-  main.append(h("div", { class: "grid2" }, actCard,
+  main.append(h("div", { class: "grid-main" }, actCard,
     h("div", {}, postPanelCard("LFG panel", "Posts the message with the “Create LFG” button.", "/lfg/panel"), chCard)));
 
   // --- Schedules (creating one-off groups is in Member → Groups)
@@ -2391,5 +2391,21 @@ function addGuideButton(main, key) {
     head.append(first, btn);
   } else main.prepend(h("div", { class: "row", style: "justify-content:flex-end" }, btn));
 }
+
+// Adaptive tables: each cell gets its column name (shown as a label when a narrow card stacks the rows)
+function labelTables() {
+  for (const t of document.querySelectorAll("table.table")) {
+    const heads = [...t.querySelectorAll("thead th")].map(th => th.textContent.trim());
+    if (!heads.some(Boolean)) continue;
+    for (const tr of t.querySelectorAll("tbody tr"))
+      [...tr.children].forEach((td, i) => { if (heads[i] && td.dataset.label !== heads[i]) td.dataset.label = heads[i]; });
+  }
+}
+let labelQueued = false;
+new MutationObserver(() => {
+  if (labelQueued) return;
+  labelQueued = true;
+  requestAnimationFrame(() => { labelQueued = false; labelTables(); });
+}).observe(document.body, { childList: true, subtree: true });
 
 boot();
