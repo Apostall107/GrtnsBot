@@ -80,7 +80,7 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
     }
 
     [ModalInteraction("ticket:form:*")]
-    public async Task OnFormSubmitted(string projectKey, TicketFormModal _)
+    public async Task OnFormSubmitted(string projectKey, TicketFormModal modal)
     {
         var project = store.FindProject(Context.Guild.Id, projectKey);
         if (project is null)
@@ -305,7 +305,7 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
     }
 
     [ModalInteraction("ticket:denyok:*")]
-    public async Task OnDenyConfirmed(string ticketId, TicketDenyModal _)
+    public async Task OnDenyConfirmed(string ticketId, TicketDenyModal modal)
     {
         var ticket = FindOwnTicket(ticketId);
         var project = ticket is null ? null : store.FindProject(ticket.GuildId, ticket.ProjectKey);
