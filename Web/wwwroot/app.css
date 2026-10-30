@@ -24,8 +24,8 @@
   --surface: #141924;
   --surface-elevated: #1F2634;
   --surface-hover: #1A2030;
-  --primary: #7657F6;
-  --primary-hover: #896EFF;
+  --primary: #7B4DFF;
+  --primary-hover: #9270FF;
   --primary-soft: rgba(118, 87, 246, .16);
   --primary-text: #B9A9FF;
   --success: #22C58B;
@@ -59,13 +59,13 @@
   --shadow-card: 0 1px 0 rgba(255, 255, 255, .03) inset, 0 8px 24px rgba(0, 0, 0, .18);
 
   /* Module tones — icons and highlights, so sections are told apart at a glance */
-  --t-violet: #9378FF;
-  --t-blue: #4C9BFF;
-  --t-amber: #F5B942;
-  --t-teal: #2BCDB4;
-  --t-pink: #F0609E;
-  --t-green: #22C58B;
-  --t-cyan: #45C8EA;
+  --t-violet: #9D7BFF;
+  --t-blue: #3D9BFF;
+  --t-amber: #FFBB33;
+  --t-teal: #1FE0C0;
+  --t-pink: #FF4FA0;
+  --t-green: #1EDB8F;
+  --t-cyan: #33D0FF;
   --ease: 140ms ease;
 
   /* Legacy names (older pages) → new tokens */
@@ -540,7 +540,7 @@ button.stat { cursor: pointer; }
   background: linear-gradient(180deg, rgba(255, 255, 255, .025), rgba(255, 255, 255, 0) 120px), var(--surface);
   box-shadow: var(--shadow-card);
 }
-.card > .card-head:first-child:has(h2.with-icon) {
+.card > .card-head:first-child:has(h2.with-icon), .card > .card-head:first-child:has(h3.with-icon) {
   margin: calc(var(--s5) * -1) calc(var(--s5) * -1) var(--s4); padding: var(--s3) var(--s5);
   border-bottom: 1px solid var(--border); border-radius: var(--radius-card) var(--radius-card) 0 0;
   background: rgba(255, 255, 255, .015);
@@ -771,3 +771,73 @@ input.switch:checked::after { transform: translateX(18px); background: #fff; }
 .char-actions .spacer { flex: 1; }
 .char-add { margin: 0; display: flex; flex-direction: column; align-items: flex-start; gap: var(--s3); border-style: dashed; border-color: var(--border-strong); --tone: var(--t-cyan); }
 .char-add .row { width: 100%; }
+
+/* =====================================================================
+   Glossy glass buttons: saturated, mirror highlight, neon glow
+   ===================================================================== */
+
+.btn { position: relative; overflow: hidden; isolation: isolate; }
+/* Mirror: bright upper half + a sheen that sweeps on hover */
+.btn::before {
+  content: ""; position: absolute; inset: 0 0 50% 0; z-index: -1; pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .22), rgba(255, 255, 255, .04));
+  border-radius: inherit;
+}
+.btn::after {
+  content: ""; position: absolute; top: -50%; bottom: -50%; left: -60%; width: 40%; z-index: -1; pointer-events: none;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .28), transparent);
+  transform: skewX(-20deg) translateX(-120%); transition: transform 600ms ease;
+}
+.btn:hover::after { transform: skewX(-20deg) translateX(520%); }
+.btn.ghost::before, .btn.ghost::after, .tabs .btn::before, .tabs .btn::after { display: none; }
+
+/* Primary */
+.btn:not(.secondary):not(.ghost):not(.danger):not(.btn-refresh):not(.btn-guide) {
+  color: #fff; text-shadow: 0 1px 2px rgba(40, 10, 120, .6);
+  background: linear-gradient(180deg, #A07CFF 0%, #8457FF 50%, #6A35FF 51%, #7C48FF 100%);
+  border: 1px solid rgba(206, 190, 255, .55);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), inset 0 -2px 6px rgba(50, 10, 160, .45),
+    0 0 0 1px rgba(123, 77, 255, .35), 0 6px 20px rgba(123, 77, 255, .55), 0 0 26px rgba(146, 112, 255, .45);
+}
+.btn:not(.secondary):not(.ghost):not(.danger):not(.btn-refresh):not(.btn-guide):hover {
+  background: linear-gradient(180deg, #B193FF 0%, #9468FF 50%, #7A47FF 51%, #8B5CFF 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .6), inset 0 -2px 6px rgba(50, 10, 160, .4),
+    0 0 0 1px rgba(160, 124, 255, .55), 0 8px 26px rgba(123, 77, 255, .7), 0 0 38px rgba(160, 124, 255, .65);
+}
+.btn:not(.secondary):not(.ghost):not(.danger):not(.btn-refresh):not(.btn-guide):active { transform: translateY(1px); }
+
+/* Secondary: clear glass */
+.btn.secondary {
+  background: linear-gradient(180deg, rgba(255, 255, 255, .1), rgba(255, 255, 255, .03));
+  border: 1px solid rgba(255, 255, 255, .14);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), 0 4px 14px rgba(0, 0, 0, .25);
+}
+.btn.secondary:hover { border-color: rgba(180, 160, 255, .45); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2), 0 0 18px rgba(123, 77, 255, .3); }
+
+/* Danger, Refresh, Guide: tinted glass with their own glow */
+.btn.danger { background: linear-gradient(180deg, rgba(255, 90, 105, .28), rgba(255, 90, 105, .1)); border-color: rgba(255, 110, 125, .5); color: #FFB3BA;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), 0 0 14px rgba(255, 80, 100, .2); }
+.btn.danger:hover { background: linear-gradient(180deg, #FF6B7A, #E8364A); color: #fff; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .4), 0 0 24px rgba(255, 80, 100, .6); }
+.btn.btn-refresh { background: linear-gradient(180deg, rgba(30, 219, 143, .26), rgba(30, 219, 143, .08)); border-color: rgba(30, 219, 143, .5); color: #7DF5C4;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), 0 0 14px rgba(30, 219, 143, .22); }
+.btn.btn-refresh:hover { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2), 0 0 24px rgba(30, 219, 143, .5); }
+.btn.btn-guide { background: linear-gradient(180deg, rgba(255, 187, 51, .26), rgba(255, 187, 51, .08)); border-color: rgba(255, 187, 51, .5); color: #FFD98A;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), 0 0 14px rgba(255, 187, 51, .2); }
+.btn.btn-guide:hover { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2), 0 0 24px rgba(255, 187, 51, .5); }
+
+/* Glass a bit clearer, ambient light a bit richer */
+:root { --glass: rgba(20, 24, 38, .52); --blur: blur(18px) saturate(180%); }
+body::before { filter: saturate(1.25); }
+.card::after { opacity: .95; }
+
+/* Headings with icon chips (h3 too) */
+h3.with-icon { display: flex; align-items: center; gap: 8px; }
+h2.with-icon .tone-chip, h3.with-icon .tone-chip { width: 28px; height: 28px; border-radius: 8px; }
+.card > h2.with-icon:first-child, .card > h3.with-icon:first-child { margin-bottom: var(--s4); }
+@media (prefers-reduced-motion: reduce) { .btn::after { display: none; } }
+
+.perm-chip { height: 30px; padding: 0 10px; gap: 7px; }
+.perm-chip .icon { color: var(--tone); }
+.perm-chip:has(input:checked) { border-color: color-mix(in srgb, var(--tone) 55%, transparent); box-shadow: 0 0 12px color-mix(in srgb, var(--tone) 22%, transparent); }
+h2.sub-title { margin-top: var(--s2); }
