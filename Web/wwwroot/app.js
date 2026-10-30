@@ -95,7 +95,9 @@ function roleChip(r, onRemove) {
   return h("span", { class: `chip${r.exists === false ? " warn" : ""}` },
     h("span", { class: "swatch", style: r.color ? `background:${r.color}` : null }),
     `@${r.name}`,
-    onRemove ? h("button", { title: "Remove", onclick: onRemove }, "×") : null);
+    onRemove ? h("button", { title: "Remove", onclick: async () => {
+      if (await confirmDialog(`Remove @${r.name}?`, "It is removed from this list (saved when you save the form).", "Remove")) onRemove();
+    } }, "×") : null);
 }
 
 function empty(text) { return h("div", { class: "empty" }, text); }
@@ -119,6 +121,39 @@ function confirmDialog(title, text, okLabel = "Confirm", danger = true) {
         h("button", { class: `btn ${danger ? "danger" : ""}`, onclick: () => { d.close(); resolve(true); } }, okLabel)));
     d.onclose = () => resolve(false);
     d.showModal();
+  });
+}
+
+/** Tabs row (projects etc.): remembers the choice in storeKey and reloads the page. */
+function tabsRow(items, current, storeKey, ...extra) {
+  return h("div", { class: "tabs" }, items.map(([k, label]) =>
+    h("button", { class: `btn secondary${k === current ? " active-tab" : ""}`, onclick: () => { store.set(storeKey, k); refresh(); } }, label)),
+    ...extra);
+}
+
+/** Pick several roles at once (checkboxes + search). Resolves with the chosen roles or null. */
+function pickRolesDialog(title, exclude = []) {
+  return new Promise(resolve => {
+    const d = dialog();
+    const search = h("input", { placeholder: "Search roles…", style: "width:100%" });
+    const items = state.roles.filter(r => !exclude.includes(r.id)).map(r => {
+      const cb = h("input", { type: "checkbox" });
+      return { r, cb, el: h("label", {}, cb, roleChip(r)) };
+    });
+    const list = h("div", { class: "check-list" }, items.length ? items.map(x => x.el) : empty("No more roles."));
+    search.addEventListener("input", () => {
+      const q = search.value.trim().toLowerCase();
+      for (const x of items) x.el.style.display = !q || x.r.name.toLowerCase().includes(q) ? "" : "none";
+    });
+    const count = h("span", { class: "muted small", style: "margin-right:auto" }, "0 selected");
+    list.addEventListener("change", () => { count.textContent = `${items.filter(x => x.cb.checked).length} selected`; });
+    let result = null;
+    const ok = h("button", { class: "btn", onclick: () => { result = items.filter(x => x.cb.checked).map(x => x.r); d.close(); } }, "➕ Add selected");
+    d.replaceChildren(h("h2", {}, title), search, list,
+      h("div", { class: "actions" }, count, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), ok));
+    d.onclose = () => resolve(result && result.length ? result : null);
+    d.showModal();
+    search.focus();
   });
 }
 
@@ -391,7 +426,7 @@ async function pageOverview(main) {
 // ================= LFG =================
 
 async function pageLfg(main) {
-  main.append(h("div", { class: "card-head" }, h("h1", {}, "📣 LFG"), h("button", { class: "btn secondary", onclick: refresh }, "🔄 Refresh")));
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "📣 LFG"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
 
   // Projects (games): every project has its own tab — activities, panel, classes, templates, schedules, groups, stats.
   // ⚙️ General — projects, settings and everything shared by all projects.
@@ -405,10 +440,9 @@ async function pageLfg(main) {
   const mode = !projects.length ? "all" : P ? "project" : "shared";
   const project = projects.find(p => p.key === P);
 
-  if (projects.length) main.append(h("div", { class: "row", style: "margin-bottom:16px" },
-    [...projects.map(p => [p.key, `🎮 ${p.name}`]), ["general", "⚙️ General"]].map(([k, label]) =>
-      h("button", { class: `btn secondary${k === tab ? " active-tab" : ""}`,
-        onclick: () => { store.set("gb.lfgProject", k); refresh(); } }, label))));
+  if (projects.length) main.append(tabsRow([...projects.map(p => [p.key, `🎮 ${p.name}`]), ["general", "⚙️ General"]], tab, "gb.lfgProject",
+    project ? h("button", { class: "btn ghost", title: "Rename the project, change its roles", onclick: () => projectDialog(project) }, `✏️ Edit ${project.name}`) : null,
+    h("button", { class: "btn ghost", onclick: () => projectDialog(null) }, "➕ Project")));
 
   const [acts, templates] = await Promise.all([
     gApi("GET", "/lfg/activities").catch(() => []),
@@ -436,13 +470,14 @@ async function pageLfg(main) {
   actCard.append(actList.length ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
     h("thead", {}, h("tr", {}, h("th", {}, "Activity"), h("th", {}, "Ping role"), projects.length ? h("th", {}, "Project") : null, h("th", {}))),
     h("tbody", {}, actList.map(a => {
+      const edit = h("button", { class: "btn secondary", onclick: () => activityDialog(a) }, "✏️ Edit");
       const rm = h("button", { class: "btn ghost" }, "Remove");
       rm.addEventListener("click", async () => {
         if (!await confirmDialog(`Remove ${a.name}?`, "Groups that are already posted are not affected.", "Remove")) return;
         if (await act(rm, () => gApi("DELETE", `/lfg/activities/${encodeURIComponent(a.key)}`), "Activity removed.") !== undefined) refresh();
       });
       return h("tr", {}, h("td", {}, a.name, mode === "project" && !a.projectKey ? h("div", {}, shared.cloneNode(true)) : null),
-        h("td", {}, roleChip(a.role)), projects.length ? h("td", {}, moveSel(a)) : null, h("td", { class: "actions" }, rm));
+        h("td", {}, roleChip(a.role)), projects.length ? h("td", {}, moveSel(a)) : null, h("td", { class: "actions" }, edit, " ", rm));
     })))) : empty("No activities yet."));
   const nameIn = h("input", { placeholder: "Activity name, e.g. Fire Temple", maxlength: "100" });
   const roleIn = roleSelect("Role to ping…");
@@ -525,6 +560,25 @@ async function pageLfg(main) {
     const groups = (await gApi("GET", "/lfg/groups")).filter(g => mode === "all" || ofProject(g.projectKey));
     groupsBody.replaceChildren(groups.length ? h("div", { class: "grid2" }, groups.map(groupCard)) : empty("No active groups."));
   } catch (e) { groupsBody.replaceChildren(empty(e.message)); }
+}
+
+/** Rename an activity / change the role it pings. */
+function activityDialog(a) {
+  const d = dialog();
+  const name = h("input", { maxlength: "100", value: a.name, style: "width:100%" });
+  const role = roleSelect("Role to ping…");
+  role.value = a.role.id;
+  const save = h("button", { class: "btn" }, "💾 Save");
+  save.addEventListener("click", async () => {
+    if (await act(save, () => gApi("PUT", `/lfg/activities/${encodeURIComponent(a.key)}`, { name: name.value, roleId: role.value }),
+      "Activity saved.") !== undefined) { d.close(); refresh(); }
+  });
+  d.replaceChildren(h("h2", {}, `Edit activity: ${a.name}`),
+    h("div", { class: "field" }, h("label", {}, "Name"), name),
+    h("div", { class: "field" }, h("label", {}, "Role to ping"), role),
+    h("p", { class: "muted small" }, "Groups that are already posted keep the old name."),
+    h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), save));
+  d.showModal();
 }
 
 const SLOT_ROLES = [["Any", "🎲 All"], ["Dps", "⚔️ DD"], ["Tank", "🛡️ Tank"], ["Healer", "💚 Sup"]];
@@ -902,18 +956,22 @@ async function renderClasses(card, projectList = [], projectKey = store.get("gb.
       const useRole = ri ? h("button", { class: "btn secondary", title: "Use this role's icon from Discord" }, roleIconEl(ri), "Role icon") : null;
       if (useRole) useRole.addEventListener("click", () => importIcons(useRole, [r]));
       return h("div", { class: "row question-row" }, roleChip(r.role), prev, icon, pick, useRole,
-        h("button", { class: "btn ghost", onclick: () => { rows.splice(i, 1); draw(); } }, "✖"));
+        h("button", { class: "btn ghost", title: "Remove", onclick: async () => {
+          if (await confirmDialog(`Remove @${r.role.name} from classes?`, "Saved when you press Save classes.", "Remove")) { rows.splice(i, 1); draw(); }
+        } }, "✖"));
     }));
   };
-  const addSel = roleSelect("+ Add class role…");
-  addSel.addEventListener("change", () => {
-    const role = state.roles.find(r => r.id === addSel.value);
-    if (role && !rows.some(r => r.roleId === role.id)) {
+  // Several class roles at once
+  const addSel = h("button", { class: "btn secondary" }, "➕ Add class roles…");
+  addSel.addEventListener("click", async () => {
+    const picked = await pickRolesDialog("Add class roles", rows.map(r => r.roleId));
+    if (!picked) return;
+    for (const role of picked) {
       const ri = roleIcons[role.id];
       rows.push({ roleId: role.id, role: { ...role, exists: true }, icon: ri && ri.emoji ? ri.emoji : "" });
     }
-    addSel.value = "";
     draw();
+    toast(`Added ${picked.length} role(s) — press Save classes.`);
   });
   const fromRoles = h("button", { class: "btn secondary", title: "Fill empty icons with the roles' own icons from Discord (if none are empty — all)" }, "🎨 Use role icons");
   // Empty icons first; if none are empty — all rows whose role has an icon
@@ -1117,7 +1175,9 @@ function groupCard(g) {
         h("span", {},
           tool("⬆️", "Move into the group (sends a DM)", () => roster("promote", r.member, "Moved into the group, DM sent.")),
           tool("✏️", "Change character", rename(r.member, r.character)),
-          tool("✖️", "Remove from the reserve", () => roster("removeReserve", r.member, "Removed from the reserve."))))))) : null,
+          tool("✖️", "Remove from the reserve", async () => {
+            if (await confirmDialog(`Remove ${r.member.name} from the reserve?`, "They are taken out of this group.", "Remove")) roster("removeReserve", r.member, "Removed from the reserve.");
+          })))))) : null,
     h("div", { class: "row", style: "margin-top:12px" },
       h("a", { class: "btn secondary", href: g.jumpUrl, target: "_blank", rel: "noopener" }, "Open in Discord"),
       h("button", { class: "btn secondary", onclick: () => rescheduleDialog(g, `/lfg/groups/${encodeURIComponent(g.id)}/time`) }, "🕒 Time"),
@@ -1127,35 +1187,44 @@ function groupCard(g) {
 // ================= Tickets =================
 
 async function pageTickets(main) {
-  main.append(h("div", { class: "card-head" }, h("h1", {}, "🎫 Tickets"), h("button", { class: "btn secondary", onclick: refresh }, "🔄 Refresh")));
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "🎫 Tickets"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
 
-  const nameIn = h("input", { placeholder: "Project name, e.g. Aion 2", maxlength: "100" });
-  const roleIn = roleSelect("Role given on Approve…");
-  const addBtn = h("button", { class: "btn" }, "➕ Add project");
-  addBtn.addEventListener("click", async () => {
-    if (await act(addBtn, () => gApi("POST", "/tickets/projects", { name: nameIn.value, memberRoleId: roleIn.value }),
-      "Project added. Now set its leadership roles.") !== undefined) refresh();
-  });
+  // A tab per ticket project; ⚙️ General — ticket panel, all open tickets, archive
+  let projects = [];
+  try { projects = await gApi("GET", "/tickets/projects"); } catch (e) { main.append(empty(e.message)); return; }
+  let tab = store.get("gb.ticketTab") || (projects[0] ? projects[0].key : "new");
+  if (!["new", "general"].includes(tab) && !projects.some(p => p.key === tab)) tab = projects[0] ? projects[0].key : "new";
+  main.append(tabsRow([...projects.map(p => [p.key, `📁 ${p.name}${p.open ? ` (${p.open})` : ""}`]), ["new", "➕ New project"], ["general", "⚙️ General"]],
+    tab, "gb.ticketTab"));
 
-  main.append(h("div", { class: "grid2" },
-    h("div", { class: "card" }, h("h3", {}, "New project"),
+  if (tab === "new") {
+    const nameIn = h("input", { placeholder: "Project name, e.g. Aion 2", maxlength: "100" });
+    const roleIn = roleSelect("Role given on Approve…");
+    const addBtn = h("button", { class: "btn" }, "➕ Add project");
+    addBtn.addEventListener("click", async () => {
+      if (await act(addBtn, () => gApi("POST", "/tickets/projects", { name: nameIn.value, memberRoleId: roleIn.value }),
+        "Project added. Now set its leadership roles.") === undefined) return;
+      const list = await gApi("GET", "/tickets/projects").catch(() => []);
+      const added = list.find(p => p.name.toLowerCase() === nameIn.value.trim().toLowerCase());
+      store.set("gb.ticketTab", added ? added.key : "general");
+      refresh();
+    });
+    main.append(h("div", { class: "card" }, h("h3", {}, "New project"),
       h("p", { class: "muted small" }, "Applicants pick the project in the ticket panel."),
-      h("div", { class: "row" }, h("div", { class: "grow" }, nameIn), roleIn, addBtn)),
-    postPanelCard("Ticket panel", "Posts the message with the button to open a ticket.", "/tickets/panel")));
+      h("div", { class: "row" }, h("div", { class: "grow" }, nameIn), roleIn, addBtn)));
+    return;
+  }
 
-  const projectsBody = h("div", {}, h("div", { class: "muted" }, "Loading…"));
+  const project = projects.find(p => p.key === tab);
   const openBody = h("div", {}, h("div", { class: "muted" }, "Loading…"));
-  main.append(h("h2", {}, "Projects"), projectsBody,
-    h("div", { class: "card" }, h("div", { class: "card-head" }, h("h2", {}, "Open tickets")), openBody),
-    ticketArchiveCard());
+  if (project) main.append(projectCard(project));
+  else main.append(postPanelCard("Ticket panel", "Posts the message with the button to open a ticket (all projects in one panel).", "/tickets/panel"));
+  main.append(h("div", { class: "card" }, h("div", { class: "card-head" }, h("h2", {}, project ? `Open tickets · ${project.name}` : "Open tickets")), openBody));
+  if (!project) main.append(ticketArchiveCard());
 
   try {
-    const projects = await gApi("GET", "/tickets/projects");
-    projectsBody.replaceChildren(...(projects.length ? projects.map(projectCard) : [h("div", { class: "card" }, empty("No projects yet."))]));
-  } catch (e) { projectsBody.replaceChildren(empty(e.message)); }
-
-  try {
-    const open = await gApi("GET", "/tickets/open");
+    let open = await gApi("GET", "/tickets/open");
+    if (project) open = open.filter(t => t.project === project.name);
     openBody.replaceChildren(open.length ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
       h("thead", {}, h("tr", {}, h("th", {}, "Project"), h("th", {}, "Applicant"), h("th", {}, "Status"), h("th", {}, "Opened"), h("th", {}))),
       h("tbody", {}, open.map(t => {
@@ -1175,6 +1244,7 @@ async function pageTickets(main) {
 }
 
 function projectCard(p) {
+  const nameIn = h("input", { maxlength: "100", value: p.name, style: "font-weight:600;min-width:200px" });
   const staff = roleListEditor(p.staffRoles);
   const members = roleListEditor(p.memberRoles);
   const cat = channelSelect("categories", "Default category “Tickets”");
@@ -1191,11 +1261,12 @@ function projectCard(p) {
   save.addEventListener("click", async () => {
     const res = await act(save, () => gApi("PUT", `/tickets/projects/${encodeURIComponent(p.key)}`, {
       staffRoleIds: staff.value(), memberRoleIds: members.value(), categoryId: cat.value || null, customText: text.value,
-      formEnabled: form.enabled(), questions: form.value(),
+      formEnabled: form.enabled(), questions: form.value(), name: nameIn.value,
       autoCloseDays: autoClose.value === "" ? null : Number(autoClose.value)
     }));
     if (res === undefined) return;
-    toast(`Project ${p.name} saved.`);
+    toast(`Project ${nameIn.value.trim() || p.name} saved.`);
+    if (nameIn.value.trim() && nameIn.value.trim() !== p.name) refresh();
     if (res.warning) toast(res.warning, "warn");
     if (res.ticketsTotal) toast(`Updated ${res.ticketsUpdated} of ${res.ticketsTotal} open tickets.`, res.ticketsUpdated === res.ticketsTotal ? "ok" : "warn");
   });
@@ -1206,7 +1277,8 @@ function projectCard(p) {
   });
 
   return h("div", { class: "card" },
-    h("div", { class: "card-head" }, h("h3", {}, p.name), h("span", { class: "badge wait" }, `${p.open} open`)),
+    h("div", { class: "card-head" }, h("div", { class: "field", style: "margin:0;margin-right:auto" }, h("label", {}, "Project name"), nameIn),
+      h("span", { class: "badge wait" }, `${p.open} open`)),
     h("div", { class: "grid2" },
       h("div", { class: "field" }, h("label", {}, "Leadership (see tickets, can Approve)"), staff.el),
       h("div", { class: "field" }, h("label", {}, "Roles given on Approve"), members.el)),
@@ -1237,7 +1309,9 @@ function questionEditor(p) {
       const max = h("input", { type: "number", min: "1", max: "4000", value: q.maxLength ?? (q.long ? 1000 : 200), style: "width:80px", title: "Max length" });
       max.addEventListener("input", () => { q.maxLength = Number(max.value || 0) || null; });
       const up = h("button", { class: "btn ghost", type: "button", title: "Up", disabled: i === 0, onclick: () => { [qs[i - 1], qs[i]] = [qs[i], qs[i - 1]]; draw(); } }, "↑");
-      const del = h("button", { class: "btn ghost", type: "button", title: "Remove", onclick: () => { qs.splice(i, 1); draw(); } }, "✖");
+      const del = h("button", { class: "btn ghost", type: "button", title: "Remove", onclick: async () => {
+        if (await confirmDialog("Remove this question?", "Saved when you press Save.", "Remove")) { qs.splice(i, 1); draw(); }
+      } }, "✖");
       return h("div", { class: "row question-row" }, h("span", { class: "muted" }, `${i + 1}.`), label, hint,
         h("label", { class: "row small" }, long, "long"), h("label", { class: "row small" }, req, "required"), max, up, del);
     }));
@@ -1305,7 +1379,7 @@ function ticketArchiveCard() {
 // ================= Temp Voice =================
 
 async function pageVoice(main) {
-  main.append(h("div", { class: "card-head" }, h("h1", {}, "🔊 Temp Voice"), h("button", { class: "btn secondary", onclick: refresh }, "🔄 Refresh")));
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "🔊 Temp Voice"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
 
   // New channel
   const nName = h("input", { placeholder: "➕ Create room", maxlength: "100" });
@@ -1407,7 +1481,7 @@ function roomRow(r) {
 
 async function pageTexts(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "📝 Panel texts"),
-    h("button", { class: "btn secondary", onclick: refresh }, "🔄 Refresh")));
+    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
   main.append(h("p", { class: "muted" },
     "Edit the text of the panels the bot posts. Saving updates the panels already posted on the server. ",
     "Panels posted before this feature are unknown to the bot — click “Find posted panels” once to pick them up."));
@@ -1487,7 +1561,7 @@ const KIND_LABELS = {
 
 async function pagePosts(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "📌 Posts"),
-    h("button", { class: "btn secondary", onclick: refresh }, "🔄 Refresh")));
+    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
 
   // --- Panels
   const discover = h("button", { class: "btn secondary" }, "🔍 Find posted panels");
@@ -1601,7 +1675,7 @@ const SOURCE_LABELS = { web: "🌐 site", discord: "💬 Discord", system: "🤖
 
 async function pageLog(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "📜 Log"),
-    h("button", { class: "btn secondary", onclick: refresh }, "🔄 Refresh")));
+    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
   main.append(h("p", { class: "muted" }, "What was done on the site and in the bot: who, when and with what. The last 5000 actions are kept."));
 
   const actor = h("select", {}, h("option", { value: "" }, "Everyone"));
@@ -1698,7 +1772,7 @@ async function pageSettings(main) {
 // ================= Member: home =================
 
 async function pageHome(main) {
-  main.append(h("div", { class: "card-head" }, h("h1", {}, "🏠 Home"), h("button", { class: "btn secondary", onclick: refresh }, "🔄 Refresh")));
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "🏠 Home"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
   const holder = h("div", {}, h("div", { class: "muted" }, "Loading…"));
   main.append(holder);
 
@@ -1853,8 +1927,15 @@ async function pageContent(main) {
 const ROLE_CHOICES = [["Dps", "⚔️ DD"], ["Tank", "🛡️ Tank"], ["Healer", "💚 Sup"], ["Any", "🎲 All"]];
 
 async function pagePlay(main) {
-  main.append(h("div", { class: "card-head" }, h("h1", {}, "🎮 Groups"), h("button", { class: "btn secondary", onclick: refresh }, "🔄 Refresh")));
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "🎮 Groups"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
   const holder = h("div", {}, h("div", { class: "muted" }, "Loading…"));
+
+  // Project tabs: groups of one game at a time
+  let projects = [];
+  try { projects = (await gApi("GET", "/me/characters")).projects || []; } catch { /* no projects */ }
+  let tab = store.get("gb.playProject") || "all";
+  if (tab !== "all" && !projects.some(p => p.key === tab)) tab = "all";
+  if (projects.length > 1) main.append(tabsRow([["all", "🌐 All"], ...projects.map(p => [p.key, `🎮 ${p.name}`])], tab, "gb.playProject"));
   main.append(holder);
 
   // Create a group (like /lfg) — collapsed by default
@@ -1875,7 +1956,8 @@ async function pagePlay(main) {
       const opt = await gApi("GET", "/me/create-options");
       if (!opt.channel && !(opt.projects || []).some(p => p.channel)) { createBody.replaceChildren(empty("The channel for groups isn't set yet — ask an admin.")); return; }
       const form = lfgForm(opt.activities, { mode: "once", fixedChannel: opt.channel || { id: "", name: "" }, hideSeat: true,
-        templates: opt.templates, roles: opt.roles, projects: opt.projects, mirrorChannels: opt.mirrorChannels });
+        templates: opt.templates, roles: opt.roles, projects: opt.projects, mirrorChannels: opt.mirrorChannels,
+        initial: tab !== "all" ? { projectKey: tab } : {} });
       const publish = h("button", { class: "btn" }, "📣 Publish");
       publish.addEventListener("click", async () => {
         const res = await act(publish, () => gApi("POST", "/me/create", form.value()));
@@ -1890,6 +1972,7 @@ async function pagePlay(main) {
 
   let data;
   try { data = await gApi("GET", "/me/groups"); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
+  if (tab !== "all") data.groups = data.groups.filter(g => g.projectKey === tab);
   holder.replaceChildren(h("h2", {}, "Active groups"), data.groups.length
     ? h("div", { class: "grid2" }, data.groups.map(g => playCard(g)))
     : h("div", { class: "card" }, empty("No active groups right now.")));
@@ -1916,7 +1999,9 @@ function playCard(g) {
       h("span", { class: "char" }, r.character || "", r.gs ? ` · GS ${r.gs}` : ""),
       org ? h("span", {},
         tool("⬆️", "Move into the group (sends a DM)", () => roster$("promote", r.member, "Moved into the group, DM sent.")),
-        tool("✖️", "Remove from the reserve", () => roster$("removeReserve", r.member, "Removed from the reserve."))) : null)))) : null;
+        tool("✖️", "Remove from the reserve", async () => {
+          if (await confirmDialog(`Remove ${r.member.name} from the reserve?`, "They are taken out of this group.", "Remove")) roster$("removeReserve", r.member, "Removed from the reserve.");
+        })) : null)))) : null;
   const closeBtn = org ? h("button", { class: "btn danger" }, "🗑️ Close group") : null;
   if (closeBtn) closeBtn.addEventListener("click", async () => {
     if (!await confirmDialog(`Close ${g.activity}?`, "The post is deleted in Discord. Copy the invites first if you need them.", "Close & delete")) return;
@@ -1947,6 +2032,7 @@ function playCard(g) {
   });
   const leave = h("button", { class: "btn secondary" }, "Leave");
   leave.addEventListener("click", async () => {
+    if (!await confirmDialog(`Leave ${g.activity}?`, "Your slot becomes free.", "Leave")) return;
     if (await act(leave, () => gApi("POST", `/me/groups/${encodeURIComponent(g.id)}/leave`), "You left the group.") !== undefined) refresh();
   });
 
@@ -1974,7 +2060,7 @@ function playCard(g) {
 // ================= Member: characters =================
 
 async function pageChars(main) {
-  main.append(h("div", { class: "card-head" }, h("h1", {}, "🧙 My characters"), h("button", { class: "btn secondary", onclick: refresh }, "🔄 Refresh")));
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "🧙 My characters"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
   const holder = h("div", {}, h("div", { class: "muted" }, "Loading…"));
   main.append(holder);
 
@@ -1984,7 +2070,7 @@ async function pageChars(main) {
   const pq = data.project ? `?project=${encodeURIComponent(data.project)}` : "";
 
   // Projects (games): each has its own characters; locked without the project role
-  const tabsRow = data.projects.length ? h("div", { class: "row", style: "margin-bottom:12px" },
+  const projTabs = data.projects.length ? h("div", { class: "tabs" },
     data.projects.map(p => h("button", {
       class: `btn secondary${p.key === data.project ? " active-tab" : ""}`, disabled: !p.allowed,
       title: p.allowed ? "" : `Needs ${p.roles.map(r => "@" + r.name).join(" or ")}`,
@@ -2025,7 +2111,15 @@ async function pageChars(main) {
       if (!await confirmDialog(`Remove ${c.name}?`, "The character, its class and note are deleted.", "Remove")) return;
       if (await act(rm, () => gApi("DELETE", `/me/characters/${encodeURIComponent(c.name)}${pq}`), "Removed.") !== undefined) refresh();
     });
-    return h("tr", {}, h("td", {}, h("b", {}, c.name)), h("td", {}, h("div", { class: "row", style: "flex-wrap:nowrap" }, clsIcon, cls)), h("td", {}, gs), h("td", { style: "min-width:220px" }, note),
+    // Rename: class, note, GS and active groups follow the new name
+    const rename = h("button", { class: "btn ghost", title: "Rename", style: "padding:2px 6px" }, "✏️");
+    rename.addEventListener("click", async () => {
+      const name = await promptDialog(`Rename ${c.name}`, c.name);
+      if (!name || name === c.name) return;
+      if (await act(rename, () => gApi("POST", `/me/characters/${encodeURIComponent(c.name)}/rename${pq}`, { name }),
+        r => r.groupsUpdated ? `Renamed. Updated ${r.groupsUpdated} active group(s).` : "Renamed.") !== undefined) refresh();
+    });
+    return h("tr", {}, h("td", {}, h("div", { class: "row", style: "flex-wrap:nowrap;gap:4px" }, h("b", {}, c.name), rename)), h("td", {}, h("div", { class: "row", style: "flex-wrap:nowrap" }, clsIcon, cls)), h("td", {}, gs), h("td", { style: "min-width:220px" }, note),
       h("td", { class: "actions" }, save, " ", rm));
   });
 
@@ -2033,7 +2127,7 @@ async function pageChars(main) {
     h("div", { class: "card" },
       h("label", { class: "row" }, dm, "Get a DM when a group is posted for an activity whose role I have"),
       h("p", { class: "muted small" }, "Same as 🔔 / 🔕 under the LFG panel or /lfg-dm.")),
-    h("div", { class: "card" }, tabsRow,
+    h("div", { class: "card" }, projTabs,
       h("p", { class: "muted small" }, "Each game (project) has its own characters. Class — any class of this project (no role needed); its icon is shown next to your name in group posts. GS is checked by group requirements. The note is only for you — you see it when picking a character."),
       data.characters.length ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
         h("thead", {}, h("tr", {}, h("th", {}, "Character"), h("th", {}, "Class"), h("th", {}, "GS"), h("th", {}, "Note"), h("th", {}))),
@@ -2045,7 +2139,7 @@ async function pageChars(main) {
 
 async function pageAccess(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "🔑 Access"),
-    h("button", { class: "btn secondary", onclick: refresh }, "🔄 Refresh")));
+    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
   main.append(h("p", { class: "muted" },
     "Who can log in to this panel and which sections they see. Only you (the bot owner) can open this page. ",
     "Changes apply immediately — no re-login needed."));
@@ -2267,7 +2361,9 @@ const HELP = {
       ["Project tabs", [
         "Each project (game) has its own tab at the top: its **activities**, **LFG panel** (posted panels are linked to the project), **classes**, **templates**, **recurring groups**, **active groups** and **statistics** — nothing from other projects.",
         "🌐 **all projects** items (activities, templates) are shared and shown in every project; manage them in **⚙️ General**.",
-        "**⚙️ General** — projects, LFG settings, channel for groups, shared activities and templates, common classes."
+        "**⚙️ General** — projects, LFG settings, channel for groups, shared activities and templates, common classes.",
+        "Everything can be edited: ✏️ **Edit** on activities (name, role), ✏️ **Edit <project>** next to the tabs, templates and schedules — **Edit**.",
+        "**🎭 Classes** → **➕ Add class roles…** — tick several roles at once."
       ]],
       ["Projects & classes", [
         "**🎮 Projects** — name + required role(s), one is the default (older characters belong to it). Link each LFG panel to its project.",
@@ -2464,7 +2560,7 @@ function guideDialog(key) {
 /** Puts the ❔ Guide button into the page heading. */
 function addGuideButton(main, key) {
   if (!HELP[key]) return;
-  const btn = h("button", { class: "btn secondary", onclick: () => guideDialog(key) }, "❔ Guide");
+  const btn = h("button", { class: "btn btn-guide", title: "How this section works", onclick: () => guideDialog(key) }, "❔ Guide");
   const first = main.firstElementChild;
   if (first && first.classList.contains("card-head")) first.append(btn);
   else if (first && first.tagName === "H1") {

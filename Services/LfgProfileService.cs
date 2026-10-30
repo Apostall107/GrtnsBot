@@ -127,6 +127,41 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
     /// <summary>
     /// После /character class|note: обновить все активные сборы, где человек записан этим персонажем.
     /// </summary>
+    /// <summary>Персонаж переименован: новое имя во всех активных сборах этого проекта (в группе и резерве).</summary>
+    public async Task<int> RenameInGroupsAsync(ulong guildId, ulong userId, string oldName, string newName, string? scope = null)
+    {
+        var updated = 0;
+        foreach (var group in store.Groups.Values.Where(g => g.GuildId == guildId && !g.IsClosed && signup.Scope(g) == scope).ToList())
+        {
+            await group.Gate.WaitAsync();
+            try
+            {
+                var changed = false;
+                foreach (var slot in group.Slots.Where(s => s.UserId == userId &&
+                             string.Equals(s.CharacterName, oldName, StringComparison.OrdinalIgnoreCase)))
+                {
+                    slot.CharacterName = newName;
+                    changed = true;
+                }
+                if (group.FindReserve(userId) is { } reserve && string.Equals(reserve.CharacterName, oldName, StringComparison.OrdinalIgnoreCase))
+                {
+                    reserve.CharacterName = newName;
+                    changed = true;
+                }
+                if (!changed) continue;
+                signup.ApplyProfile(group, userId);
+                store.SaveGroups();
+                await signup.RefreshPostAsync(group);
+                updated++;
+            }
+            finally
+            {
+                group.Gate.Release();
+            }
+        }
+        return updated;
+    }
+
     public async Task<int> RefreshCharacterAsync(ulong guildId, ulong userId, string name, string? scope = null)
     {
         var updated = 0;

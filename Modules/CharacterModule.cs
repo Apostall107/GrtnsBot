@@ -117,6 +117,27 @@ public sealed class CharacterModule(CharacterStore store, LfgProfileService prof
                             (groups > 0 ? $" Updated {groups} active group(s)." : ""), ephemeral: true);
     }
 
+    [SlashCommand("rename", "Rename a character (class, note, GS and active groups keep it)")]
+    public async Task RenameAsync(
+        [Summary("name", "Character name"), Autocomplete(typeof(CharacterAutocomplete))] string name,
+        [Summary("new_name", "New name"), MaxLength(CharacterStore.MaxNameLength)] string newName,
+        [Summary("project", "Game / project (empty = default)"), Autocomplete(typeof(ProjectAutocomplete))] string? project = null)
+    {
+        if (await ScopeAsync(project) is not { } scope || await ExactAsync(name, scope.Value) is not { } exact) return;
+        if (store.Rename(Context.Guild.Id, Context.User.Id, exact, newName, scope.Value) is { } error)
+        {
+            await RespondAsync(error, ephemeral: true);
+            return;
+        }
+
+        await DeferAsync(ephemeral: true);
+        var clean = newName.Replace("`", "").Trim();
+        var groups = await profiles.RenameInGroupsAsync(Context.Guild.Id, Context.User.Id, exact, clean, scope.Value);
+        audit.FromDiscord(Context.Guild.Id, Context.User, "lfg", "Renamed character", $"{exact} → {clean}");
+        await FollowupAsync($"**{Format.Sanitize(exact)}** → **{Format.Sanitize(clean)}**." +
+                            (groups > 0 ? $" Updated {groups} active group(s)." : ""), ephemeral: true);
+    }
+
     [SlashCommand("remove", "Remove a character")]
     public async Task RemoveAsync(
         [Summary("name", "Character name"), Autocomplete(typeof(CharacterAutocomplete))] string name,

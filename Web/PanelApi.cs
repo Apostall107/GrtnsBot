@@ -202,6 +202,17 @@ public static partial class PanelApi
             return error is null ? Results.Ok() : Error(error);
         });
 
+        // Переименовать активность / сменить роль. Уже опубликованные сборы не меняются.
+        g.MapPut("/activities/{key}", (ulong guildId, string key, ActivityBody body, DiscordSocketClient client, ActivityStore activities) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            var name = (body.Name ?? "").Trim();
+            if (name.Length is 0 or > MaxNameLength) return Error($"The name must be 1–{MaxNameLength} characters.");
+            if (ParseId(body.RoleId) is not { } roleId || guild.GetRole(roleId) is null) return Error("Pick a role to ping.");
+            var error = activities.Update(guildId, key, name, roleId);
+            return error is null ? Results.Ok() : Error(error);
+        });
+
         // Активность → проект (пусто — общая для всех проектов)
         g.MapPut("/activities/{key}/project", (ulong guildId, string key, LfgPanelProjectBody body, ActivityStore activities, LfgProjectStore projects) =>
         {
@@ -372,8 +383,12 @@ public static partial class PanelApi
             }
             if (body.FormEnabled == true && (questions ?? existing.Questions).Count == 0) return Error("Add at least one question to enable the form.");
             if (body.AutoCloseDays is < 2 or > 90) return Error("Auto-close: 2–90 days (empty = off).");
+            var newName = string.IsNullOrWhiteSpace(body.Name) ? existing.Name : body.Name.Trim();
+            if (newName.Length > MaxNameLength) return Error($"The name must be 1–{MaxNameLength} characters.");
+            if (tickets.GetProjects(guildId).Any(x => x.Key != key && x.Name.Equals(newName, StringComparison.OrdinalIgnoreCase)))
+                return Error($"Project \"{newName}\" already exists.");
 
-            var textChanged = text != existing.CustomText;
+            var textChanged = text != existing.CustomText || newName != existing.Name;
             tickets.UpdateProject(guildId, key, p =>
             {
                 p.StaffRoleIds = staff;
@@ -383,6 +398,7 @@ public static partial class PanelApi
                 if (body.FormEnabled is { } fe) p.FormEnabled = fe;
                 if (questions is not null) p.Questions = questions;
                 p.AutoCloseDays = body.AutoCloseDays;
+                p.Name = newName;
             });
 
             // Свой текст поменялся — перерисовываем уже открытые тикеты проекта
@@ -985,7 +1001,7 @@ public static partial class PanelApi
 public sealed record ActivityBody(string? Name, string? RoleId, string? ProjectKey = null);
 public sealed record ProjectBody(string? Name, string? MemberRoleId);
 public sealed record ProjectUpdateBody(List<string>? StaffRoleIds, List<string>? MemberRoleIds, string? CategoryId, string? CustomText,
-    bool? FormEnabled = null, List<QuestionBody>? Questions = null, int? AutoCloseDays = null);
+    bool? FormEnabled = null, List<QuestionBody>? Questions = null, int? AutoCloseDays = null, string? Name = null);
 public sealed record QuestionBody(string? Id, string? Label, string? Placeholder, bool Long, bool Required, int? MaxLength);
 public sealed record ChannelBody(string? ChannelId);
 public sealed record UserBody(string? UserId);
