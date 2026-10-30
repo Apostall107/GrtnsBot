@@ -732,6 +732,8 @@ public static partial class PanelApi
         return await panels.RefreshAsync(guildId, key);
     }
 
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, (DateTimeOffset At, List<object> List)> BotChannelsCache = new();
+
     // ================= Сообщения бота: панели и посты =================
 
     private static void MapPosts(RouteGroupBuilder g)
@@ -764,6 +766,43 @@ public static partial class PanelApi
         });
 
         // Последние сообщения бота в канале
+        // Каналы, где у бота есть сообщения (последние 50 сообщений каждого канала; кэш 2 минуты, ?refresh=true — заново)
+        g.MapGet("/channels", async (ulong guildId, bool? refresh, DiscordSocketClient client) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            if (refresh != true && BotChannelsCache.TryGetValue(guildId, out var cached) && DateTimeOffset.UtcNow - cached.At < TimeSpan.FromMinutes(2))
+                return Results.Ok(cached.List);
+
+            var me = client.CurrentUser.Id;
+            var gate = new SemaphoreSlim(5);
+            var channels = guild.TextChannels.Where(c => c is not SocketThreadChannel)
+                .Where(c => guild.CurrentUser.GetPermissions(c) is { ViewChannel: true, ReadMessageHistory: true }).ToList();
+            var found = await Task.WhenAll(channels.Select(async c =>
+            {
+                await gate.WaitAsync();
+                try
+                {
+                    var messages = await c.GetMessagesAsync(50).FlattenAsync();
+                    var mine = messages.Where(m => m.Author.Id == me).ToList();
+                    return (Channel: c, Count: mine.Count, Last: mine.Count > 0 ? mine.Max(m => m.Timestamp) : (DateTimeOffset?)null);
+                }
+                catch (Discord.Net.HttpException) { return (Channel: c, Count: 0, Last: (DateTimeOffset?)null); }
+                finally { gate.Release(); }
+            }));
+            var list = found.Where(x => x.Count > 0).OrderByDescending(x => x.Last)
+                .Select(x => (object)new
+                {
+                    id = x.Channel.Id.ToString(),
+                    name = x.Channel.Name,
+                    voice = x.Channel is SocketVoiceChannel,
+                    category = x.Channel.Category?.Name,
+                    count = x.Count,
+                    lastAt = x.Last?.ToUnixTimeMilliseconds()
+                }).ToList();
+            BotChannelsCache[guildId] = (DateTimeOffset.UtcNow, list);
+            return Results.Ok(list);
+        });
+
         g.MapGet("/channels/{channelId}/messages", async (ulong guildId, ulong channelId, int? limit, DiscordSocketClient client,
             PanelTextStore texts, LfgStore lfg, TicketStore tickets) =>
         {
