@@ -259,6 +259,186 @@ function iconizeButtons(root) {
     btn.insertBefore(icon(EMOJI_ICONS[key], 16), first);
   }
 }
+// ================= Custom selects & number fields =================
+// Every <select> gets a styled trigger + a glass list with search; long lists open as a popup window.
+// The native <select> stays (hidden) as the source of truth: .value and "change" keep working everywhere.
+
+const SELECT_POPUP_AT = 16;   // options from which the list opens as a centered popup
+const SELECT_SEARCH_AT = 6;   // options from which a search field is shown
+
+/** How an option looks: role pills for slot/role lists, class icons, plain text otherwise. */
+function optionView(sel, opt) {
+  const text = opt.textContent.trim();
+  if (sel.dataset.render === "role") {
+    const num = /^(\d+)\.\s*/.exec(text);
+    const rest = text.replace(/^\d+\.\s*/, "");
+    const reserve = /\(reserve\)/.test(rest);
+    const label = rest.replace(/\(reserve\)/, "").replace(/^[^\p{L}]+/u, "").trim();
+    return h("span", { class: "opt-view" }, num ? h("span", { class: "muted" }, `${num[1]}.`) : null, rolePill(label),
+      reserve ? h("span", { class: "muted small" }, "reserve") : null);
+  }
+  const ic = opt.dataset.icon;
+  return h("span", { class: "opt-view" }, ic ? h("span", { class: "opt-icon" }, classMark({ classIcon: ic }) || ic) : null, h("span", { class: "opt-text" }, text));
+}
+
+function enhanceSelect(sel) {
+  if (sel.dataset.enhanced || sel.multiple || sel.closest(".no-enhance")) return;
+  sel.dataset.enhanced = "1";
+  const wrap = h("span", { class: "select" });
+  if (sel.style.cssText) { wrap.style.cssText = sel.style.cssText; sel.style.cssText = ""; }
+  const label = h("span", { class: "select-label" });
+  const trigger = h("button", { type: "button", class: "select-trigger", "aria-haspopup": "listbox" }, label, icon("chevrons-up-down", 15, "select-chevron"));
+  if (sel.title) trigger.title = sel.title;
+  if (sel.getAttribute("aria-label")) trigger.setAttribute("aria-label", sel.getAttribute("aria-label"));
+  sel.parentNode.insertBefore(wrap, sel);
+  wrap.append(sel, trigger);
+  sel.tabIndex = -1;
+  sel.setAttribute("aria-hidden", "true");
+
+  const sync = () => {
+    const opt = sel.options[sel.selectedIndex];
+    label.replaceChildren(opt ? optionView(sel, opt) : h("span", { class: "muted" }, "—"));
+    trigger.disabled = sel.disabled;
+    wrap.classList.toggle("placeholder", !sel.value);
+  };
+  sel._syncSelect = sync;
+  // Programmatic .value / .selectedIndex changes update the label too
+  for (const prop of ["value", "selectedIndex"]) {
+    const d = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, prop);
+    Object.defineProperty(sel, prop, { configurable: true, get() { return d.get.call(this); }, set(v) { d.set.call(this, v); sync(); } });
+  }
+  new MutationObserver(sync).observe(sel, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled"] });
+  sel.addEventListener("change", sync);
+  trigger.addEventListener("click", () => openSelect(sel, trigger));
+  trigger.addEventListener("keydown", e => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); openSelect(sel, trigger); }
+    // Start typing on a focused field → the list opens with the filter filled in
+    else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && e.key !== " ") { e.preventDefault(); openSelect(sel, trigger, e.key); }
+  });
+  sync();
+}
+
+let openSelectClose = null;
+function openSelect(sel, trigger, typed = "") {
+  if (openSelectClose) openSelectClose();
+  const opts = [...sel.options];
+  const popup = opts.length >= SELECT_POPUP_AT;
+  const host = trigger.closest("dialog[open]") || document.body;
+
+  const search = h("input", { class: "select-search", placeholder: "Type to filter…", "aria-label": "Filter" });
+  const list = h("div", { class: "select-list", role: "listbox" });
+  let items = [], active = 0;
+  const draw = () => {
+    const q = search.value.trim().toLowerCase();
+    items = [];
+    const nodes = [];
+    let group = null;
+    for (const opt of opts) {
+      const og = opt.parentElement.tagName === "OPTGROUP" ? opt.parentElement.label : null;
+      if (q && !opt.textContent.toLowerCase().includes(q)) continue;
+      if (og !== group) { group = og; if (og) nodes.push(h("div", { class: "select-group" }, og)); }
+      const it = h("div", { class: `select-option${opt.selected ? " selected" : ""}${opt.disabled ? " disabled" : ""}`, role: "option",
+        "aria-selected": opt.selected ? "true" : "false" }, optionView(sel, opt), opt.selected ? icon("check", 15, "select-check") : null);
+      if (!opt.disabled) {
+        const idx = items.length;
+        items.push({ opt, el: it });
+        it.addEventListener("mousedown", e => { e.preventDefault(); pick(idx); });
+        it.addEventListener("mousemove", () => { if (active !== idx) { active = idx; mark(); } });
+      }
+      nodes.push(it);
+    }
+    list.replaceChildren(...(nodes.length ? nodes : [h("div", { class: "select-empty" }, "Nothing found")]));
+    active = Math.max(0, items.findIndex(x => x.opt.selected));
+    mark();
+  };
+  const mark = () => items.forEach((x, i) => x.el.classList.toggle("active", i === active));
+  const pick = i => {
+    const x = items[i];
+    if (!x) return;
+    if (sel.value !== x.opt.value) {
+      sel.value = x.opt.value;
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    close();
+    trigger.focus();
+  };
+
+  const box = h("div", { class: `select-pop${popup ? " popup" : ""}` },
+    popup ? h("div", { class: "select-pop-head" }, h("b", {}, trigger.getAttribute("aria-label") || sel.title || (opts[0] && opts[0].value === "" ? opts[0].textContent.replace(/[…:]+$/, "") : "Choose")),
+      h("button", { type: "button", class: "btn ghost icon-only sm", "aria-label": "Close", onclick: () => close() }, icon("x", 16))) : null,
+    opts.length >= SELECT_SEARCH_AT || popup ? h("div", { class: "select-search-wrap" }, icon("search", 15), search) : null, list);
+  const backdrop = popup ? h("div", { class: "select-backdrop", onmousedown: () => close() }) : null;
+  if (backdrop) host.append(backdrop);
+  host.append(box);
+
+  const place = () => {
+    if (popup) return;
+    const r = trigger.getBoundingClientRect();
+    const below = window.innerHeight - r.bottom - 12, above = r.top - 12;
+    const h0 = Math.min(box.scrollHeight, 360);
+    box.style.minWidth = `${Math.max(r.width, 200)}px`;
+    box.style.left = `${Math.min(r.left, window.innerWidth - box.offsetWidth - 8)}px`;
+    if (below < h0 && above > below) { box.style.top = ""; box.style.bottom = `${window.innerHeight - r.top + 6}px`; box.style.maxHeight = `${Math.min(360, above)}px`; }
+    else { box.style.bottom = ""; box.style.top = `${r.bottom + 6}px`; box.style.maxHeight = `${Math.min(360, below)}px`; }
+  };
+  if (typed && box.querySelector(".select-search")) search.value = typed;
+  draw();
+  place();
+  trigger.classList.add("open");
+  (box.querySelector(".select-search") || list).focus?.();
+  if (!box.querySelector(".select-search")) { box.tabIndex = -1; box.focus(); }
+  setTimeout(() => { const s = list.querySelector(".selected"); if (s) s.scrollIntoView({ block: "nearest" }); });
+
+  const onKey = e => {
+    if (e.key === "ArrowDown") { active = Math.min(items.length - 1, active + 1); mark(); items[active]?.el.scrollIntoView({ block: "nearest" }); e.preventDefault(); }
+    else if (e.key === "ArrowUp") { active = Math.max(0, active - 1); mark(); items[active]?.el.scrollIntoView({ block: "nearest" }); e.preventDefault(); }
+    else if (e.key === "Enter") { pick(active); e.preventDefault(); }
+    else if (e.key === "Escape") { close(); trigger.focus(); e.preventDefault(); e.stopPropagation(); }
+    else if (e.key === "Tab") close();
+  };
+  search.addEventListener("input", draw);
+  box.addEventListener("keydown", onKey);
+  const outside = e => { if (!box.contains(e.target) && e.target !== trigger && !trigger.contains(e.target)) close(); };
+  const onScroll = e => { if (!box.contains(e.target)) place(); };
+  setTimeout(() => document.addEventListener("mousedown", outside, true));
+  window.addEventListener("scroll", onScroll, true);
+  window.addEventListener("resize", place);
+  function close() {
+    box.remove();
+    if (backdrop) backdrop.remove();
+    trigger.classList.remove("open");
+    document.removeEventListener("mousedown", outside, true);
+    window.removeEventListener("scroll", onScroll, true);
+    window.removeEventListener("resize", place);
+    openSelectClose = null;
+  }
+  openSelectClose = close;
+}
+
+/** Number fields: styled − / + steppers instead of the browser's arrows. */
+function enhanceNumber(input) {
+  if (input.dataset.enhanced) return;
+  input.dataset.enhanced = "1";
+  const wrap = h("span", { class: "num-field" });
+  if (input.style.cssText) { wrap.style.cssText = input.style.cssText; input.style.cssText = ""; }
+  input.parentNode.insertBefore(wrap, input);
+  const step = dir => () => {
+    const min = input.min === "" ? -Infinity : Number(input.min), max = input.max === "" ? Infinity : Number(input.max);
+    const cur = input.value === "" ? (dir > 0 ? Math.max(0, min) - 1 : Math.max(0, min) + 1) : Number(input.value);
+    input.value = String(Math.min(max, Math.max(min, cur + dir * (Number(input.step) || 1))));
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  wrap.append(input, h("span", { class: "num-steps" },
+    h("button", { type: "button", tabindex: "-1", "aria-label": "Increase", onclick: step(1) }, icon("chevron-up", 12)),
+    h("button", { type: "button", tabindex: "-1", "aria-label": "Decrease", onclick: step(-1) }, icon("chevron-down", 12))));
+}
+
+function enhanceControls(root) {
+  for (const sel of root.querySelectorAll("select:not([data-enhanced])")) enhanceSelect(sel);
+  for (const n of root.querySelectorAll("input[type=number]:not([data-enhanced])")) enhanceNumber(n);
+}
+
 /** Card headings: a leading emoji (or a known title) becomes a tone icon chip. */
 const HEADING_EMOJI = { "⚙️": "settings", "🎭": "drama", "🎮": "gamepad-2", "👥": "users", "💾": "database-backup", "📄": "file-text",
   "📅": "calendar", "📈": "trending-up", "📋": "clipboard-list", "📝": "file-pen-line", "🔁": "repeat", "🗂️": "folder", "🗄️": "archive",
@@ -298,7 +478,7 @@ let iconizeQueued = false;
 new MutationObserver(() => {
   if (iconizeQueued) return;
   iconizeQueued = true;
-  requestAnimationFrame(() => { iconizeQueued = false; iconizeButtons(document.body); iconizeHeadings(document.body); });
+  requestAnimationFrame(() => { iconizeQueued = false; iconizeButtons(document.body); iconizeHeadings(document.body); enhanceControls(document.body); });
 }).observe(document.body, { childList: true, subtree: true });
 
 // ================= Mentions: @ / # suggestions in text fields =================
@@ -1278,7 +1458,7 @@ function lfgForm(acts, opts) {
   const drawSlots = () => {
     size.value = String(slots.length);
     slotBox.replaceChildren(...slots.map((r, i) => {
-      const sel = h("select", { title: `Slot ${i + 1}` }, SLOT_ROLES.map(([val, label]) => h("option", { value: val }, `${i + 1}. ${label}`)));
+      const sel = h("select", { title: `Slot ${i + 1}`, "data-render": "role" }, SLOT_ROLES.map(([val, label]) => h("option", { value: val }, `${i + 1}. ${label}`)));
       sel.value = r;
       sel.addEventListener("change", () => { slots[i] = sel.value; });
       return sel;
@@ -2725,7 +2905,7 @@ function playCard(g) {
 
   // Sign-up form: role + character (saved or new)
   const free = v => g.canJoin[v] || (g.me && g.me.status === "group" && g.me.role === v);
-  const role = h("select", { "aria-label": "Role" }, ROLE_CHOICES.map(([v, l]) => h("option", { value: v }, free(v) ? l : `${l} (reserve)`)));
+  const role = h("select", { "aria-label": "Role", "data-render": "role" }, ROLE_CHOICES.map(([v, l]) => h("option", { value: v }, free(v) ? l : `${l} (reserve)`)));
   const charSel = h("select", { "aria-label": "Character" }, characters.map(c => h("option", { value: c }, c)), h("option", { value: "" }, "+ New character…"));
   const newChar = h("input", { placeholder: "Character name", maxlength: "32", style: "width:160px", "aria-label": "New character name" });
   const sync = () => { newChar.style.display = charSel.value ? "none" : ""; };
@@ -2817,7 +2997,7 @@ async function pageChars(main) {
   const cards = data.characters.map(c => {
     // <option> can't show images: unicode icons go in the text, server/bot emojis are shown in the card header
     const cls = h("select", { "aria-label": "Class" }, h("option", { value: "" }, "No class"),
-      data.classRoles.map(r => h("option", { value: r.id }, `${r.icon && !isCustom(r.icon) ? r.icon + " " : ""}${r.name}`)));
+      data.classRoles.map(r => h("option", { value: r.id, "data-icon": r.icon || null }, r.name)));
     if (c.classRole) cls.value = c.classRole.id;
     const badge = h("span", { class: "char-icon big" });
     const clsName = h("span", { class: "muted small" });
