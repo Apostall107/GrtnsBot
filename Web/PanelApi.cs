@@ -434,7 +434,8 @@ public static partial class PanelApi
                 voiceChannel = guild.GetVoiceChannel(t.VoiceChannelId)?.Name,
                 jumpUrl = $"https://discord.com/channels/{guildId}/{t.TextChannelId}",
                 approvedBy = t.ApprovedBy is { } by ? Member(guild, by) : null,
-                createdAt = t.CreatedAt.ToUnixTimeMilliseconds()
+                createdAt = t.CreatedAt.ToUnixTimeMilliseconds(),
+                answers = t.Answers.Select(x => new { question = x.Question, answer = x.Answer })
             }));
         });
 

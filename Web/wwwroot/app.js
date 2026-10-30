@@ -2233,47 +2233,114 @@ async function pageTickets(main) {
   try {
     let open = await gApi("GET", "/tickets/open");
     if (project) open = open.filter(t => t.project === project.name);
-    openBody.replaceChildren(open.length ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
-      h("thead", {}, h("tr", {}, h("th", {}, "Project"), h("th", {}, "Applicant"), h("th", {}, "Status"), h("th", {}, "Opened"), h("th", {}))),
+    // Row: Approve / Deny + "⋯" (Open, Force close). Click the row → the ticket card with the form answers.
+    openBody.replaceChildren(open.length ? h("div", { class: "table-wrap" }, h("table", { class: "table clickable-rows" },
+      h("thead", {}, h("tr", {}, h("th", {}, "Applicant"), h("th", {}, "Project"), h("th", {}, "Status"), h("th", {}, "Opened"), h("th", {}))),
       h("tbody", {}, open.map(t => {
-        const close = h("button", { class: "btn danger" }, "Force close");
-        close.addEventListener("click", async () => {
-          if (!await confirmDialog("Close this ticket?", `The ticket channels of ${t.applicant.name} will be deleted.`, "Close ticket")) return;
-          if (await act(close, () => gApi("POST", `/tickets/open/${encodeURIComponent(t.id)}/close`), "Ticket closed.") !== undefined) refresh();
-        });
-        // Approve / Deny — same as the buttons in the ticket
-        const tid = encodeURIComponent(t.id);
-        const approve = t.approvedBy ? null : h("button", { class: "btn" }, icon("check", 15), "Approve");
-        if (approve) approve.addEventListener("click", async () => {
-          if (!await confirmDialog(`Approve ${t.applicant.name}?`, `They get the roles of ${t.project}, a DM, and the ticket closes in 15 seconds.`, "Approve", false)) return;
-          const res = await act(approve, () => gApi("POST", `/tickets/open/${tid}/approve`));
-          if (res === undefined) return;
-          toast(res.closed ? "Approved — roles given, the ticket closes in 15 seconds." : res.warning, res.closed ? "ok" : "warn");
-          refresh();
-        });
-        const deny = t.approvedBy ? null : h("button", { class: "btn secondary" }, icon("x", 15), "Deny");
-        if (deny) deny.addEventListener("click", () => {
-          const d = dialog();
-          const reason = h("textarea", { maxlength: "500", placeholder: "Optional — sent to the applicant by DM", style: "min-height:100px" });
-          const ok = h("button", { class: "btn danger" }, icon("x", 15), "Deny application");
-          ok.addEventListener("click", async () => {
-            const res = await act(ok, () => gApi("POST", `/tickets/open/${tid}/deny`, { reason: reason.value }), "Denied — DM sent, the ticket closes in 15 seconds.");
-            if (res !== undefined) { d.close(); refresh(); }
-          });
-          d.replaceChildren(h("h2", {}, `Deny ${t.applicant.name}?`),
-            h("div", { class: "field" }, h("label", {}, "Reason (sent to the applicant)"), reason),
-            h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), ok));
-          d.showModal();
-          reason.focus();
-        });
-        return h("tr", {},
+        const a = ticketActions(t);
+        const row = h("tr", { title: "Open the ticket card", onclick: e => { if (!e.target.closest("button, a, .menu-pop")) ticketCard(t); } },
+          h("td", {}, member(t.applicant), t.answers.length ? h("div", { class: "muted small" }, icon("clipboard-list", 12), ` ${t.answers.length} answers`) : null),
           h("td", {}, t.project),
-          h("td", {}, member(t.applicant)),
-          h("td", {}, t.approvedBy ? h("span", { class: "badge ok" }, "approved") : h("span", { class: "badge wait" }, "pending")),
+          h("td", {}, ticketStatus(t)),
           h("td", { title: new Date(t.createdAt).toLocaleString() }, fmtRelative(t.createdAt)),
-          h("td", { class: "actions" }, approve, " ", deny, " ", h("a", { class: "btn ghost", href: t.jumpUrl, target: "_blank", rel: "noopener" }, "Open"), " ", close));
-      })))) : empty("No open tickets."));
+          h("td", { class: "actions" }, h("div", { class: "row-actions" }, a.approve, a.deny, a.more)));
+        return row;
+      })))) : emptyState("inbox", "No open tickets", "New applications appear here."));
   } catch (e) { openBody.replaceChildren(empty(e.message)); }
+}
+
+const ticketStatus = t => t.approvedBy ? h("span", { class: "badge ok" }, icon("check", 12), "Approved") : h("span", { class: "badge wait" }, icon("clock", 12), "Pending");
+
+/** Approve / Deny / ⋯ (Open, Force close) for an open ticket — used in the table row and in the ticket card. */
+function ticketActions(t, after) {
+  const tid = encodeURIComponent(t.id);
+  const done = () => { if (after) after(); refresh(); };
+  const approve = t.approvedBy ? null : h("button", { class: "btn sm" }, icon("check", 15), "Approve");
+  if (approve) approve.addEventListener("click", async () => {
+    if (!await confirmDialog(`Approve ${t.applicant.name}?`, `They get the roles of ${t.project}, a DM, and the ticket closes in 15 seconds.`, "Approve", false)) return;
+    const res = await act(approve, () => gApi("POST", `/tickets/open/${tid}/approve`));
+    if (res === undefined) return;
+    toast(res.closed ? "Approved — roles given, the ticket closes in 15 seconds." : res.warning, res.closed ? "ok" : "warn");
+    done();
+  });
+  const deny = t.approvedBy ? null : h("button", { class: "btn secondary sm" }, icon("x", 15), "Deny");
+  if (deny) deny.addEventListener("click", () => {
+    const d = dialog();
+    const reason = h("textarea", { maxlength: "500", placeholder: "Optional — sent to the applicant by DM", style: "min-height:100px" });
+    const ok = h("button", { class: "btn danger" }, icon("x", 15), "Deny application");
+    ok.addEventListener("click", async () => {
+      const res = await act(ok, () => gApi("POST", `/tickets/open/${tid}/deny`, { reason: reason.value }), "Denied — DM sent, the ticket closes in 15 seconds.");
+      if (res !== undefined) { d.close(); done(); }
+    });
+    d.replaceChildren(h("h2", {}, `Deny ${t.applicant.name}?`),
+      h("div", { class: "field" }, h("label", {}, "Reason (sent to the applicant)"), reason),
+      h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), ok));
+    d.showModal();
+    reason.focus();
+  });
+  const more = menuButton([
+    { icon: "external-link", label: "Open in Discord", href: t.jumpUrl },
+    { icon: "trash-2", label: "Force close", danger: true, onclick: async () => {
+      if (!await confirmDialog("Close this ticket?", `The ticket channels of ${t.applicant.name} will be deleted (no outcome is recorded).`, "Close ticket")) return;
+      if (await act(null, () => gApi("POST", `/tickets/open/${tid}/close`), "Ticket closed.") !== undefined) done();
+    } }
+  ]);
+  return { approve, deny, more };
+}
+
+/** Ticket card: who, project, status, form answers and the actions. */
+function ticketCard(t) {
+  const d = dialog();
+  const a = ticketActions(t, () => d.close());
+  d.classList.add("wide");
+  d.replaceChildren(
+    h("div", { class: "card-head" }, h("h2", { class: "with-icon" }, toneChip("ticket", 16), `${t.project} — application`),
+      h("button", { class: "btn ghost icon-only sm", "aria-label": "Close", onclick: () => d.close() }, icon("x", 16))),
+    h("div", { class: "group-meta", style: "margin-bottom:14px" },
+      h("div", { class: "meta-item" }, icon("user-round", 14), member(t.applicant)),
+      h("div", { class: "meta-item" }, icon("clock", 14), `opened ${fmtRelative(t.createdAt)}`),
+      ticketStatus(t),
+      t.approvedBy ? h("div", { class: "meta-item" }, "by ", member(t.approvedBy)) : null),
+    h("div", { class: "guide-body" }, t.answers.length
+      ? h("div", { class: "answers" }, t.answers.map(x => h("div", { class: "answer" }, h("div", { class: "muted small" }, x.question), h("div", {}, x.answer || "—"))))
+      : h("p", { class: "muted" }, "No application form answers.")),
+    h("div", { class: "actions" }, a.more, h("span", { style: "flex:1" }), a.deny, a.approve));
+  d.onclose = () => d.classList.remove("wide");
+  d.showModal();
+}
+
+/** "⋯" button with a small menu (items: {icon, label, onclick | href, danger}). */
+function menuButton(items) {
+  const wrap = h("span", { class: "menu-wrap" });
+  const btn = h("button", { type: "button", class: "btn ghost icon-only sm", "aria-label": "More actions", title: "More" }, icon("ellipsis", 18));
+  let pop = null;
+  btn.addEventListener("click", e => {
+    e.stopPropagation();
+    if (pop) return close();
+    pop = h("div", { class: "menu-pop" }, items.map(it => it.href
+      ? h("a", { class: "menu-item", href: it.href, target: "_blank", rel: "noopener", onclick: close }, icon(it.icon, 15), it.label)
+      : h("button", { type: "button", class: `menu-item${it.danger ? " danger" : ""}`, onclick: () => { close(); it.onclick(); } }, icon(it.icon, 15), it.label)));
+    // Mount outside cards: their backdrop-filter would trap a fixed popup and clip it.
+    (btn.closest("dialog") || document.body).append(pop);
+    const r = btn.getBoundingClientRect(), ph = pop.offsetHeight, pw = pop.offsetWidth;
+    const up = r.bottom + 6 + ph > innerHeight - 8 && r.top - 6 - ph > 8;
+    pop.style.top = `${up ? r.top - 6 - ph : r.bottom + 6}px`;
+    pop.style.left = `${Math.max(8, Math.min(innerWidth - pw - 8, r.right - pw))}px`;
+    setTimeout(() => {
+      document.addEventListener("mousedown", outside, true);
+      addEventListener("scroll", close, true);
+      addEventListener("resize", close);
+    });
+  });
+  const outside = e => { if (pop && !pop.contains(e.target) && !btn.contains(e.target)) close(); };
+  function close() {
+    pop?.remove(); pop = null;
+    document.removeEventListener("mousedown", outside, true);
+    removeEventListener("scroll", close, true);
+    removeEventListener("resize", close);
+  }
+  wrap.append(btn);
+  return wrap;
 }
 
 function projectCard(p) {
