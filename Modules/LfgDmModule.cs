@@ -33,7 +33,14 @@ public sealed class LfgDmModule(LfgStore store, CharacterStore characters, LfgSi
             return;
         }
 
-        var saved = characters.Get(group.GuildId, Context.User.Id);
+        // Сбор проекта (игры): без роли проекта записаться и выбрать его персонажей нельзя
+        if (signup.ProjectBlock(group, Context.User.Id) is { } blocked)
+        {
+            await RespondAsync(blocked, ephemeral: true, allowedMentions: AllowedMentions.None);
+            return;
+        }
+
+        var saved = profile.PickerList(group, Context.User.Id);
         if (saved.Count == 0)
         {
             await RespondWithModalAsync<CharacterModal>($"lfgdm:charnew:{groupId}:{role}");
@@ -55,7 +62,12 @@ public sealed class LfgDmModule(LfgStore store, CharacterStore characters, LfgSi
             return;
         }
 
-        characters.Add(group.GuildId, Context.User.Id, values[0]);
+        if (signup.ProjectBlock(group, Context.User.Id) is { } blocked)
+        {
+            await RespondAsync(blocked, ephemeral: true, allowedMentions: AllowedMentions.None);
+            return;
+        }
+        characters.Add(group.GuildId, Context.User.Id, values[0], signup.Scope(group));
         var result = await signup.JoinAsync(group, Context.User.Id, Enum.Parse<SlotRole>(role), values[0]);
         var controls = profile.Controls(group, Context.User.Id);
         await Component.UpdateAsync(m =>
@@ -78,7 +90,12 @@ public sealed class LfgDmModule(LfgStore store, CharacterStore characters, LfgSi
             return;
         }
 
-        characters.Add(group.GuildId, Context.User.Id, name);
+        if (signup.ProjectBlock(group, Context.User.Id) is { } blocked)
+        {
+            await RespondAsync(blocked, ephemeral: true, allowedMentions: AllowedMentions.None);
+            return;
+        }
+        characters.Add(group.GuildId, Context.User.Id, name, signup.Scope(group));
         var result = await signup.JoinAsync(group, Context.User.Id, Enum.Parse<SlotRole>(role), name);
         var controls = profile.Controls(group, Context.User.Id);
         await RespondAsync(result + (controls is null ? "" : LfgModule.ProfileHint), components: controls, ephemeral: true,

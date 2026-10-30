@@ -452,7 +452,15 @@ async function pageLfg(main) {
   // Schedules
   let templates = [];
   try { templates = await gApi("GET", "/lfg/templates"); } catch { /* shown in the card */ }
-  renderRecurring(recCard, acts, templates);
+  let lfgProjects = { projects: [], panels: [] };
+  try { lfgProjects = await gApi("GET", "/lfg/projects"); } catch { /* shown in the card */ }
+  const projCard = h("div", { class: "card" });
+  const classCard = h("div", { class: "card" });
+  main.insertBefore(projCard, recCard);
+  main.insertBefore(classCard, recCard);
+  renderProjects(projCard, lfgProjects);
+  renderClasses(classCard);
+  renderRecurring(recCard, acts, templates, lfgProjects.projects);
   const tplCard = h("div", { class: "card" });
   const statsCard = h("div", { class: "card" });
   main.insertBefore(tplCard, recCard);
@@ -479,6 +487,31 @@ function lfgForm(acts, opts) {
     : channelSelect("text", "Channel…");
   const channelEl = channel.el || channel;
   if (v.channelId) channel.value = v.channelId;
+
+  // Project (game): characters of this project are used; members need its role
+  const projectSel = opts.projects && opts.projects.length
+    ? h("select", {}, opts.projects.map(p => h("option", { value: p.key }, p.name)))
+    : null;
+  if (projectSel) {
+    projectSel.value = v.projectKey || (opts.projects.find(p => p.isDefault) || opts.projects[0]).key;
+    if (opts.fixedChannel) {
+      // The post goes to the channel of the project's LFG panel
+      const syncChannel = () => {
+        const p = opts.projects.find(x => x.key === projectSel.value);
+        const c = (p && p.channel) || opts.fixedChannel;
+        channel.value = c ? c.id : "";
+        channel.el.textContent = c ? `#${c.name}` : "not set — ask an admin";
+      };
+      projectSel.addEventListener("change", syncChannel);
+      syncChannel();
+    }
+  }
+  // Admins: duplicate the post to other channels
+  const mirrorBoxes = (opts.mirrorChannels || []).map(c => {
+    const cb = h("input", { type: "checkbox" });
+    return { id: c.id, cb, el: h("label", { class: "chip", style: "cursor:pointer" }, cb, `#${c.name}`) };
+  });
+  const voice = h("input", { type: "checkbox", checked: !!v.createVoice });
   const nameIn = h("input", { placeholder: "Template name, e.g. Dungeon 4: Tank/Sup/DD/DD", maxlength: "80", value: v.name || "" });
 
   const activity = h("select", {},
@@ -545,6 +578,7 @@ function lfgForm(acts, opts) {
   const seatLabel = opts.hideSeat ? null : h("label", { class: "row" }, seat, "Organizer takes slot 1");
 
   const fields = [
+    projectSel ? h("div", { class: "field" }, h("label", {}, "🎮 Project (game)"), projectSel) : null,
     tplSel ? h("div", { class: "field" }, h("label", {}, "📋 Template"), tplSel) : null,
     h("div", { class: "grid2" },
       tplMode ? h("div", { class: "field" }, h("label", {}, "Template name"), nameIn)
@@ -595,21 +629,27 @@ function lfgForm(acts, opts) {
 
   if (!tplMode) fields.push(h("div", { class: "row", style: "margin-bottom:12px" },
     h("label", { class: "row" }, dm, "DM members with the activity role"),
+    opts.mode === "once" ? h("label", { class: "row" }, voice, "🔊 Create a voice room (everyone listens, the group speaks)") : null,
     seatLabel));
+  if (mirrorBoxes.length) fields.push(h("details", { style: "margin-bottom:12px" },
+    h("summary", { class: "muted" }, "📢 Also post in other channels (optional)"),
+    h("div", { style: "margin-top:6px" }, mirrorBoxes.map(x => x.el))));
 
   return {
     el: h("div", {}, fields),
     value: () => ({
       channelId: channel.value || null, activityKey: activity.value || null, customName: activity.value ? null : custom.value,
       slots: slots.slice(), notifyByDm: dm.checked, seatOwner: seat.checked,
-      requiredRoleIds: req.value(), minGs: minGs.value === "" ? null : Number(minGs.value), ...extra()
+      requiredRoleIds: req.value(), minGs: minGs.value === "" ? null : Number(minGs.value),
+      projectKey: projectSel ? projectSel.value : null, createVoice: voice.checked,
+      mirrorChannelIds: mirrorBoxes.filter(x => x.cb.checked).map(x => x.id), ...extra()
     })
   };
 }
 
-async function renderRecurring(card, acts, templates = []) {
+async function renderRecurring(card, acts, templates = [], projects = []) {
   const add = h("button", { class: "btn" }, "➕ Add schedule");
-  add.addEventListener("click", () => recurringDialog(acts, null, templates));
+  add.addEventListener("click", () => recurringDialog(acts, null, templates, projects));
   const body = h("div", {}, h("div", { class: "muted" }, "Loading…"));
   card.replaceChildren(h("div", { class: "card-head" }, h("h2", {}, "🔁 Recurring groups"), add),
     h("p", { class: "muted small" }, "Posted automatically on the chosen days, the set number of hours before the start."), body);
@@ -623,7 +663,7 @@ async function renderRecurring(card, acts, templates = []) {
     h("thead", {}, h("tr", {}, h("th", {}, "Activity"), h("th", {}, "When"), h("th", {}, "Next post"), h("th", {}, "Status"), h("th", {}))),
     h("tbody", {}, list.map(r => {
       const edit = h("button", { class: "btn secondary" }, "Edit");
-      edit.addEventListener("click", () => recurringDialog(acts, r, templates));
+      edit.addEventListener("click", () => recurringDialog(acts, r, templates, projects));
       const rm = h("button", { class: "btn ghost" }, "Delete");
       rm.addEventListener("click", async () => {
         if (!await confirmDialog(`Delete the ${r.activity} schedule?`, "Groups that are already posted stay.", "Delete")) return;
@@ -640,9 +680,9 @@ async function renderRecurring(card, acts, templates = []) {
     })))));
 }
 
-function recurringDialog(acts, r, templates = []) {
+function recurringDialog(acts, r, templates = [], projects = []) {
   const d = dialog();
-  const form = lfgForm(acts, { mode: "recurring", initial: r || {}, templates });
+  const form = lfgForm(acts, { mode: "recurring", initial: r || {}, templates, projects });
   const save = h("button", { class: "btn" }, r ? "💾 Save" : "➕ Add");
   save.addEventListener("click", async () => {
     const res = await act(save, () => r ? gApi("PUT", `/lfg/recurring/${r.id}`, form.value()) : gApi("POST", "/lfg/recurring", form.value()),
@@ -654,6 +694,92 @@ function recurringDialog(acts, r, templates = []) {
     h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), save));
   d.onclose = () => d.classList.remove("wide");
   d.showModal();
+}
+
+// ----- LFG projects (games) & classes (admin) -----
+
+function renderProjects(card, data) {
+  const add = h("button", { class: "btn" }, "➕ Add project");
+  add.addEventListener("click", () => projectDialog(null));
+  const panelRows = data.panels.map(p => {
+    const sel = h("select", {}, h("option", { value: "" }, "Default project"), data.projects.map(x => h("option", { value: x.key }, x.name)));
+    sel.value = p.projectKey || "";
+    sel.addEventListener("change", () => act(sel, () => gApi("PUT", `/lfg/panels/${p.messageId}/project`, { projectKey: sel.value || null }),
+      "Panel linked."));
+    return h("tr", {}, h("td", {}, p.channel ? `#${p.channel}` : h("span", { class: "chip warn" }, "deleted channel")),
+      h("td", {}, sel), h("td", { class: "actions" }, h("a", { class: "btn ghost", href: p.jumpUrl, target: "_blank", rel: "noopener" }, "Open")));
+  });
+  card.replaceChildren(
+    h("div", { class: "card-head" }, h("h2", {}, "🎮 Projects (games)"), add),
+    h("p", { class: "muted small" }, "Each project has its own characters. Members need one of the project's roles to add or pick its characters and to sign up for its groups. ",
+      "Characters created before projects belong to the default project."),
+    data.projects.length ? h("div", { class: "table-wrap" }, h("table", { class: "table" }, h("tbody", {}, data.projects.map(p => {
+      const edit = h("button", { class: "btn secondary", onclick: () => projectDialog(p) }, "Edit");
+      const rm = h("button", { class: "btn ghost" }, "Delete");
+      rm.addEventListener("click", async () => {
+        if (!await confirmDialog(`Delete the project ${p.name}?`, "Its groups and characters stay in the data, but the project can't be chosen anymore.", "Delete")) return;
+        if (await act(rm, () => gApi("DELETE", `/lfg/projects/${p.key}`), "Project deleted.") !== undefined) refresh();
+      });
+      return h("tr", {}, h("td", {}, h("b", {}, p.name), p.isDefault ? h("span", { class: "badge ok", style: "margin-left:6px" }, "default") : null),
+        h("td", {}, p.roles.length ? p.roles.map(r => roleChip(r)) : h("span", { class: "muted small" }, "open to everyone")),
+        h("td", { class: "actions" }, edit, " ", rm));
+    })))) : empty("No projects yet — everything uses one shared character list."),
+    h("h3", { style: "margin-top:14px" }, "LFG panels → project"),
+    h("p", { class: "muted small" }, "Groups created with «Create LFG» on a panel belong to its project. Older panels: use Find posted panels (Panels & posts) first."),
+    data.panels.length ? h("div", { class: "table-wrap" }, h("table", { class: "table" }, h("tbody", {}, panelRows))) : empty("No known LFG panels."));
+}
+
+function projectDialog(p) {
+  const d = dialog();
+  const name = h("input", { maxlength: "60", placeholder: "e.g. Aion 2", value: p ? p.name : "" });
+  const roles = roleListEditor(p ? p.roles : []);
+  const def = h("input", { type: "checkbox", checked: p ? p.isDefault : false });
+  const save = h("button", { class: "btn" }, p ? "💾 Save" : "➕ Add");
+  save.addEventListener("click", async () => {
+    if (await act(save, () => gApi("PUT", `/lfg/projects/${p ? p.key : "new"}`, { name: name.value, roleIds: roles.value(), isDefault: def.checked }),
+      "Project saved.") !== undefined) { d.close(); refresh(); }
+  });
+  d.replaceChildren(h("h2", {}, p ? `Edit project: ${p.name}` : "New project"),
+    h("div", { class: "field" }, h("label", {}, "Name"), name),
+    h("div", { class: "field" }, h("label", {}, "Required role (any of) — empty = everyone"), roles.el),
+    h("label", { class: "row", style: "margin-bottom:6px" }, def, "Default project (older characters and panels without a project)"),
+    h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), save));
+  d.showModal();
+}
+
+async function renderClasses(card) {
+  card.replaceChildren(h("h2", {}, "🎭 Classes"), h("div", { class: "muted" }, "Loading…"));
+  let data;
+  try { data = await gApi("GET", "/lfg/classes"); } catch (e) { card.replaceChildren(h("h2", {}, "🎭 Classes"), empty(e.message)); return; }
+  let rows = data.classes.map(c => ({ roleId: c.role.id, role: c.role, icon: c.icon }));
+  const list = h("div", {});
+  const preview = icon => classMark({ classIcon: icon }) || h("span", { class: "muted small" }, "—");
+  const draw = () => {
+    list.replaceChildren(...rows.map((r, i) => {
+      const icon = h("input", { value: r.icon || "", placeholder: "🛡️ or <:name:id>", style: "width:180px" });
+      const prev = h("span", {}, preview(r.icon));
+      icon.addEventListener("input", () => { r.icon = icon.value; prev.replaceChildren(preview(icon.value)); });
+      const pick = h("select", {}, h("option", { value: "" }, "server emoji…"), data.emojis.map(e => h("option", { value: e.code }, `:${e.name}:`)));
+      pick.addEventListener("change", () => { if (pick.value) { r.icon = icon.value = pick.value; prev.replaceChildren(preview(pick.value)); } });
+      return h("div", { class: "row question-row" }, roleChip(r.role), prev, icon, pick,
+        h("button", { class: "btn ghost", onclick: () => { rows.splice(i, 1); draw(); } }, "✖"));
+    }));
+  };
+  const addSel = roleSelect("+ Add class role…");
+  addSel.addEventListener("change", () => {
+    const role = state.roles.find(r => r.id === addSel.value);
+    if (role && !rows.some(r => r.roleId === role.id)) rows.push({ roleId: role.id, role: { ...role, exists: true }, icon: "" });
+    addSel.value = "";
+    draw();
+  });
+  const save = h("button", { class: "btn" }, "💾 Save classes");
+  save.addEventListener("click", () => act(save, () => gApi("PUT", "/lfg/classes", { classes: rows.map(r => ({ roleId: r.roleId, icon: r.icon })) }),
+    "Classes saved. New signups use the icons; existing posts update when someone changes their class."));
+  draw();
+  card.replaceChildren(h("h2", {}, "🎭 Classes"),
+    h("p", { class: "muted small" }, "Roles that count as classes and their icon shown next to the player's name. If the list is not empty, players can only pick these roles as their class. ",
+      "Use a unicode emoji or a server emoji (upload class icons as server emojis, then pick them here)."),
+    list, h("div", { class: "row", style: "margin-top:8px" }, addSel, save));
 }
 
 // ----- LFG templates (admin) -----
@@ -769,9 +895,12 @@ function requirementsLine(req) {
 
 /** Class of a character: the role's emoji, otherwise a small role chip. */
 function classMark(e) {
-  if (!e.classRole) return null;
-  if (e.classIcon) return h("span", { title: `@${e.classRole.name}` }, e.classIcon);
-  return roleChip(e.classRole);
+  if (!e.classIcon) return null;
+  // Custom server emoji <:name:id> → image; unicode → text
+  const m = /^<a?:([^:]+):(\d+)>$/.exec(e.classIcon);
+  const title = e.classRole ? `@${e.classRole.name}` : "";
+  return m ? h("img", { src: `https://cdn.discordapp.com/emojis/${m[2]}.webp?size=32`, alt: m[1], title, style: "width:18px;height:18px" })
+    : h("span", { title }, e.classIcon);
 }
 
 function groupCard(g) {
@@ -799,7 +928,7 @@ function groupCard(g) {
     h("div", { style: "margin-bottom:8px" }),
     h("ul", { class: "slots" }, g.slots.map((s, i) => h("li", {},
       h("span", { class: "num" }, i + 1), h("span", {}, s.emoji),
-      s.member ? h("span", {}, h("span", { class: "row", style: "gap:4px" }, classMark(s), member(s.member)),
+      s.member ? h("span", {}, h("span", { class: "row", style: "gap:4px" }, member(s.member), classMark(s)),
         s.comment ? h("div", { class: "muted small" }, `💬 ${s.comment}`) : null) : h("span", { class: "free" }, `free (${s.slotRole})`),
       h("span", { class: "char" }, s.character || "", s.gs ? ` · GS ${s.gs}` : ""),
       s.member ? h("span", {},
@@ -811,7 +940,7 @@ function groupCard(g) {
         }) : null) : null))),
     g.reserve.length ? h("div", { style: "margin-top:8px" }, h("div", { class: "muted small" }, `Reserve (${g.reserve.length})`),
       h("ul", { class: "slots" }, g.reserve.map(r => h("li", {}, h("span", {}, r.emoji),
-        h("span", {}, h("span", { class: "row", style: "gap:4px" }, classMark(r), member(r.member)),
+        h("span", {}, h("span", { class: "row", style: "gap:4px" }, member(r.member), classMark(r)),
           r.comment ? h("div", { class: "muted small" }, `💬 ${r.comment}`) : null),
         h("span", { class: "char" }, r.character || ""),
         h("span", {},
@@ -1602,8 +1731,9 @@ async function pagePlay(main) {
     createBody.replaceChildren(h("div", { class: "muted" }, "Loading…"));
     try {
       const opt = await gApi("GET", "/me/create-options");
-      if (!opt.channel) { createBody.replaceChildren(empty("The channel for groups isn't set yet — ask an admin.")); return; }
-      const form = lfgForm(opt.activities, { mode: "once", fixedChannel: opt.channel, hideSeat: true, templates: opt.templates, roles: opt.roles });
+      if (!opt.channel && !(opt.projects || []).some(p => p.channel)) { createBody.replaceChildren(empty("The channel for groups isn't set yet — ask an admin.")); return; }
+      const form = lfgForm(opt.activities, { mode: "once", fixedChannel: opt.channel || { id: "", name: "" }, hideSeat: true,
+        templates: opt.templates, roles: opt.roles, projects: opt.projects, mirrorChannels: opt.mirrorChannels });
       const publish = h("button", { class: "btn" }, "📣 Publish");
       publish.addEventListener("click", async () => {
         const res = await act(publish, () => gApi("POST", "/me/create", form.value()));
@@ -1619,11 +1749,12 @@ async function pagePlay(main) {
   let data;
   try { data = await gApi("GET", "/me/groups"); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
   holder.replaceChildren(h("h2", {}, "Active groups"), data.groups.length
-    ? h("div", { class: "grid2" }, data.groups.map(g => playCard(g, data.characters)))
+    ? h("div", { class: "grid2" }, data.groups.map(g => playCard(g)))
     : h("div", { class: "card" }, empty("No active groups right now.")));
 }
 
-function playCard(g, characters) {
+function playCard(g) {
+  const characters = g.characters || [];
   // Organizer tools (like ⚙️ Manage in Discord): group ⇄ reserve
   const roster$ = (action, m, okText) => act(null,
     () => gApi("POST", `/me/groups/${encodeURIComponent(g.id)}/roster`, { action, userId: m.id }), okText)
@@ -1633,16 +1764,14 @@ function playCard(g, characters) {
 
   const roster = h("ul", { class: "slots" }, g.slots.map((s, i) => h("li", {},
     h("span", { class: "num" }, i + 1), h("span", {}, s.emoji),
-    s.member ? h("span", {}, h("span", { class: "row", style: "gap:4px" }, classMark(s), member(s.member)),
-      s.comment ? h("div", { class: "muted small" }, `💬 ${s.comment}`) : null) : h("span", { class: "free" }, `free (${s.slotRole})`),
+    s.member ? h("span", { class: "row", style: "gap:4px" }, member(s.member), classMark(s)) : h("span", { class: "free" }, `free (${s.slotRole})`),
     h("span", { class: "char" }, s.character || "", s.gs ? ` · GS ${s.gs}` : ""),
     org && s.member && g.started ? attendanceButton(s, `/me/groups/${encodeURIComponent(g.id)}/attendance`) : null,
     org && s.member && s.member.id !== g.owner.id ? tool("⬇️", "Move to reserve", () => roster$("toReserve", s.member, "Moved to the reserve.")) : null)));
   const reserve = g.reserve.length ? h("div", { style: "margin-top:8px" }, h("div", { class: "muted small" }, `Reserve (${g.reserve.length})`),
     h("ul", { class: "slots" }, g.reserve.map(r => h("li", {}, h("span", {}, r.emoji),
-      h("span", {}, h("span", { class: "row", style: "gap:4px" }, classMark(r), member(r.member)),
-        r.comment ? h("div", { class: "muted small" }, `💬 ${r.comment}`) : null),
-      h("span", { class: "char" }, r.character || ""),
+      h("span", { class: "row", style: "gap:4px" }, member(r.member), classMark(r)),
+      h("span", { class: "char" }, r.character || "", r.gs ? ` · GS ${r.gs}` : ""),
       org ? h("span", {},
         tool("⬆️", "Move into the group (sends a DM)", () => roster$("promote", r.member, "Moved into the group, DM sent.")),
         tool("✖️", "Remove from the reserve", () => roster$("removeReserve", r.member, "Removed from the reserve."))) : null)))) : null;
@@ -1685,12 +1814,14 @@ function playCard(g, characters) {
 
   return h("div", { class: "card", style: "margin:0" },
     h("div", { class: "card-head" }, h("h3", {}, g.activity), status, h("span", { class: "badge ok" }, `${g.filled}/${g.size}`)),
+    g.project ? h("div", { class: "muted small" }, `🎮 ${g.project}`) : null,
     h("div", { class: "muted small" }, "Organizer: ", member(g.owner)),
     h("div", { class: "muted small" }, `Start: ${fmtDate(g.startsAt)}`, g.channel ? ` · #${g.channel}` : ""),
     requirementsLine(g.requirements),
     h("div", { style: "margin-bottom:8px" }),
     roster, reserve,
     g.closed ? h("div", { class: "muted", style: "margin-top:10px" }, "Signups are closed.") :
+      g.blocked && !g.me ? h("div", { class: "muted small", style: "margin-top:10px" }, `🔒 ${g.blocked}`) :
       h("div", { class: "row", style: "margin-top:12px" }, role, charSel, newChar, join, g.me && !org ? leave : null),
     h("div", { class: "row", style: "margin-top:8px" },
       h("a", { class: "btn ghost", href: g.jumpUrl, target: "_blank", rel: "noopener" }, "Open in Discord"),
@@ -1706,7 +1837,17 @@ async function pageChars(main) {
   main.append(holder);
 
   let data;
-  try { data = await gApi("GET", "/me/characters"); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
+  const wanted = store.get("gb.charProject") || "";
+  try { data = await gApi("GET", `/me/characters?project=${encodeURIComponent(wanted)}`); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
+  const pq = data.project ? `?project=${encodeURIComponent(data.project)}` : "";
+
+  // Projects (games): each has its own characters; locked without the project role
+  const tabsRow = data.projects.length ? h("div", { class: "row", style: "margin-bottom:12px" },
+    data.projects.map(p => h("button", {
+      class: `btn secondary${p.key === data.project ? " active-tab" : ""}`, disabled: !p.allowed,
+      title: p.allowed ? "" : `Needs ${p.roles.map(r => "@" + r.name).join(" or ")}`,
+      onclick: () => { store.set("gb.charProject", p.key); refresh(); }
+    }, p.allowed ? p.name : `🔒 ${p.name}`))) : null;
 
   const dm = h("input", { type: "checkbox", checked: data.dmEnabled });
   dm.addEventListener("change", () => act(null, () => gApi("PUT", "/me/dm", { enabled: dm.checked }),
@@ -1715,7 +1856,7 @@ async function pageChars(main) {
   const nameIn = h("input", { placeholder: "Character name", maxlength: "32" });
   const add = h("button", { class: "btn" }, "➕ Add character");
   add.addEventListener("click", async () => {
-    if (await act(add, () => gApi("POST", "/me/characters", { name: nameIn.value }), "Character added.") !== undefined) refresh();
+    if (await act(add, () => gApi("POST", `/me/characters${pq}`, { name: nameIn.value }), "Character added.") !== undefined) refresh();
   });
 
   const rows = data.characters.map(c => {
@@ -1726,12 +1867,12 @@ async function pageChars(main) {
     const gs = h("input", { type: "number", min: "0", max: "99999", placeholder: "GS", value: c.gs ?? "", style: "width:90px" });
     const save = h("button", { class: "btn secondary" }, "Save");
     save.addEventListener("click", () => act(save,
-      () => gApi("PUT", `/me/characters/${encodeURIComponent(c.name)}`, { classRoleId: cls.value || null, comment: note.value, gs: gs.value === "" ? null : Number(gs.value) }),
+      () => gApi("PUT", `/me/characters/${encodeURIComponent(c.name)}${pq}`, { classRoleId: cls.value || null, comment: note.value, gs: gs.value === "" ? null : Number(gs.value) }),
       r => r.groupsUpdated ? `Saved. Updated ${r.groupsUpdated} active group(s).` : "Saved."));
     const rm = h("button", { class: "btn ghost" }, "Remove");
     rm.addEventListener("click", async () => {
       if (!await confirmDialog(`Remove ${c.name}?`, "The character, its class and note are deleted.", "Remove")) return;
-      if (await act(rm, () => gApi("DELETE", `/me/characters/${encodeURIComponent(c.name)}`), "Removed.") !== undefined) refresh();
+      if (await act(rm, () => gApi("DELETE", `/me/characters/${encodeURIComponent(c.name)}${pq}`), "Removed.") !== undefined) refresh();
     });
     return h("tr", {}, h("td", {}, h("b", {}, c.name)), h("td", {}, cls), h("td", {}, gs), h("td", { style: "min-width:220px" }, note),
       h("td", { class: "actions" }, save, " ", rm));
@@ -1741,8 +1882,8 @@ async function pageChars(main) {
     h("div", { class: "card" },
       h("label", { class: "row" }, dm, "Get a DM when a group is posted for an activity whose role I have"),
       h("p", { class: "muted small" }, "Same as 🔔 / 🔕 under the LFG panel or /lfg-dm.")),
-    h("div", { class: "card" },
-      h("p", { class: "muted small" }, "Class = one of your server roles, shown next to your name in group posts. GS is checked by group requirements. The note is shown under your name. All saved per character."),
+    h("div", { class: "card" }, tabsRow,
+      h("p", { class: "muted small" }, "Each game (project) has its own characters. Class = its icon is shown next to your name in group posts. GS is checked by group requirements. The note is only for you — you see it when picking a character."),
       data.characters.length ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
         h("thead", {}, h("tr", {}, h("th", {}, "Character"), h("th", {}, "Class"), h("th", {}, "GS"), h("th", {}, "Note"), h("th", {}))),
         h("tbody", {}, rows))) : empty("No characters yet."),
@@ -1924,8 +2065,11 @@ const HELP = {
         "**Reserve** when the needed slots are full; the organizer moves people between the group and the reserve (with a DM).",
         "📋 **Invite to group** — ready `/invite Name` commands; 🏰 **Invite to dungeon** — just the names.",
         "**Templates** (admin): activity + slots + requirements, picked in one click in /lfg and on the site.",
+        "**Projects (games)**: each has its own characters; a project's groups and characters need its role. LFG panels are linked to a project.",
+        "**Classes**: the admin picks which roles are classes and their icons (emoji or server emoji) — only the icon is shown next to the name.",
+        "**Duplicate the post** to other channels (admins), copies stay in sync.",
         "**Requirements**: a required role and/or minimum character **GS** — others go to the reserve.",
-        "🔊 **Voice room** for a group: everyone can join and listen, only group members can speak; deleted with the group.",
+        "🔊 **Voice room** for a group — only if turned on when creating: everyone can join and listen, only group members can speak; deleted with the group.",
         "**Change time** of a posted group — everyone signed up gets a DM.",
         "**Attendance** after the start → **statistics** and player reliability.",
         "Admin tab: activities, the LFG panel, **recurring groups** on a schedule, any group's roster, force-close.",
@@ -1936,12 +2080,14 @@ const HELP = {
       ["Create a group", [
         "Click **Create LFG** on the LFG panel (or use `/lfg`). A menu only you can see opens.",
         "Choose the size → the activity (or «Custom activity», no ping) → select slots and set their roles → **Next**.",
-        "Pick the date and time (or «No time») → **Publish**. You take slot 1 with your last used character."
+        "Pick the date and time (or «No time»), turn 🔊 **Voice room** on if needed → **Publish**. You take slot 1 with your last used character.",
+        "Admins: after publishing, pick channels in «📢 Also post this group in…» to duplicate the post."
       ]],
       ["Sign up", [
         "Click a role button under the group post, then pick a saved character or **New character**.",
         "Under the reply you can pick your **class role** and **add a note** — saved for that character and shown in the post.",
-        "Later: `/character class name role`, `/character gs name 1450`, `/character note name text` (empty = remove). `/character list` shows them.",
+        "Later: `/character class name role`, `/character gs name 1450`, `/character note name text` (empty = remove), add `project:` for another game. `/character list` shows all.",
+        "The note is only for you — it is shown when you pick a character, not in the post.",
         "Click the same role again to switch character, another role to switch role. **Leave** frees your slot.",
         "Grey role button = no free slot → you go to the **reserve**."
       ]],
@@ -1963,6 +2109,10 @@ const HELP = {
       ]],
       ["Creating groups", [
         "One-off groups are created in **Member → Groups → Create a group** (as an admin you are a member too)."
+      ]],
+      ["Projects & classes", [
+        "**🎮 Projects** — name + required role(s), one is the default (older characters belong to it). Link each LFG panel to its project.",
+        "**🎭 Classes** — add class roles and set an icon for each (emoji or server emoji)."
       ]],
       ["Templates & statistics", [
         "**📋 Templates** — name, activity, slots, required role, minimum GS. Shown in /lfg Step 1 and in Create a group.",

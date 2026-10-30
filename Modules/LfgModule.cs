@@ -10,7 +10,8 @@ namespace LfgBot.Modules;
 [RequireContext(ContextType.Guild)]
 public sealed class LfgModule(PanelService panels, LfgPublisher publisher, AuditLog audit, LfgProfileService profile,
     LfgTemplateStore templates, LfgStore store, ActivityStore activities, CharacterStore characters, TimeService time,
-    LfgNotifyStore notifyPrefs, LfgNotifier notifier, LfgSignupService signup, BotOwner botOwner)
+    LfgNotifyStore notifyPrefs, LfgNotifier notifier, LfgSignupService signup, BotOwner botOwner,
+    LfgProjectStore projects, PanelTextStore panelStore, AdminStore admins)
     : InteractionModuleBase<SocketInteractionContext>
 {
     private SocketMessageComponent Component => (SocketMessageComponent)Context.Interaction;
@@ -58,7 +59,20 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
     {
         store.PruneDrafts(TimeSpan.FromMinutes(30));
 
-        var draft = new LfgDraft(Context.Guild.Id, ChannelId, Context.User.Id);
+        // Проект сборов: панель, на которой нажали Create LFG (LFG → Projects), иначе панель этого канала, иначе по умолчанию
+        var messageId = (Context.Interaction as SocketMessageComponent)?.Message.Id;
+        var posted = messageId is { } mid ? panelStore.FindPosted(Context.Guild.Id, "lfg", mid) : null;
+        var projectKey = posted?.ProjectKey ??
+                         panelStore.GetPosted(Context.Guild.Id, "lfg").FirstOrDefault(p => p.ChannelId == ChannelId && p.ProjectKey is not null)?.ProjectKey;
+        var project = projects.Effective(Context.Guild.Id, projectKey);
+        if (!LfgProjectStore.CanUse(Context.Guild.GetUser(Context.User.Id), project))
+        {
+            await RespondAsync($"Groups here are for **{project!.Name}** — you need {string.Join(" or ", project.RoleIds.Select(id => $"<@&{id}>"))}.",
+                ephemeral: true, allowedMentions: AllowedMentions.None);
+            return;
+        }
+
+        var draft = new LfgDraft(Context.Guild.Id, ChannelId, Context.User.Id) { ProjectKey = project?.Key };
         store.Drafts[draft.Id] = draft;
 
         var s = LfgRenderer.SizeStep(draft, templates.Get(Context.Guild.Id));
@@ -215,6 +229,14 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         await ShowAsync(TimeScreen(d));
     }
 
+    [ComponentInteraction("lfg:dvoice:*")]
+    public async Task OnToggleVoice(string draftId)
+    {
+        if (await GetDraftAsync(draftId) is not { } d) return;
+        d.CreateVoice = !d.CreateVoice;
+        await ShowAsync(TimeScreen(d));
+    }
+
     [ComponentInteraction("lfg:notime:*")]
     public async Task OnNoTime(string draftId)
     {
@@ -288,14 +310,44 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
 
         var (group, jumpUrl, dmsStarted) = await publisher.PublishAsync(new LfgPublishRequest(
             d.GuildId, d.ChannelId, d.OwnerId, d.ActivityName ?? "Activity", d.PingRoleId,
-            d.Slots.Select(x => x.Role).ToList(), startsAt, d.NotifyByDm));
+            d.Slots.Select(x => x.Role).ToList(), startsAt, d.NotifyByDm, true, d.RequiredRoleIds, d.MinGs,
+            d.ProjectKey, null, d.CreateVoice));
         audit.FromDiscord(d.GuildId, Context.User, "lfg", "Created LFG group",
             $"{group.ActivityName} · {group.Slots.Count} slots · {(startsAt is { } at ? at.ToString("u") : "no time")}");
 
         var result = $"✅ Published: {jumpUrl}";
         if (dmsStarted) result += "\n🔔 Sending DMs to members with the activity role…";
+        if (group.VoiceChannelId is { } vc) result += $"\n🔊 Voice room: <#{vc}>";
 
-        await ShowAsync(new Screen(result, null, new ComponentBuilder().Build()));
+        // Админ бота может продублировать пост в другие каналы
+        var comps = new ComponentBuilder();
+        if (Context.User is IGuildUser gu && admins.IsAdmin(gu))
+        {
+            result += "\n-# Optional: duplicate the post to other channels — pick them below.";
+            comps.WithSelectMenu(new SelectMenuBuilder()
+                .WithCustomId($"lfg:mirror:{group.Id}")
+                .WithType(ComponentType.ChannelSelect)
+                .WithChannelTypes(ChannelType.Text, ChannelType.News)
+                .WithPlaceholder("📢 Also post this group in…")
+                .WithMinValues(1)
+                .WithMaxValues(5));
+        }
+        await ShowAsync(new Screen(result, null, comps.Build()));
+    }
+
+    [ComponentInteraction("lfg:mirror:*")]
+    public async Task OnMirror(string groupId, string[] values)
+    {
+        if (!store.Groups.TryGetValue(groupId, out var group) || Context.User is not IGuildUser gu || !admins.IsAdmin(gu))
+        {
+            await RespondAsync("This group is no longer active.", ephemeral: true);
+            return;
+        }
+        await DeferAsync(ephemeral: true);
+        var added = await publisher.AddMirrorsAsync(group, values.Select(ulong.Parse));
+        audit.FromDiscord(group.GuildId, Context.User, "lfg", "Duplicated LFG post", $"{group.ActivityName} → {added} channel(s)");
+        await FollowupAsync(added > 0 ? $"📢 Posted in {added} more channel(s). Copies stay in sync and are deleted with the group."
+            : "Nothing posted — I can't write in those channels or they already have the post.", ephemeral: true);
     }
 
     // ================= Опубликованный сбор =================
@@ -321,7 +373,14 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
             return;
         }
 
-        var saved = characters.Get(Context.Guild.Id, Context.User.Id);
+        // Сбор проекта (игры): без роли проекта записаться и выбрать его персонажей нельзя
+        if (signup.ProjectBlock(group, Context.User.Id) is { } blocked)
+        {
+            await RespondAsync(blocked, ephemeral: true, allowedMentions: AllowedMentions.None);
+            return;
+        }
+
+        var saved = profile.PickerList(group, Context.User.Id);
         if (saved.Count == 0)
         {
             await RespondWithModalAsync<CharacterModal>($"lfg:charnew:{groupId}:{role}");
@@ -341,7 +400,12 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
             return;
         }
 
-        characters.Add(Context.Guild.Id, Context.User.Id, values[0]); // поднимает персонажа наверх списка
+        if (Blocked(groupId) is { } blocked)
+        {
+            await RespondAsync(blocked, ephemeral: true, allowedMentions: AllowedMentions.None);
+            return;
+        }
+        characters.Add(Context.Guild.Id, Context.User.Id, values[0], ScopeOf(groupId)); // поднимает персонажа наверх списка
         var result = await JoinAsync(groupId, Enum.Parse<SlotRole>(role), values[0]);
         var controls = ProfileControls(groupId);
         await Component.UpdateAsync(m =>
@@ -351,6 +415,12 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
             m.AllowedMentions = AllowedMentions.None;
         });
     }
+
+    /// <summary>Персонажи хранятся по проекту сбора.</summary>
+    private string? ScopeOf(string groupId) => store.Groups.TryGetValue(groupId, out var g) ? signup.Scope(g) : null;
+
+    private string? Blocked(string groupId) =>
+        store.Groups.TryGetValue(groupId, out var g) ? signup.ProjectBlock(g, Context.User.Id) : null;
 
     [ModalInteraction("lfg:charnew:*:*")]
     public async Task OnNewCharacter(string groupId, string role, CharacterModal modal)
@@ -362,7 +432,12 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
             return;
         }
 
-        characters.Add(Context.Guild.Id, Context.User.Id, name);
+        if (Blocked(groupId) is { } blocked)
+        {
+            await RespondAsync(blocked, ephemeral: true, allowedMentions: AllowedMentions.None);
+            return;
+        }
+        characters.Add(Context.Guild.Id, Context.User.Id, name, ScopeOf(groupId));
         var result = await JoinAsync(groupId, Enum.Parse<SlotRole>(role), name);
         var controls = ProfileControls(groupId);
         await RespondAsync(result + (controls is null ? "" : ProfileHint), components: controls, ephemeral: true,
@@ -370,7 +445,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
     }
 
     /// <summary>Под ответом о записи: выбрать класс-роль и добавить заметку к персонажу.</summary>
-    public const string ProfileHint = "\n-# Optional: pick your class role and add a note for this character below — they are shown in the group post.";
+    public const string ProfileHint = "\n-# Optional: pick your class role (its icon is shown next to your name) and set GS / a personal note for this character below.";
 
     private MessageComponent? ProfileControls(string groupId) =>
         store.Groups.TryGetValue(groupId, out var group) ? profile.Controls(group, Context.User.Id) : null;

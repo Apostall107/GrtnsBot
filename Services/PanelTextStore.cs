@@ -17,6 +17,8 @@ public sealed class PostedPanel
 {
     public ulong ChannelId { get; set; }
     public ulong MessageId { get; set; }
+    /// <summary>LFG-панель: проект (игра), под который идут сборы с этой панели. null — проект по умолчанию.</summary>
+    public string? ProjectKey { get; set; }
 }
 
 public sealed class GuildPanels
@@ -58,13 +60,13 @@ public static class PanelDefs
         "(turn them on or off for yourself with the 🔔 / 🔕 buttons below or `/lfg-dm`). " +
         "«Custom activity» lets you type a name, without a ping.\n" +
         "4. Select slots and assign roles ⚔️ DD / 🛡️ Tank / 💚 Sup / 🎲 All, then click **Next**.\n" +
-        "5. Pick the start date and time (or «No time») and click **Publish**. " +
+        "5. Pick the start date and time (or «No time»), turn 🔊 **Voice room** on if you need one, and click **Publish**. " +
         "You take slot 1 automatically with your last used character. " +
         "Everyone sees the time in their own time zone.\n\n" +
         "**How to sign up**\n" +
         "• Click a role button under the group post.\n" +
         "• Pick one of your saved characters or enter a new name — it will be saved for next time.\n" +
-        "• Under the reply pick your **class role** and add a **note** — shown next to / under your name in the post.\n" +
+        "• Under the reply pick your **class role** (its icon is shown next to your name) and add your **GS** and a personal **note**.\n" +
         "• Click the same role again to switch character, or another role to switch role.\n" +
         "• No free slot for your role? The grey role button puts you on the **reserve** list. " +
         "The organizer can move you into the group, and you'll get a DM.\n" +
@@ -76,7 +78,7 @@ public static class PanelDefs
         "(or after creation if no time was set).\n" +
         "• 📋 **Invite to group** shows ready-to-copy `/invite Name` commands for everyone in the group (except you).\n" +
         "• 🏰 **Invite to dungeon** shows just the character names, ready to copy into the dungeon invite.\n" +
-        "• 🔊 **Voice room** creates a voice channel for the group: everyone can join and listen, only the group can speak.\n" +
+        "• 🔊 **Voice room** (if the organizer turned it on): everyone can join and listen, only the group can speak.\n" +
         "• Some groups have **requirements** (a role or minimum GS) — set your GS with `/character gs`.\n\n" +
         "**Characters:** `/character list`, `/character add`, `/character class`, `/character note`, `/character remove`",
         [
@@ -165,7 +167,9 @@ public sealed class PanelTextStore
     public IReadOnlyList<PostedPanel> GetPosted(ulong guildId, string key)
     {
         lock (_lock)
-            return _data.TryGetValue(guildId, out var g) && g.Posted.TryGetValue(key, out var list) ? list.ToList() : [];
+            return _data.TryGetValue(guildId, out var g) && g.Posted.TryGetValue(key, out var list)
+                ? list.Select(p => new PostedPanel { ChannelId = p.ChannelId, MessageId = p.MessageId, ProjectKey = p.ProjectKey }).ToList()
+                : [];
     }
 
     public bool Track(ulong guildId, string key, ulong channelId, ulong messageId)
@@ -177,6 +181,29 @@ public sealed class PanelTextStore
             if (list.Any(p => p.MessageId == messageId)) return false;
             list.Add(new PostedPanel { ChannelId = channelId, MessageId = messageId });
             if (list.Count > MaxPostedPerPanel) list.RemoveAt(0);
+            Save();
+            return true;
+        }
+    }
+
+    /// <summary>Опубликованная панель по id сообщения (null — не запомнена).</summary>
+    public PostedPanel? FindPosted(ulong guildId, string key, ulong messageId)
+    {
+        lock (_lock)
+            return _data.TryGetValue(guildId, out var g) && g.Posted.TryGetValue(key, out var list) &&
+                   list.Find(p => p.MessageId == messageId) is { } found
+                ? new PostedPanel { ChannelId = found.ChannelId, MessageId = found.MessageId, ProjectKey = found.ProjectKey }
+                : null;
+    }
+
+    /// <summary>Привязать LFG-панель к проекту.</summary>
+    public bool SetPanelProject(ulong guildId, string key, ulong messageId, string? projectKey)
+    {
+        lock (_lock)
+        {
+            if (!_data.TryGetValue(guildId, out var g) || !g.Posted.TryGetValue(key, out var list) ||
+                list.Find(p => p.MessageId == messageId) is not { } found) return false;
+            found.ProjectKey = projectKey;
             Save();
             return true;
         }

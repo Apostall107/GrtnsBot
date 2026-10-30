@@ -56,13 +56,13 @@ public static partial class PanelApi
     private static void MapMember(RouteGroupBuilder g)
     {
         // Активные сборы + моё место в каждом + мои персонажи для записи
-        g.MapGet("/groups", (ulong guildId, ClaimsPrincipal user, DiscordSocketClient client, LfgStore lfg, CharacterStore characters) =>
+        g.MapGet("/groups", (ulong guildId, ClaimsPrincipal user, DiscordSocketClient client, LfgStore lfg, CharacterStore characters,
+            LfgSignupService signup, LfgProjectStore projects) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var me = user.UserId()!.Value;
             return Results.Ok(new
             {
-                characters = characters.Get(guildId, me),
                 groups = ActiveGroups(lfg, guildId).Select(x =>
                 {
                     var mySlot = x.Slots.Find(s => s.UserId == me);
@@ -71,6 +71,11 @@ public static partial class PanelApi
                     {
                         id = x.Id,
                         activity = x.ActivityName,
+                        // Проект сбора: мои персонажи этого проекта; без роли проекта записаться нельзя
+                        project = projects.Effective(guildId, x.ProjectKey)?.Name,
+                        blocked = signup.ProjectBlock(x, me) is { } b ? StripMarkdown(System.Text.RegularExpressions.Regex.Replace(b, "<@&(\\d+)>",
+                            m => "@" + (guild.GetRole(ulong.Parse(m.Groups[1].Value))?.Name ?? "role"))) : null,
+                        characters = characters.Get(guildId, me, signup.Scope(x)),
                         owner = Member(guild, x.OwnerId),
                         channel = guild.GetTextChannel(x.ChannelId)?.Name,
                         startsAt = x.StartsAt?.ToUnixTimeMilliseconds(),
@@ -99,7 +104,6 @@ public static partial class PanelApi
                             character = s.CharacterName,
                             classRole = s.ClassRoleId is { } cr ? Role(guild, cr) : null,
                             classIcon = s.ClassIcon,
-                            comment = s.Comment,
                             gs = s.Gs,
                             attended = s.Attended
                         }),
@@ -110,7 +114,6 @@ public static partial class PanelApi
                             character = r.CharacterName,
                             classRole = r.ClassRoleId is { } rr ? Role(guild, rr) : null,
                             classIcon = r.ClassIcon,
-                            comment = r.Comment,
                             gs = r.Gs
                         })
                     };
@@ -123,6 +126,7 @@ public static partial class PanelApi
             LfgStore lfg, CharacterStore characters, LfgSignupService signup) =>
         {
             if (!lfg.Groups.TryGetValue(groupId, out var group) || group.GuildId != guildId) return Error("This group is no longer active.");
+            if (signup.ProjectBlock(group, user.UserId()!.Value) is not null) return Error("You don't have the role of this group's project.");
             if (!Enum.TryParse<SlotRole>(body.Role, true, out var role)) return Error("Pick a role.");
             var name = (body.Character ?? "").Replace("`", "").Trim();
             if (name.Length is 0 or > CharacterStore.MaxNameLength) return Error($"Character name: 1–{CharacterStore.MaxNameLength} characters.");
@@ -134,7 +138,7 @@ public static partial class PanelApi
             finally { group.Gate.Release(); }
             if (error is not null) return Error(error);
 
-            characters.Add(guildId, me, name);
+            characters.Add(guildId, me, name, signup.Scope(group));
             var result = await signup.JoinAsync(group, me, role, name);
             var ok = group.Slots.Any(s => s.UserId == me) || group.FindReserve(me) is not null;
             return ok ? Results.Ok(new { message = StripMarkdown(result) }) : Error(StripMarkdown(result));
@@ -165,24 +169,37 @@ public static partial class PanelApi
         });
 
         // Мои персонажи: класс-роль и заметка
-        g.MapGet("/characters", (ulong guildId, ClaimsPrincipal user, DiscordSocketClient client, CharacterStore characters,
-            LfgProfileService profiles, LfgNotifyStore notify) =>
+        // Мои персонажи выбранного проекта (?project=key, пусто — по умолчанию): класс, GS, заметка
+        g.MapGet("/characters", (ulong guildId, string? project, ClaimsPrincipal user, DiscordSocketClient client, CharacterStore characters,
+            LfgProfileService profiles, LfgNotifyStore notify, LfgProjectStore projects) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var me = user.UserId()!.Value;
+            var member = guild.GetUser(me);
+            var current = projects.Effective(guildId, project);
+            var scope = projects.Scope(guildId, current?.Key);
             return Results.Ok(new
             {
                 dmEnabled = notify.IsEnabled(guildId, me),
+                projects = projects.GetProjects(guildId).Select(p => new
+                {
+                    key = p.Key,
+                    name = p.Name,
+                    allowed = LfgProjectStore.CanUse(member, p),
+                    roles = p.RoleIds.Select(id => Role(guild, id))
+                }),
+                project = current?.Key,
+                allowed = LfgProjectStore.CanUse(member, current),
                 classRoles = profiles.ClassRoles(guildId, me).Select(r => new
                 {
                     id = r.Id.ToString(),
                     name = r.Name,
                     color = r.Color.RawValue == 0 ? null : $"#{r.Color.RawValue:x6}",
-                    icon = LfgSignupService.IconOf(r)
+                    icon = profiles.Icon(guildId, r)
                 }),
-                characters = characters.Get(guildId, me).Select(name =>
+                characters = characters.Get(guildId, me, scope).Select(name =>
                 {
-                    var info = characters.GetInfo(guildId, me, name);
+                    var info = characters.GetInfo(guildId, me, name, scope);
                     return new
                     {
                         name,
@@ -196,34 +213,41 @@ public static partial class PanelApi
             });
         });
 
-        g.MapPost("/characters", (ulong guildId, CharacterBody body, ClaimsPrincipal user, CharacterStore characters) =>
+        g.MapPost("/characters", (ulong guildId, string? project, CharacterBody body, ClaimsPrincipal user, DiscordSocketClient client,
+            CharacterStore characters, LfgProjectStore projects) =>
         {
+            if (CharacterScope(guildId, project, user, client, projects) is not { } scope) return Error("You don't have the role of this project.");
             var name = (body.Name ?? "").Replace("`", "").Trim();
             if (name.Length is 0 or > CharacterStore.MaxNameLength) return Error($"Character name: 1–{CharacterStore.MaxNameLength} characters.");
-            characters.Add(guildId, user.UserId()!.Value, name);
+            characters.Add(guildId, user.UserId()!.Value, name, scope.Value);
             return Results.Ok();
         });
 
-        g.MapPut("/characters/{name}", async (ulong guildId, string name, CharacterProfileBody body, ClaimsPrincipal user,
-            CharacterStore characters, LfgProfileService profiles) =>
+        g.MapPut("/characters/{name}", async (ulong guildId, string name, string? project, CharacterProfileBody body, ClaimsPrincipal user,
+            DiscordSocketClient client, CharacterStore characters, LfgProfileService profiles, LfgProjectStore projects) =>
         {
+            if (CharacterScope(guildId, project, user, client, projects) is not { } scope) return Error("You don't have the role of this project.");
             var me = user.UserId()!.Value;
-            var exact = characters.Get(guildId, me).FirstOrDefault(n => n.Equals(name, StringComparison.OrdinalIgnoreCase));
+            var exact = characters.Get(guildId, me, scope.Value).FirstOrDefault(n => n.Equals(name, StringComparison.OrdinalIgnoreCase));
             if (exact is null) return Error("Character not found.");
 
             ulong? roleId = ParseId(body.ClassRoleId);
-            if (roleId is { } r && profiles.ClassRoles(guildId, me).All(x => x.Id != r)) return Error("You don't have this role.");
+            if (roleId is { } r && profiles.ClassRoles(guildId, me).All(x => x.Id != r)) return Error("You can't pick this class role.");
             if (body.Comment is { Length: > CharacterStore.MaxCommentLength }) return Error($"Note: up to {CharacterStore.MaxCommentLength} characters.");
-
             if (body.Gs is < 0 or > 99999) return Error("GS: 0–99999.");
-            characters.SetInfo(guildId, me, exact, true, roleId, true, body.Comment);
-            characters.SetGs(guildId, me, exact, body.Gs is > 0 ? body.Gs : null);
-            var groups = await profiles.RefreshCharacterAsync(guildId, me, exact);
+
+            characters.SetInfo(guildId, me, exact, true, roleId, true, body.Comment, scope.Value);
+            characters.SetGs(guildId, me, exact, body.Gs is > 0 ? body.Gs : null, scope.Value);
+            var groups = await profiles.RefreshCharacterAsync(guildId, me, exact, scope.Value);
             return Results.Ok(new { groupsUpdated = groups });
         });
 
-        g.MapDelete("/characters/{name}", (ulong guildId, string name, ClaimsPrincipal user, CharacterStore characters) =>
-            characters.Remove(guildId, user.UserId()!.Value, name) ? Results.Ok() : Error("Character not found."));
+        g.MapDelete("/characters/{name}", (ulong guildId, string name, string? project, ClaimsPrincipal user, DiscordSocketClient client,
+            CharacterStore characters, LfgProjectStore projects) =>
+        {
+            if (CharacterScope(guildId, project, user, client, projects) is not { } scope) return Error("You don't have the role of this project.");
+            return characters.Remove(guildId, user.UserId()!.Value, name, scope.Value) ? Results.Ok() : Error("Character not found.");
+        });
 
         // Главная участника: мои сборы, мои заявки (тикеты), моя голосовая комната
         g.MapGet("/home", (ulong guildId, ClaimsPrincipal user, DiscordSocketClient client, LfgStore lfg, TicketStore tickets,
@@ -304,13 +328,29 @@ public static partial class PanelApi
         });
 
         // Для создания сбора: активности и канал, куда уйдёт пост (выбирает админ в LFG → Channel for groups)
-        g.MapGet("/create-options", (ulong guildId, DiscordSocketClient client, ActivityStore activities,
-            BotSettingsStore settings, PanelTextStore panels, LfgTemplateStore templates) =>
+        g.MapGet("/create-options", (ulong guildId, ClaimsPrincipal user, DiscordSocketClient client, ActivityStore activities,
+            BotSettingsStore settings, PanelTextStore panels, LfgTemplateStore templates, LfgProjectStore projects, PanelAccess access) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            var me = user.UserId()!.Value;
+            var member = guild.GetUser(me);
             var channel = LfgChannel(guild, settings, panels);
             return Results.Ok(new
             {
+                // Проекты, роли которых у меня есть, и канал, куда уйдёт сбор каждого
+                projects = projects.GetProjects(guildId).Where(p => LfgProjectStore.CanUse(member, p)).Select(p => new
+                {
+                    key = p.Key,
+                    name = p.Name,
+                    isDefault = p.Key == projects.DefaultKey(guildId),
+                    channel = LfgChannel(guild, settings, panels, p.Key) is { } c ? new { id = c.Id.ToString(), name = c.Name } : null
+                }),
+                // Админ может продублировать пост в другие каналы
+                mirrorChannels = access.IsAdmin(me)
+                    ? guild.TextChannels.Where(c => c is not SocketVoiceChannel and not SocketThreadChannel)
+                        .Where(c => guild.CurrentUser.GetPermissions(c) is { ViewChannel: true, SendMessages: true, EmbedLinks: true })
+                        .OrderBy(c => c.Position).Select(c => new { id = c.Id.ToString(), name = c.Name })
+                    : null,
                 activities = activities.Get(guildId).Select(a => new { key = a.Key, name = a.Name, role = Role(guild, a.RoleId) }),
                 templates = TemplatesDto(guild, templates),
                 // Роли для требований сбора (организатор выбирает, какие нужны)
@@ -323,12 +363,14 @@ public static partial class PanelApi
         // Создать сбор (как /lfg): организатор — я
         g.MapPost("/create", async (ulong guildId, LfgCreateBody body, ClaimsPrincipal user, DiscordSocketClient client,
             ActivityStore activities, LfgPublisher publisher, BotSettingsStore settings, PanelTextStore panels,
-            [Microsoft.AspNetCore.Mvc.FromServices] TimeService time) =>
+            LfgProjectStore projects, PanelAccess access, [Microsoft.AspNetCore.Mvc.FromServices] TimeService time) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var me = user.UserId()!.Value;
-            // Канал выбирает не участник, а админ — пост всегда уходит в канал для сборов
-            if (LfgChannel(guild, settings, panels) is not { } lfgChannel)
+            var project = projects.Effective(guildId, body.ProjectKey);
+            if (!LfgProjectStore.CanUse(guild.GetUser(me), project)) return Error($"You need the {project!.Name} role to create its groups.");
+            // Канал выбирает не участник, а админ — пост уходит в канал проекта / канал для сборов
+            if (LfgChannel(guild, settings, panels, project?.Key) is not { } lfgChannel)
                 return Error("The channel for groups is not set yet. Ask an admin (LFG → Channel for groups).");
             var (err, channelId, name, pingRole, slots) = ResolveLfgInput(guild, activities, lfgChannel.Id.ToString(), body.ActivityKey, body.CustomName, body.Slots);
             if (err is not null) return Error(err);
@@ -349,7 +391,11 @@ public static partial class PanelApi
             {
                 var (group, jumpUrl, dms) = await publisher.PublishAsync(new LfgPublishRequest(
                     guildId, channelId, me, name!, pingRole, slots!, startsAt, body.NotifyByDm, true,
-                    Requirements(guild, body.RequiredRoleIds), body.MinGs is > 0 and <= 99999 ? body.MinGs : null));
+                    Requirements(guild, body.RequiredRoleIds), body.MinGs is > 0 and <= 99999 ? body.MinGs : null,
+                    project?.Key,
+                    // Дублировать пост в другие каналы может только админ
+                    access.IsAdmin(me) ? ParseIds(body.MirrorChannelIds).Where(id => guild.GetTextChannel(id) is not null).Take(5).ToList() : null,
+                    body.CreateVoice));
                 return Results.Ok(new { id = group.Id, jumpUrl, dmsStarted = dms });
             }
             catch (Exception ex) when (ex is InvalidOperationException or Discord.Net.HttpException)
@@ -461,9 +507,23 @@ public static partial class PanelApi
         });
     }
 
-    /// <summary>Канал для сборов с сайта: из настроек, иначе канал первой LFG-панели.</summary>
-    private static SocketTextChannel? LfgChannel(SocketGuild guild, BotSettingsStore settings, PanelTextStore panels)
+    /// <summary>Ключ хранения персонажей проекта; null — нет роли проекта (менять его персонажей нельзя).</summary>
+    private static (string? Value, bool Ok)? CharacterScope(ulong guildId, string? project, ClaimsPrincipal user, DiscordSocketClient client,
+        LfgProjectStore projects)
     {
+        var current = projects.Effective(guildId, string.IsNullOrWhiteSpace(project) ? null : project);
+        if (!LfgProjectStore.CanUse(client.GetGuild(guildId)?.GetUser(user.UserId()!.Value), current)) return null;
+        return (projects.Scope(guildId, current?.Key), true);
+    }
+
+    /// <summary>Канал для сборов с сайта: из настроек, иначе канал первой LFG-панели.</summary>
+    private static SocketTextChannel? LfgChannel(SocketGuild guild, BotSettingsStore settings, PanelTextStore panels, string? projectKey = null)
+    {
+        // У проекта своя LFG-панель (LFG → Projects) — сборы проекта идут в её канал
+        if (projectKey is not null &&
+            panels.GetPosted(guild.Id, "lfg").Where(p => p.ProjectKey == projectKey)
+                .Select(p => guild.GetTextChannel(p.ChannelId)).FirstOrDefault(c => c is not null) is { } projectChannel)
+            return projectChannel;
         if (settings.GetLfgChannel(guild.Id) is { } id && guild.GetTextChannel(id) is { } set) return set;
         return panels.GetPosted(guild.Id, "lfg").Select(p => guild.GetTextChannel(p.ChannelId)).FirstOrDefault(c => c is not null);
     }

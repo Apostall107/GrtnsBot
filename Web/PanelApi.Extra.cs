@@ -61,6 +61,84 @@ public static partial class PanelApi
             return error is null ? Results.Ok() : Error(error);
         });
 
+        // ----- Проекты (игры): роли, проект по умолчанию, привязка LFG-панелей -----
+        g.MapGet("/projects", (ulong guildId, DiscordSocketClient client, LfgProjectStore projects, PanelTextStore panels) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            var def = projects.DefaultKey(guildId);
+            return Results.Ok(new
+            {
+                projects = projects.GetProjects(guildId).Select(p => new
+                {
+                    key = p.Key,
+                    name = p.Name,
+                    isDefault = p.Key == def,
+                    roles = p.RoleIds.Select(id => Role(guild, id))
+                }),
+                panels = panels.GetPosted(guildId, "lfg").Select(p => new
+                {
+                    messageId = p.MessageId.ToString(),
+                    channel = guild.GetTextChannel(p.ChannelId)?.Name,
+                    projectKey = p.ProjectKey,
+                    jumpUrl = $"https://discord.com/channels/{guildId}/{p.ChannelId}/{p.MessageId}"
+                })
+            });
+        });
+
+        g.MapPut("/projects/{key}", (ulong guildId, string key, LfgProjectBody body, DiscordSocketClient client, LfgProjectStore projects) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            var name = (body.Name ?? "").Trim();
+            if (name.Length is 0 or > 60) return Error("Project name: 1–60 characters.");
+            var projectKey = key == "new" ? IdGen.New() : key;
+            var error = projects.Save(guildId, new LfgProject
+            {
+                Key = projectKey,
+                Name = name,
+                RoleIds = ParseIds(body.RoleIds).Where(id => guild.GetRole(id) is not null).Take(10).ToList()
+            });
+            if (error is null && body.IsDefault) projects.SetDefault(guildId, projectKey);
+            return error is null ? Results.Ok() : Error(error);
+        });
+
+        g.MapDelete("/projects/{key}", (ulong guildId, string key, LfgProjectStore projects) =>
+            projects.Remove(guildId, key) ? Results.Ok() : Error("Project not found."));
+
+        // Под какой проект идут сборы с уже опубликованной LFG-панели
+        g.MapPut("/panels/{messageId}/project", (ulong guildId, ulong messageId, LfgPanelProjectBody body, LfgProjectStore projects,
+            PanelTextStore panels) =>
+        {
+            var key = string.IsNullOrWhiteSpace(body.ProjectKey) ? null : body.ProjectKey;
+            if (key is not null && projects.Find(guildId, key) is null) return Error("Project not found.");
+            return panels.SetPanelProject(guildId, "lfg", messageId, key) ? Results.Ok() : Error("Panel not found — use Find posted panels first.");
+        });
+
+        // ----- Классы: какие роли — классы и их иконки (эмодзи или эмодзи сервера) -----
+        g.MapGet("/classes", (ulong guildId, DiscordSocketClient client, LfgProjectStore projects) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            return Results.Ok(new
+            {
+                classes = projects.ClassIcons(guildId).Select(kv => new { role = Role(guild, kv.Key), icon = kv.Value }),
+                emojis = guild.Emotes.OrderBy(e => e.Name).Select(e => new { name = e.Name, code = $"<{(e.Animated ? "a" : "")}:{e.Name}:{e.Id}>", url = e.Url })
+            });
+        });
+
+        g.MapPut("/classes", (ulong guildId, ClassIconsBody body, DiscordSocketClient client, LfgProjectStore projects) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            var map = new Dictionary<ulong, string>();
+            foreach (var c in body.Classes ?? [])
+            {
+                if (ParseId(c.RoleId) is not { } id || guild.GetRole(id) is null) continue;
+                var icon = (c.Icon ?? "").Trim();
+                if (icon.Length > 80) return Error("Icon is too long.");
+                map[id] = icon;
+            }
+            projects.SetClassIcons(guildId, map);
+            return Results.Ok();
+        });
+
         // ----- Шаблоны сборов -----
         g.MapGet("/templates", (ulong guildId, DiscordSocketClient client, LfgTemplateStore templates) =>
         {
@@ -177,6 +255,7 @@ public static partial class PanelApi
                     postHoursBefore = r.PostHoursBefore,
                     notifyByDm = r.NotifyByDm,
                     seatOwner = r.SeatOwner,
+                    projectKey = r.ProjectKey,
                     requiredRoles = r.RequiredRoleIds.Select(id => Role(guild, id)),
                     minGs = r.MinGs,
                     enabled = r.Enabled,
@@ -224,6 +303,7 @@ public static partial class PanelApi
                 r.PostHoursBefore = draft.PostHoursBefore;
                 r.NotifyByDm = draft.NotifyByDm;
                 r.SeatOwner = draft.SeatOwner;
+                r.ProjectKey = draft.ProjectKey;
                 r.RequiredRoleIds = draft.RequiredRoleIds;
                 r.MinGs = draft.MinGs;
                 r.Enabled = draft.Enabled;
@@ -455,6 +535,7 @@ public static partial class PanelApi
         item.PostHoursBefore = body.PostHoursBefore;
         item.NotifyByDm = body.NotifyByDm;
         item.SeatOwner = body.SeatOwner;
+        item.ProjectKey = string.IsNullOrWhiteSpace(body.ProjectKey) ? null : body.ProjectKey;
         item.RequiredRoleIds = ParseIds(body.RequiredRoleIds).Where(id => guild.GetRole(id) is not null).Take(10).ToList();
         if (body.MinGs is < 0 or > 99999) return "Minimum GS: 0–99999.";
         item.MinGs = body.MinGs is > 0 ? body.MinGs : null;
@@ -540,6 +621,11 @@ public static partial class PanelApi
         ("POST", "/lfg/panel", "lfg", "Posted LFG panel"),
         ("PUT", "/lfg/channel", "lfg", "Set channel for groups"),
         ("PUT", "/lfg/templates/{key}", "lfg", "Saved LFG template"),
+        ("PUT", "/lfg/projects/{key}", "lfg", "Saved LFG project"),
+        ("DELETE", "/lfg/projects/{key}", "lfg", "Removed LFG project"),
+        ("PUT", "/lfg/panels/{messageId}/project", "lfg", "Linked LFG panel to a project"),
+        ("PUT", "/lfg/classes", "lfg", "Saved class icons"),
+        ("POST", "/lfg/mirror", "lfg", "Duplicated LFG post"),
         ("DELETE", "/lfg/templates/{key}", "lfg", "Removed LFG template"),
         ("POST", "/lfg/groups/{groupId}/time", "lfg", "Changed LFG time"),
         ("POST", "/lfg/groups/{groupId}/attendance", "lfg", "Marked attendance"),
@@ -680,11 +766,16 @@ public static partial class PanelApi
 }
 
 public sealed record LfgCreateBody(string? ChannelId, string? ActivityKey, string? CustomName, List<string>? Slots,
-    string? Date, string? Time, bool NotifyByDm = true, bool SeatOwner = true, List<string>? RequiredRoleIds = null, int? MinGs = null);
+    string? Date, string? Time, bool NotifyByDm = true, bool SeatOwner = true, List<string>? RequiredRoleIds = null, int? MinGs = null,
+    string? ProjectKey = null, List<string>? MirrorChannelIds = null, bool CreateVoice = false);
 public sealed record RosterBody(string? Action, string? UserId, string? Character);
 public sealed record RecurringBody(string? ChannelId, string? ActivityKey, string? CustomName, List<string>? Slots,
     List<int>? Days, string? Time, int PostHoursBefore = 24, bool NotifyByDm = true, bool SeatOwner = true, bool Enabled = true,
-    string? OwnerId = null, List<string>? RequiredRoleIds = null, int? MinGs = null);
+    string? OwnerId = null, List<string>? RequiredRoleIds = null, int? MinGs = null, string? ProjectKey = null);
+public sealed record LfgProjectBody(string? Name, List<string>? RoleIds, bool IsDefault = false);
+public sealed record LfgPanelProjectBody(string? ProjectKey);
+public sealed record ClassIconBody(string? RoleId, string? Icon);
+public sealed record ClassIconsBody(List<ClassIconBody>? Classes);
 public sealed record TemplateBody(string? Name, string? ActivityKey, string? CustomActivity, List<string>? Slots,
     List<string>? RequiredRoleIds, int? MinGs);
 public sealed record TimeBody(string? Date, string? Time);

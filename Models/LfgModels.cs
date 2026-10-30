@@ -64,6 +64,12 @@ public sealed class Slot
     }
 }
 
+public sealed class LfgMirror
+{
+    public ulong ChannelId { get; set; }
+    public ulong MessageId { get; set; }
+}
+
 public sealed class ReserveEntry
 {
     public ulong UserId { get; set; }
@@ -98,6 +104,10 @@ public sealed class LfgDraft(ulong guildId, ulong channelId, ulong ownerId)
     public HashSet<int> Selected { get; set; } = [];
     /// <summary>Разослать ЛС всем с ролью активности при публикации.</summary>
     public bool NotifyByDm { get; set; } = true;
+    /// <summary>Проект (игра): из панели LFG, на которой нажали Create LFG. null — проект по умолчанию.</summary>
+    public string? ProjectKey { get; set; }
+    /// <summary>Создать голосовую комнату сбора при публикации.</summary>
+    public bool CreateVoice { get; set; }
     /// <summary>Требования (из шаблона): нужна одна из ролей; минимальный GS персонажа.</summary>
     public List<ulong> RequiredRoleIds { get; set; } = [];
     public int? MinGs { get; set; }
@@ -133,6 +143,7 @@ public sealed class LfgGroup
         Slots = draft.Slots.Select(s => new Slot { Role = s.Role }).ToList();
         RequiredRoleIds = draft.RequiredRoleIds.ToList();
         MinGs = draft.MinGs;
+        ProjectKey = draft.ProjectKey;
     }
 
     // Сеттеры нужны для сохранения сборов в файл (data/lfg-groups.json)
@@ -157,6 +168,10 @@ public sealed class LfgGroup
     [JsonIgnore] public bool HasRequirements => RequiredRoleIds.Count > 0 || MinGs is not null;
     /// <summary>Напоминание за 10 минут уже отправлено (или не нужно).</summary>
     public bool Reminded { get; set; }
+    /// <summary>Проект (игра) сбора: персонажи берутся из него, записаться можно только с ролью проекта.</summary>
+    public string? ProjectKey { get; set; }
+    /// <summary>Копии поста в других каналах (обновляются и удаляются вместе с основным).</summary>
+    public List<LfgMirror> Mirrors { get; set; } = [];
     /// <summary>Голосовая комната сбора (кнопка 🔊 в посте): все видят и могут зайти, говорить — только участники группы.</summary>
     public ulong? VoiceChannelId { get; set; }
     /// <summary>Сообщение-напоминание бота, удаляется вместе с постом.</summary>

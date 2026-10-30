@@ -16,7 +16,10 @@ public sealed record LfgPublishRequest(
     bool NotifyByDm,
     bool SeatOwner = true,
     IReadOnlyList<ulong>? RequiredRoleIds = null,
-    int? MinGs = null);
+    int? MinGs = null,
+    string? ProjectKey = null,
+    IReadOnlyList<ulong>? MirrorChannelIds = null,
+    bool CreateVoice = false);
 
 /// <summary>Публикация сбора: пост с пингом роли, сохранение, ЛС участникам с ролью активности.</summary>
 public sealed class LfgPublisher(
@@ -25,7 +28,8 @@ public sealed class LfgPublisher(
     CharacterStore characters,
     TimeService time,
     LfgNotifier notifier,
-    LfgSignupService signup)
+    LfgSignupService signup,
+    LfgProjectStore projects)
 {
     /// <summary>Публикует сбор. Возвращает сбор и ссылку на пост; бросает исключение, если в канал нельзя писать.</summary>
     public async Task<(LfgGroup Group, string JumpUrl, bool DmsStarted)> PublishAsync(LfgPublishRequest r)
@@ -39,7 +43,8 @@ public sealed class LfgPublisher(
             PingRoleId = r.PingRoleId,
             Slots = r.Slots.Select(role => new Slot { Role = role }).ToList(),
             RequiredRoleIds = r.RequiredRoleIds?.ToList() ?? [],
-            MinGs = r.MinGs
+            MinGs = r.MinGs,
+            ProjectKey = r.ProjectKey
         };
 
         var group = new LfgGroup(draft)
@@ -52,7 +57,7 @@ public sealed class LfgPublisher(
         // Организатор участвует сам: слот 1 + последний использованный персонаж
         if (r.SeatOwner)
         {
-            group.SeatOwner(characters.Get(r.GuildId, r.OwnerId).FirstOrDefault());
+            group.SeatOwner(characters.Get(r.GuildId, r.OwnerId, projects.Scope(r.GuildId, r.ProjectKey)).FirstOrDefault());
             signup.ApplyProfile(group, r.OwnerId); // класс и заметка персонажа организатора
         }
 
@@ -74,7 +79,43 @@ public sealed class LfgPublisher(
         var jumpUrl = message.GetJumpUrl();
         var dms = r.NotifyByDm && group.PingRoleId is not null;
         if (dms) notifier.Start(group, jumpUrl);
+
+        if (r.MirrorChannelIds is { Count: > 0 } mirrors) await AddMirrorsAsync(group, mirrors);
+        // Голосовая комната — только если при создании выбрали эту опцию
+        if (r.CreateVoice && (client.GetUser(r.OwnerId) as IUser ?? await client.Rest.GetUserAsync(r.OwnerId)) is { } owner)
+            await signup.CreateVoiceAsync(group, owner);
         return (group, jumpUrl, dms);
+    }
+
+    /// <summary>Копии поста сбора в других каналах (без пинга). Кнопки работают так же, как в основном посте.</summary>
+    public async Task<int> AddMirrorsAsync(LfgGroup group, IEnumerable<ulong> channelIds)
+    {
+        var added = 0;
+        await group.Gate.WaitAsync();
+        try
+        {
+            foreach (var id in channelIds.Distinct().Where(id => id != group.ChannelId && group.Mirrors.All(m => m.ChannelId != id)).Take(5))
+            {
+                if (await GetChannelAsync(id) is not { } channel) continue;
+                try
+                {
+                    var s = LfgRenderer.Group(group);
+                    var message = await channel.SendMessageAsync(embed: s.Embed, components: s.Components, allowedMentions: AllowedMentions.None);
+                    group.Mirrors.Add(new LfgMirror { ChannelId = id, MessageId = message.Id });
+                    added++;
+                }
+                catch (Discord.Net.HttpException)
+                {
+                    // нет доступа к каналу — пропускаем
+                }
+            }
+            store.SaveGroups();
+        }
+        finally
+        {
+            group.Gate.Release();
+        }
+        return added;
     }
 
     private async Task<IMessageChannel?> GetChannelAsync(ulong channelId)
