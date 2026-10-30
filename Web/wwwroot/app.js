@@ -197,6 +197,64 @@ function pickMemberDialog(title) {
   });
 }
 
+// ================= Shared UI pieces =================
+
+/** Card heading with an icon and actions on the right. */
+function cardHead(ic, title, ...actions) {
+  return h("div", { class: "card-head" }, h("h2", { class: "with-icon" }, icon(ic, 18), title), ...actions);
+}
+
+/** Small uppercase label above a group of cards. */
+function sectionLabel(text) { return h("div", { class: "section-label" }, text); }
+
+/** Statistic card: icon, label, value, supporting text; clickable when onClick is given. */
+function statCard(ic, label, value, sub, onClick) {
+  return h(onClick ? "button" : "div", { class: `stat${onClick ? " clickable" : ""}`, onclick: onClick || null },
+    h("div", { class: "stat-top" }, h("span", { class: "label" }, label), h("span", { class: "stat-icon" }, icon(ic, 16))),
+    h("div", { class: "value" }, value), sub ? h("div", { class: "sub" }, sub) : null);
+}
+
+/** Empty state: what's missing and what to do next. */
+function emptyState(ic, title, text, action) {
+  return h("div", { class: "empty-state" }, h("span", { class: "es-icon" }, icon(ic, 20)),
+    h("div", {}, h("b", {}, title), text ? h("div", { class: "muted small" }, text) : null), action || null);
+}
+
+/** Capacity: "2/4" with a bar. */
+function capacity(filled, size) {
+  const pct = size ? Math.round(filled / size * 100) : 0;
+  return h("span", { class: `capacity${filled >= size ? " full" : ""}`, title: `${filled} of ${size} slots taken` },
+    h("span", { class: "cap-text" }, `${filled}/${size}`), h("span", { class: "cap-bar" }, h("span", { style: `width:${pct}%` })));
+}
+
+/** Loading placeholders. */
+function skeletonLines(n) { return h("div", {}, Array.from({ length: n }, (_, i) => h("div", { class: "skeleton", style: `width:${90 - i * 15}%` }))); }
+function skeletonStat() { return h("div", { class: "stat" }, h("div", { class: "skeleton", style: "width:40%" }), h("div", { class: "skeleton tall", style: "width:30%" })); }
+
+/** Emoji at the start of a button/tab label → a Lucide icon (old labels keep working). */
+const EMOJI_ICONS = { "➕": "plus", "💾": "save", "🗑️": "trash-2", "🗑": "trash-2", "✏️": "pencil", "📌": "pin", "👁": "eye", "✅": "check",
+  "✕": "x", "✖": "x", "✖️": "x", "🔍": "search", "↩️": "undo-2", "📅": "calendar", "🕒": "clock", "🔊": "volume-2", "📋": "clipboard-list",
+  "⚙️": "settings", "🎨": "palette", "🎮": "gamepad-2", "🌐": "globe", "📣": "megaphone", "📝": "file-pen-line", "📨": "send", "🔒": "lock",
+  "🔓": "lock-open", "🔁": "repeat", "📁": "folder", "📄": "file-text", "📢": "megaphone", "🔄": "refresh-cw" };
+function iconizeButtons(root) {
+  for (const btn of root.querySelectorAll(".btn, .tabs button")) {
+    const first = btn.firstChild;
+    if (!first || first.nodeType !== Node.TEXT_NODE) continue;
+    const m = /^(\S+?)️?\s+/u.exec(first.textContent);
+    if (!m) continue;
+    const key = Object.keys(EMOJI_ICONS).find(k => first.textContent.startsWith(k));
+    if (!key) continue;
+    first.textContent = first.textContent.slice(key.length).replace(/^️?\s*/u, "");
+    btn.insertBefore(icon(EMOJI_ICONS[key], 16), first);
+  }
+}
+let iconizeQueued = false;
+new MutationObserver(() => {
+  if (iconizeQueued) return;
+  iconizeQueued = true;
+  requestAnimationFrame(() => { iconizeQueued = false; iconizeButtons(document.body); });
+}).observe(document.body, { childList: true, subtree: true });
+
 // ================= Mentions: @ / # suggestions in text fields =================
 
 const knownUsers = new Map(); // id → name (for showing <@id> as @name)
@@ -2281,86 +2339,149 @@ async function pageSettings(main) {
 // ================= Member: home =================
 
 async function pageHome(main) {
-  main.append(h("div", { class: "card-head" }, h("h1", {}, "🏠 Home"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
-  const holder = h("div", {}, h("div", { class: "muted" }, "Loading…"));
-  main.append(holder);
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "Home"),
+    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
+  const go = (tab, extra) => () => { if (extra) extra(); state.tab = tab; store.set("gb.tab", tab); renderShell(); };
+  const guild = currentGuild();
+
+  // A. Welcome + server context
+  const hour = new Date().getHours();
+  const hello = hour < 5 ? "Good night" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  main.append(h("div", { class: "home-hero" },
+    h("div", {}, h("div", { class: "hero-title" }, `${hello}, ${state.me.name}!`),
+      h("div", { class: "muted" }, "Here's what's happening on ", h("b", { class: "text-strong" }, guild ? guild.name : "your server"), " right now.")),
+    h("span", { class: `status-pill ${state.connection === "Connected" ? "ok" : "bad"}` }, h("span", { class: "dot" }),
+      h("span", {}, state.connection === "Connected" ? "Bot online" : `Bot ${state.connection || "offline"}`))));
+
+  // B. Server overview (real counts only)
+  const server = h("div", {}, sectionLabel("Server"), h("div", { class: "stats" }, [0, 1, 2, 3].map(() => skeletonStat())));
+  main.append(server);
+  gApi("GET", "/me/summary").then(sum => {
+    server.replaceChildren(sectionLabel("Server"), h("div", { class: "stats" },
+      statCard("users", "Members", sum.server.members, sum.server.name),
+      statCard("swords", "Active groups", sum.activeGroups, sum.recruiting ? `${sum.recruiting} recruiting` : "none recruiting", go("play")),
+      statCard("ticket", "Open tickets", sum.openTickets, "applications in progress", can("tickets") ? go("tickets") : null),
+      statCard("headphones", "Voice rooms", sum.voiceRooms, "temporary rooms now", can("voice") ? go("voice") : null)));
+  }).catch(e => server.replaceChildren(sectionLabel("Server"), empty(e.message)));
+
+  // D. Quick actions — only what this user can do
+  const quick = [
+    ["circle-plus", "Create a group", "LFG · post a group", go("play", () => store.set("gb.openCreate", "1"))],
+    ["file-pen-line", "Apply", "Open an application", () => applyDialog()],
+    ["user-round", "My characters", "Classes, GS, notes", go("chars")],
+    can("tickets") ? ["ticket", "Tickets", "Manage applications", go("tickets")] : null,
+    can("voice") ? ["headphones", "Temp Voice", "Rooms & channels", go("voice")] : null,
+    can("announce") ? ["megaphone", "Announcement", "Post as the bot", go("announce")] : null
+  ].filter(Boolean);
+  main.append(sectionLabel("Quick actions"), h("div", { class: "quick-actions" }, quick.map(([ic, title, sub, fn]) =>
+    h("button", { class: "quick-action", onclick: fn }, h("span", { class: "qa-icon" }, icon(ic, 18)),
+      h("span", { class: "qa-text" }, h("b", {}, title), h("span", { class: "muted small" }, sub))))));
+
+  // C. Personal activity
+  main.append(sectionLabel("My activity"));
+  const grid = h("div", { class: "grid2" });
+  const left = h("div", {}), right = h("div", {});
+  grid.append(left, right);
+  main.append(grid);
+  const groupsCard = h("div", { class: "card" }, cardHead("users-round", "My groups", h("button", { class: "btn secondary", onclick: go("play") }, "All groups", icon("arrow-right", 15))), skeletonLines(3));
+  const statsCard = h("div", { class: "card" }, cardHead("chart-column", "My stats"), skeletonLines(2));
+  const ticketsCard = h("div", { class: "card" });
+  const charsCard = h("div", { class: "card" }, cardHead("user-round", "My characters", h("button", { class: "btn secondary", onclick: go("chars") }, "Manage", icon("arrow-right", 15))), skeletonLines(2));
+  const roomCard = h("div", { class: "card" });
+  const prefsCard = h("div", { class: "card" }, cardHead("sliders-horizontal", "My room defaults"),
+    h("p", { class: "muted small" }, "Applied every time your temporary voice room is created (same as /room defaults in Discord)."));
+  left.append(groupsCard, statsCard, charsCard);
+  right.append(ticketsCard, roomCard, prefsCard);
 
   let d;
-  try { d = await gApi("GET", "/me/home"); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
-  const go = tab => () => { state.tab = tab; store.set("gb.tab", tab); renderShell(); };
-  const STATUS = { organizer: ["organizer", "ok"], group: ["in the group", "ok"], reserve: ["reserve", "wait"] };
+  try { d = await gApi("GET", "/me/home"); } catch (e) { groupsCard.replaceChildren(empty(e.message)); return; }
+  const STATUS = { organizer: ["Organizer", "ok", "crown"], group: ["In the group", "ok", "check"], reserve: ["Reserve", "wait", "clock"] };
 
-  // My groups
-  const groups = h("div", { class: "card" }, h("div", { class: "card-head" }, h("h2", {}, "🎮 My groups"),
-    h("button", { class: "btn secondary", onclick: go("play") }, "All groups →")),
-    d.groups.length ? h("ul", { class: "slots" }, d.groups.map(g => h("li", {},
-      h("span", {}, h("b", {}, g.activity), h("div", { class: "muted small" }, `${fmtDate(g.startsAt)} · ${g.filled}/${g.size}${g.character ? ` · ${g.character}` : ""}`)),
-      h("span", { class: "char" }, h("span", { class: `badge ${STATUS[g.status][1]}` }, STATUS[g.status][0])),
-      h("a", { class: "btn ghost", href: g.jumpUrl, target: "_blank", rel: "noopener" }, "Open"))))
-      : empty("You're not in any group. Find one in Groups."));
+  groupsCard.replaceChildren(groupsCard.firstChild, d.groups.length ? h("div", { class: "list" }, d.groups.map(g => h("div", { class: "list-row" },
+    h("div", { class: "grow" }, h("b", {}, g.activity),
+      h("div", { class: "muted small" }, `${g.startsAt ? fmtDate(g.startsAt) : "no time set"}${g.character ? ` · ${g.character}` : ""}`)),
+    capacity(g.filled, g.size),
+    h("span", { class: `badge ${STATUS[g.status][1]}` }, icon(STATUS[g.status][2], 12), STATUS[g.status][0]),
+    h("a", { class: "btn ghost icon-only", href: g.jumpUrl, target: "_blank", rel: "noopener", title: "Open in Discord" }, icon("external-link", 16)))))
+    : emptyState("users-round", "You're not in any group", "Find a group to join or create your own.",
+      h("button", { class: "btn", onclick: go("play") }, icon("search", 16), "Browse groups")));
 
-  // My applications
-  const apply = h("button", { class: "btn" }, "📝 Apply");
+  const apply = h("button", { class: "btn secondary" }, icon("file-pen-line", 16), "Apply");
   apply.addEventListener("click", () => applyDialog());
-  const tickets = h("div", { class: "card" }, h("div", { class: "card-head" }, h("h2", {}, "🎫 My applications"), apply),
-    d.tickets.length ? h("ul", { class: "slots" }, d.tickets.map(t => h("li", {},
-      h("span", {}, h("b", {}, t.project), h("div", { class: "muted small" }, `opened ${fmtRelative(t.createdAt)}`)),
-      h("span", { class: "char" }, t.approved ? h("span", { class: "badge ok" }, "approved") : h("span", { class: "badge wait" }, "waiting")),
-      h("a", { class: "btn ghost", href: t.jumpUrl, target: "_blank", rel: "noopener" }, "Open"))))
-      : empty("No open applications."));
+  ticketsCard.append(cardHead("ticket", "My applications", apply), d.tickets.length ? h("div", { class: "list" }, d.tickets.map(t => h("div", { class: "list-row" },
+    h("div", { class: "grow" }, h("b", {}, t.project), h("div", { class: "muted small" }, `opened ${fmtRelative(t.createdAt)}`)),
+    t.approved ? h("span", { class: "badge ok" }, icon("check", 12), "Approved") : h("span", { class: "badge wait" }, icon("clock", 12), "Waiting"),
+    h("a", { class: "btn ghost icon-only", href: t.jumpUrl, target: "_blank", rel: "noopener", title: "Open in Discord" }, icon("external-link", 16)))))
+    : emptyState("inbox", "No open applications", "Want to join a project? Send an application — a private ticket opens for you."));
 
   // My voice room
-  const room = h("div", { class: "card" }, h("h2", {}, "🔊 My voice room"));
-  if (!d.room) room.append(empty("You don't own a temporary room. Join a «join to create» channel in Discord to get one."));
+  roomCard.append(cardHead("headphones", "My voice room"));
+  if (!d.room) roomCard.append(emptyState("volume-2", "You don't own a room now", "Join a «join to create» voice channel in Discord — your room appears here."));
   else {
     const r = d.room;
-    const name = h("input", { value: r.name, maxlength: "100" });
-    const limit = h("input", { type: "number", min: "0", max: "99", value: r.limit ?? 0, style: "width:90px" });
+    const name = h("input", { value: r.name, maxlength: "100", "aria-label": "Room name" });
+    const limit = h("input", { type: "number", min: "0", max: "99", value: r.limit ?? 0, style: "width:90px", "aria-label": "User limit" });
     const call = (btn, body) => act(btn, () => gApi("POST", "/me/room", body), res => res.message).then(x => { if (x !== undefined) refresh(); });
     const rn = h("button", { class: "btn secondary" }, "Rename");
     rn.addEventListener("click", () => call(rn, { action: "rename", name: name.value }));
     const lm = h("button", { class: "btn secondary" }, "Set limit");
     lm.addEventListener("click", () => call(lm, { action: "limit", limit: Number(limit.value || 0) }));
-    const lk = h("button", { class: "btn" }, r.locked ? "🔓 Unlock" : "🔒 Lock");
+    const lk = h("button", { class: "btn" }, icon(r.locked ? "lock-open" : "lock", 16), r.locked ? "Unlock" : "Lock");
     lk.addEventListener("click", () => call(lk, { action: r.locked ? "unlock" : "lock" }));
-    room.append(
-      h("p", { class: "muted small" }, `${r.inside} inside${r.locked ? " · locked" : ""}. Permit / kick members in Discord (Room controls or /room).`),
-      h("div", { class: "row", style: "margin-bottom:8px" }, h("div", { class: "grow" }, name), rn),
-      h("div", { class: "row" }, limit, lm, lk));
+    roomCard.append(
+      h("div", { class: "row", style: "margin-bottom:12px" }, h("span", { class: "badge ok" }, icon("users", 12), `${r.inside} inside`),
+        r.locked ? h("span", { class: "badge lock" }, icon("lock", 12), "Locked") : h("span", { class: "badge" }, icon("lock-open", 12), "Open")),
+      h("div", { class: "field" }, h("label", {}, "Name"), h("div", { class: "row" }, h("div", { class: "grow" }, name), rn)),
+      h("div", { class: "field" }, h("label", {}, "User limit (0 = no limit)"), h("div", { class: "row" }, limit, lm, lk)),
+      h("p", { class: "muted small" }, "Permit or kick members in Discord (Room controls or /room)."));
   }
 
-  // Room defaults: applied every time my temporary room is created
-  const prefsCard = h("div", { class: "card" }, h("h2", {}, "⚙️ My room defaults"),
-    h("p", { class: "muted small" }, "Used whenever your temporary room is created. Same as /room defaults in Discord."));
+  // E. Room defaults
   gApi("GET", "/me/room-prefs").then(pr => {
-    const pn = h("input", { placeholder: "Room name, {user} = your name (empty = channel default)", maxlength: "100", value: pr.name || "" });
-    const pl = h("input", { type: "number", min: "0", max: "99", placeholder: "limit", value: pr.limit ?? "", style: "width:90px" });
+    const pn = h("input", { placeholder: "e.g. {user}'s room — empty = the channel's default", maxlength: "100", value: pr.name || "" });
+    const pl = h("input", { type: "number", min: "0", max: "99", placeholder: "no limit", value: pr.limit ?? "", style: "width:110px" });
     const pk = h("input", { type: "checkbox", checked: pr.locked });
-    const ps = h("button", { class: "btn secondary" }, "Save");
-    ps.addEventListener("click", () => act(ps, () => gApi("PUT", "/me/room-prefs",
-      { name: pn.value || null, limit: pl.value === "" ? null : Number(pl.value), locked: pk.checked }), "Room defaults saved."));
-    prefsCard.append(h("div", { class: "field" }, pn), h("div", { class: "row" }, pl, h("label", { class: "row" }, pk, "Lock right away"), ps));
+    const ps = h("button", { class: "btn" }, icon("save", 16), "Save defaults");
+    ps.addEventListener("click", () => {
+      if (pl.value !== "" && (Number(pl.value) < 0 || Number(pl.value) > 99)) return toast("The limit is 0–99.", "warn");
+      act(ps, () => gApi("PUT", "/me/room-prefs", { name: pn.value || null, limit: pl.value === "" ? null : Number(pl.value), locked: pk.checked }),
+        "Room defaults saved — used for your next room.");
+    });
+    prefsCard.append(
+      h("div", { class: "field" }, h("label", {}, "Room name"), pn, h("span", { class: "muted small" }, "{user} is replaced with your name.")),
+      h("div", { class: "row", style: "margin-bottom:12px" },
+        h("div", { class: "field", style: "margin:0" }, h("label", {}, "User limit"), pl),
+        h("label", { class: "row", style: "margin-top:20px" }, pk, "Lock the room right away")),
+      ps);
   }).catch(e => prefsCard.append(empty(e.message)));
 
   // My stats
-  const statsCard = h("div", { class: "card" }, h("h2", {}, "📈 My stats"));
   gApi("GET", "/me/stats").then(st => {
-    statsCard.append(
-      h("div", { class: "stats" },
-        h("div", { class: "stat" }, h("div", { class: "label" }, "Groups"), h("div", { class: "value" }, st.groups)),
-        h("div", { class: "stat" }, h("div", { class: "label" }, "Organized"), h("div", { class: "value" }, st.organized)),
-        h("div", { class: "stat" }, h("div", { class: "label" }, "Reliability"), h("div", { class: "value" }, st.reliability === null ? "—" : `${st.reliability}%`),
-          h("div", { class: "sub" }, `came ${st.attended} · no-show ${st.noShows}`))),
-      st.recent.length ? h("ul", { class: "slots" }, st.recent.map(r => h("li", {},
-        h("span", {}, h("b", {}, r.activity), h("div", { class: "muted small" }, fmtDate(r.at))),
-        h("span", { class: "char" }, r.organizer ? h("span", { class: "badge ok" }, "organizer")
-          : r.attended === true ? h("span", { class: "badge ok" }, "came") : r.attended === false ? h("span", { class: "badge lock" }, "no-show") : "")))) : null);
-  }).catch(e => statsCard.append(empty(e.message)));
+    statsCard.replaceChildren(statsCard.firstChild,
+      h("div", { class: "stats compact" },
+        statCard("users-round", "Groups", st.groups, "played"),
+        statCard("crown", "Organized", st.organized, "as organizer"),
+        statCard("circle-check", "Reliability", st.reliability === null ? "—" : `${st.reliability}%`, `came ${st.attended} · no-show ${st.noShows}`)),
+      st.recent.length ? h("div", { class: "list" }, st.recent.slice(0, 5).map(r => h("div", { class: "list-row" },
+        h("div", { class: "grow" }, h("b", {}, r.activity), h("div", { class: "muted small" }, fmtDate(r.at))),
+        r.organizer ? h("span", { class: "badge" }, icon("crown", 12), "Organizer")
+          : r.attended === true ? h("span", { class: "badge ok" }, icon("check", 12), "Came")
+          : r.attended === false ? h("span", { class: "badge lock" }, icon("x", 12), "No-show") : null)))
+        : h("p", { class: "muted small" }, "Your finished groups will appear here."));
+  }).catch(e => statsCard.replaceChildren(statsCard.firstChild, empty(e.message)));
 
-  holder.replaceChildren(groups, h("div", { class: "grid2" }, tickets, room), h("div", { class: "grid2" }, statsCard, prefsCard),
-    h("div", { class: "card" }, h("h2", {}, "🧙 Characters"),
-      h("p", { class: "muted small" }, "Your characters, their class role and note, and group DMs."),
-      h("button", { class: "btn secondary", onclick: go("chars") }, "My characters →")));
+  // My characters (default project)
+  gApi("GET", "/me/characters").then(c => {
+    const proj = (c.projects || []).find(p => p.key === c.project);
+    charsCard.replaceChildren(charsCard.firstChild,
+      proj ? h("p", { class: "muted small" }, `Project: ${proj.name}`) : null,
+      c.characters.length ? h("div", { class: "char-grid" }, c.characters.slice(0, 6).map(ch => h("div", { class: "char-card" },
+        h("span", { class: "char-icon" }, ch.classRole ? (classMark({ classIcon: (c.classRoles.find(r => r.id === ch.classRole.id) || {}).icon, classRole: ch.classRole }) || icon("user-round", 16)) : icon("user-round", 16)),
+        h("div", { class: "grow" }, h("b", {}, ch.name), h("div", { class: "muted small" },
+          [ch.classRole && ch.classRole.name, ch.gs ? `GS ${ch.gs}` : null].filter(Boolean).join(" · ") || "no class yet")))))
+        : emptyState("user-plus", "No characters yet", "Add your characters once — then sign up for groups in one click.",
+          h("button", { class: "btn", onclick: go("chars") }, icon("plus", 16), "Add a character")));
+  }).catch(e => charsCard.replaceChildren(charsCard.firstChild, empty(e.message)));
 }
 
 /** Apply for a project from the site (with the project's form, if enabled). */
@@ -2478,6 +2599,8 @@ async function pagePlay(main) {
     } catch (e) { createBody.replaceChildren(empty(e.message)); }
   });
   main.insertBefore(createCard, holder);
+  // Home → «Create a group» opens the form right away
+  if (store.get("gb.openCreate") === "1") { store.set("gb.openCreate", ""); toggle.click(); }
 
   let data;
   try { data = await gApi("GET", "/me/groups"); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
