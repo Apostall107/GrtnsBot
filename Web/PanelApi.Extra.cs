@@ -152,6 +152,41 @@ public static partial class PanelApi
             return Results.Ok();
         });
 
+        // ----- Автодубли постов сборов: ?project=key — проекта, без project — общие (текстовые и голосовые каналы) -----
+        g.MapGet("/auto-mirrors", (ulong guildId, string? project, DiscordSocketClient client, LfgProjectStore projects) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            var key = string.IsNullOrWhiteSpace(project) ? null : project;
+            var own = projects.AutoMirrors(guildId, key);
+            var effective = projects.EffectiveAutoMirrors(guildId, key);
+            object Dto(ulong id) => guild.GetTextChannel(id) is { } c
+                ? new { id = id.ToString(), name = c.Name, voice = c is SocketVoiceChannel, exists = true }
+                : new { id = id.ToString(), name = "deleted channel", voice = false, exists = false };
+            return Results.Ok(new
+            {
+                channels = own.Select(Dto),
+                inherited = own.Count == 0 && effective.Count > 0 ? effective.Select(Dto) : null
+            });
+        });
+
+        g.MapPut("/auto-mirrors", (ulong guildId, string? project, AutoMirrorsBody body, DiscordSocketClient client, LfgProjectStore projects) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            var key = string.IsNullOrWhiteSpace(project) ? null : project;
+            if (key is not null && projects.Find(guildId, key) is null) return Error("Project not found.");
+            var ids = new List<ulong>();
+            foreach (var id in ParseIds(body.ChannelIds).Distinct())
+            {
+                if (guild.GetTextChannel(id) is not { } channel) return Error("Channel not found.");
+                if (guild.CurrentUser.GetPermissions(channel) is not { ViewChannel: true, SendMessages: true, EmbedLinks: true })
+                    return Error($"I can't post in #{channel.Name}. Give the bot View Channel, Send Messages and Embed Links there.");
+                ids.Add(id);
+            }
+            if (ids.Count > LfgPublisher.MaxMirrors) return Error($"Up to {LfgPublisher.MaxMirrors} channels.");
+            projects.SetAutoMirrors(guildId, key, ids);
+            return Results.Ok();
+        });
+
         // ----- Классы: какие роли — классы и их иконки (эмодзи или эмодзи сервера) -----
         // ?project=key — классы проекта; без project — общие (действуют в проектах без своих классов)
         g.MapGet("/classes", async (ulong guildId, string? project, DiscordSocketClient client, LfgProjectStore projects) =>
@@ -762,6 +797,7 @@ public static partial class PanelApi
         ("PUT", "/lfg/panels/{messageId}/project", "lfg", "Linked LFG panel to a project"),
         ("PUT", "/lfg/classes", "lfg", "Saved class icons"),
         ("PUT", "/lfg/voice-category", "lfg", "Set voice room category"),
+        ("PUT", "/lfg/auto-mirrors", "lfg", "Set channels for duplicate posts"),
         ("POST", "/lfg/classes/role-icons", "lfg", "Imported class icons from roles"),
         ("PUT", "/lfg/activities/{key}/project", "lfg", "Moved activity to a project"),
         ("PUT", "/lfg/activities/{key}", "lfg", "Edited activity"),
@@ -925,3 +961,5 @@ public sealed record TemplateBody(string? Name, string? ActivityKey, string? Cus
 public sealed record TimeBody(string? Date, string? Time);
 public sealed record AttendanceBody(string? UserId, bool? Attended);
 public sealed record SettingsBody(string? TimeZone, int? AutoDeleteHours, int? ReminderMinutes);
+
+public sealed record AutoMirrorsBody(List<string>? ChannelIds);

@@ -80,12 +80,17 @@ public sealed class LfgPublisher(
         var dms = r.NotifyByDm && group.PingRoleId is not null;
         if (dms) notifier.Start(group, jumpUrl);
 
-        if (r.MirrorChannelIds is { Count: > 0 } mirrors) await AddMirrorsAsync(group, mirrors);
+        // Дубли поста: каналы, заданные в админке для проекта (или общие), + выбранные при создании
+        var mirrors = projects.EffectiveAutoMirrors(r.GuildId, group.ProjectKey).Concat(r.MirrorChannelIds ?? Array.Empty<ulong>()).ToList();
+        if (mirrors.Count > 0) await AddMirrorsAsync(group, mirrors);
         // Голосовая комната — только если при создании выбрали эту опцию
         if (r.CreateVoice && (client.GetUser(r.OwnerId) as IUser ?? await client.Rest.GetUserAsync(r.OwnerId)) is { } owner)
             await signup.CreateVoiceAsync(group, owner);
         return (group, jumpUrl, dms);
     }
+
+    /// <summary>Сколько копий поста может быть у сбора (текстовые каналы и чаты голосовых).</summary>
+    public const int MaxMirrors = 10;
 
     /// <summary>Копии поста сбора в других каналах (без пинга). Кнопки работают так же, как в основном посте.</summary>
     public async Task<int> AddMirrorsAsync(LfgGroup group, IEnumerable<ulong> channelIds)
@@ -94,7 +99,7 @@ public sealed class LfgPublisher(
         await group.Gate.WaitAsync();
         try
         {
-            foreach (var id in channelIds.Distinct().Where(id => id != group.ChannelId && group.Mirrors.All(m => m.ChannelId != id)).Take(5))
+            foreach (var id in channelIds.Distinct().Where(id => id != group.ChannelId && group.Mirrors.All(m => m.ChannelId != id)).Take(MaxMirrors - group.Mirrors.Count))
             {
                 if (await GetChannelAsync(id) is not { } channel) continue;
                 try

@@ -492,8 +492,8 @@ async function pageLfg(main) {
   // --- LFG panel of the project (posted panels are linked to it right away)
   const panelCard = () => {
     const card = postPanelCard(mode === "project" ? `LFG panel · ${project.name}` : "LFG panel",
-      mode === "project" ? "Posts the “Create LFG” panel for this project — groups created with it belong to the project."
-        : "Posts the message with the “Create LFG” button.",
+      mode === "project" ? "Publishes the message with the “Create LFG” button in a channel (once — it stays there). Groups created with it belong to this project."
+        : "Publishes the message with the “Create LFG” button in a channel (once — it stays there).",
       mode === "project" ? `/lfg/panel?project=${encodeURIComponent(P)}` : "/lfg/panel");
     if (mode === "project") {
       const mine = lfgProjects.panels.filter(x => ofProject(x.projectKey));
@@ -553,10 +553,48 @@ async function pageLfg(main) {
     return vc;
   };
 
+  // --- Channels where every new group post is duplicated (text channels or the chat of a voice channel)
+  const mirrorCard = () => {
+    const mc = h("div", { class: "card" }, h("h3", {}, mode === "project" ? `📢 Duplicate posts · ${project.name}` : "📢 Duplicate posts"),
+      h("p", { class: "muted small" }, "Every new group is also posted in these channels — a text channel or the chat of a 🔊 voice channel. ",
+        "Copies update with the group and are deleted with it. ",
+        mode === "project" ? "Empty = the common list (⚙️ General)." : "A project can have its own list (its tab)."));
+    const q = mode === "project" ? `?project=${encodeURIComponent(P)}` : "";
+    let list = [];
+    const chips = h("div", { style: "margin-bottom:8px" });
+    const info = h("div", { class: "muted small" });
+    const label = c => `${c.voice ? "🔊" : "#"} ${c.name}`;
+    const draw = () => chips.replaceChildren(...(list.length ? list.map((c, i) =>
+      h("span", { class: `chip${c.exists === false ? " warn" : ""}` }, label(c), h("button", { title: "Remove", onclick: async () => {
+        if (await confirmDialog(`Stop duplicating to ${label(c)}?`, "Saved when you press Save. Copies already posted stay.", "Remove")) { list.splice(i, 1); draw(); }
+      } }, "×"))) : [h("span", { class: "muted small" }, "No channels.")]));
+    const add = h("select", {}, h("option", { value: "" }, "+ Add channel…"),
+      h("optgroup", { label: "Text channels" }, state.channels.text.filter(c => c.canPost).map(c => h("option", { value: c.id }, `# ${c.name}`))),
+      h("optgroup", { label: "Voice channels (their chat)" }, state.channels.voice.map(c => h("option", { value: `v${c.id}` }, `🔊 ${c.name}`))));
+    add.addEventListener("change", () => {
+      const voice = add.value.startsWith("v");
+      const id = voice ? add.value.slice(1) : add.value;
+      const src = (voice ? state.channels.voice : state.channels.text).find(c => c.id === id);
+      if (src && !list.some(c => c.id === id)) { list.push({ id, name: src.name, voice, exists: true }); draw(); }
+      add.value = "";
+    });
+    const save = h("button", { class: "btn" }, "💾 Save");
+    save.addEventListener("click", async () => {
+      if (await act(save, () => gApi("PUT", `/lfg/auto-mirrors${q}`, { channelIds: list.map(c => c.id) }), "Saved — new groups are duplicated there.") !== undefined) refresh();
+    });
+    mc.append(chips, h("div", { class: "row" }, h("div", { class: "grow" }, add), save), info);
+    gApi("GET", `/lfg/auto-mirrors${q}`).then(r => {
+      list = r.channels;
+      draw();
+      info.textContent = r.inherited ? `Now uses the common list: ${r.inherited.map(label).join(", ")}` : "";
+    }).catch(e => { info.textContent = e.message; });
+    return mc;
+  };
+
   if (mode === "shared") {
     // ⚙️ General: projects, settings, channel, shared activities / templates, common classes
     const projCard = card(), lfgSettingsCard = card();
-    main.append(projCard, h("div", { class: "grid-main" }, actCard, h("div", {}, channelCard(), voiceCard())), lfgSettingsCard, classCard, tplCard);
+    main.append(projCard, h("div", { class: "grid-main" }, actCard, h("div", {}, channelCard(), voiceCard(), mirrorCard())), lfgSettingsCard, classCard, tplCard);
     renderProjects(projCard, lfgProjects);
     renderLfgSettings(lfgSettingsCard);
     renderClasses(classCard, projects, "", { noTabs: true });
@@ -564,7 +602,7 @@ async function pageLfg(main) {
     return;
   }
 
-  main.append(h("div", { class: "grid-main" }, actCard, h("div", {}, panelCard(), mode === "all" ? channelCard() : null, voiceCard())));
+  main.append(h("div", { class: "grid-main" }, actCard, h("div", {}, panelCard(), mode === "all" ? channelCard() : null, voiceCard(), mirrorCard())));
   if (mode === "all") {
     const projCard = card(), lfgSettingsCard = card();
     main.append(lfgSettingsCard, projCard);
@@ -2268,7 +2306,8 @@ const HELP = {
       "See all active groups on the server with their roster, class roles and notes.",
       "Sign up with a role and a character, switch role or character, or leave — the Discord post updates at once.",
       "Create your own group and manage it as the organizer (reserve, close).",
-      "A role marked **(reserve)** has no free slot: you'll be put on the reserve list."
+      "A role marked **(reserve)** has no free slot: you'll be put on the reserve list.",
+      "Tabs at the top show the groups of one project (game) or 🌐 all; **🔊 Voice room** opens the group's voice room."
     ]]],
     discord: [["The same in Discord", [
       "Click a role button under the group post, then pick a character or **New character**.",
@@ -2281,7 +2320,7 @@ const HELP = {
         "Already in? **Switch** changes role/character, **Leave** takes you out."
       ]],
       ["Create and organize", [
-        "**➕ Create a group** — activity, slots, date/time → **Publish**. It is posted in the server's LFG channel; you are the organizer and take slot 1.",
+        "**➕ Create a group** — project, activity, slots, date/time, 🔊 voice room → **Publish**. It is posted in the project's LFG channel; you are the organizer and take slot 1.",
         "In your own groups: ⬇️ move a member to the reserve, ⬆️ move someone from the reserve into the group (they get a DM), ✖️ remove from the reserve, **Close group**."
       ]]
     ]
@@ -2289,17 +2328,18 @@ const HELP = {
   chars: {
     title: "My characters",
     features: [["What you can do here", [
-      "Keep your list of characters for signups.",
-      "Give each character a **class** (one of your server roles), a **GS** and a **note** — shown in group posts; GS is checked by group requirements.",
+      "Keep your list of characters for signups — separately for each project (game), switched with the tabs (🔒 = you don't have the project's role).",
+      "Give each character a **class** (any class of the project — its icon is shown after your name in posts), a **GS** (checked by group requirements) and a **note** (only you see it, when picking a character).",
       "Turn group DMs on or off."
     ]]],
     discord: [["The same in Discord", [
-      "`/character list`, `/character add`, `/character class name role`, `/character note name text`, `/character remove`.",
+      "`/character list`, `/character add`, `/character class name role`, `/character gs name 1450`, `/character note name text`, `/character rename name new_name`, `/character remove` — add `project:` for another game.",
       "🔔 / 🔕 under the LFG panel or `/lfg-dm` for DMs."
     ]]],
     panel: [["Using it", [
-      "Pick the class and type the note → **Save**. Active groups where you play this character are updated.",
-      "**Add character** adds a new name; **Remove** deletes it with its class and note."
+      "Pick the class, GS and note → **Save**. Active groups where you play this character are updated.",
+      "✏️ next to the name renames the character (class, note, GS and active groups follow).",
+      "**Add character** adds a new name; **Remove** deletes it with its class and note (asks first)."
     ]]]
   },
   overview: {
@@ -2310,7 +2350,7 @@ const HELP = {
       "Pick the server in the top bar. The green dot means the bot is connected to Discord."
     ]]],
     discord: [["Commands overview", [
-      "`/lfg`, `/lfg-dm`, `/character list|add|class|note|remove` — groups and characters (everyone).",
+      "`/lfg`, `/lfg-dm`, `/character list|add|class|gs|note|rename|remove` — groups and characters (everyone).",
       "`/room rename|limit|lock|unlock|permit|kick|claim|panel` — your temporary voice room (everyone).",
       "`/admin` — the in-Discord admin panel (bot admins).",
       "`/lfg-panel`, `/ticket-panel`, `/tempvoice …`, `/activity …`, `/ticket-project …` — setup commands (bot admins)."
@@ -2318,7 +2358,9 @@ const HELP = {
     panel: [["Using the panel", [
       "Tabs on the left show only the sections you have access to.",
       "The cards on this page show counters; click one to open its section.",
-      "❔ **Guide** on every tab explains that module: what it can do, how to use it in Discord and here."
+      "❔ **Guide** (orange, top right) on every tab explains that module; 🔄 **Refresh** (green) reloads the data.",
+      "Where a module works per project (LFG, Tickets, Groups, My characters) — tabs at the top switch the project.",
+      "Every removal asks for confirmation first."
     ]]]
   },
   lfg: {
@@ -2328,18 +2370,18 @@ const HELP = {
         "Groups of 2–25 slots with roles ⚔️ DD / 🛡️ Tank / 💚 Sup / 🎲 All per slot.",
         "**Activities** — a name linked to a server role: the role is pinged and its members get a DM when a group is posted.",
         "Start time shown to everyone in their own time zone; ⏰ reminder before the start; the post is removed automatically after the start.",
-        "**Characters**: members sign up with a saved character; each character can have a **class role** (one of the member's roles, shown next to the name) and a **note** (shown under the name).",
+        "**Characters**: members sign up with a saved character; each character can have a **class** (any class of its project, shown as an icon after the name), a **GS** and a **note** (only the owner sees it, when picking a character).",
         "**Reserve** when the needed slots are full; the organizer moves people between the group and the reserve (with a DM).",
         "📋 **Invite to group** — ready `/invite Name` commands; 🏰 **Invite to dungeon** — just the names.",
         "**Templates** (admin): activity + slots + requirements, picked in one click in /lfg and on the site.",
-        "**Projects (games)**: each has its own characters; a project's groups and characters need its role. LFG panels are linked to a project.",
-        "**Classes**: the admin picks which roles are classes and their icons (emoji or server emoji) — only the icon is shown next to the name.",
-        "**Duplicate the post** to other channels (admins), copies stay in sync.",
+        "**Projects (games)**: each has its own characters, activities, classes, templates, panels and statistics; a project's groups and characters need its role.",
+        "**Classes**: the admin picks which roles are classes and their icons (emoji, server emoji or the role's own icon) — only the icon is shown after the name.",
+        "**Duplicate posts**: every new group is also posted in channels set by the admin (text channels or the chat of a voice channel); admins can add more after publishing. Copies stay in sync and are deleted with the group.",
         "**Requirements**: a required role and/or minimum character **GS** — others go to the reserve.",
-        "🔊 **Voice room** for a group — only if turned on when creating: everyone can join and listen, only group members can speak; deleted with the group.",
+        "🔊 **Voice room** for a group — only if turned on when creating; created in the category set by the admin. Everyone can join and listen, only group members can speak; the link is in the post; deleted with the group.",
         "**Change time** of a posted group — everyone signed up gets a DM.",
         "**Attendance** after the start → **statistics** and player reliability.",
-        "Admin tab: activities, the LFG panel, **recurring groups** on a schedule, any group's roster, force-close.",
+        "Admin tab **LFG**: a tab per project + ⚙️ General — activities, panel, voice room category, duplicate posts, classes, templates, **recurring groups**, any group's roster, force-close, statistics.",
         "Member tab **Groups**: everyone with the member role signs up, creates groups and manages their own groups."
       ]]
     ],
@@ -2348,12 +2390,12 @@ const HELP = {
         "Click **Create LFG** on the LFG panel (or use `/lfg`). A menu only you can see opens.",
         "Choose the size → the activity (or «Custom activity», no ping) → select slots and set their roles → **Next**.",
         "Pick the date and time (or «No time»), turn 🔊 **Voice room** on if needed → **Publish**. You take slot 1 with your last used character.",
-        "Admins: after publishing, pick channels in «📢 Also post this group in…» to duplicate the post."
+        "The post is duplicated automatically to the channels set in the admin panel (📢 Duplicate posts). Admins can add more after publishing in «📢 Also post this group in…» (text or voice channels)."
       ]],
       ["Sign up", [
         "Click a role button under the group post, then pick a saved character or **New character**.",
-        "Under the reply you can pick your **class role** and **add a note** — saved for that character and shown in the post.",
-        "Later: `/character class name role`, `/character gs name 1450`, `/character note name text` (empty = remove), add `project:` for another game. `/character list` shows all.",
+        "Under the reply you can pick your **class** (any class of the project) and set **GS** and a **note** — saved for that character.",
+        "Later: `/character class name role`, `/character gs name 1450`, `/character note name text` (empty = remove), `/character rename name new_name`, add `project:` for another game. `/character list` shows all.",
         "The note is only for you — it is shown when you pick a character, not in the post.",
         "Click the same role again to switch character, another role to switch role. **Leave** frees your slot.",
         "Grey role button = no free slot → you go to the **reserve**."
@@ -2369,33 +2411,28 @@ const HELP = {
       ]]
     ],
     panel: [
-      ["Activities, panel & channel", [
-        "**Channel for groups** — where groups created by members on the site are posted (members can't choose). Empty = the LFG panel's channel.",
-        "**Activities** — add a name + the role to ping, or remove one. Posted groups are not affected.",
-        "**LFG panel** — pick a text channel and **Post** the message with the Create LFG button."
+      ["Tabs", [
+        "A tab per **project** (game) at the top + **⚙️ General**. A project tab shows only that project: activities, panel, voice rooms, duplicate posts, classes, templates, schedules, active groups and statistics.",
+        "🌐 **all projects** items (activities, templates) are shared — shown in every project, managed in ⚙️ General.",
+        "**✏️ Edit <project>** next to the tabs — rename it, change its required roles. **➕ Project** — add one.",
+        "The ⭐ **default** project holds the characters, groups and panels made before projects; it can be renamed but not replaced or deleted while other projects exist."
+      ]],
+      ["Project tab", [
+        "**Activities** — name + the role to ping. ✏️ **Edit** renames it or changes the role; the Project list moves it to another project or to 🌐 all projects.",
+        "**LFG panel** — publishes the message with the Create LFG button in a channel (once, it stays there); groups created with it belong to the project. Below: the panels of this project.",
+        "**🔊 Voice rooms** — the category where this project's group voice rooms are created. Empty = the common one (General), otherwise the category of the post's channel.",
+        "**📢 Duplicate posts** — text channels and/or voice channels (their chat) where every new group of the project is posted too. Empty = the common list (General).",
+        "**🎭 Classes** — the project's own classes (empty = the common list; **📋 Copy the common list** to start). **➕ Add class roles…** — tick several at once; **🎨 Use role icons** takes the roles' own icons from Discord.",
+        "**📋 Templates**, **🔁 Recurring groups**, **Active groups**, **📈 Statistics** — of this project only."
+      ]],
+      ["⚙️ General", [
+        "**🎮 Projects** and which project each posted LFG panel belongs to.",
+        "**Shared activities**, **Channel for groups** (where members' groups from the site go if the project has no panel), the common **🔊 voice room** category and **📢 duplicate posts**.",
+        "**⚙️ LFG settings** — server time zone, delete posts after N hours, reminder N minutes before the start (0 = off).",
+        "**Common classes** and **shared templates**."
       ]],
       ["Creating groups", [
-        "One-off groups are created in **Member → Groups → Create a group** (as an admin you are a member too)."
-      ]],
-      ["LFG settings", [
-        "**⚙️ LFG settings** — server time zone (start times, recurring groups), delete posts after N hours, reminder N minutes before the start (0 = off)."
-      ]],
-      ["Project tabs", [
-        "Each project (game) has its own tab at the top: its **activities**, **LFG panel** (posted panels are linked to the project), **classes**, **templates**, **recurring groups**, **active groups** and **statistics** — nothing from other projects.",
-        "🌐 **all projects** items (activities, templates) are shared and shown in every project; manage them in **⚙️ General**.",
-        "**⚙️ General** — projects, LFG settings, channel for groups, shared activities and templates, common classes. and the common 🔊 voice room category.",
-        "**🔊 Voice rooms** — the category where group voice rooms are created: per project (its tab) or common (General). The room link is in the post and on the group card on the site.",
-        "Everything can be edited: ✏️ **Edit** on activities (name, role), ✏️ **Edit <project>** next to the tabs, templates and schedules — **Edit**.",
-        "**🎭 Classes** → **➕ Add class roles…** — tick several roles at once."
-      ]],
-      ["Projects & classes", [
-        "**🎮 Projects** — name + required role(s), one is the default (older characters belong to it). Link each LFG panel to its project.",
-        "**🎭 Classes** — common list and per project (a project without its own uses the common list): class roles and an icon for each. **🎨 Use role icons** takes the roles' own icons from Discord (image icons become the bot's emojis).",
-        "**Activities** can belong to a project (offered only in its groups) or to «All projects»."
-      ]],
-      ["Templates & statistics", [
-        "**📋 Templates** — name, activity, slots, required role, minimum GS. Shown in /lfg Step 1 and in Create a group.",
-        "**📈 Statistics** — groups per activity, top players and organizers, no-shows; period filter."
+        "One-off groups are created in **Member → Groups → Create a group** (as an admin you are a member too) or with Create LFG / `/lfg` in Discord."
       ]],
       ["Recurring groups", [
         "**Add schedule**: the same form + days of the week, start time, how many hours before the start to post, the organizer, on/off.",
@@ -2437,15 +2474,18 @@ const HELP = {
       ]]
     ],
     panel: [
-      ["Projects", [
-        "**New project** — name + the role given on Approve. Then set leadership roles, approve roles, the category and the ticket text, and **Save**.",
-        "Saving a new ticket text updates the message in open tickets of that project.",
-        "**Application form**: tick «Ask these questions», add up to 5 questions (text, hint, long/short, required, max length), **Save**.",
-        "**Auto-close**: number of days without messages (2–90), empty = never."
+      ["Tabs", [
+        "A tab per ticket **project** (the number = open tickets), **➕ New project** and **⚙️ General**."
       ]],
-      ["Panel & open tickets", [
-        "**Ticket panel** — post it into a text channel.",
-        "**Open tickets** — status, link, **Force close** (deletes the channels).",
+      ["Project tab", [
+        "**Project name** (editable), leadership roles, roles given on Approve, the category for channels and the ticket text → **Save**.",
+        "Saving a new name or ticket text updates the message in open tickets of that project.",
+        "**Application form**: tick «Ask these questions», add up to 5 questions (text, hint, long/short, required, max length), **Save**.",
+        "**Auto-close**: number of days without messages (2–90), empty = never. **Open tickets** of the project below; **🗑️ Remove** deletes the project (asks first)."
+      ]],
+      ["⚙️ General", [
+        "**Ticket panel** — publishes the message with the Create ticket button in a channel (all projects in one panel).",
+        "**Open tickets** of all projects — status, link, **Force close** (deletes the channels).",
         "**🗄️ Archive** — filter by outcome, search by name, project, reason or answers; **Form** shows the answers."
       ]]
     ]
