@@ -397,19 +397,20 @@ const state = {
 // [key, icon, label, required permission] — "member": role «участник» on the selected server; "admin": any admin right
 // [key, icon, label, required permission, nav section]
 // "member" = member role on the selected server; "admin" = any admin right; "content" = Panel texts or Posts right
+// [key, Lucide icon, label, required permission, nav section]
 const allTabs = [
-  ["home", "🏠", "Home", "member", "Member"],
-  ["play", "🎮", "Groups", "member", "Member"],
-  ["chars", "🧙", "My characters", "member", "Member"],
-  ["lfg", "📣", "LFG", "lfg", "Admin · Modules"],
-  ["tickets", "🎫", "Tickets", "tickets", "Admin · Modules"],
-  ["voice", "🔊", "Temp Voice", "voice", "Admin · Modules"],
-  ["content", "📌", "Panels & posts", "content", "Admin · Content"],
-  ["announce", "✍️", "Announcements", "announce", "Admin · Content"],
-  ["overview", "📊", "Dashboard", "admin", "Admin · System"],
-  ["log", "📜", "Log", "log", "Admin · System"],
-  ["settings", "⚙️", "Settings", "settings", "Admin · System"],
-  ["access", "🔑", "Access", "access", "Admin · System"]
+  ["home", "house", "Home", "member", "Member"],
+  ["play", "users-round", "Groups", "member", "Member"],
+  ["chars", "user-round", "My characters", "member", "Member"],
+  ["lfg", "swords", "LFG", "lfg", "Community modules"],
+  ["tickets", "ticket", "Tickets", "tickets", "Community modules"],
+  ["voice", "headphones", "Temp Voice", "voice", "Community modules"],
+  ["content", "layout-template", "Panels & posts", "content", "Community modules"],
+  ["announce", "megaphone", "Announcements", "announce", "Community modules"],
+  ["overview", "layout-dashboard", "Dashboard", "admin", "Administration"],
+  ["log", "scroll-text", "Log", "log", "Administration"],
+  ["settings", "settings", "Settings", "settings", "Administration"],
+  ["access", "key-round", "Access", "access", "Administration"]
 ];
 const currentGuild = () => state.guilds.find(g => g.id === state.guildId);
 const isAdmin = () => !!(state.me && state.me.isAdmin);
@@ -433,10 +434,10 @@ function renderLogin(message) {
     h("div", { class: "card login" },
       h("img", { class: "logo-img", src: "/favicon.png", alt: "" }),
       h("h1", {}, "Greatness Bot"),
-      h("p", {}, "Admin panel. Log in with your Discord account."),
+      h("p", {}, "Discord bot management panel. Log in with your Discord account."),
       failed ? h("p", { class: "error-text" }, "Login was cancelled or failed. Try again.") : null,
       message ? h("p", { class: "error-text" }, message) : null,
-      h("a", { class: "btn lg", href: "/login" }, "Login with Discord")));
+      h("a", { class: "btn lg", href: "/login" }, icon("log-in", 18), "Login with Discord")));
 }
 
 function renderDenied(me) {
@@ -496,40 +497,80 @@ async function selectGuild(id) {
 }
 
 function renderShell() {
-  const guildSel = h("select", { onchange: e => selectGuild(e.target.value) },
-    state.guilds.map(g => h("option", { value: g.id, selected: g.id === state.guildId }, g.name)));
   const connected = state.connection === "Connected";
-
   if (!visibleTabs().some(t => t[0] === state.tab)) state.tab = (visibleTabs()[0] || ["overview"])[0];
-  const navButton = ([key, icon, label]) =>
-    h("button", { class: state.tab === key ? "active" : "", onclick: () => { state.tab = key; store.set("gb.tab", key); renderShell(); } }, icon, " ", label);
+  const collapsed = store.get("gb.navCollapsed") === "1";
+
+  // ----- Sidebar: sections, Lucide icons, active route; collapses to icons on desktop, drawer on mobile
+  const layout = h("div", { class: `layout${collapsed ? " collapsed" : ""}` });
+  const closeDrawer = () => layout.classList.remove("drawer-open");
+  const navButton = ([key, ic, label]) => h("button", {
+    class: `nav-item${state.tab === key ? " active" : ""}`, title: label, "aria-current": state.tab === key ? "page" : null,
+    onclick: () => { state.tab = key; store.set("gb.tab", key); renderShell(); }
+  }, icon(ic, 18), h("span", { class: "nav-label" }, label));
   const navItems = [];
   let section = null;
   for (const t of visibleTabs()) {
-    if (t[4] !== section) { section = t[4]; navItems.push(h("div", { class: "nav-section" }, section)); }
+    if (t[4] !== section) { section = t[4]; navItems.push(h("div", { class: "nav-section" }, h("span", { class: "nav-section-text" }, section))); }
     navItems.push(navButton(t));
   }
-  const nav = h("nav", { class: "nav" }, navItems);
-
+  const collapseBtn = h("button", { class: "nav-item nav-collapse", title: collapsed ? "Expand menu" : "Collapse menu",
+    onclick: () => { store.set("gb.navCollapsed", collapsed ? "0" : "1"); renderShell(); } },
+    icon(collapsed ? "panel-left-open" : "panel-left-close", 18), h("span", { class: "nav-label" }, "Collapse"));
+  const nav = h("nav", { class: "nav", "aria-label": "Sections" }, navItems, h("div", { class: "nav-footer" }, collapseBtn));
   const main = h("main", { class: "main" });
+  layout.append(nav, h("div", { class: "nav-backdrop", onclick: closeDrawer }), main);
+
+  // ----- Header: menu (mobile), brand, server, bot status, account menu
+  const guildSel = h("select", { "aria-label": "Server", onchange: e => selectGuild(e.target.value) },
+    state.guilds.map(g => h("option", { value: g.id, selected: g.id === state.guildId }, g.name)));
+  const userPop = h("div", { class: "user-pop", style: "display:none" },
+    h("div", { class: "who" }, h("b", {}, state.me.name), h("span", { class: "muted small" }, isAdmin() ? "Admin access" : "Member")),
+    h("button", { class: "menu-item danger", onclick: logout }, icon("log-out", 16), "Log out"));
+  const userBtn = h("button", { class: "user-button", "aria-haspopup": "menu", "aria-expanded": "false" },
+    state.me.avatarUrl ? h("img", { class: "avatar", src: state.me.avatarUrl, alt: "" }) : h("span", { class: "avatar" }),
+    h("span", { class: "name" }, state.me.name), icon("chevron-down", 16, "muted"));
+  const toggleUser = open => {
+    userPop.style.display = open ? "" : "none";
+    userBtn.setAttribute("aria-expanded", open ? "true" : "false");
+  };
+  userBtn.addEventListener("click", e => { e.stopPropagation(); toggleUser(userPop.style.display === "none"); });
+  document.onclick = e => { if (!userPop.contains(e.target)) toggleUser(false); };
 
   document.getElementById("app").replaceChildren(
     h("header", { class: "topbar" },
-      h("div", { class: "brand" }, h("span", { class: "brand-logo" },
-        h("img", { src: "/favicon.png", alt: "" }), h("span", { class: `dot ${connected ? "ok" : "bad"}`, title: `Bot: ${state.connection || "unknown"}` })),
-        isAdmin() ? "Greatness Bot · Admin" : "Greatness Bot"),
-      state.guilds.length ? guildSel : h("span", { class: "muted" }, "The bot is on no servers"),
-      h("div", { class: "user" },
-        state.me.avatarUrl ? h("img", { class: "avatar", src: state.me.avatarUrl, alt: "" }) : null,
-        h("span", {}, state.me.name),
-        h("button", { class: "btn ghost", onclick: logout, title: "Log out" }, "Log out"))),
-    h("div", { class: "layout" }, nav, main));
+      h("button", { class: "btn ghost icon-only menu-toggle", title: "Menu", "aria-label": "Menu",
+        onclick: () => layout.classList.toggle("drawer-open") }, icon("menu", 20)),
+      h("div", { class: "brand" }, h("span", { class: "brand-logo" }, h("img", { src: "/favicon.png", alt: "" })),
+        h("span", { class: "brand-text" }, h("span", { class: "brand-name" }, "Greatness Bot"))),
+      h("div", { class: "spacer" }),
+      state.guilds.length ? h("div", { class: "server-select" }, icon("server", 16), guildSel) : h("span", { class: "muted" }, "The bot is on no servers"),
+      h("span", { class: `status-pill ${connected ? "ok" : "bad"}`, title: `Bot: ${state.connection || "unknown"}` },
+        h("span", { class: "dot" }), h("span", { class: "label" }, connected ? "Online" : (state.connection || "Offline"))),
+      h("div", { class: "user-menu" }, userBtn, userPop)),
+    layout);
 
   if (!state.guildId) { main.append(empty("No servers available for your account.")); return; }
   if (!visibleTabs().length) { main.append(empty("You have no sections on this server. Ask an admin for the member role.")); return; }
   const page = { home: pageHome, content: pageContent, play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, tickets: pageTickets, voice: pageVoice, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess }[state.tab];
   page(main);
   addGuideButton(main, state.tab);
+  decorateHeading(main);
+}
+
+/** Page heading: the section's icon instead of an emoji; Refresh / Guide with icons. */
+function decorateHeading(main) {
+  const head = main.firstElementChild;
+  if (!head || !head.classList.contains("card-head")) return;
+  head.classList.add("page-head");
+  const title = head.querySelector("h1");
+  const tab = allTabs.find(t => t[0] === state.tab);
+  if (title && tab) {
+    const text = title.textContent.replace(/^[^\p{L}\p{N}]+/u, "").trim();
+    title.replaceChildren(icon(tab[1], 24), text);
+  }
+  for (const btn of head.querySelectorAll(".btn-refresh")) btn.replaceChildren(icon("refresh-cw", 16), "Refresh");
+  for (const btn of head.querySelectorAll(".btn-guide")) btn.replaceChildren(icon("circle-help", 16), "Guide");
 }
 
 /** Re-renders the current page only (keeps the shell). */
@@ -807,7 +848,7 @@ async function pageAnnounce(main) {
 // ================= Overview =================
 
 async function pageOverview(main) {
-  main.append(h("h1", {}, "Overview"));
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "Dashboard"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
   const holder = h("div", {}, h("div", { class: "muted" }, "Loading…"));
   main.append(holder);
   try {
@@ -2378,7 +2419,7 @@ async function applyDialog() {
 
 async function pageContent(main) {
   const sub = store.get("gb.content") === "posts" && can("posts") ? "posts" : can("texts") ? "texts" : "posts";
-  const tabsRow = h("div", { class: "row", style: "margin-bottom:16px" },
+  const tabsRow = h("div", { class: "tabs" },
     can("texts") ? h("button", { class: `btn secondary${sub === "texts" ? " active-tab" : ""}`, onclick: () => { store.set("gb.content", "texts"); refresh(); } }, "📝 Panel texts") : null,
     can("posts") ? h("button", { class: `btn secondary${sub === "posts" ? " active-tab" : ""}`, onclick: () => { store.set("gb.content", "posts"); refresh(); } }, "📌 Posts & messages") : null);
   main.append(h("div", { class: "card-head" }, h("h1", {}, "📌 Panels & posts")), tabsRow);

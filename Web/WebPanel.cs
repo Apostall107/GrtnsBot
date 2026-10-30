@@ -155,6 +155,11 @@ public static class WebPanel
         MapStatic(app, "/", "index.html", "text/html; charset=utf-8");
         MapStatic(app, "/app.js", "app.js", "text/javascript; charset=utf-8");
         MapStatic(app, "/app.css", "app.css", "text/css; charset=utf-8");
+        MapStatic(app, "/icons.js", "icons.js", "text/javascript; charset=utf-8");
+        // Шрифт Inter (OFL) — свой, без внешних CDN; файлы не меняются → кэш на год
+        foreach (var font in new[] { "inter-latin-wght-normal.woff2", "inter-latin-ext-wght-normal.woff2",
+                     "inter-cyrillic-wght-normal.woff2", "inter-cyrillic-ext-wght-normal.woff2" })
+            MapStatic(app, $"/fonts/{font}", $"fonts/{font}", "font/woff2", "public, max-age=31536000, immutable");
 
         // Иконка сайта = аватар бота (берётся из Discord, кэшируется на час)
         app.MapGet("/favicon.png", async (DiscordSocketClient client, IHttpClientFactory http) =>
@@ -167,12 +172,12 @@ public static class WebPanel
         PanelApi.Map(app);
     }
 
-    private static void MapStatic(WebApplication app, string route, string file, string contentType)
+    private static void MapStatic(WebApplication app, string route, string file, string contentType, string cache = "no-cache")
     {
         var bytes = ReadResource(file);
         app.MapGet(route, (HttpContext ctx) =>
         {
-            ctx.Response.Headers.CacheControl = "no-cache";
+            ctx.Response.Headers.CacheControl = cache;
             ctx.Response.Headers["X-Content-Type-Options"] = "nosniff";
             ctx.Response.Headers["X-Frame-Options"] = "DENY";
             ctx.Response.Headers["Referrer-Policy"] = "same-origin";
