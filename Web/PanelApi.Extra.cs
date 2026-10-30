@@ -97,12 +97,18 @@ public static partial class PanelApi
                 Name = name,
                 RoleIds = ParseIds(body.RoleIds).Where(id => guild.GetRole(id) is not null).Take(10).ToList()
             });
-            if (error is null && body.IsDefault) projects.SetDefault(guildId, projectKey);
+            // Проект по умолчанию не переключается: в нём лежат персонажи, сборы и панели, созданные до проектов.
+            // Его смена «переселила» бы эти данные в другой проект. Первый созданный проект — по умолчанию.
             return error is null ? Results.Ok() : Error(error);
         });
 
         g.MapDelete("/projects/{key}", (ulong guildId, string key, LfgProjectStore projects) =>
-            projects.Remove(guildId, key) ? Results.Ok() : Error("Project not found."));
+        {
+            if (key == projects.DefaultKey(guildId) && projects.GetProjects(guildId).Count > 1)
+                return Error("This is the default project — it holds the characters, groups and panels made before projects. " +
+                             "It can't be deleted while other projects exist (rename it instead).");
+            return projects.Remove(guildId, key) ? Results.Ok() : Error("Project not found.");
+        });
 
         // Под какой проект идут сборы с уже опубликованной LFG-панели
         g.MapPut("/panels/{messageId}/project", (ulong guildId, ulong messageId, LfgPanelProjectBody body, LfgProjectStore projects,
