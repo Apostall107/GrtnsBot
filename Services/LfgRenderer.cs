@@ -184,6 +184,9 @@ public static class LfgRenderer
             builder.WithButton(d.NotifyByDm ? "DM role members: ON" : "DM role members: OFF", $"lfg:dm:{d.Id}",
                 d.NotifyByDm ? ButtonStyle.Success : ButtonStyle.Secondary,
                 new Emoji(d.NotifyByDm ? "🔔" : "🔕"), row: 4);
+        // Голосовая комната сбора — только если включить
+        builder.WithButton(d.CreateVoice ? "Voice room: ON" : "Voice room: OFF", $"lfg:dvoice:{d.Id}",
+            d.CreateVoice ? ButtonStyle.Success : ButtonStyle.Secondary, new Emoji("🔊"), row: 4);
 
         var comps = builder.Build();
 
@@ -221,10 +224,8 @@ public static class LfgRenderer
         sb.AppendLine($"Roster: **{g.FilledCount}/{g.Slots.Count}**");
         if (Requirements(g) is { } req) sb.AppendLine($"📋 Requirements: {req}");
         sb.AppendLine();
-        // Заметки к персонажам могут не влезть в лимит embed (4096) — тогда показываем без них
-        var roster = Roster(g, withComments: true);
-        if (sb.Length + roster.Length > 3900) roster = Roster(g, withComments: false);
-        sb.Append(roster);
+        // Заметки к персонажам в посте не показываются — их видит владелец при выборе персонажа
+        sb.Append(Roster(g, withComments: false));
 
         sb.AppendLine();
         sb.AppendLine($"-# Post will be removed <t:{g.ExpiresAt.ToUnixTimeSeconds()}:R>");
@@ -246,12 +247,10 @@ public static class LfgRenderer
             builder.WithButton(role.Label(), $"lfg:join:{g.Id}:{role}",
                 g.CanJoinAs(role) ? ButtonStyle.Primary : ButtonStyle.Secondary,
                 new Emoji(role.Emoji()), disabled: g.IsClosed, row: 0);
-        // Голосовая комната сбора: нет — создать (участник группы), есть — ссылка
+        // Голосовая комната — только если её выбрали при создании: ссылка на неё
         if (g.VoiceChannelId is { } voiceId)
             builder.WithButton("Voice room", style: ButtonStyle.Link, url: $"https://discord.com/channels/{g.GuildId}/{voiceId}",
                 emote: new Emoji("🔊"), row: 0);
-        else
-            builder.WithButton("Voice room", $"lfg:voice:{g.Id}", ButtonStyle.Secondary, new Emoji("🔊"), disabled: g.IsClosed, row: 0);
 
         builder
             .WithButton("Leave", $"lfg:leave:{g.Id}", ButtonStyle.Secondary, disabled: g.IsClosed, row: 1)
@@ -265,14 +264,21 @@ public static class LfgRenderer
 
     // ---------- Выбор персонажа при записи ----------
     /// <param name="prefix">"lfg" — запись на сервере, "lfgdm" — запись из ЛС.</param>
-    public static Screen CharacterPicker(LfgGroup g, SlotRole role, IReadOnlyList<string> characters, string prefix = "lfg")
+    /// <param name="characters">Имя, заметка (видна только владельцу — здесь, при выборе) и иконка класса.</param>
+    public static Screen CharacterPicker(LfgGroup g, SlotRole role, IReadOnlyList<(string Name, string? Note, string? Icon)> characters,
+        string prefix = "lfg")
     {
         var menu = new SelectMenuBuilder()
             .WithCustomId($"{prefix}:char:{g.Id}:{role}")
             .WithPlaceholder("Choose a character");
 
-        foreach (var name in characters.Take(CharacterStore.MaxPerUser))
-            menu.AddOption(name, name);
+        foreach (var c in characters.Take(CharacterStore.MaxPerUser))
+        {
+            var option = new SelectMenuOptionBuilder().WithLabel(Trim(c.Name)).WithValue(c.Name);
+            if (!string.IsNullOrWhiteSpace(c.Note)) option.WithDescription(Trim(c.Note));
+            if (LfgProjectStore.ToEmote(c.Icon) is { } emote) option.WithEmote(emote);
+            menu.AddOption(option);
+        }
 
         menu.AddOption("New character", NewCharacterValue, "Enter a name manually", new Emoji("➕"));
 
@@ -437,16 +443,15 @@ public static class LfgRenderer
             sb.AppendLine($"**Reserve ({g.Reserve.Count}):**");
             foreach (var r in g.Reserve)
             {
-                sb.AppendLine($"{r.Role.Emoji()} {ClassPrefix(r.ClassIcon, r.ClassRoleId)}<@{r.UserId}> **{Format.Sanitize(r.CharacterName ?? "-")}**{GsText(r.Gs)}");
+                sb.AppendLine($"{r.Role.Emoji()} <@{r.UserId}>{ClassIcon(r.ClassIcon)} **{Format.Sanitize(r.CharacterName ?? "-")}**{GsText(r.Gs)}");
                 if (withComments) AppendComment(sb, r.Comment);
             }
         }
         return sb.ToString();
     }
 
-    /// <summary>Иконка класса перед ником: эмодзи роли, иначе упоминание роли (цветное имя, без пинга в embed).</summary>
-    private static string ClassPrefix(string? icon, ulong? roleId) =>
-        icon is not null ? $"{icon} " : roleId is { } id ? $"<@&{id}> " : "";
+    /// <summary>Иконка класса после ника — только иконка (эмодзи из LFG → Classes или эмодзи роли), без упоминания роли.</summary>
+    private static string ClassIcon(string? icon) => string.IsNullOrWhiteSpace(icon) ? "" : $" {icon}";
 
     private static void AppendComment(StringBuilder sb, string? comment)
     {
@@ -463,7 +468,7 @@ public static class LfgRenderer
             : "";
         var character = s.CharacterName is { } name ? $" **{Format.Sanitize(name)}**{GsText(s.Gs)}" : "";
         var attended = s.Attended switch { true => " ✅", false => " ❌", _ => "" };
-        return $"{SlotHead(i, s)} — {ClassPrefix(s.ClassIcon, s.ClassRoleId)}<@{userId}>{character}{takenAs}{attended}";
+        return $"{SlotHead(i, s)} — <@{userId}>{ClassIcon(s.ClassIcon)}{character}{takenAs}{attended}";
     }
 
     private static string GsText(int? gs) => gs is { } v ? $" · GS {v}" : "";

@@ -34,6 +34,7 @@ builder.Services.AddSingleton<AuditLog>();
 builder.Services.AddSingleton<LfgHistoryStore>();
 builder.Services.AddSingleton<LfgStore>();
 builder.Services.AddSingleton<LfgTemplateStore>();
+builder.Services.AddSingleton<LfgProjectStore>();
 builder.Services.AddSingleton<ActivityStore>();
 builder.Services.AddSingleton<CharacterStore>();
 builder.Services.AddSingleton<TimeService>();

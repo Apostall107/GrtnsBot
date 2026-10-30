@@ -9,11 +9,13 @@ namespace LfgBot.Services;
 /// Общая логика записи и обновления поста сбора: используется на сервере, из ЛС,
 /// в меню организатора и для напоминаний.
 /// </summary>
-public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store, CharacterStore characters, ILogger<LfgSignupService> logger)
+public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store, CharacterStore characters, LfgProjectStore projects,
+    ILogger<LfgSignupService> logger)
 {
     /// <summary>Запись в слот или в резерв + сохранение + обновление поста.</summary>
     public async Task<string> JoinAsync(LfgGroup group, ulong userId, SlotRole role, string characterName)
     {
+        if (ProjectBlock(group, userId) is { } blocked) return blocked;
         await group.Gate.WaitAsync();
         try
         {
@@ -54,13 +56,13 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
         var slot = group.Slots.Find(s => s.UserId == userId);
         var entry = slot is null ? group.FindReserve(userId) : null;
         var name = slot?.CharacterName ?? entry?.CharacterName;
-        var info = characters.GetInfo(group.GuildId, userId, name);
+        var info = characters.GetInfo(group.GuildId, userId, name, Scope(group));
 
         var guild = client.GetGuild(group.GuildId);
         var role = info?.ClassRoleId is { } roleId ? guild?.GetRole(roleId) : null;
         if (role is not null && guild?.GetUser(userId) is { } member && member.Roles.All(r => r.Id != role.Id)) role = null;
 
-        var icon = IconOf(role);
+        var icon = projects.ClassIcon(group.GuildId, role);
         if (slot is not null)
         {
             slot.ClassRoleId = role?.Id;
@@ -88,7 +90,7 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
             if (member is null || member.Roles.All(r => !group.RequiredRoleIds.Contains(r.Id)))
                 missing.Add(string.Join(" / ", group.RequiredRoleIds.Select(id => $"<@&{id}>")));
         }
-        if (group.MinGs is { } min && (characters.GetInfo(group.GuildId, userId, characterName)?.Gs ?? 0) < min)
+        if (group.MinGs is { } min && (characters.GetInfo(group.GuildId, userId, characterName, Scope(group))?.Gs ?? 0) < min)
             missing.Add($"GS {min}+ (set it with `/character gs`)");
         return missing.Count == 0 ? null : string.Join(" and ", missing);
     }
@@ -140,6 +142,17 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
         return null;
     }
 
+    /// <summary>Ключ хранения персонажей проекта этого сбора.</summary>
+    public string? Scope(LfgGroup group) => projects.Scope(group.GuildId, group.ProjectKey);
+
+    /// <summary>Нет роли проекта сбора — записаться (и выбрать персонажа этого проекта) нельзя. null — можно.</summary>
+    public string? ProjectBlock(LfgGroup group, ulong userId)
+    {
+        var project = projects.Effective(group.GuildId, group.ProjectKey);
+        if (LfgProjectStore.CanUse(client.GetGuild(group.GuildId)?.GetUser(userId), project)) return null;
+        return $"This group is for **{project!.Name}** — you need {string.Join(" or ", project.RoleIds.Select(id => $"<@&{id}>"))} to sign up.";
+    }
+
     /// <summary>Юникод-эмодзи роли (иконка-эмодзи из настроек роли), если есть.</summary>
     public static string? IconOf(IRole? role) =>
         role?.Emoji is { } e && !string.IsNullOrWhiteSpace(e.Name) ? e.Name : null;
@@ -157,6 +170,23 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
                 m.Embeds = new[] { s.Embed! };
                 m.Components = s.Components;
             });
+            // Копии поста в других каналах
+            foreach (var mirror in group.Mirrors.ToList())
+            {
+                try
+                {
+                    if (await GetChannelAsync(mirror.ChannelId) is { } mc)
+                        await mc.ModifyMessageAsync(mirror.MessageId, m =>
+                        {
+                            m.Embeds = new[] { s.Embed! };
+                            m.Components = s.Components;
+                        });
+                }
+                catch (Discord.Net.HttpException)
+                {
+                    group.Mirrors.Remove(mirror); // копию удалили вручную
+                }
+            }
         }
         catch (Discord.Net.HttpException ex)
         {
@@ -309,6 +339,14 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
     /// <summary>Удалить пост сбора и напоминание (только сообщения самого бота).</summary>
     public async Task DeleteMessagesAsync(LfgGroup group)
     {
+        foreach (var mirror in group.Mirrors)
+        {
+            try
+            {
+                if (await GetChannelAsync(mirror.ChannelId) is { } mc) await mc.DeleteMessageAsync(mirror.MessageId);
+            }
+            catch (Discord.Net.HttpException) { /* уже удалена */ }
+        }
         if (group.VoiceChannelId is { } voiceId && client.GetGuild(group.GuildId)?.GetVoiceChannel(voiceId) is { } voice)
         {
             try { await voice.DeleteAsync(); }

@@ -43,22 +43,26 @@ public sealed class CharacterStore
             : new();
     }
 
-    private static string Key(ulong guildId, ulong userId) => $"{guildId}:{userId}";
+    /// <summary>scope — проект (см. LfgProjectStore.Scope); null — проект по умолчанию / персонажи до появления проектов.</summary>
+    private static string Key(ulong guildId, ulong userId, string? scope = null) =>
+        scope is null ? $"{guildId}:{userId}" : $"{guildId}:{userId}@{scope}";
 
-    private static string InfoKey(ulong guildId, ulong userId, string name) => $"{guildId}:{userId}:{name.Trim().ToLowerInvariant()}";
+    private static string InfoKey(ulong guildId, ulong userId, string name, string? scope = null) =>
+        $"{Key(guildId, userId, scope)}:{name.Trim().ToLowerInvariant()}";
 
     /// <summary>Класс и заметка персонажа (null — не заданы).</summary>
-    public CharacterInfo? GetInfo(ulong guildId, ulong userId, string? name)
+    public CharacterInfo? GetInfo(ulong guildId, ulong userId, string? name, string? scope = null)
     {
         if (string.IsNullOrWhiteSpace(name)) return null;
         lock (_lock)
-            return _info.TryGetValue(InfoKey(guildId, userId, name), out var i)
+            return _info.TryGetValue(InfoKey(guildId, userId, name, scope), out var i)
                 ? new CharacterInfo { ClassRoleId = i.ClassRoleId, Comment = i.Comment, Gs = i.Gs }
                 : null;
     }
 
     /// <summary>Меняет класс и/или заметку. setClass/setComment = false — поле не трогать.</summary>
-    public void SetInfo(ulong guildId, ulong userId, string name, bool setClass, ulong? classRoleId, bool setComment, string? comment)
+    public void SetInfo(ulong guildId, ulong userId, string name, bool setClass, ulong? classRoleId, bool setComment, string? comment,
+        string? scope = null)
     {
         if (string.IsNullOrWhiteSpace(name)) return;
         comment = string.IsNullOrWhiteSpace(comment) ? null : comment.Trim();
@@ -66,7 +70,7 @@ public sealed class CharacterStore
 
         lock (_lock)
         {
-            var key = InfoKey(guildId, userId, name);
+            var key = InfoKey(guildId, userId, name, scope);
             if (!_info.TryGetValue(key, out var info)) info = new CharacterInfo();
             if (setClass) info.ClassRoleId = classRoleId;
             if (setComment) info.Comment = comment;
@@ -78,12 +82,12 @@ public sealed class CharacterStore
     }
 
     /// <summary>GS персонажа: null — убрать.</summary>
-    public void SetGs(ulong guildId, ulong userId, string name, int? gs)
+    public void SetGs(ulong guildId, ulong userId, string name, int? gs, string? scope = null)
     {
         if (string.IsNullOrWhiteSpace(name)) return;
         lock (_lock)
         {
-            var key = InfoKey(guildId, userId, name);
+            var key = InfoKey(guildId, userId, name, scope);
             if (!_info.TryGetValue(key, out var info)) info = new CharacterInfo();
             info.Gs = gs is { } v ? Math.Clamp(v, 0, 99999) : null;
             if (info.ClassRoleId is null && info.Comment is null && info.Gs is null) _info.Remove(key);
@@ -92,14 +96,14 @@ public sealed class CharacterStore
         }
     }
 
-    public IReadOnlyList<string> Get(ulong guildId, ulong userId)
+    public IReadOnlyList<string> Get(ulong guildId, ulong userId, string? scope = null)
     {
         lock (_lock)
-            return _data.TryGetValue(Key(guildId, userId), out var list) ? list.ToList() : [];
+            return _data.TryGetValue(Key(guildId, userId, scope), out var list) ? list.ToList() : [];
     }
 
     /// <summary>Добавляет персонажа или поднимает существующего в начало списка (последний использованный — первый).</summary>
-    public void Add(ulong guildId, ulong userId, string name)
+    public void Add(ulong guildId, ulong userId, string name, string? scope = null)
     {
         name = name.Replace("`", "").Trim(); // обратные кавычки ломают блок кода с /invite
         if (name.Length == 0) return;
@@ -107,7 +111,7 @@ public sealed class CharacterStore
 
         lock (_lock)
         {
-            var key = Key(guildId, userId);
+            var key = Key(guildId, userId, scope);
             if (!_data.TryGetValue(key, out var list))
                 _data[key] = list = [];
 
@@ -118,16 +122,16 @@ public sealed class CharacterStore
         }
     }
 
-    public bool Remove(ulong guildId, ulong userId, string name)
+    public bool Remove(ulong guildId, ulong userId, string name, string? scope = null)
     {
         lock (_lock)
         {
-            if (!_data.TryGetValue(Key(guildId, userId), out var list)) return false;
+            if (!_data.TryGetValue(Key(guildId, userId, scope), out var list)) return false;
             var removed = list.RemoveAll(n => n.Equals(name, StringComparison.OrdinalIgnoreCase)) > 0;
             if (removed)
             {
                 Save();
-                if (_info.Remove(InfoKey(guildId, userId, name))) SaveInfo();
+                if (_info.Remove(InfoKey(guildId, userId, name, scope))) SaveInfo();
             }
             return removed;
         }
