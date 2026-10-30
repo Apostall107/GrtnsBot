@@ -1021,3 +1021,62 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 .server-select > .icon { z-index: 1; }
 .server-select .select-trigger { padding-left: 34px; min-height: 36px; }
 @media (max-width: 640px) { .server-select .select { min-width: 0; width: 150px; } }
+
+/* =====================================================================
+   Secondary / ghost buttons and tabs v2: volume, readable labels, tinted icons
+   ===================================================================== */
+
+.btn.secondary {
+  color: #EEF0F7; font-weight: 550;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .13) 0%, rgba(255, 255, 255, .05) 48%, rgba(255, 255, 255, .02) 52%, rgba(255, 255, 255, .04) 100%),
+    rgba(34, 40, 58, .72);
+  border: 1px solid rgba(255, 255, 255, .16);
+  border-bottom-color: rgba(0, 0, 0, .45);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18), inset 0 -1px 0 rgba(0, 0, 0, .25), 0 2px 0 rgba(0, 0, 0, .25), 0 6px 14px rgba(0, 0, 0, .3);
+  transition: transform 120ms ease, background var(--ease), border-color var(--ease), box-shadow var(--ease), color var(--ease);
+}
+.btn.secondary .icon { color: #B9A6FF; filter: drop-shadow(0 0 4px rgba(150, 120, 255, .45)); }
+.btn.secondary:hover {
+  transform: translateY(-1px);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .16) 0%, rgba(255, 255, 255, .07) 48%, rgba(255, 255, 255, .03) 52%, rgba(255, 255, 255, .06) 100%),
+    rgba(52, 46, 86, .8);
+  border-color: rgba(175, 150, 255, .5); border-bottom-color: rgba(60, 30, 140, .6);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), 0 3px 0 rgba(0, 0, 0, .25), 0 8px 18px rgba(0, 0, 0, .32), 0 0 14px rgba(123, 77, 255, .22);
+}
+.btn.secondary:hover .icon { color: #D4C8FF; }
+.btn.secondary:active { transform: translateY(1px); box-shadow: inset 0 2px 4px rgba(0, 0, 0, .35), 0 1px 0 rgba(0, 0, 0, .2); }
+
+/* Ghost buttons (Remove, Open, Edit project…): readable, glass on hover */
+.btn.ghost { color: #C7CCD8; font-weight: 500; }
+.btn.ghost .icon { color: #A893FF; }
+.btn.ghost:hover { color: #fff; background: rgba(255, 255, 255, .07); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .1); }
+
+/* Tabs: each tab is a raised glass pill; the active one is lit */
+.tabs { gap: 6px; padding: 4px; border-radius: 12px; background: rgba(7, 9, 13, .45); border: 1px solid rgba(255, 255, 255, .06); width: fit-content; max-width: 100%; }
+.tabs .btn.secondary, .tabs .btn.ghost {
+  min-height: 34px; color: #CDD2DE; font-weight: 550; transform: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, .02));
+  border: 1px solid rgba(255, 255, 255, .07); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08);
+}
+.tabs .btn .icon { color: #9AA3B8; filter: none; }
+.tabs .btn.secondary:hover, .tabs .btn.ghost:hover {
+  color: #fff; transform: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .12), rgba(255, 255, 255, .04));
+  border-color: rgba(255, 255, 255, .16);
+}
+.tabs .btn:hover .icon { color: #C9BBFF; }
+.btn.active-tab, .tabs .btn.secondary.active-tab {
+  color: #fff;
+  background: linear-gradient(180deg, rgba(150, 110, 255, .45), rgba(110, 60, 250, .3));
+  border-color: rgba(190, 170, 255, .6);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .25), 0 0 14px rgba(123, 77, 255, .35);
+  text-shadow: 0 1px 2px rgba(40, 0, 120, .5);
+}
+.tabs .btn.active-tab .icon { color: #fff; filter: drop-shadow(0 0 4px rgba(255, 255, 255, .5)); }
+.tabs .btn:disabled { opacity: .45; }
+
+/* Text contrast: secondary text a notch brighter */
+:root { --text-secondary: #ADB5C7; }
+.muted { color: var(--text-secondary); }
