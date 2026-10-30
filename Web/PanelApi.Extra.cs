@@ -821,6 +821,8 @@ public static partial class PanelApi
         ("PUT", "/tickets/projects/{key}", "tickets", "Edited ticket project"),
         ("DELETE", "/tickets/projects/{key}", "tickets", "Removed ticket project"),
         ("POST", "/tickets/open/{ticketId}/close", "tickets", "Force-closed ticket"),
+        ("POST", "/tickets/open/{ticketId}/approve", "tickets", "Approved ticket (site)"),
+        ("POST", "/tickets/open/{ticketId}/deny", "tickets", "Denied ticket (site)"),
         ("POST", "/tickets/panel", "tickets", "Posted ticket panel"),
         ("POST", "/voice/creators/new", "voice", "Created 'join to create' channel"),
         ("PUT", "/voice/creators/{channelId}", "voice", "Set 'join to create' channel"),

@@ -2241,12 +2241,37 @@ async function pageTickets(main) {
           if (!await confirmDialog("Close this ticket?", `The ticket channels of ${t.applicant.name} will be deleted.`, "Close ticket")) return;
           if (await act(close, () => gApi("POST", `/tickets/open/${encodeURIComponent(t.id)}/close`), "Ticket closed.") !== undefined) refresh();
         });
+        // Approve / Deny — same as the buttons in the ticket
+        const tid = encodeURIComponent(t.id);
+        const approve = t.approvedBy ? null : h("button", { class: "btn" }, icon("check", 15), "Approve");
+        if (approve) approve.addEventListener("click", async () => {
+          if (!await confirmDialog(`Approve ${t.applicant.name}?`, `They get the roles of ${t.project}, a DM, and the ticket closes in 15 seconds.`, "Approve", false)) return;
+          const res = await act(approve, () => gApi("POST", `/tickets/open/${tid}/approve`));
+          if (res === undefined) return;
+          toast(res.closed ? "Approved — roles given, the ticket closes in 15 seconds." : res.warning, res.closed ? "ok" : "warn");
+          refresh();
+        });
+        const deny = t.approvedBy ? null : h("button", { class: "btn secondary" }, icon("x", 15), "Deny");
+        if (deny) deny.addEventListener("click", () => {
+          const d = dialog();
+          const reason = h("textarea", { maxlength: "500", placeholder: "Optional — sent to the applicant by DM", style: "min-height:100px" });
+          const ok = h("button", { class: "btn danger" }, icon("x", 15), "Deny application");
+          ok.addEventListener("click", async () => {
+            const res = await act(ok, () => gApi("POST", `/tickets/open/${tid}/deny`, { reason: reason.value }), "Denied — DM sent, the ticket closes in 15 seconds.");
+            if (res !== undefined) { d.close(); refresh(); }
+          });
+          d.replaceChildren(h("h2", {}, `Deny ${t.applicant.name}?`),
+            h("div", { class: "field" }, h("label", {}, "Reason (sent to the applicant)"), reason),
+            h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), ok));
+          d.showModal();
+          reason.focus();
+        });
         return h("tr", {},
           h("td", {}, t.project),
           h("td", {}, member(t.applicant)),
           h("td", {}, t.approvedBy ? h("span", { class: "badge ok" }, "approved") : h("span", { class: "badge wait" }, "pending")),
           h("td", { title: new Date(t.createdAt).toLocaleString() }, fmtRelative(t.createdAt)),
-          h("td", { class: "actions" }, h("a", { class: "btn ghost", href: t.jumpUrl, target: "_blank", rel: "noopener" }, "Open"), " ", close));
+          h("td", { class: "actions" }, approve, " ", deny, " ", h("a", { class: "btn ghost", href: t.jumpUrl, target: "_blank", rel: "noopener" }, "Open"), " ", close));
       })))) : empty("No open tickets."));
   } catch (e) { openBody.replaceChildren(empty(e.message)); }
 }
@@ -3600,7 +3625,7 @@ const HELP = {
       ]],
       ["⚙️ General", [
         "**Ticket panel** — publishes the message with the Create ticket button in a channel (all projects in one panel).",
-        "**Open tickets** of all projects — status, link, **Force close** (deletes the channels).",
+        "**Open tickets** — **Approve** (gives the roles, DM, closes in 15 s), **Deny** (reason by DM, closes in 15 s), Open, **Force close** (deletes the channels without an outcome).",
         "**🗄️ Archive** — filter by outcome, search by name, project, reason or answers; **Form** shows the answers."
       ]]
     ]
@@ -3637,6 +3662,7 @@ const HELP = {
       "Edit the title, text and button labels of the **LFG**, **Ticket** and **Room controls** panels.",
       "Button labels under **LFG group posts** (Leave, Invite…, Manage, Close, Voice room) and in **ticket messages** (Approve, Deny, Close).",
       "Saving updates the panels already posted in Discord. **Reset to default** restores the original text.",
+      "The title is plain text (Discord shows no markdown there); type **-** for no title and put headings (# / ## / -#) in the text. In Discord: `/panel-text`.",
       "LFG panel placeholders: `{hours}` — auto-delete hours, `{reminder}` — reminder minutes."
     ]]],
     discord: [["Where it shows", [

@@ -197,6 +197,41 @@ public sealed class TicketService(
         }
     }
 
+    /// <summary>Пауза перед закрытием после Approve / Deny (чтобы все увидели итог).</summary>
+    public static readonly TimeSpan CloseDelay = TimeSpan.FromSeconds(15);
+
+    /// <summary>Закрыть тикет через <see cref="CloseDelay"/> (в архив с итогом, каналы удалить).</summary>
+    public void CloseLater(Ticket ticket, IUser? by, string outcome, string? reason) => _ = Task.Run(async () =>
+    {
+        try
+        {
+            await Task.Delay(CloseDelay);
+            await CloseAsync(ticket, outcome, by, reason);
+        }
+        catch (Exception)
+        {
+            // каналы могли удалить вручную — тикет уже убран из списка
+        }
+    });
+
+    /// <summary>ЛС заявителю об одобрении (каналы тикета скоро исчезнут, итог должен остаться у него).</summary>
+    public async Task NotifyApprovedAsync(Ticket ticket, TicketProject project, IEnumerable<ulong> roleIds)
+    {
+        try
+        {
+            var guild = client.GetGuild(ticket.GuildId);
+            var user = client.GetUser(ticket.UserId) as IUser ?? await client.Rest.GetUserAsync(ticket.UserId);
+            if (user is null) return;
+            var roles = string.Join(", ", roleIds.Select(id => guild?.GetRole(id)?.Name ?? "role").Select(Format.Sanitize));
+            await user.SendMessageAsync($"✅ Your application to **{Format.Sanitize(project.Name)}** on " +
+                $"**{Format.Sanitize(guild?.Name ?? "the server")}** was approved. You got: **{roles}**.");
+        }
+        catch (Discord.Net.HttpException)
+        {
+            // закрытые ЛС
+        }
+    }
+
     /// <summary>ЛС заявителю об отказе с причиной.</summary>
     public async Task NotifyDeniedAsync(Ticket ticket, TicketProject? project, string? reason)
     {
