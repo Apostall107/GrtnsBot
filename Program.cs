@@ -27,7 +27,7 @@ builder.Services.AddSingleton(new DiscordSocketConfig
 builder.Services.AddSingleton<DiscordSocketClient>();
 builder.Services.AddSingleton(sp => new InteractionService(
     sp.GetRequiredService<DiscordSocketClient>(),
-    new InteractionServiceConfig { LogLevel = LogSeverity.Info, UseCompiledLambda = true }));
+    new InteractionServiceConfig { LogLevel = LogSeverity.Info, UseCompiledLambda = true, ExitOnMissingModalField = false }));
 
 builder.Services.AddSingleton<BotSettingsStore>();
 builder.Services.AddSingleton<AuditLog>();

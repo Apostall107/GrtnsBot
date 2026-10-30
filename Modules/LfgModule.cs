@@ -613,7 +613,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
     }
 
     [ModalInteraction("lfg:reschedok:*")]
-    public async Task OnRescheduleSubmitted(string groupId)
+    public async Task OnRescheduleSubmitted(string groupId, LfgRescheduleModal _)
     {
         if (!store.Groups.TryGetValue(groupId, out var group) || !IsOrganizer(group))
         {
@@ -827,4 +827,13 @@ public sealed class CharacterModal : IModal
     [InputLabel("Character name")]
     [ModalTextInput("name", TextInputStyle.Short, placeholder: "In-game name", maxLength: CharacterStore.MaxNameLength)]
     public string Name { get; set; } = "";
+}
+
+/// <summary>Окно «Change time» (строится вручную, поле when читается из ответа). Нужен для регистрации обработчика.</summary>
+public sealed class LfgRescheduleModal : IModal
+{
+    public string Title => "Change time";
+
+    [ModalTextInput("when")]
+    public string? When { get; set; }
 }
