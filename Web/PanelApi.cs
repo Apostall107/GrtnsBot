@@ -162,12 +162,14 @@ public static partial class PanelApi
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var query = (q ?? "").Trim();
+            bool Has(string? text) => text is not null && text.Contains(query, StringComparison.OrdinalIgnoreCase);
+            bool Starts(string? text) => text is not null && text.StartsWith(query, StringComparison.OrdinalIgnoreCase);
+            // Ник на сервере, глобальное имя и логин; сначала те, что начинаются с запроса
             var list = guild.Users
                 .Where(u => !u.IsBot)
-                .Where(u => query.Length == 0 ||
-                            u.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                            u.Username.Contains(query, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(u => u.DisplayName)
+                .Where(u => query.Length == 0 || Has(u.DisplayName) || Has(u.GlobalName) || Has(u.Username))
+                .OrderByDescending(u => query.Length > 0 && (Starts(u.DisplayName) || Starts(u.GlobalName) || Starts(u.Username)))
+                .ThenBy(u => u.DisplayName)
                 .Take(20)
                 .Select(u => Member(guild, u.Id));
             return Results.Ok(list);
@@ -620,12 +622,14 @@ public static partial class PanelApi
 
     private static void MapTexts(RouteGroupBuilder g)
     {
-        g.MapGet("/", (ulong guildId, PanelTextStore texts) => Results.Ok(PanelDefs.All.Select(d =>
+        g.MapGet("/", (ulong guildId, PanelTextStore texts) => Results.Ok(PanelDefs.All.Concat(PanelDefs.Messages).Select(d =>
         {
             var custom = texts.GetText(guildId, d.Key);
             return new
             {
                 key = d.Key,
+                // panel — опубликованная панель (заголовок, текст, кнопки); labels — только подписи кнопок в постах бота
+                kind = PanelDefs.Messages.Contains(d) ? "labels" : "panel",
                 name = d.Name,
                 placeholders = d.Placeholders,
                 maxTitle = PanelDef.MaxTitle,
@@ -645,12 +649,14 @@ public static partial class PanelApi
             };
         })));
 
-        g.MapPut("/{key}", async (ulong guildId, string key, PanelTextBody body, PanelTextStore texts, PanelService panels) =>
+        g.MapPut("/{key}", async (ulong guildId, string key, PanelTextBody body, PanelTextStore texts, PanelService panels,
+            LfgStore lfg, LfgSignupService signup, TicketStore tickets, TicketMessageService ticketMessages) =>
         {
             if (PanelDefs.Find(key) is not { } def) return Error("Unknown panel.");
+            var labelsOnly = PanelDefs.Messages.Contains(def);
 
-            var title = Clean(body.Title, def.DefaultTitle);
-            var description = Clean(body.Description, def.DefaultDescription);
+            var title = labelsOnly ? null : Clean(body.Title, def.DefaultTitle);
+            var description = labelsOnly ? null : Clean(body.Description, def.DefaultDescription);
             if (title is { Length: > PanelDef.MaxTitle }) return Error($"The title is limited to {PanelDef.MaxTitle} characters.");
             if (description is { Length: > PanelDef.MaxDescription }) return Error($"The text is limited to {PanelDef.MaxDescription} characters.");
 
@@ -668,15 +674,16 @@ public static partial class PanelApi
                 : new PanelText { Title = title, Description = description, Labels = labels };
             texts.SetText(guildId, key, custom);
 
-            var (updated, total) = await panels.RefreshAsync(guildId, key);
+            var (updated, total) = await RefreshTextsAsync(guildId, key, panels, lfg, signup, tickets, ticketMessages);
             return Results.Ok(new { panelsUpdated = updated, panelsTotal = total });
         });
 
-        g.MapDelete("/{key}", async (ulong guildId, string key, PanelTextStore texts, PanelService panels) =>
+        g.MapDelete("/{key}", async (ulong guildId, string key, PanelTextStore texts, PanelService panels,
+            LfgStore lfg, LfgSignupService signup, TicketStore tickets, TicketMessageService ticketMessages) =>
         {
             if (PanelDefs.Find(key) is null) return Error("Unknown panel.");
             texts.SetText(guildId, key, null);
-            var (updated, total) = await panels.RefreshAsync(guildId, key);
+            var (updated, total) = await RefreshTextsAsync(guildId, key, panels, lfg, signup, tickets, ticketMessages);
             return Results.Ok(new { panelsUpdated = updated, panelsTotal = total });
         });
 
@@ -694,6 +701,35 @@ public static partial class PanelApi
         if (string.IsNullOrWhiteSpace(value)) return null;
         var text = value.Replace("\r\n", "\n").Trim();
         return text == @default ? null : text;
+    }
+
+    /// <summary>После смены текстов: панели — перерисовать; подписи постов — активные сборы или открытые тикеты.</summary>
+    private static async Task<(int Updated, int Total)> RefreshTextsAsync(ulong guildId, string key, PanelService panels,
+        LfgStore lfg, LfgSignupService signup, TicketStore tickets, TicketMessageService ticketMessages)
+    {
+        if (key == PanelDefs.LfgPost.Key)
+        {
+            var groups = ActiveGroups(lfg, guildId).ToList();
+            foreach (var group in groups)
+            {
+                await group.Gate.WaitAsync();
+                try { await signup.RefreshPostAsync(group); }
+                finally { group.Gate.Release(); }
+            }
+            return (groups.Count, groups.Count);
+        }
+        if (key == PanelDefs.TicketMessage.Key)
+        {
+            var (updated, total) = (0, 0);
+            foreach (var project in tickets.GetProjects(guildId))
+            {
+                var r = await ticketMessages.RefreshProjectAsync(guildId, project.Key);
+                updated += r.Updated;
+                total += r.Total;
+            }
+            return (updated, total);
+        }
+        return await panels.RefreshAsync(guildId, key);
     }
 
     // ================= Сообщения бота: панели и посты =================

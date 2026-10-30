@@ -55,32 +55,24 @@ public static class PanelDefs
         "📣 Group & Raid Finder",
         "**How to create a group**\n" +
         "1. Click **Create LFG** — a menu only you can see will open.\n" +
-        "2. Choose the group size.\n" +
-        "3. Choose the activity. Members with its role will be pinged and get a DM " +
-        "(turn them on or off for yourself with the 🔔 / 🔕 buttons below or `/lfg-dm`). " +
-        "«Custom activity» lets you type a name, without a ping.\n" +
-        "4. Select slots and assign roles ⚔️ DD / 🛡️ Tank / 💚 Sup / 🎲 All, then click **Next**.\n" +
-        "5. Pick the start date and time (or «No time»), turn 🔊 **Voice room** on if you need one, and click **Publish**. " +
-        "You take slot 1 automatically with your last used character. " +
-        "Everyone sees the time in their own time zone.\n\n" +
+        "2. Pick a **template** for one click, or choose the group size.\n" +
+        "3. Choose the activity of this game. Members with its role are pinged and get a DM " +
+        "(turn DMs on or off for yourself with 🔔 / 🔕 below or `/lfg-dm`). «Custom activity» — your own name, no ping.\n" +
+        "4. Select slots and set their roles ⚔️ DD / 🛡️ Tank / 💚 Sup / 🎲 All → **Next**.\n" +
+        "5. Pick the start date and time (or «No time»), turn on 🔊 **Voice room** if you need one → **Publish**. " +
+        "You take slot 1 with your last used character. Everyone sees the time in their own time zone.\n\n" +
         "**How to sign up**\n" +
-        "• Click a role button under the group post.\n" +
-        "• Pick one of your saved characters or enter a new name — it will be saved for next time.\n" +
-        "• Under the reply pick your **class role** (its icon is shown next to your name) and add your **GS** and a personal **note**.\n" +
-        "• Click the same role again to switch character, or another role to switch role.\n" +
-        "• No free slot for your role? The grey role button puts you on the **reserve** list. " +
-        "The organizer can move you into the group, and you'll get a DM.\n" +
-        "• **Leave** frees your slot (or takes you off the reserve).\n" +
-        "• ⚙️ **Manage** — organizer only: swap members between the group and the reserve.\n" +
-        "• Everyone in the group gets a ⏰ reminder {reminder} minutes before the start.\n" +
-        "• **Close** — organizer only. Shows the invite list and deletes the group post.\n" +
-        "• Group posts are removed automatically {hours} h after the start time " +
-        "(or after creation if no time was set).\n" +
-        "• 📋 **Invite to group** shows ready-to-copy `/invite Name` commands for everyone in the group (except you).\n" +
-        "• 🏰 **Invite to dungeon** shows just the character names, ready to copy into the dungeon invite.\n" +
-        "• 🔊 **Voice room** (if the organizer turned it on): everyone can join and listen, only the group can speak.\n" +
-        "• Some groups have **requirements** (a role or minimum GS) — set your GS with `/character gs`.\n\n" +
-        "**Characters:** `/character list`, `/character add`, `/character class`, `/character note`, `/character remove`",
+        "• Click a role button under the group post, then pick a saved character or enter a new name.\n" +
+        "• Under the reply pick your **class** (its icon is shown after your name), set your **GS** and a personal **note** (only you see it).\n" +
+        "• Same role again — switch character; another role — switch role. **Leave** frees your slot.\n" +
+        "• Grey role button — no free slot: you go to the **reserve**; the organizer can move you in (you get a DM).\n" +
+        "• Some groups have **requirements** (a role or minimum GS).\n" +
+        "• ⏰ Reminder {reminder} minutes before the start; the post is removed {hours} h after the start (or after creation without a time).\n\n" +
+        "**In the group post**\n" +
+        "• 📋 **Invite to group** — ready `/invite Name` commands; 🏰 **Invite to dungeon** — just the names.\n" +
+        "• 🔊 **Voice room** (if turned on) — everyone can listen, only the group speaks.\n" +
+        "• ⚙️ **Manage** (organizer) — group ⇄ reserve, attendance, 🕒 change time. **Close** — invites, then the post is deleted.\n\n" +
+        "**Characters** (per game): `/character list`, `add`, `class`, `gs`, `note`, `rename`, `remove` — or on the website.",
         [
             new("start", "“Create LFG” button", "Create LFG"),
             new("dmon", "“DMs on” button", "DMs on"),
@@ -93,13 +85,13 @@ public static class PanelDefs
         "tickets", "Ticket panel",
         "🎫 Applications & Tickets",
         "**How to apply**\n" +
-        "1. Click **Create ticket**.\n" +
-        "2. Choose the project you are applying to (e.g. WWM, Aion 2). Only you can see this menu.\n" +
+        "1. Click **Create ticket** and choose the project you are applying to (only you see this menu).\n" +
+        "2. If the project has an **application form**, answer the questions.\n" +
         "3. The bot creates a private **text** and **voice** channel for you and the project leadership.\n" +
-        "4. Talk with the leadership there. When they **Approve** your application, " +
-        "you get the project role automatically and the ticket closes (you'll also get a DM).\n" +
+        "4. Talk with the leadership there. **Approve** — you get the project role, a DM, and the ticket closes. " +
+        "**Deny** — you get a DM with the reason.\n" +
         "5. Anyone in the ticket can **Close** it — both channels are deleted.\n\n" +
-        "-# You can have one open ticket per project.",
+        "-# One open ticket per project. Inactive tickets may be closed automatically. You can also apply on the website.",
         [new("start", "“Create ticket” button", "Create ticket")],
         "ticket:start");
 
@@ -109,7 +101,8 @@ public static class PanelDefs
         "Use these while you are **in your temporary room**. Only the room owner can use them, except **Claim**.\n\n" +
         "✏️ **Rename** · 👥 **Limit** (0 = no limit) · 🔒 **Lock / Unlock** — when locked, only people inside " +
         "or permitted can join · 👑 **Claim** — take the room if the owner left\n" +
-        "✅ **Permit** a member to join even when locked · 🚫 **Kick** a member and block them from rejoining",
+        "✅ **Permit** a member to join even when locked · 🚫 **Kick** a member and block them from rejoining\n\n" +
+        "-# Your defaults for new rooms (name, limit, locked): `/room defaults` or on the website.",
         [
             new("rename", "“Rename” button", "Rename"),
             new("limit", "“Limit” button", "Limit"),
@@ -122,7 +115,36 @@ public static class PanelDefs
 
     public static readonly PanelDef[] All = [Lfg, Tickets, Rooms];
 
-    public static PanelDef? Find(string key) => Array.Find(All, d => d.Key == key);
+    /// <summary>Кнопки в постах сборов (не панель: только подписи).</summary>
+    public static readonly PanelDef LfgPost = new(
+        "lfgpost", "LFG group post — buttons", "", "",
+        [
+            new("leave", "“Leave” button", "Leave"),
+            new("invites", "“Invite to group” button", "Invite to group"),
+            new("dungeon", "“Invite to dungeon” button", "Invite to dungeon"),
+            new("manage", "“Manage” button", "Manage"),
+            new("close", "“Close” button", "Close"),
+            new("voice", "“Voice room” link button", "Voice room")
+        ],
+        "");
+
+    /// <summary>Кнопки в сообщении тикета.</summary>
+    public static readonly PanelDef TicketMessage = new(
+        "ticketmsg", "Ticket message — buttons", "", "",
+        [
+            new("approve", "“Approve” button", "Approve"),
+            new("deny", "“Deny” button", "Deny"),
+            new("close", "“Close” button", "Close")
+        ],
+        "");
+
+    /// <summary>Наборы подписей для сообщений бота (не панели — их не публикуют и не ищут).</summary>
+    public static readonly PanelDef[] Messages = [LfgPost, TicketMessage];
+
+    public static PanelDef? Find(string key) => Array.Find(All, d => d.Key == key) ?? Array.Find(Messages, d => d.Key == key);
+
+    /// <summary>Подпись кнопки с учётом своих текстов сервера (для статических рендереров).</summary>
+    public static string Label(ulong guildId, PanelDef def, string id) => def.Label(PanelTextStore.Instance?.GetText(guildId, def.Key), id);
 }
 
 /// <summary>Свои тексты панелей и список опубликованных панелей по серверам (data/panels.json).</summary>
@@ -135,8 +157,12 @@ public sealed class PanelTextStore
     private readonly string _path;
     private readonly Dictionary<ulong, GuildPanels> _data;
 
+    /// <summary>Для статических рендереров постов (подписи кнопок из веб-админки).</summary>
+    public static PanelTextStore? Instance { get; private set; }
+
     public PanelTextStore(IConfiguration config)
     {
+        Instance = this;
         _path = config["Storage:PanelsPath"] ?? "data/panels.json";
         _data = File.Exists(_path)
             ? JsonSerializer.Deserialize<Dictionary<ulong, GuildPanels>>(File.ReadAllText(_path)) ?? new()

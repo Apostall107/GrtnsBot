@@ -84,11 +84,11 @@ public static class TicketRenderer
                 .Build());
 
         var comps = new ComponentBuilder()
-            .WithButton("Approve", $"ticket:approve:{t.Id}", ButtonStyle.Success, new Emoji("✅"),
+            .WithButton(PanelDefs.Label(t.GuildId, PanelDefs.TicketMessage, "approve"), $"ticket:approve:{t.Id}", ButtonStyle.Success, new Emoji("✅"),
                 disabled: t.ApprovedBy is not null)
-            .WithButton("Deny", $"ticket:deny:{t.Id}", ButtonStyle.Secondary, new Emoji("❌"),
+            .WithButton(PanelDefs.Label(t.GuildId, PanelDefs.TicketMessage, "deny"), $"ticket:deny:{t.Id}", ButtonStyle.Secondary, new Emoji("❌"),
                 disabled: t.ApprovedBy is not null)
-            .WithButton("Close", $"ticket:close:{t.Id}", ButtonStyle.Danger, new Emoji("🔒"))
+            .WithButton(PanelDefs.Label(t.GuildId, PanelDefs.TicketMessage, "close"), $"ticket:close:{t.Id}", ButtonStyle.Danger, new Emoji("🔒"))
             .Build();
 
         return (embeds.ToArray(), comps);
