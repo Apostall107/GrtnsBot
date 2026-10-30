@@ -268,3 +268,20 @@ select { max-width: 100%; text-overflow: ellipsis; }
   dialog { padding: 14px; }
   .table td.actions { white-space: normal; }
 }
+
+/* Page heading: title on the left, 🔄 Refresh and ❔ Guide in the right corner */
+.card-head h1 { margin: 0; margin-right: auto; }
+.btn.btn-refresh { background: #1f7a4d; }
+.btn.btn-refresh:hover { background: #18603c; }
+.btn.btn-guide { background: #b7791f; }
+.btn.btn-guide:hover { background: #975a16; }
+
+/* Project tabs */
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; align-items: center; }
+.tabs .btn.active-tab { box-shadow: inset 0 -3px 0 rgba(255,255,255,.55); }
+
+/* Multi-pick list */
+.check-list { max-height: 50vh; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
+.check-list label { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.check-list label:hover { background: var(--panel-2); }
+.badge { white-space: nowrap; }

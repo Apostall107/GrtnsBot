@@ -122,6 +122,34 @@ public sealed class CharacterStore
         }
     }
 
+    /// <summary>Переименовать персонажа (класс, заметка и GS переходят к новому имени). null — успех, иначе текст ошибки.</summary>
+    public string? Rename(ulong guildId, ulong userId, string oldName, string newName, string? scope = null)
+    {
+        newName = newName.Replace("`", "").Trim();
+        if (newName.Length == 0) return "Enter a name.";
+        if (newName.Length > MaxNameLength) return $"Name: up to {MaxNameLength} characters.";
+
+        lock (_lock)
+        {
+            if (!_data.TryGetValue(Key(guildId, userId, scope), out var list)) return "Character not found.";
+            var index = list.FindIndex(n => n.Equals(oldName, StringComparison.OrdinalIgnoreCase));
+            if (index < 0) return "Character not found.";
+            if (list.Where((_, i) => i != index).Any(n => n.Equals(newName, StringComparison.OrdinalIgnoreCase)))
+                return "You already have a character with this name.";
+
+            var oldKey = InfoKey(guildId, userId, list[index], scope);
+            var newKey = InfoKey(guildId, userId, newName, scope);
+            list[index] = newName;
+            Save();
+            if (oldKey != newKey && _info.Remove(oldKey, out var info))
+            {
+                _info[newKey] = info;
+                SaveInfo();
+            }
+            return null;
+        }
+    }
+
     public bool Remove(ulong guildId, ulong userId, string name, string? scope = null)
     {
         lock (_lock)

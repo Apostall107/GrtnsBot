@@ -58,6 +58,21 @@ public sealed class ActivityStore
         }
     }
 
+    /// <summary>Переименовать активность и/или сменить роль для пинга.</summary>
+    public string? Update(ulong guildId, string key, string name, ulong roleId)
+    {
+        lock (_lock)
+        {
+            if (!_data.TryGetValue(guildId, out var list) || list.Find(a => a.Key == key) is not { } activity) return "Activity not found.";
+            if (list.Any(a => a.Key != key && a.Name.Equals(name, StringComparison.OrdinalIgnoreCase) && a.ProjectKey == activity.ProjectKey))
+                return $"Activity \"{name}\" already exists.";
+            activity.Name = name;
+            activity.RoleId = roleId;
+            Save();
+            return null;
+        }
+    }
+
     /// <summary>Перенести активность в проект (null — общая для всех проектов).</summary>
     public bool SetProject(ulong guildId, string key, string? projectKey)
     {

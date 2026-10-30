@@ -73,6 +73,7 @@ public static partial class PanelApi
                         activity = x.ActivityName,
                         // Проект сбора: мои персонажи этого проекта; без роли проекта записаться нельзя
                         project = projects.Effective(guildId, x.ProjectKey)?.Name,
+                        projectKey = projects.Effective(guildId, x.ProjectKey)?.Key,
                         blocked = signup.ProjectBlock(x, me) is { } b ? StripMarkdown(System.Text.RegularExpressions.Regex.Replace(b, "<@&(\\d+)>",
                             m => "@" + (guild.GetRole(ulong.Parse(m.Groups[1].Value))?.Name ?? "role"))) : null,
                         characters = characters.Get(guildId, me, signup.Scope(x)),
@@ -240,6 +241,20 @@ public static partial class PanelApi
             characters.SetInfo(guildId, me, exact, true, roleId, true, body.Comment, scope.Value);
             characters.SetGs(guildId, me, exact, body.Gs is > 0 ? body.Gs : null, scope.Value);
             var groups = await profiles.RefreshCharacterAsync(guildId, me, exact, scope.Value);
+            return Results.Ok(new { groupsUpdated = groups });
+        });
+
+        // Переименовать персонажа: класс, заметка, GS и активные сборы переходят на новое имя
+        g.MapPost("/characters/{name}/rename", async (ulong guildId, string name, string? project, CharacterRenameBody body, ClaimsPrincipal user,
+            DiscordSocketClient client, CharacterStore characters, LfgProfileService profiles, LfgProjectStore projects) =>
+        {
+            if (CharacterScope(guildId, project, user, client, projects) is not { } scope) return Error("You don't have the role of this project.");
+            var me = user.UserId()!.Value;
+            var exact = characters.Get(guildId, me, scope.Value).FirstOrDefault(n => n.Equals(name, StringComparison.OrdinalIgnoreCase));
+            if (exact is null) return Error("Character not found.");
+            var newName = (body.Name ?? "").Replace("`", "").Trim();
+            if (characters.Rename(guildId, me, exact, newName, scope.Value) is { } error) return Error(error);
+            var groups = await profiles.RenameInGroupsAsync(guildId, me, exact, newName, scope.Value);
             return Results.Ok(new { groupsUpdated = groups });
         });
 
@@ -541,3 +556,5 @@ public sealed record DmBody(bool Enabled);
 public sealed record RoomPrefsBody(string? Name, int? Limit, bool Locked);
 public sealed record ApplyBody(string? ProjectKey, Dictionary<string, string?>? Answers);
 public sealed record RoomActionBody(string? Action, string? Name, int? Limit);
+
+public sealed record CharacterRenameBody(string? Name);
