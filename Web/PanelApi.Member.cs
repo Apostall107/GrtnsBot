@@ -190,12 +190,12 @@ public static partial class PanelApi
                 }),
                 project = current?.Key,
                 allowed = LfgProjectStore.CanUse(member, current),
-                classRoles = profiles.ClassRoles(guildId, me).Select(r => new
+                classRoles = profiles.ClassRoles(guildId, me, current?.Key).Select(r => new
                 {
                     id = r.Id.ToString(),
                     name = r.Name,
                     color = r.Color.RawValue == 0 ? null : $"#{r.Color.RawValue:x6}",
-                    icon = profiles.Icon(guildId, r)
+                    icon = profiles.Icon(guildId, r, current?.Key)
                 }),
                 characters = characters.Get(guildId, me, scope).Select(name =>
                 {
@@ -232,7 +232,8 @@ public static partial class PanelApi
             if (exact is null) return Error("Character not found.");
 
             ulong? roleId = ParseId(body.ClassRoleId);
-            if (roleId is { } r && profiles.ClassRoles(guildId, me).All(x => x.Id != r)) return Error("You can't pick this class role.");
+            if (roleId is { } r && profiles.ClassRoles(guildId, me, projects.Effective(guildId, string.IsNullOrWhiteSpace(project) ? null : project)?.Key)
+                    .All(x => x.Id != r)) return Error("You can't pick this class role.");
             if (body.Comment is { Length: > CharacterStore.MaxCommentLength }) return Error($"Note: up to {CharacterStore.MaxCommentLength} characters.");
             if (body.Gs is < 0 or > 99999) return Error("GS: 0–99999.");
 
@@ -351,7 +352,7 @@ public static partial class PanelApi
                         .Where(c => guild.CurrentUser.GetPermissions(c) is { ViewChannel: true, SendMessages: true, EmbedLinks: true })
                         .OrderBy(c => c.Position).Select(c => new { id = c.Id.ToString(), name = c.Name })
                     : null,
-                activities = activities.Get(guildId).Select(a => new { key = a.Key, name = a.Name, role = Role(guild, a.RoleId) }),
+                activities = activities.Get(guildId).Select(a => new { key = a.Key, name = a.Name, role = Role(guild, a.RoleId), projectKey = a.ProjectKey }),
                 templates = TemplatesDto(guild, templates),
                 // Роли для требований сбора (организатор выбирает, какие нужны)
                 roles = guild.Roles.Where(r => !r.IsEveryone && !r.IsManaged).OrderByDescending(r => r.Position)

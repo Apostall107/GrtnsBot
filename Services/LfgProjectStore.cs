@@ -25,6 +25,8 @@ public sealed class GuildLfgSetup
     public string? DefaultKey { get; set; }
     /// <summary>Иконка класса для роли: юникод-эмодзи или эмодзи сервера &lt;:name:id&gt;. Если задано — классом можно выбрать только эти роли.</summary>
     public Dictionary<ulong, string> ClassIcons { get; set; } = new();
+    /// <summary>Классы отдельного проекта. Если у проекта список пуст — действуют общие (ClassIcons).</summary>
+    public Dictionary<string, Dictionary<ulong, string>> ProjectClassIcons { get; set; } = new();
 }
 
 /// <summary>data/lfg-setup.json — проекты, проект по умолчанию, иконки классов (по серверам).</summary>
@@ -120,26 +122,43 @@ public sealed class LfgProjectStore
         }
     }
 
-    public IReadOnlyDictionary<ulong, string> ClassIcons(ulong guildId)
-    {
-        lock (_lock) return new Dictionary<ulong, string>(Guild(guildId).ClassIcons);
-    }
-
-    public void SetClassIcons(ulong guildId, Dictionary<ulong, string> icons)
+    /// <summary>Классы как заданы: projectKey null — общие для всех проектов, иначе — только этого проекта.</summary>
+    public IReadOnlyDictionary<ulong, string> ClassIcons(ulong guildId, string? projectKey = null)
     {
         lock (_lock)
         {
-            Guild(guildId).ClassIcons = icons;
+            var g = Guild(guildId);
+            if (projectKey is null) return new Dictionary<ulong, string>(g.ClassIcons);
+            return g.ProjectClassIcons.TryGetValue(projectKey, out var own) ? new Dictionary<ulong, string>(own) : new Dictionary<ulong, string>();
+        }
+    }
+
+    /// <summary>Классы, действующие в проекте: свои, а если их нет — общие.</summary>
+    public IReadOnlyDictionary<ulong, string> EffectiveClassIcons(ulong guildId, string? projectKey)
+    {
+        var key = Effective(guildId, projectKey)?.Key;
+        var own = key is null ? null : ClassIcons(guildId, key);
+        return own is { Count: > 0 } ? own : ClassIcons(guildId);
+    }
+
+    public void SetClassIcons(ulong guildId, string? projectKey, Dictionary<ulong, string> icons)
+    {
+        lock (_lock)
+        {
+            var g = Guild(guildId);
+            if (projectKey is null) g.ClassIcons = icons;
+            else if (icons.Count == 0) g.ProjectClassIcons.Remove(projectKey);
+            else g.ProjectClassIcons[projectKey] = icons;
             Write();
         }
     }
 
-    /// <summary>Иконка класса: заданная админом, иначе юникод-эмодзи самой роли.</summary>
-    public string? ClassIcon(ulong guildId, IRole? role)
+    /// <summary>Иконка класса в проекте: заданная админом (проекта или общая), иначе юникод-эмодзи самой роли.</summary>
+    public string? ClassIcon(ulong guildId, IRole? role, string? projectKey = null)
     {
         if (role is null) return null;
-        lock (_lock)
-            if (Guild(guildId).ClassIcons.TryGetValue(role.Id, out var icon) && !string.IsNullOrWhiteSpace(icon)) return icon;
+        if (EffectiveClassIcons(guildId, projectKey).TryGetValue(role.Id, out var icon) && !string.IsNullOrWhiteSpace(icon)) return icon;
+        if (ClassIcons(guildId).TryGetValue(role.Id, out var common) && !string.IsNullOrWhiteSpace(common)) return common;
         return role.Emoji is { } e && !string.IsNullOrWhiteSpace(e.Name) ? e.Name : null;
     }
 

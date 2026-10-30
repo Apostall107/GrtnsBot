@@ -15,10 +15,10 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
 
     /// <summary>Роли игрока, которые можно выбрать классом (без @everyone и ролей ботов/интеграций), сверху — старшие.</summary>
     /// <remarks>Если админ задал иконки классов (LFG → Classes) — только эти роли.</remarks>
-    public IReadOnlyList<SocketRole> ClassRoles(ulong guildId, ulong userId)
+    public IReadOnlyList<SocketRole> ClassRoles(ulong guildId, ulong userId, string? projectKey = null)
     {
         if (client.GetGuild(guildId)?.GetUser(userId) is not { } member) return new List<SocketRole>();
-        var configured = projects.ClassIcons(guildId);
+        var configured = projects.EffectiveClassIcons(guildId, projectKey);
         return member.Roles
             .Where(r => !r.IsEveryone && !r.IsManaged && (configured.Count == 0 || configured.ContainsKey(r.Id)))
             .OrderByDescending(r => r.Position).ToList();
@@ -33,12 +33,12 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
         {
             var info = characters.GetInfo(group.GuildId, userId, name, scope);
             var role = info?.ClassRoleId is { } id ? guild?.GetRole(id) : null;
-            return (name, info?.Comment, projects.ClassIcon(group.GuildId, role));
+            return (name, info?.Comment, projects.ClassIcon(group.GuildId, role, group.ProjectKey));
         }).ToList();
     }
 
     /// <summary>Иконка класса для показа (заданная админом или эмодзи роли).</summary>
-    public string? Icon(ulong guildId, IRole? role) => projects.ClassIcon(guildId, role);
+    public string? Icon(ulong guildId, IRole? role, string? projectKey = null) => projects.ClassIcon(guildId, role, projectKey);
 
     /// <summary>Меню «класс» + кнопка «заметка» под ответом о записи. null — человека нет в сборе.</summary>
     public MessageComponent? Controls(LfgGroup group, ulong userId)
@@ -47,7 +47,7 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
         if (current is null) return null;
 
         var builder = new ComponentBuilder();
-        var roles = ClassRoles(group.GuildId, userId);
+        var roles = ClassRoles(group.GuildId, userId, group.ProjectKey);
         if (roles.Count > 0)
         {
             var menu = new SelectMenuBuilder()
@@ -60,7 +60,7 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
                     .WithLabel(Trim(role.Name, 100))
                     .WithValue(role.Id.ToString())
                     .WithDefault(current.Value.ClassRoleId == role.Id);
-                if (LfgProjectStore.ToEmote(projects.ClassIcon(group.GuildId, role)) is { } emote) option.WithEmote(emote);
+                if (LfgProjectStore.ToEmote(projects.ClassIcon(group.GuildId, role, group.ProjectKey)) is { } emote) option.WithEmote(emote);
                 menu.AddOption(option);
             }
             builder.WithSelectMenu(menu, row: 0);
@@ -94,7 +94,7 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
         ulong? roleId = null;
         if (value != NoClassValue)
         {
-            if (!ulong.TryParse(value, out var id) || ClassRoles(group.GuildId, userId).All(r => r.Id != id))
+            if (!ulong.TryParse(value, out var id) || ClassRoles(group.GuildId, userId, group.ProjectKey).All(r => r.Id != id))
                 return Task.FromResult("You don't have this role.");
             roleId = id;
         }
