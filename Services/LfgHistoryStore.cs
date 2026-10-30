@@ -27,6 +27,8 @@ public sealed class LfgHistoryEntry
     public int Size { get; set; }
     public List<LfgHistoryMember> Members { get; set; } = [];
     public int Reserve { get; set; }
+    /// <summary>Проект (игра) сбора; null — старые записи (проект по умолчанию).</summary>
+    public string? ProjectKey { get; set; }
 }
 
 /// <summary>История сборов (data/lfg-history.json, последние 10000) и статистика по ней.</summary>
@@ -63,6 +65,7 @@ public sealed class LfgHistoryStore
                 How = how,
                 Size = g.Slots.Count,
                 Reserve = g.Reserve.Count,
+                ProjectKey = g.ProjectKey,
                 Members = g.Slots.Where(s => s.UserId is not null).Select(s => new LfgHistoryMember
                 {
                     UserId = s.UserId!.Value,

@@ -213,12 +213,14 @@ public static partial class PanelApi
         g.MapDelete("/activities/{key}", (ulong guildId, string key, ActivityStore activities) =>
             activities.Remove(guildId, key) is null ? Error("Activity not found.") : Results.Ok());
 
-        g.MapGet("/groups", (ulong guildId, DiscordSocketClient client, LfgStore lfg) =>
+        g.MapGet("/groups", (ulong guildId, DiscordSocketClient client, LfgStore lfg, LfgProjectStore projects) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            var defaultProject = projects.DefaultKey(guildId);
             return Results.Ok(ActiveGroups(lfg, guildId).Select(x => new
             {
                 id = x.Id,
+                projectKey = x.ProjectKey ?? defaultProject,
                 activity = x.ActivityName,
                 owner = Member(guild, x.OwnerId),
                 channel = guild.GetTextChannel(x.ChannelId)?.Name,
@@ -279,8 +281,18 @@ public static partial class PanelApi
             return Results.Ok();
         });
 
-        g.MapPost("/panel", (ulong guildId, ChannelBody body, DiscordSocketClient client, PanelService panels) =>
-            PostAsync(client, guildId, body.ChannelId, ch => panels.PostAsync(ch, guildId, "lfg")));
+        // ?project=key — панель сразу привязывается к проекту (сборы с неё идут под этот проект)
+        g.MapPost("/panel", (ulong guildId, string? project, ChannelBody body, DiscordSocketClient client, PanelService panels,
+            PanelTextStore texts, LfgProjectStore projects) =>
+        {
+            var key = string.IsNullOrWhiteSpace(project) ? null : project;
+            if (key is not null && projects.Find(guildId, key) is null) return Task.FromResult(Error("Project not found."));
+            return PostAsync(client, guildId, body.ChannelId, async ch =>
+            {
+                var message = await panels.PostAsync(ch, guildId, "lfg");
+                if (key is not null) texts.SetPanelProject(guildId, "lfg", message.Id, key);
+            });
+        });
     }
 
     // ================= Tickets =================

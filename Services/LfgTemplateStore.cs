@@ -15,12 +15,16 @@ public sealed class LfgTemplate
     public List<SlotRole> Slots { get; set; } = [];
     public List<ulong> RequiredRoleIds { get; set; } = [];
     public int? MinGs { get; set; }
+    /// <summary>Проект (игра). null — во всех проектах.</summary>
+    public string? ProjectKey { get; set; }
 }
 
 /// <summary>data/lfg-templates.json — шаблоны сборов по серверам.</summary>
 public sealed class LfgTemplateStore
 {
-    public const int MaxPerGuild = 24; // выпадающий список в мастере /lfg
+    public const int MaxPerGuild = 100;
+    /// <summary>Сколько шаблонов помещается в меню мастера /lfg.</summary>
+    public const int MaxInMenu = 24;
 
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     private readonly object _lock = new();

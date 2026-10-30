@@ -53,7 +53,7 @@ public static class LfgRenderer
             var tpl = new SelectMenuBuilder()
                 .WithCustomId($"lfg:tpl:{d.Id}")
                 .WithPlaceholder("📋 Use a template");
-            foreach (var t in templates.Take(LfgTemplateStore.MaxPerGuild))
+            foreach (var t in templates.Take(LfgTemplateStore.MaxInMenu))
             {
                 var roles = string.Join("/", t.Slots.Select(r => r.Label()));
                 var desc = $"{t.Slots.Count} slots: {roles}";

@@ -214,9 +214,11 @@ public static partial class PanelApi
         });
 
         g.MapPut("/templates/{key}", (ulong guildId, string key, TemplateBody body, DiscordSocketClient client,
-            ActivityStore activities, LfgTemplateStore templates) =>
+            ActivityStore activities, LfgTemplateStore templates, LfgProjectStore projects) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            var projectKey = string.IsNullOrWhiteSpace(body.ProjectKey) ? null : body.ProjectKey;
+            if (projectKey is not null && projects.Find(guildId, projectKey) is null) return Error("Project not found.");
             var name = (body.Name ?? "").Trim();
             if (name.Length is 0 or > 80) return Error("Template name: 1–80 characters.");
             if (!string.IsNullOrWhiteSpace(body.ActivityKey) && activities.Find(guildId, body.ActivityKey) is null) return Error("Activity not found.");
@@ -237,7 +239,8 @@ public static partial class PanelApi
                 CustomActivity = string.IsNullOrWhiteSpace(body.ActivityKey) ? (body.CustomActivity ?? name).Trim() : null,
                 Slots = slots,
                 RequiredRoleIds = Requirements(guild, body.RequiredRoleIds) ?? [],
-                MinGs = body.MinGs is > 0 ? body.MinGs : null
+                MinGs = body.MinGs is > 0 ? body.MinGs : null,
+                ProjectKey = projectKey
             });
             return error is null ? Results.Ok() : Error(error);
         });
@@ -254,11 +257,18 @@ public static partial class PanelApi
             AttendanceAsync(guildId, groupId, body, lfg, signup, null));
 
         // ----- Статистика -----
-        g.MapGet("/stats", (ulong guildId, int? days, DiscordSocketClient client, LfgHistoryStore history) =>
+        g.MapGet("/stats", (ulong guildId, int? days, string? project, DiscordSocketClient client, LfgHistoryStore history,
+            LfgProjectStore projects) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var since = days is > 0 ? DateTimeOffset.UtcNow.AddDays(-days.Value) : (DateTimeOffset?)null;
             var list = history.Get(guildId, since);
+            if (!string.IsNullOrWhiteSpace(project))
+            {
+                // Старые сборы без проекта — в проекте по умолчанию
+                var def = projects.DefaultKey(guildId);
+                list = list.Where(e => (e.ProjectKey ?? def) == project).ToList();
+            }
             var players = LfgStats.Players(list);
             return Results.Ok(new
             {
@@ -503,7 +513,8 @@ public static partial class PanelApi
             customActivity = t.CustomActivity,
             slots = t.Slots.Select(s => s.ToString()),
             requiredRoles = t.RequiredRoleIds.Select(id => Role(guild, id)),
-            minGs = t.MinGs
+            minGs = t.MinGs,
+            projectKey = t.ProjectKey
         }).ToList();
 
     private static object StatsDto(SocketGuild guild, PlayerStats p) => new
@@ -868,7 +879,7 @@ public sealed record ClassIconsBody(List<ClassIconBody>? Classes);
 public sealed record ClassRoleIconsBody(List<string>? RoleIds);
 public sealed record EmojiDto(string Name, string Code, string Url, bool App);
 public sealed record TemplateBody(string? Name, string? ActivityKey, string? CustomActivity, List<string>? Slots,
-    List<string>? RequiredRoleIds, int? MinGs);
+    List<string>? RequiredRoleIds, int? MinGs, string? ProjectKey = null);
 public sealed record TimeBody(string? Date, string? Time);
 public sealed record AttendanceBody(string? UserId, bool? Attended);
 public sealed record SettingsBody(string? TimeZone, int? AutoDeleteHours, int? ReminderMinutes);

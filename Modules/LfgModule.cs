@@ -75,7 +75,9 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         var draft = new LfgDraft(Context.Guild.Id, ChannelId, Context.User.Id) { ProjectKey = project?.Key };
         store.Drafts[draft.Id] = draft;
 
-        var s = LfgRenderer.SizeStep(draft, templates.Get(Context.Guild.Id));
+        // Шаблоны этого проекта + общие (без проекта)
+        var s = LfgRenderer.SizeStep(draft, templates.Get(Context.Guild.Id)
+            .Where(t => t.ProjectKey is null || project is null || t.ProjectKey == project.Key).ToList());
         await RespondAsync(s.Content, embed: s.Embed, components: s.Components, ephemeral: true);
     }
 
