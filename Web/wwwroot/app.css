@@ -1243,3 +1243,17 @@ dialog[open]:has(.check-list, .pick-list, .guide-body) { overflow: clip; }
 .user-pop { min-width: 260px; z-index: 50; background-color: rgba(22, 26, 40, .98); -webkit-backdrop-filter: none; backdrop-filter: none; }
 .user-pop .who span { display: block; }
 .menu-item.view-as span { white-space: nowrap; }
+
+/* Compact row actions + "⋯" menu; clickable rows */
+.row-actions { display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end; }
+.table.clickable-rows tbody tr { cursor: pointer; }
+.table.clickable-rows tbody tr:hover { background: rgba(123, 77, 255, .07); }
+.menu-wrap { position: relative; display: inline-flex; }
+.menu-pop {
+  position: fixed; z-index: 1000; min-width: 190px; padding: 6px; text-align: left;
+  background: rgba(22, 26, 40, .98); border: 1px solid rgba(255, 255, 255, .1); border-radius: 10px; box-shadow: var(--shadow-pop);
+}
+.menu-pop a.menu-item { text-decoration: none; }
+.answers { display: flex; flex-direction: column; gap: 10px; }
+.answer { padding: 10px 12px; border-radius: 10px; background: rgba(10, 13, 20, .55); border: 1px solid rgba(255, 255, 255, .08); white-space: pre-wrap; word-break: break-word; }
+.answer .muted { margin-bottom: 4px; font-weight: 600; }
