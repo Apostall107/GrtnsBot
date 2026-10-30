@@ -157,6 +157,37 @@ function pickRolesDialog(title, exclude = [], pool = state.roles) {
   });
 }
 
+/** Pick several channels (search + highlight). Resolves with the chosen ids or null (cancel). */
+function pickChannelsDialog(title, pool, selected = []) {
+  return new Promise(resolve => {
+    const d = dialog();
+    const search = h("input", { placeholder: "Search channels…", style: "width:100%" });
+    const chosen = new Set(selected);
+    const items = pool.map(c => {
+      const cb = h("input", { type: "checkbox", checked: chosen.has(c.id) });
+      return { c, cb, el: h("label", {}, cb, icon(c.voice ? "volume-2" : "hash", 15, "muted"), h("span", {}, c.name)) };
+    });
+    const groups = [["Text channels", items.filter(x => !x.c.voice)], ["Voice channels (their chat)", items.filter(x => x.c.voice)]]
+      .filter(([, list]) => list.length);
+    const list = h("div", { class: "check-list" }, groups.flatMap(([label, list]) => [h("div", { class: "select-group" }, label), ...list.map(x => x.el)]));
+    search.addEventListener("input", () => {
+      const q = search.value.trim().toLowerCase();
+      for (const x of items) x.el.style.display = !q || x.c.name.toLowerCase().includes(q) ? "" : "none";
+    });
+    const count = h("span", { class: "muted small", style: "margin-right:auto" });
+    const syncCount = () => { count.textContent = `${items.filter(x => x.cb.checked).length} selected`; };
+    list.addEventListener("change", syncCount);
+    syncCount();
+    let result = null;
+    d.replaceChildren(h("h2", {}, title), search, list,
+      h("div", { class: "actions" }, count, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"),
+        h("button", { class: "btn", onclick: () => { result = items.filter(x => x.cb.checked).map(x => x.c.id); d.close(); } }, icon("check", 15), "Done")));
+    d.onclose = () => resolve(result);
+    d.showModal();
+    search.focus();
+  });
+}
+
 function promptDialog(title, initial) {
   return new Promise(resolve => {
     const d = dialog();
@@ -1548,10 +1579,22 @@ function lfgForm(acts, opts) {
   if (projectSel) projectSel.value = v.projectKey || (opts.projects.find(p => p.isDefault) || opts.projects[0]).key;
   const currentProject = () => locked ? opts.lockProject : projectSel ? projectSel.value : null;
   // Admins: duplicate the post to other channels
-  const mirrorBoxes = (opts.mirrorChannels || []).map(c => {
-    const cb = h("input", { type: "checkbox" });
-    return { id: c.id, cb, el: h("label", { class: "chip", style: "cursor:pointer" }, cb, `#${c.name}`) };
+  // Admins only (the server sends the list only to admins): chosen channels as chips + a searchable picker
+  const mirrorPool = (opts.mirrorChannels || []).map(c => {
+    const voice = c.name.startsWith("🔊 ");
+    return { id: c.id, name: voice ? c.name.slice(3) : c.name, voice };
   });
+  let mirrorIds = [];
+  const mirrorChips = h("div", { class: "row", style: "gap:6px" });
+  const drawMirrors = () => mirrorChips.replaceChildren(...mirrorIds.map(id => {
+    const c = mirrorPool.find(x => x.id === id);
+    return h("span", { class: "chip" }, icon(c.voice ? "volume-2" : "hash", 13), c.name,
+      h("button", { type: "button", title: "Remove", onclick: () => { mirrorIds = mirrorIds.filter(x => x !== id); drawMirrors(); } }, "×"));
+  }), h("button", { type: "button", class: "btn secondary sm", onclick: async () => {
+    const picked = await pickChannelsDialog("Also post in…", mirrorPool, mirrorIds);
+    if (picked) { mirrorIds = picked; drawMirrors(); }
+  } }, icon("plus", 14), mirrorIds.length ? "Change channels…" : "Add channels…"));
+  drawMirrors();
   const voice = h("input", { type: "checkbox", checked: !!v.createVoice });
   const nameIn = h("input", { placeholder: "Template name, e.g. Dungeon 4: Tank/Sup/DD/DD", maxlength: "80", value: v.name || "" });
 
@@ -1703,9 +1746,8 @@ function lfgForm(acts, opts) {
     h("label", { class: "row" }, dm, "DM members with the activity role"),
     opts.mode === "once" ? h("label", { class: "row" }, voice, "🔊 Create a voice room (everyone listens, the group speaks)") : null,
     seatLabel));
-  if (mirrorBoxes.length) fields.push(h("details", { style: "margin-bottom:12px" },
-    h("summary", { class: "muted" }, "📢 Also post in other channels (optional)"),
-    h("div", { style: "margin-top:6px" }, mirrorBoxes.map(x => x.el))));
+  if (mirrorPool.length) fields.push(h("div", { class: "field" },
+    h("label", {}, "Also post in other channels (admins, optional)"), mirrorChips));
 
   return {
     el: h("div", {}, fields),
@@ -1714,7 +1756,7 @@ function lfgForm(acts, opts) {
       slots: slots.slice(), notifyByDm: dm.checked, seatOwner: seat.checked,
       requiredRoleIds: req.value(), minGs: minGs.value === "" ? null : Number(minGs.value),
       projectKey: currentProject(), createVoice: voice.checked,
-      mirrorChannelIds: mirrorBoxes.filter(x => x.cb.checked).map(x => x.id), ...extra()
+      mirrorChannelIds: mirrorIds.slice(), ...extra()
     })
   };
 }
