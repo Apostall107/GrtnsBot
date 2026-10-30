@@ -223,6 +223,7 @@ public static class LfgRenderer
             sb.AppendLine($"🕒 Starts: {FormatTime(startsAt)}");
         sb.AppendLine($"Roster: **{g.FilledCount}/{g.Slots.Count}**");
         if (Requirements(g) is { } req) sb.AppendLine($"📋 Requirements: {req}");
+        if (g.VoiceChannelId is { } voice) sb.AppendLine($"🔊 Voice room: <#{voice}>");
         sb.AppendLine();
         // Заметки к персонажам в посте не показываются — их видит владелец при выборе персонажа
         sb.Append(Roster(g, withComments: false));

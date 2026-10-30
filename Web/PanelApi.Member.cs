@@ -83,6 +83,7 @@ public static partial class PanelApi
                         filled = x.FilledCount,
                         size = x.Slots.Count,
                         jumpUrl = LfgSignupService.JumpUrl(x),
+                voiceUrl = x.VoiceChannelId is { } vc ? $"https://discord.com/channels/{x.GuildId}/{vc}" : null,
                         closed = x.IsClosed,
                         isOrganizer = x.OwnerId == me,
                         requirements = x.HasRequirements ? new

@@ -27,6 +27,8 @@ public sealed class GuildLfgSetup
     public Dictionary<ulong, string> ClassIcons { get; set; } = new();
     /// <summary>Классы отдельного проекта. Если у проекта список пуст — действуют общие (ClassIcons).</summary>
     public Dictionary<string, Dictionary<ulong, string>> ProjectClassIcons { get; set; } = new();
+    /// <summary>Категория для голосовых комнат сборов: "" — общая, иначе ключ проекта.</summary>
+    public Dictionary<string, ulong> VoiceCategories { get; set; } = new();
 }
 
 /// <summary>data/lfg-setup.json — проекты, проект по умолчанию, иконки классов (по серверам).</summary>
@@ -149,6 +151,31 @@ public sealed class LfgProjectStore
             if (projectKey is null) g.ClassIcons = icons;
             else if (icons.Count == 0) g.ProjectClassIcons.Remove(projectKey);
             else g.ProjectClassIcons[projectKey] = icons;
+            Write();
+        }
+    }
+
+    /// <summary>Категория голосовых комнат как задана: projectKey null — общая, иначе только проекта.</summary>
+    public ulong? VoiceCategory(ulong guildId, string? projectKey)
+    {
+        lock (_lock)
+            return Guild(guildId).VoiceCategories.TryGetValue(projectKey ?? "", out var id) ? id : null;
+    }
+
+    /// <summary>Категория для комнаты сбора: проекта, иначе общая (null — категория канала с постом).</summary>
+    public ulong? EffectiveVoiceCategory(ulong guildId, string? projectKey)
+    {
+        var key = Effective(guildId, projectKey)?.Key;
+        return (key is null ? null : VoiceCategory(guildId, key)) ?? VoiceCategory(guildId, null);
+    }
+
+    public void SetVoiceCategory(ulong guildId, string? projectKey, ulong? categoryId)
+    {
+        lock (_lock)
+        {
+            var g = Guild(guildId);
+            if (categoryId is { } id) g.VoiceCategories[projectKey ?? ""] = id;
+            else g.VoiceCategories.Remove(projectKey ?? "");
             Write();
         }
     }

@@ -240,6 +240,7 @@ public static partial class PanelApi
                 filled = x.FilledCount,
                 size = x.Slots.Count,
                 jumpUrl = LfgSignupService.JumpUrl(x),
+                voiceUrl = x.VoiceChannelId is { } vc ? $"https://discord.com/channels/{x.GuildId}/{vc}" : null,
                 started = x.StartsAt is null || x.StartsAt <= DateTimeOffset.UtcNow,
                 requirements = x.HasRequirements ? new { roles = x.RequiredRoleIds.Select(id => Role(guild, id)), minGs = x.MinGs } : null,
                 slots = x.Slots.Select(s => new

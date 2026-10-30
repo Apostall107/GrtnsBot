@@ -276,9 +276,13 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
             var postChannel = guild.GetTextChannel(group.ChannelId);
             var name = $"🔊 {group.ActivityName}";
             if (name.Length > 100) name = name[..100];
+            // Категория: заданная в админке (проекта или общая), иначе категория канала с постом
+            var category = projects.EffectiveVoiceCategory(group.GuildId, group.ProjectKey) is { } chosen && guild.GetCategoryChannel(chosen) is not null
+                ? chosen
+                : postChannel?.CategoryId;
             var channel = await guild.CreateVoiceChannelAsync(name, p =>
             {
-                if (postChannel?.CategoryId is { } cat) p.CategoryId = cat;
+                if (category is { } cat) p.CategoryId = cat;
                 p.PermissionOverwrites = new Optional<IEnumerable<Overwrite>>(VoiceOverwrites(guild, group));
             });
             group.VoiceChannelId = channel.Id;
