@@ -203,7 +203,11 @@ function pickMemberDialog(title) {
 const ICON_TONES = {
   "users": "blue", "users-round": "violet", "swords": "violet", "circle-plus": "violet", "user-round": "cyan", "user-plus": "cyan",
   "ticket": "amber", "inbox": "amber", "file-pen-line": "amber", "headphones": "teal", "volume-2": "teal", "sliders-horizontal": "teal",
-  "megaphone": "pink", "chart-column": "green", "circle-check": "green", "crown": "amber", "bell": "amber"
+  "megaphone": "pink", "chart-column": "green", "circle-check": "green", "crown": "amber", "bell": "amber",
+  "hash": "blue", "message-square-text": "blue", "bot": "green", "key-round": "amber", "pen-line": "pink", "layout-template": "blue",
+  "pin": "violet", "drama": "cyan", "archive": "amber", "calendar": "pink", "repeat": "violet", "trending-up": "green",
+  "database-backup": "green", "settings": "cyan", "clipboard-list": "violet", "folder": "amber", "file-text": "blue",
+  "gamepad-2": "violet", "list": "blue", "shield-check": "green", "server": "blue", "list-filter": "blue", "scroll-text": "blue"
 };
 const toneOf = ic => `tone-${ICON_TONES[ic] || "violet"}`;
 function toneChip(ic, size = 16) { return h("span", { class: `tone-chip ${toneOf(ic)}` }, icon(ic, size)); }
@@ -242,26 +246,59 @@ function skeletonStat() { return h("div", { class: "stat" }, h("div", { class: "
 
 /** Emoji at the start of a button/tab label → a Lucide icon (old labels keep working). */
 const EMOJI_ICONS = { "➕": "plus", "💾": "save", "🗑️": "trash-2", "🗑": "trash-2", "✏️": "pencil", "📌": "pin", "👁": "eye", "✅": "check",
-  "✕": "x", "✖": "x", "✖️": "x", "🔍": "search", "↩️": "undo-2", "📅": "calendar", "🕒": "clock", "🔊": "volume-2", "📋": "clipboard-list",
+  "✕": "x", "✖": "x", "✖️": "x", "🔍": "search", "↩️": "undo-2", "📅": "calendar", "🕒": "clock", "🔊": "volume-2", "📋": "clipboard-list", "⬇️": "download", "⬆️": "upload", "👤": "user-round", "🔎": "search",
   "⚙️": "settings", "🎨": "palette", "🎮": "gamepad-2", "🌐": "globe", "📣": "megaphone", "📝": "file-pen-line", "📨": "send", "🔒": "lock",
   "🔓": "lock-open", "🔁": "repeat", "📁": "folder", "📄": "file-text", "📢": "megaphone", "🔄": "refresh-cw" };
 function iconizeButtons(root) {
   for (const btn of root.querySelectorAll(".btn, .tabs button")) {
     const first = btn.firstChild;
     if (!first || first.nodeType !== Node.TEXT_NODE) continue;
-    const m = /^(\S+?)️?\s+/u.exec(first.textContent);
-    if (!m) continue;
     const key = Object.keys(EMOJI_ICONS).find(k => first.textContent.startsWith(k));
     if (!key) continue;
     first.textContent = first.textContent.slice(key.length).replace(/^️?\s*/u, "");
     btn.insertBefore(icon(EMOJI_ICONS[key], 16), first);
   }
 }
+/** Card headings: a leading emoji (or a known title) becomes a tone icon chip. */
+const HEADING_EMOJI = { "⚙️": "settings", "🎭": "drama", "🎮": "gamepad-2", "👥": "users", "💾": "database-backup", "📄": "file-text",
+  "📅": "calendar", "📈": "trending-up", "📋": "clipboard-list", "📝": "file-pen-line", "🔁": "repeat", "🗂️": "folder", "🗄️": "archive",
+  "🔊": "headphones", "📢": "megaphone", "📌": "pin", "🎫": "ticket", "📣": "megaphone", "🔑": "key-round", "📊": "chart-column", "📜": "scroll-text" };
+const HEADING_TEXT = [["Activities", "swords"], ["Shared activities", "swords"], ["LFG panel", "pin"], ["Voice rooms", "headphones"],
+  ["Duplicate posts", "megaphone"], ["Channel for groups", "hash"], ["Active groups", "users-round"], ["Open tickets", "ticket"],
+  ["Ticket panel", "pin"], ["Room control panel", "pin"], ["New project", "circle-plus"], ["'Join to create' channels", "headphones"], ["Create a 'join to create' channel", "circle-plus"],
+  ["Use an existing voice channel", "volume-2"], ["Active rooms", "volume-2"], ["Room panel", "pin"], ["Bot messages in a channel", "message-square-text"],
+  ["Panels", "layout-template"], ["Bot", "bot"], ["Give access", "key-round"], ["People with access", "users"], ["New post", "pen-line"],
+  ["Edit scheduled post", "pen-line"], ["Classes", "drama"], ["Common classes", "drama"], ["Templates", "clipboard-list"], ["Log", "scroll-text"],
+  ["Filters", "list-filter"], ["Settings", "settings"], ["Member roles", "users"], ["Project name", "folder"]];
+function iconizeHeadings(root) {
+  for (const hd of root.querySelectorAll(".card h2:not(.with-icon):not([data-iconized]), .card h3:not(.with-icon):not([data-iconized])")) {
+    hd.dataset.iconized = "1";
+    if (hd.closest("dialog")) continue;
+    const text = hd.textContent.trim();
+    let ic = null, rest = text;
+    const key = Object.keys(HEADING_EMOJI).find(k => text.startsWith(k));
+    if (key) { ic = HEADING_EMOJI[key]; rest = text.slice(key.length).replace(/^\uFE0F?\s*/u, ""); }
+    else {
+      const m = HEADING_TEXT.find(([t]) => text === t || text.startsWith(t + " ·") || text.startsWith(t + " "));
+      if (m) ic = m[1];
+    }
+    if (!ic) continue;
+    if (key) {
+      // keep child nodes after the emoji (e.g. badges)
+      const first = hd.firstChild;
+      if (first && first.nodeType === Node.TEXT_NODE) first.textContent = first.textContent.slice(key.length).replace(/^\uFE0F?\s*/u, "");
+      else hd.textContent = rest;
+    }
+    hd.classList.add("with-icon");
+    hd.prepend(toneChip(ic, 16));
+  }
+}
+
 let iconizeQueued = false;
 new MutationObserver(() => {
   if (iconizeQueued) return;
   iconizeQueued = true;
-  requestAnimationFrame(() => { iconizeQueued = false; iconizeButtons(document.body); });
+  requestAnimationFrame(() => { iconizeQueued = false; iconizeButtons(document.body); iconizeHeadings(document.body); });
 }).observe(document.body, { childList: true, subtree: true });
 
 // ================= Mentions: @ / # suggestions in text fields =================
@@ -491,7 +528,8 @@ const can = perm => {
 };
 const MEMBER_TABS = ["home", "play", "chars"];
 const visibleTabs = () => allTabs.filter(t => can(t[3]));
-const PERM_LABELS = { lfg: "📣 LFG", tickets: "🎫 Tickets", voice: "🔊 Temp Voice", texts: "📝 Panel texts", posts: "📌 Posts", announce: "✍️ Announcements", log: "📜 Log", settings: "⚙️ Settings" };
+const PERM_LABELS = { lfg: "LFG", tickets: "Tickets", voice: "Temp Voice", texts: "Panel texts", posts: "Posts", announce: "Announcements", log: "Log", settings: "Settings" };
+const PERM_ICONS = { lfg: "swords", tickets: "ticket", voice: "headphones", texts: "file-pen-line", posts: "pin", announce: "megaphone", log: "scroll-text", settings: "settings" };
 
 function renderLogin(message) {
   const params = new URLSearchParams(location.search);
@@ -918,23 +956,29 @@ async function pageAnnounce(main) {
 
 async function pageOverview(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "Dashboard"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
-  const holder = h("div", {}, h("div", { class: "muted" }, "Loading…"));
+  const holder = h("div", {}, h("div", { class: "stats" }, [0, 1, 2, 3].map(() => skeletonStat())));
   main.append(holder);
+  const go = tab => can(tab) ? () => { state.tab = tab; store.set("gb.tab", tab); renderShell(); } : null;
   try {
     const o = await gApi("GET", "/overview");
-    const stat = (label, value, sub, tab) => (tab && !can(tab)) ? null : h("div", { class: "stat", style: tab ? "cursor:pointer" : null,
-      onclick: tab ? () => { state.tab = tab; store.set("gb.tab", tab); renderShell(); } : null },
-      h("div", { class: "label" }, label), h("div", { class: "value" }, value), h("div", { class: "sub" }, sub));
+    const connected = state.connection === "Connected";
     holder.replaceChildren(
+      sectionLabel(o.guild.name),
       h("div", { class: "stats" },
-        stat("Server", o.guild.members, `${o.guild.name} · members`),
-        stat("📣 LFG groups", o.lfg.groups, `${o.lfg.activities} activities`, "lfg"),
-        stat("🎫 Open tickets", o.tickets.open, `${o.tickets.projects} projects`, "tickets"),
-        stat("🔊 Active rooms", o.voice.rooms, `${o.voice.creators} 'join to create' channels`, "voice")),
-      h("div", { class: "card" },
-        h("h3", {}, "Bot"),
-        h("p", { class: "muted" }, `Status: ${state.connection || "unknown"}`, state.bot ? ` · ${state.bot.name}` : ""),
-        h("p", { class: "muted small" }, "Changes made here apply immediately — the same data the bot uses in Discord.")));
+        statCard("users", "Members", o.guild.members, "on the server"),
+        statCard("swords", "LFG groups", o.lfg.groups, `${o.lfg.activities} activities`, go("lfg")),
+        statCard("ticket", "Open tickets", o.tickets.open, `${o.tickets.projects} projects`, go("tickets")),
+        statCard("headphones", "Active rooms", o.voice.rooms, `${o.voice.creators} 'join to create' channels`, go("voice"))),
+      sectionLabel("Bot"),
+      h("div", { class: "card" }, cardHead("bot", "Bot status"),
+        h("div", { class: "row" },
+          h("span", { class: `status-pill ${connected ? "ok" : "bad"}` }, h("span", { class: "dot" }), connected ? "Connected to Discord" : (state.connection || "Offline")),
+          state.bot ? h("span", { class: "chip" }, icon("bot", 13), state.bot.name) : null),
+        h("p", { class: "muted small", style: "margin-top:12px" }, "Changes made here apply immediately — the panel uses the same data as the bot in Discord.")),
+      sectionLabel("Sections"),
+      h("div", { class: "quick-actions" }, allTabs.filter(t => t[3] !== "member" && t[0] !== "overview" && can(t[3])).map(([key, ic, label]) =>
+        h("button", { class: `quick-action ${toneOf(ic)}`, onclick: () => { state.tab = key; store.set("gb.tab", key); renderShell(); } },
+          h("span", { class: "qa-icon" }, icon(ic, 18)), h("span", { class: "qa-text" }, h("b", {}, label), h("span", { class: "muted small" }, "Open"))))));
   } catch (e) { holder.replaceChildren(empty(e.message)); }
 }
 
@@ -1707,56 +1751,65 @@ function classMark(e) {
 }
 
 function groupCard(g) {
-  const close = h("button", { class: "btn danger" }, "🗑️ Force close");
+  const gid = encodeURIComponent(g.id);
+  const close = h("button", { class: "btn danger" }, icon("trash-2", 15), "Force close");
   close.addEventListener("click", async () => {
     if (!await confirmDialog(`Close ${g.activity}?`, "The group is closed and its post is deleted in Discord.", "Close & delete")) return;
-    if (await act(close, () => gApi("POST", `/lfg/groups/${encodeURIComponent(g.id)}/close`), "Group closed.") !== undefined) refresh();
+    if (await act(close, () => gApi("POST", `/lfg/groups/${gid}/close`), "Group closed.") !== undefined) refresh();
   });
 
   const roster = (action, m, okText, extra) => act(null,
-    () => gApi("POST", `/lfg/groups/${encodeURIComponent(g.id)}/roster`, { action, userId: m.id, ...(extra || {}) }), okText)
+    () => gApi("POST", `/lfg/groups/${gid}/roster`, { action, userId: m.id, ...(extra || {}) }), okText)
     .then(r => { if (r !== undefined) refresh(); });
-  const tool = (icon, title, fn) => h("button", { class: "btn ghost", title, onclick: fn, style: "padding:2px 6px" }, icon);
+  const tool = (ic, title, fn) => h("button", { class: "btn ghost icon-only sm", title, "aria-label": title, onclick: fn }, icon(ic, 15));
   const rename = (m, current) => async () => {
     const name = await promptDialog(`Character of ${m.name}`, current || "");
     if (name) roster("character", m, "Character changed.", { character: name });
   };
+  const note = c => c ? h("span", { class: "muted small", title: "Note" }, icon("message-square-text", 12), " ", c) : null;
 
-  return h("div", { class: "card", style: "margin:0" },
-    h("div", { class: "card-head" }, h("h3", {}, g.activity), h("span", { class: "badge ok" }, `${g.filled}/${g.size}`)),
-    h("div", { class: "muted small" }, "Organizer: ", member(g.owner)),
-    h("div", { class: "muted small" }, `Start: ${fmtDate(g.startsAt)}`, g.channel ? ` · #${g.channel}` : ""),
-    h("div", { class: "muted small" }, `Auto-delete ${fmtRelative(g.expiresAt)}`),
-    requirementsLine(g.requirements),
-    h("div", { style: "margin-bottom:8px" }),
-    h("ul", { class: "slots" }, g.slots.map((s, i) => h("li", {},
-      h("span", { class: "num" }, i + 1), h("span", {}, s.emoji),
-      s.member ? h("span", {}, h("span", { class: "row", style: "gap:4px" }, member(s.member), classMark(s)),
-        s.comment ? h("div", { class: "muted small" }, `💬 ${s.comment}`) : null) : h("span", { class: "free" }, `free (${s.slotRole})`),
-      h("span", { class: "char" }, s.character || "", s.gs ? ` · GS ${s.gs}` : ""),
-      s.member ? h("span", {},
-        g.started ? attendanceButton(s, `/lfg/groups/${encodeURIComponent(g.id)}/attendance`) : null,
-        tool("✏️", "Change character", rename(s.member, s.character)),
-        s.member.id !== g.owner.id ? tool("⬇️", "Move to reserve", () => roster("toReserve", s.member, "Moved to the reserve.")) : null,
-        s.member.id !== g.owner.id ? tool("✖️", "Remove from the group", async () => {
-          if (await confirmDialog(`Remove ${s.member.name}?`, "Their slot becomes free.", "Remove")) roster("remove", s.member, "Removed.");
-        }) : null) : null))),
-    g.reserve.length ? h("div", { style: "margin-top:8px" }, h("div", { class: "muted small" }, `Reserve (${g.reserve.length})`),
-      h("ul", { class: "slots" }, g.reserve.map(r => h("li", {}, h("span", {}, r.emoji),
-        h("span", {}, h("span", { class: "row", style: "gap:4px" }, member(r.member), classMark(r)),
-          r.comment ? h("div", { class: "muted small" }, `💬 ${r.comment}`) : null),
-        h("span", { class: "char" }, r.character || ""),
-        h("span", {},
-          tool("⬆️", "Move into the group (sends a DM)", () => roster("promote", r.member, "Moved into the group, DM sent.")),
-          tool("✏️", "Change character", rename(r.member, r.character)),
-          tool("✖️", "Remove from the reserve", async () => {
-            if (await confirmDialog(`Remove ${r.member.name} from the reserve?`, "They are taken out of this group.", "Remove")) roster("removeReserve", r.member, "Removed from the reserve.");
-          })))))) : null,
-    h("div", { class: "row", style: "margin-top:12px" },
-      h("a", { class: "btn secondary", href: g.jumpUrl, target: "_blank", rel: "noopener" }, "Open in Discord"),
-      g.voiceUrl ? h("a", { class: "btn btn-refresh", href: g.voiceUrl, target: "_blank", rel: "noopener", title: "Open the group's voice room in Discord" }, "🔊 Voice room") : null,
-      h("button", { class: "btn secondary", onclick: () => rescheduleDialog(g, `/lfg/groups/${encodeURIComponent(g.id)}/time`) }, "🕒 Time"),
-      close));
+  const full = g.filled >= g.size;
+  return h("div", { class: `card group-card${full ? " is-full" : ""}`, style: "margin:0" },
+    h("div", { class: "group-head" },
+      h("div", { class: "group-title" }, h("h3", {}, g.activity)),
+      h("div", { class: "group-state" },
+        g.started ? h("span", { class: "badge wait" }, icon("timer", 12), "Started") : full ? h("span", { class: "badge ok" }, icon("check", 12), "Full")
+          : h("span", { class: "badge recruiting" }, h("span", { class: "pulse" }), "Recruiting"),
+        capacity(g.filled, g.size))),
+    h("div", { class: "group-meta" },
+      h("div", { class: "meta-item" }, icon("crown", 14), member(g.owner)),
+      h("div", { class: "meta-item" }, icon("calendar-clock", 14), g.startsAt ? fmtDate(g.startsAt) : "No time set"),
+      g.channel ? h("div", { class: "meta-item" }, icon("hash", 14), g.channel) : null,
+      h("div", { class: "meta-item" }, icon("trash-2", 14), `auto-delete ${fmtRelative(g.expiresAt)}`),
+      g.requirements ? h("div", { class: "meta-item" }, icon("shield", 14), g.requirements.roles.map(r => roleChip(r)),
+        g.requirements.minGs ? h("span", { class: "chip" }, `GS ${g.requirements.minGs}+`) : null) : null),
+    h("div", { class: "roster" }, g.slots.map((s, i) => s.member
+      ? h("div", { class: "slot taken" },
+          h("span", { class: "slot-num" }, i + 1), rolePill(s.role || s.slotRole),
+          h("span", { class: "slot-who" }, member(s.member), classMark(s), note(s.comment)),
+          h("span", { class: "slot-char" }, s.character || "", s.gs ? h("span", { class: "gs" }, `GS ${s.gs}`) : null),
+          g.started ? attendanceButton(s, `/lfg/groups/${gid}/attendance`) : null,
+          tool("pencil", "Change character", rename(s.member, s.character)),
+          s.member.id !== g.owner.id ? tool("arrow-right", "Move to reserve", () => roster("toReserve", s.member, "Moved to the reserve.")) : null,
+          s.member.id !== g.owner.id ? tool("x", "Remove from the group", async () => {
+            if (await confirmDialog(`Remove ${s.member.name}?`, "Their slot becomes free.", "Remove")) roster("remove", s.member, "Removed.");
+          }) : null)
+      : h("div", { class: "slot open" }, h("span", { class: "slot-num" }, i + 1), rolePill(s.slotRole),
+          h("span", { class: "slot-open-text" }, icon("circle-plus", 14), "Open slot")))),
+    g.reserve.length ? h("details", { class: "reserve", open: true }, h("summary", {}, icon("clock", 14), `Reserve · ${g.reserve.length}`),
+      h("div", { class: "roster" }, g.reserve.map(r => h("div", { class: "slot taken reserve-row" },
+        rolePill(r.role || "All"), h("span", { class: "slot-who" }, member(r.member), classMark(r), note(r.comment)),
+        h("span", { class: "slot-char" }, r.character || ""),
+        tool("arrow-left", "Move into the group (sends a DM)", () => roster("promote", r.member, "Moved into the group, DM sent.")),
+        tool("pencil", "Change character", rename(r.member, r.character)),
+        tool("x", "Remove from the reserve", async () => {
+          if (await confirmDialog(`Remove ${r.member.name} from the reserve?`, "They are taken out of this group.", "Remove")) roster("removeReserve", r.member, "Removed from the reserve.");
+        }))))) : null,
+    h("div", { class: "group-actions" },
+      h("a", { class: "btn secondary", href: g.jumpUrl, target: "_blank", rel: "noopener" }, icon("external-link", 15), "Open in Discord"),
+      g.voiceUrl ? h("a", { class: "btn secondary voice-btn", href: g.voiceUrl, target: "_blank", rel: "noopener", title: "Open the group's voice room in Discord" }, icon("volume-2", 15), "Voice room") : null,
+      h("button", { class: "btn secondary", onclick: () => rescheduleDialog(g, `/lfg/groups/${gid}/time`) }, icon("clock", 15), "Time"),
+      h("span", { class: "spacer" }), close));
 }
 
 // ================= Tickets =================
@@ -2561,7 +2614,7 @@ async function pageContent(main) {
   await (sub === "texts" ? pageTexts(inner) : pagePosts(inner));
   // The section's own heading becomes a sub-heading
   const h1 = inner.querySelector("h1");
-  if (h1) h1.replaceWith(h("h2", {}, h1.textContent));
+  if (h1) h1.replaceWith(h("h2", { class: "sub-title" }, h1.textContent.replace(/^[^\p{L}\p{N}]+/u, "")));
 }
 
 // ================= Member: groups =================
@@ -2841,7 +2894,7 @@ async function pageAccess(main) {
   const permChecks = (selected) => {
     const boxes = data.permissions.map(p => {
       const cb = h("input", { type: "checkbox", checked: selected.includes(p) });
-      return { p, cb, el: h("label", { class: "chip", style: "cursor:pointer" }, cb, PERM_LABELS[p] || p) };
+      return { p, cb, el: h("label", { class: `chip perm-chip ${toneOf(PERM_ICONS[p] || "key-round")}`, style: "cursor:pointer" }, cb, icon(PERM_ICONS[p] || "key-round", 13), PERM_LABELS[p] || p) };
     });
     return { el: h("div", {}, boxes.map(b => b.el)), value: () => boxes.filter(b => b.cb.checked).map(b => b.p) };
   };
