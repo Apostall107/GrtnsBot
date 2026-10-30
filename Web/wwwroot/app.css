@@ -19,11 +19,11 @@
 
 :root {
   /* Colors */
-  --background: #0D0F14;
-  --sidebar: #11141B;
-  --surface: #151922;
-  --surface-elevated: #202633;
-  --surface-hover: #1A1F2A;
+  --background: #090B10;
+  --sidebar: #0E1118;
+  --surface: #141924;
+  --surface-elevated: #1F2634;
+  --surface-hover: #1A2030;
   --primary: #7657F6;
   --primary-hover: #896EFF;
   --primary-soft: rgba(118, 87, 246, .16);
@@ -36,8 +36,8 @@
   --danger-soft: rgba(239, 91, 103, .14);
   --text-primary: #F1F3F8;
   --text-secondary: #929BAE;
-  --border: #2A303C;
-  --border-strong: #363D4C;
+  --border: #262D3B;
+  --border-strong: #38415A;
 
   /* Type */
   --font: "Inter", "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
@@ -56,6 +56,16 @@
   --sidebar-w: 232px;
   --sidebar-w-collapsed: 64px;
   --shadow-pop: 0 12px 32px rgba(0, 0, 0, .45);
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, .03) inset, 0 8px 24px rgba(0, 0, 0, .18);
+
+  /* Module tones — icons and highlights, so sections are told apart at a glance */
+  --t-violet: #9378FF;
+  --t-blue: #4C9BFF;
+  --t-amber: #F5B942;
+  --t-teal: #2BCDB4;
+  --t-pink: #F0609E;
+  --t-green: #22C58B;
+  --t-cyan: #45C8EA;
   --ease: 140ms ease;
 
   /* Legacy names (older pages) → new tokens */
@@ -470,7 +480,7 @@ button.stat { cursor: pointer; }
 }
 .hero-title { font-size: 20px; font-weight: 600; margin-bottom: 2px; }
 
-.quick-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 178px), 1fr)); gap: var(--s3); margin-bottom: var(--s5); }
+.quick-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: var(--s3); margin-bottom: var(--s5); }
 .quick-action {
   display: flex; align-items: center; gap: var(--s3); padding: var(--s3) var(--s4); min-height: 64px;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card);
@@ -513,3 +523,72 @@ button.stat { cursor: pointer; }
 /* Icons inside buttons and badges */
 .btn .icon { margin: 0 -1px; }
 .badge .icon { margin-left: -2px; }
+
+/* =====================================================================
+   Depth & color: cards lift off the page, every module has its tone
+   ===================================================================== */
+
+.tone-violet { --tone: var(--t-violet); }
+.tone-blue { --tone: var(--t-blue); }
+.tone-amber { --tone: var(--t-amber); }
+.tone-teal { --tone: var(--t-teal); }
+.tone-pink { --tone: var(--t-pink); }
+.tone-green { --tone: var(--t-green); }
+.tone-cyan { --tone: var(--t-cyan); }
+
+.card {
+  background: linear-gradient(180deg, rgba(255, 255, 255, .025), rgba(255, 255, 255, 0) 120px), var(--surface);
+  box-shadow: var(--shadow-card);
+}
+.card > .card-head:first-child:has(h2.with-icon) {
+  margin: calc(var(--s5) * -1) calc(var(--s5) * -1) var(--s4); padding: var(--s3) var(--s5);
+  border-bottom: 1px solid var(--border); border-radius: var(--radius-card) var(--radius-card) 0 0;
+  background: rgba(255, 255, 255, .015);
+}
+h2.with-icon .tone-chip { width: 30px; height: 30px; border-radius: 9px; }
+
+/* Icon chip in the tone of its module */
+.tone-chip, .stat-icon, .qa-icon, .es-icon {
+  display: inline-grid; place-items: center; flex: none;
+  color: var(--tone, var(--primary-text));
+  background: color-mix(in srgb, var(--tone, var(--primary)) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone, var(--primary)) 28%, transparent);
+}
+
+.stat {
+  position: relative; overflow: hidden; box-shadow: var(--shadow-card);
+  background: radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--tone, var(--primary)) 13%, transparent), transparent 55%), var(--surface);
+}
+.stat::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: var(--tone, var(--primary)); opacity: .85;
+}
+.stat .value { color: var(--text-primary); }
+.stat.clickable:hover { border-color: color-mix(in srgb, var(--tone, var(--primary)) 55%, transparent); }
+.stats.compact .stat { background: radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--tone, var(--primary)) 12%, transparent), transparent 55%), var(--background); box-shadow: none; }
+
+.quick-action { background: var(--surface); box-shadow: var(--shadow-card); }
+.quick-action:hover { border-color: color-mix(in srgb, var(--tone, var(--primary)) 60%, transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--tone, var(--primary)) 10%, transparent), transparent 70%), var(--surface-hover); }
+
+.home-hero {
+  position: relative; overflow: hidden;
+  background:
+    radial-gradient(60% 140% at 100% 0%, rgba(240, 96, 158, .16), transparent 60%),
+    radial-gradient(70% 160% at 0% 100%, rgba(118, 87, 246, .32), transparent 60%),
+    linear-gradient(120deg, #1B1636, #141924 70%);
+  border-color: rgba(118, 87, 246, .35);
+}
+.hero-title { font-size: 22px; }
+
+.section-label { display: flex; align-items: center; gap: 10px; margin: var(--s6) 0 var(--s3); color: #A9B1C3; }
+.section-label::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+
+.empty-state { background: rgba(255, 255, 255, .015); }
+.char-card { background: var(--surface-elevated); }
+.list-row { padding: 12px 0; }
+.qa-text b, .qa-text span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Sidebar icons carry their module tone (muted until hover/active) */
+.nav-item .icon { color: var(--tone, currentColor); opacity: .8; transition: opacity var(--ease); }
+.nav-item:hover .icon, .nav-item.active .icon { opacity: 1; color: var(--tone, var(--primary-text)); }
