@@ -841,3 +841,44 @@ h2.with-icon .tone-chip, h3.with-icon .tone-chip { width: 28px; height: 28px; bo
 .perm-chip .icon { color: var(--tone); }
 .perm-chip:has(input:checked) { border-color: color-mix(in srgb, var(--tone) 55%, transparent); box-shadow: 0 0 12px color-mix(in srgb, var(--tone) 22%, transparent); }
 h2.sub-title { margin-top: var(--s2); }
+
+/* =====================================================================
+   Checkboxes: glass box, neon fill and an animated check
+   ===================================================================== */
+
+input[type=checkbox]:not(.switch) {
+  appearance: none; -webkit-appearance: none; flex: none; position: relative;
+  width: 20px; height: 20px; min-height: 0; margin: 0; padding: 0; cursor: pointer; vertical-align: middle;
+  border-radius: 6px; border: 1.5px solid rgba(190, 175, 255, .38);
+  background: linear-gradient(180deg, rgba(255, 255, 255, .08), rgba(255, 255, 255, .02)), rgba(7, 9, 13, .6);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1), inset 0 -1px 2px rgba(0, 0, 0, .35);
+  transition: background var(--ease), border-color var(--ease), box-shadow var(--ease), transform 90ms ease;
+}
+input[type=checkbox]:not(.switch)::after {
+  content: ""; position: absolute; left: 6px; top: 2.5px; width: 5px; height: 10px;
+  border: solid #fff; border-width: 0 2.5px 2.5px 0; border-radius: 1px;
+  transform: rotate(45deg) scale(0); transform-origin: center; transition: transform 140ms cubic-bezier(.3, 1.6, .5, 1);
+  filter: drop-shadow(0 0 3px rgba(255, 255, 255, .7));
+}
+input[type=checkbox]:not(.switch):hover { border-color: rgba(190, 175, 255, .75); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 0 12px rgba(123, 77, 255, .35); }
+input[type=checkbox]:not(.switch):active { transform: scale(.92); }
+input[type=checkbox]:not(.switch):checked {
+  border-color: rgba(214, 200, 255, .8);
+  background: linear-gradient(180deg, #A783FF 0%, #8457FF 50%, #6A35FF 51%, #7C48FF 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), 0 0 0 1px rgba(123, 77, 255, .4), 0 0 14px rgba(146, 112, 255, .7);
+}
+input[type=checkbox]:not(.switch):checked::after { transform: rotate(45deg) scale(1); }
+input[type=checkbox]:not(.switch):focus-visible { outline: 2px solid var(--primary-hover); outline-offset: 2px; }
+input[type=checkbox]:not(.switch):disabled { opacity: .45; cursor: default; }
+
+/* Checkbox chips (sections in Access, days, channels): the whole chip lights up */
+.chip:has(input[type=checkbox]) { cursor: pointer; transition: border-color var(--ease), background var(--ease), box-shadow var(--ease); }
+.chip:has(input[type=checkbox]:checked) {
+  border-color: color-mix(in srgb, var(--tone, var(--primary)) 60%, transparent);
+  background: color-mix(in srgb, var(--tone, var(--primary)) 14%, rgba(255, 255, 255, .03));
+  box-shadow: 0 0 14px color-mix(in srgb, var(--tone, var(--primary)) 25%, transparent);
+}
+.chip input[type=checkbox] { width: 17px; height: 17px; border-radius: 5px; }
+.chip input[type=checkbox]::after { left: 5px; top: 1.5px; width: 4.5px; height: 9px; }
+.check-list label:has(input:checked) { background: rgba(123, 77, 255, .12); }
+@media (prefers-reduced-motion: reduce) { input[type=checkbox]::after { transition: none; } }
