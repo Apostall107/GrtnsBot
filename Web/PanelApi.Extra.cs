@@ -798,6 +798,11 @@ public static partial class PanelApi
         ("PUT", "/lfg/classes", "lfg", "Saved class icons"),
         ("PUT", "/lfg/voice-category", "lfg", "Set voice room category"),
         ("PUT", "/lfg/auto-mirrors", "lfg", "Set channels for duplicate posts"),
+        ("POST", "/announce/", "posts", "Sent / scheduled a post"),
+        ("PUT", "/announce/{id}", "posts", "Edited a scheduled post"),
+        ("POST", "/announce/{id}/send-now", "posts", "Sent a scheduled post now"),
+        ("DELETE", "/announce/{id}", "posts", "Cancelled / removed a post"),
+        ("POST", "/announce/{id}/delete-messages", "posts", "Deleted a post's messages"),
         ("POST", "/lfg/classes/role-icons", "lfg", "Imported class icons from roles"),
         ("PUT", "/lfg/activities/{key}/project", "lfg", "Moved activity to a project"),
         ("PUT", "/lfg/activities/{key}", "lfg", "Edited activity"),
@@ -861,6 +866,7 @@ public static partial class PanelApi
         var pattern = (http.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText ?? http.Request.Path.Value ?? "";
         var suffix = pattern.Replace("/api/guilds/{guildId}", "").Replace("/api", "");
         if (!suffix.EndsWith('/') && suffix == "/settings") suffix = "/settings/";
+        if (suffix == "/announce/preview") return await next(ctx); // предпросмотр ничего не меняет
         var def = Array.Find(AuditActions, a => a.Method == http.Request.Method && a.Suffix == suffix);
 
         string? details = null;

@@ -12,6 +12,8 @@ public static class PanelPermissions
     public const string Texts = "texts";
     /// <summary>Сообщения бота: панели и посты — просмотр, обновление, удаление.</summary>
     public const string Posts = "posts";
+    /// <summary>Посты от имени бота (сразу и по времени).</summary>
+    public const string Announce = "announce";
     /// <summary>Журнал действий.</summary>
     public const string Log = "log";
     /// <summary>Настройки бота (часовой пояс, автоудаление, напоминание).</summary>
@@ -20,7 +22,7 @@ public static class PanelPermissions
     public const string Access = "access";
 
     /// <summary>Права, которые владелец может выдавать.</summary>
-    public static readonly string[] Grantable = [Lfg, Tickets, Voice, Texts, Posts, Log, Settings];
+    public static readonly string[] Grantable = [Lfg, Tickets, Voice, Texts, Posts, Announce, Log, Settings];
 }
 
 public sealed class WebGrant
