@@ -27,7 +27,7 @@ public sealed class LfgProfileModule(LfgProfileService profiles, LfgStore store,
     {
         if (!store.Groups.TryGetValue(groupId, out var group) || profiles.NoteModal(group, Context.User.Id) is not { } modal)
         {
-            await RespondAsync("You are not in this group anymore.", ephemeral: true);
+            await RespondAsync(Tx.Get(group?.GuildId ?? 0, "lfg.profile.notInGroup"), ephemeral: true);
             return;
         }
         await RespondWithModalAsync(modal);

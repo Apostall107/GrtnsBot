@@ -830,6 +830,8 @@ public static partial class PanelApi
         ("POST", "/voice/rooms/{channelId}/delete", "voice", "Deleted temp room"),
         ("POST", "/voice/rooms/{channelId}/owner", "voice", "Transferred room ownership"),
         ("POST", "/voice/panel", "voice", "Posted room panel"),
+        ("PUT", "/texts/bot", "texts", "Edited bot texts"),
+        ("POST", "/texts/bot/reset", "texts", "Reset bot texts"),
         ("PUT", "/texts/{key}", "texts", "Edited panel text"),
         ("DELETE", "/texts/{key}", "texts", "Reset panel text"),
         ("POST", "/texts/discover", "texts", "Searched for posted panels"),

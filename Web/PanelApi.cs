@@ -507,18 +507,20 @@ public static partial class PanelApi
             var granted = roleIds.Except(failed).ToList();
             var mentions = string.Join(", ", granted.Select(r => $"<@&{r}>"));
             var channel = guild.GetTextChannel(t.TextChannelId);
+            var byText = $"<@{me}>" + Tx.Get(guildId, "ticket.viaWebsite");
+            var approvedText = Tx.Get(guildId, "ticket.approvedMsg", ("applicant", $"<@{t.UserId}>"), ("by", byText), ("roles", mentions));
             if (failed.Count > 0)
             {
                 if (channel is not null)
-                    await channel.SendMessageAsync($"🎉 <@{t.UserId}> approved by <@{me}> (website) — {mentions} granted.\n" +
-                        $"⚠️ Couldn't give {string.Join(", ", failed.Select(r => $"<@&{r}>"))} — the ticket stays open.",
+                    await channel.SendMessageAsync(approvedText + "\n" +
+                        Tx.Get(guildId, "ticket.rolesPartlyFailed", ("roles", string.Join(", ", failed.Select(r => $"<@&{r}>")))),
                         allowedMentions: new AllowedMentions { UserIds = [t.UserId] });
                 return Results.Ok(new { closed = false, warning = "Some roles couldn't be given — the ticket stays open." });
             }
 
             if (channel is not null)
-                await channel.SendMessageAsync($"🎉 <@{t.UserId}> approved by <@{me}> (website) — {mentions} granted.\n" +
-                    $"🔒 This ticket will close in {(int)TicketService.CloseDelay.TotalSeconds} seconds.",
+                await channel.SendMessageAsync(approvedText + "\n" +
+                    Tx.Get(guildId, "ticket.closingIn", ("seconds", (int)TicketService.CloseDelay.TotalSeconds)),
                     allowedMentions: new AllowedMentions { UserIds = [t.UserId] });
             await service.NotifyApprovedAsync(updated, project, granted);
             service.CloseLater(updated, by, "approved", null);
@@ -539,9 +541,10 @@ public static partial class PanelApi
             var me = user.UserId()!.Value;
             var by = (IUser?)client.GetUser(me) ?? await client.Rest.GetUserAsync(me);
             if (guild.GetTextChannel(t.TextChannelId) is { } channel)
-                await channel.SendMessageAsync($"❌ <@{t.UserId}>'s application was denied by <@{me}> (website)." +
-                    (reason is null ? "" : $"\n**Reason:** {Format.Sanitize(reason)}") +
-                    $"\n🔒 This ticket will close in {(int)TicketService.CloseDelay.TotalSeconds} seconds.",
+                await channel.SendMessageAsync(
+                    Tx.Get(guildId, "ticket.deniedMsg", ("applicant", $"<@{t.UserId}>"), ("by", $"<@{me}>" + Tx.Get(guildId, "ticket.viaWebsite"))) +
+                    (reason is null ? "" : "\n" + Tx.Get(guildId, "ticket.reason", ("reason", Format.Sanitize(reason)))) +
+                    "\n" + Tx.Get(guildId, "ticket.closingIn", ("seconds", (int)TicketService.CloseDelay.TotalSeconds)),
                     allowedMentions: new AllowedMentions { UserIds = [t.UserId] });
             await service.NotifyDeniedAsync(t, project, reason);
             service.CloseLater(t, by, "denied", reason);
@@ -722,6 +725,8 @@ public static partial class PanelApi
                 }),
                 title = custom?.Title,
                 description = custom?.Description,
+                color = custom?.Color,
+                defaultColor = $"#{d.DefaultColor:x6}",
                 posted = texts.GetPosted(guildId, d.Key).Count
             };
         })));
@@ -749,9 +754,16 @@ public static partial class PanelApi
                 labels[l.Id] = value;
             }
 
-            var custom = title is null && description is null && labels.Count == 0
+            string? color = null;
+            if (!labelsOnly && !string.IsNullOrWhiteSpace(body.Color))
+            {
+                if (Tx.ParseColor(body.Color) is not { } parsed) return Error("Color: use the #rrggbb format.");
+                color = parsed.RawValue == def.DefaultColor ? null : $"#{parsed.RawValue:x6}";
+            }
+
+            var custom = title is null && description is null && labels.Count == 0 && color is null
                 ? null
-                : new PanelText { Title = title, Description = description, Labels = labels };
+                : new PanelText { Title = title, Description = description, Color = color, Labels = labels };
             texts.SetText(guildId, key, custom);
 
             var (updated, total) = await RefreshTextsAsync(guildId, key, panels, lfg, signup, tickets, ticketMessages);
@@ -765,6 +777,65 @@ public static partial class PanelApi
             texts.SetText(guildId, key, null);
             var (updated, total) = await RefreshTextsAsync(guildId, key, panels, lfg, signup, tickets, ticketMessages);
             return Results.Ok(new { panelsUpdated = updated, panelsTotal = total });
+        });
+
+        // ---------- Все остальные тексты бота (ответы, ЛС, окна, цвета) — BotTextCatalog ----------
+        g.MapGet("/bot", (ulong guildId, BotTextStore store) =>
+        {
+            var custom = store.GetAll(guildId);
+            return Results.Ok(BotTextCatalog.All.Select(d => new
+            {
+                key = d.Key,
+                group = d.Group,
+                name = d.Name,
+                @default = d.Default,
+                value = custom.TryGetValue(d.Key, out var v) ? v : null,
+                placeholders = d.Placeholders,
+                max = d.Max,
+                color = d.IsColor,
+                optional = d.Optional,
+                refresh = d.Refresh
+            }));
+        });
+
+        g.MapPut("/bot", async (ulong guildId, BotTextsBody body, BotTextStore store, PanelService panels,
+            LfgStore lfg, LfgSignupService signup, TicketStore tickets, TicketMessageService ticketMessages) =>
+        {
+            if (body.Values is null || body.Values.Count == 0) return Error("Nothing to save.");
+            var values = new Dictionary<string, string?>();
+            foreach (var (key, raw) in body.Values)
+            {
+                if (!BotTextCatalog.ByKey.TryGetValue(key, out var def)) return Error($"Unknown text: {key}");
+                string? value = null;
+                if (def.IsColor)
+                {
+                    if (!string.IsNullOrWhiteSpace(raw))
+                    {
+                        if (Tx.ParseColor(raw) is not { } c) return Error($"{def.Name}: use the #rrggbb format.");
+                        value = $"#{c.RawValue:x6}";
+                    }
+                }
+                else if (!string.IsNullOrWhiteSpace(raw))
+                {
+                    value = raw.Replace("\r\n", "\n");
+                    if (value.Trim() == Tx.Empty && !def.Optional) return Error($"{def.Name}: this text can't be empty.");
+                    if (value.Length > def.Max) return Error($"{def.Name}: up to {def.Max} characters.");
+                }
+                values[key] = value == def.Default ? null : value;
+            }
+
+            var changed = store.Set(guildId, values);
+            var (updated, total) = await RefreshBotTextsAsync(guildId, changed, panels, lfg, signup, tickets, ticketMessages);
+            return Results.Ok(new { changed = changed.Count, postsUpdated = updated, postsTotal = total });
+        });
+
+        g.MapPost("/bot/reset", async (ulong guildId, BotTextsResetBody body, BotTextStore store, PanelService panels,
+            LfgStore lfg, LfgSignupService signup, TicketStore tickets, TicketMessageService ticketMessages) =>
+        {
+            var keys = body.Keys is { Count: > 0 } k ? k : store.GetAll(guildId).Keys.ToList();
+            var changed = store.Reset(guildId, keys);
+            var (updated, total) = await RefreshBotTextsAsync(guildId, changed, panels, lfg, signup, tickets, ticketMessages);
+            return Results.Ok(new { changed = changed.Count, postsUpdated = updated, postsTotal = total });
         });
 
         // Найти панели, опубликованные до того, как бот начал их запоминать
@@ -810,6 +881,22 @@ public static partial class PanelApi
             return (updated, total);
         }
         return await panels.RefreshAsync(guildId, key);
+    }
+
+    /// <summary>После смены текстов бота: перерисовать активные сборы и/или открытые тикеты, если тексты их касаются.</summary>
+    private static async Task<(int Updated, int Total)> RefreshBotTextsAsync(ulong guildId, List<string> changedKeys, PanelService panels,
+        LfgStore lfg, LfgSignupService signup, TicketStore tickets, TicketMessageService ticketMessages)
+    {
+        var targets = changedKeys.Select(k => BotTextCatalog.ByKey.TryGetValue(k, out var d) ? d.Refresh : null)
+            .Where(r => r is not null).Distinct().ToList();
+        var (updated, total) = (0, 0);
+        foreach (var target in targets)
+        {
+            var r = await RefreshTextsAsync(guildId, target!, panels, lfg, signup, tickets, ticketMessages);
+            updated += r.Updated;
+            total += r.Total;
+        }
+        return (updated, total);
     }
 
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, (DateTimeOffset At, List<object> List)> BotChannelsCache = new();
@@ -1164,7 +1251,11 @@ public sealed record ChannelBody(string? ChannelId);
 public sealed record UserBody(string? UserId);
 public sealed record NewCreatorBody(string? Name, string? CategoryId, string? Template, int? Limit);
 public sealed record CreatorBody(string? Template, int? Limit);
-public sealed record PanelTextBody(string? Title, string? Description, Dictionary<string, string>? Labels);
+public sealed record PanelTextBody(string? Title, string? Description, Dictionary<string, string>? Labels, string? Color = null);
+
+public sealed record BotTextsBody(Dictionary<string, string?>? Values);
+
+public sealed record BotTextsResetBody(List<string>? Keys);
 public sealed record AccessBody(List<string>? Permissions);
 public sealed record DeleteMessagesBody(List<string>? MessageIds);
 

@@ -43,7 +43,7 @@ public sealed class LfgDmModule(LfgStore store, CharacterStore characters, LfgSi
         var saved = profile.PickerList(group, Context.User.Id);
         if (saved.Count == 0)
         {
-            await RespondWithModalAsync<CharacterModal>($"lfgdm:charnew:{groupId}:{role}");
+            await RespondWithModalAsync(LfgRenderer.CharacterModal(group.GuildId, $"lfgdm:charnew:{groupId}:{role}"));
             return;
         }
 
@@ -58,7 +58,7 @@ public sealed class LfgDmModule(LfgStore store, CharacterStore characters, LfgSi
 
         if (values[0] == LfgRenderer.NewCharacterValue)
         {
-            await RespondWithModalAsync<CharacterModal>($"lfgdm:charnew:{groupId}:{role}");
+            await RespondWithModalAsync(LfgRenderer.CharacterModal(group.GuildId, $"lfgdm:charnew:{groupId}:{role}"));
             return;
         }
 
@@ -72,7 +72,7 @@ public sealed class LfgDmModule(LfgStore store, CharacterStore characters, LfgSi
         var controls = profile.Controls(group, Context.User.Id);
         await Component.UpdateAsync(m =>
         {
-            m.Content = result + (controls is null ? "" : LfgModule.ProfileHint);
+            m.Content = result + (controls is null ? "" : LfgModule.ProfileHint(group.GuildId));
             m.Components = controls ?? new ComponentBuilder().Build();
             m.AllowedMentions = AllowedMentions.None;
         });
@@ -86,7 +86,7 @@ public sealed class LfgDmModule(LfgStore store, CharacterStore characters, LfgSi
         var name = modal.Name.Replace("`", "").Trim();
         if (name.Length == 0)
         {
-            await RespondAsync("Character name cannot be empty.", ephemeral: true);
+            await RespondAsync(Tx.Get(group.GuildId, "lfg.sign.emptyName"), ephemeral: true);
             return;
         }
 
@@ -98,7 +98,7 @@ public sealed class LfgDmModule(LfgStore store, CharacterStore characters, LfgSi
         characters.Add(group.GuildId, Context.User.Id, name, signup.Scope(group));
         var result = await signup.JoinAsync(group, Context.User.Id, Enum.Parse<SlotRole>(role), name);
         var controls = profile.Controls(group, Context.User.Id);
-        await RespondAsync(result + (controls is null ? "" : LfgModule.ProfileHint), components: controls, ephemeral: true,
+        await RespondAsync(result + (controls is null ? "" : LfgModule.ProfileHint(group.GuildId)), components: controls, ephemeral: true,
             allowedMentions: AllowedMentions.None);
     }
 
@@ -121,14 +121,11 @@ public sealed class LfgDmModule(LfgStore store, CharacterStore characters, LfgSi
         notifyPrefs.SetEnabled(guildId, Context.User.Id, enabled);
 
         var toggle = new ComponentBuilder()
-            .WithButton(enabled ? "Turn off these DMs" : "Turn DMs back on", $"lfgdm:{(enabled ? "off" : "on")}:{guildId}",
+            .WithButton(Tx.Get(guildId, enabled ? "lfg.dm.turnOff" : "lfg.dm.turnOn"), $"lfgdm:{(enabled ? "off" : "on")}:{guildId}",
                 ButtonStyle.Secondary, new Emoji(enabled ? "🔕" : "🔔"))
             .Build();
 
-        await RespondAsync(enabled
-                ? $"🔔 DMs on: you will get a DM when a group is started for your roles on **{Format.Sanitize(guild.Name)}**."
-                : $"🔕 DMs off: you will no longer get LFG DMs from **{Format.Sanitize(guild.Name)}**. " +
-                  "You can turn them back on here, with 🔔 on the LFG panel or `/lfg-dm on`.",
+        await RespondAsync(Tx.Get(guildId, enabled ? "lfg.dm.onFromDm" : "lfg.dm.offFromDm", ("server", Format.Sanitize(guild.Name))),
             components: toggle, ephemeral: true);
     }
 
@@ -137,13 +134,13 @@ public sealed class LfgDmModule(LfgStore store, CharacterStore characters, LfgSi
     {
         if (!store.Groups.TryGetValue(groupId, out var group))
         {
-            await RespondAsync("This group is no longer active.", ephemeral: true);
+            await RespondAsync(Tx.Get(0, "lfg.gone"), ephemeral: true);
             return null;
         }
 
         if (Context.Client.GetGuild(group.GuildId)?.GetUser(Context.User.Id) is null)
         {
-            await RespondAsync("You are not a member of this group's server.", ephemeral: true);
+            await RespondAsync(Tx.Get(group.GuildId, "lfg.dm.notMember"), ephemeral: true);
             return null;
         }
 

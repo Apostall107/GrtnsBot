@@ -8,6 +8,8 @@ public sealed class PanelText
 {
     public string? Title { get; set; }
     public string? Description { get; set; }
+    /// <summary>Цвет полоски слева (#rrggbb); null — цвет по умолчанию.</summary>
+    public string? Color { get; set; }
     /// <summary>Подписи кнопок/списков по id из <see cref="PanelDef.Labels"/>.</summary>
     public Dictionary<string, string> Labels { get; set; } = new();
 }
@@ -43,6 +45,11 @@ public sealed record PanelDef(string Key, string Name, string DefaultTitle, stri
         string.IsNullOrWhiteSpace(t?.Title) ? DefaultTitle : t.Title!.Trim() == NoTitle ? null : t.Title;
 
     public string Description(PanelText? t) => string.IsNullOrWhiteSpace(t?.Description) ? DefaultDescription : t.Description!;
+
+    /// <summary>Цвет полоски слева по умолчанию (0xRRGGBB).</summary>
+    public uint DefaultColor { get; init; } = 0x3498DB;
+
+    public Discord.Color Color(PanelText? t) => Tx.ParseColor(t?.Color) ?? new Discord.Color(DefaultColor);
 
     public string Label(PanelText? t, string id)
     {
@@ -83,7 +90,7 @@ public static class PanelDefs
             new("dmoff", "“DMs off” button", "DMs off")
         ],
         "lfg:start",
-        "{hours} = auto-delete hours, {reminder} = reminder minutes");
+        "{hours} = auto-delete hours, {reminder} = reminder minutes") { DefaultColor = 0x3498DB };
 
     public static readonly PanelDef Tickets = new(
         "tickets", "Ticket panel",
@@ -97,7 +104,7 @@ public static class PanelDefs
         "5. Anyone in the ticket can **Close** it — both channels are deleted.\n\n" +
         "-# One open ticket per project. Inactive tickets may be closed automatically. You can also apply on the website.",
         [new("start", "“Create ticket” button", "Create ticket")],
-        "ticket:start");
+        "ticket:start") { DefaultColor = 0xE67E22 };
 
     public static readonly PanelDef Rooms = new(
         "rooms", "Room control panel",
@@ -115,7 +122,7 @@ public static class PanelDefs
             new("permit", "Permit menu placeholder", "✅ Permit a member", 150),
             new("kick", "Kick menu placeholder", "🚫 Kick a member", 150)
         ],
-        "room:rename");
+        "room:rename") { DefaultColor = 0x1ABC9C };
 
     public static readonly PanelDef[] All = [Lfg, Tickets, Rooms];
 
@@ -178,7 +185,7 @@ public sealed class PanelTextStore
         lock (_lock)
         {
             if (!_data.TryGetValue(guildId, out var g) || !g.Texts.TryGetValue(key, out var t)) return null;
-            return new PanelText { Title = t.Title, Description = t.Description, Labels = new(t.Labels) };
+            return new PanelText { Title = t.Title, Description = t.Description, Color = t.Color, Labels = new(t.Labels) };
         }
     }
 

@@ -84,14 +84,14 @@ public sealed class TicketService(
     }
 
     /// <summary>Проверяет ответы анкеты: обязательные заполнены, длина в пределах.</summary>
-    public static string? Validate(TicketProject project, IReadOnlyList<TicketAnswer> answers)
+    public static string? Validate(TicketProject project, IReadOnlyList<TicketAnswer> answers, ulong gid = 0)
     {
         if (!project.FormEnabled) return null;
         foreach (var q in project.Questions)
         {
             var a = answers.FirstOrDefault(x => x.Question == q.Label)?.Answer?.Trim() ?? "";
-            if (q.Required && a.Length == 0) return $"Answer the question: {q.Label}";
-            if (a.Length > q.MaxLength) return $"«{q.Label}» — up to {q.MaxLength} characters.";
+            if (q.Required && a.Length == 0) return Tx.Get(gid, "ticket.form.required", ("question", q.Label));
+            if (a.Length > q.MaxLength) return Tx.Get(gid, "ticket.form.tooLong", ("question", q.Label), ("max", q.MaxLength));
         }
         return null;
     }
@@ -101,11 +101,11 @@ public sealed class TicketService(
         IReadOnlyList<TicketAnswer> answers, string source)
     {
         if (OpenTicket(guild, user.Id, project) is { } open)
-            return (null, $"You already have an open {project.Name} ticket: <#{open.TextChannelId}>");
-        if (Validate(project, answers) is { } invalid) return (null, invalid);
+            return (null, Tx.Get(guild.Id, "ticket.alreadyOpen", ("project", project.Name), ("channel", $"<#{open.TextChannelId}>")));
+        if (Validate(project, answers, guild.Id) is { } invalid) return (null, invalid);
 
         var lockKey = $"{guild.Id}:{user.Id}:{project.Key}";
-        if (!_creating.TryAdd(lockKey, 0)) return (null, "Your ticket is already being created…");
+        if (!_creating.TryAdd(lockKey, 0)) return (null, Tx.Get(guild.Id, "ticket.creating"));
         try
         {
             var categoryId = await EnsureCategoryAsync(guild, project);
@@ -115,7 +115,7 @@ public sealed class TicketService(
             {
                 p.CategoryId = categoryId;
                 p.PermissionOverwrites = overwrites;
-                p.Topic = $"{project.Name} application — {user.Username}";
+                p.Topic = Tx.Get(guild.Id, "ticket.topic", ("project", project.Name), ("user", user.Username));
             });
 
             IVoiceChannel voice;
@@ -147,7 +147,9 @@ public sealed class TicketService(
             audit.Add(guild.Id, user.Id, user.DisplayName, source, "tickets", "Opened ticket", project.Name);
 
             var (embeds, comps) = TicketRenderer.TicketMessage(ticket, project);
-            var pings = $"<@{user.Id}> " + string.Join(" ", project.StaffRoleIds.Select(r => $"<@&{r}>"));
+            string? pings = Tx.Get(guild.Id, "ticket.msg.pings", ("applicant", $"<@{user.Id}>"),
+                ("leadership", string.Join(" ", project.StaffRoleIds.Select(r => $"<@&{r}>"))));
+            if (string.IsNullOrWhiteSpace(pings)) pings = null;
             var message = await text.SendMessageAsync(pings, embeds: embeds, components: comps,
                 allowedMentions: new AllowedMentions { UserIds = [user.Id], RoleIds = project.StaffRoleIds.ToList() });
             store.UpdateTicket(ticket.Id, t => t.MessageId = message.Id);
@@ -156,8 +158,7 @@ public sealed class TicketService(
         catch (Discord.Net.HttpException ex)
         {
             logger.LogWarning(ex, "Failed to create a ticket for {User}", user.Id);
-            return (null, "I couldn't create the ticket channels. The bot needs Manage Channels and Manage Roles " +
-                          $"(Discord error: {ex.DiscordCode?.ToString() ?? ex.HttpCode.ToString()}).");
+            return (null, Tx.Get(guild.Id, "ticket.createFailed", ("error", ex.DiscordCode?.ToString() ?? ex.HttpCode.ToString())));
         }
         finally
         {
@@ -223,8 +224,8 @@ public sealed class TicketService(
             var user = client.GetUser(ticket.UserId) as IUser ?? await client.Rest.GetUserAsync(ticket.UserId);
             if (user is null) return;
             var roles = string.Join(", ", roleIds.Select(id => guild?.GetRole(id)?.Name ?? "role").Select(Format.Sanitize));
-            await user.SendMessageAsync($"✅ Your application to **{Format.Sanitize(project.Name)}** on " +
-                $"**{Format.Sanitize(guild?.Name ?? "the server")}** was approved. You got: **{roles}**.");
+            await user.SendMessageAsync(Tx.Get(ticket.GuildId, "ticket.dm.approved", ("project", Format.Sanitize(project.Name)),
+                ("server", Format.Sanitize(guild?.Name ?? "the server")), ("roles", roles)));
         }
         catch (Discord.Net.HttpException)
         {
@@ -240,8 +241,9 @@ public sealed class TicketService(
             var user = client.GetUser(ticket.UserId) as IUser ?? await client.Rest.GetUserAsync(ticket.UserId);
             if (user is null) return;
             var guildName = client.GetGuild(ticket.GuildId)?.Name ?? "the server";
-            var text = $"❌ Your application to **{Format.Sanitize(project?.Name ?? "the project")}** on **{Format.Sanitize(guildName)}** was declined.";
-            if (!string.IsNullOrWhiteSpace(reason)) text += $"\n**Reason:** {Format.Sanitize(reason)}";
+            var text = Tx.Get(ticket.GuildId, "ticket.dm.denied", ("project", Format.Sanitize(project?.Name ?? "the project")),
+                ("server", Format.Sanitize(guildName)));
+            if (!string.IsNullOrWhiteSpace(reason)) text += "\n" + Tx.Get(ticket.GuildId, "ticket.reason", ("reason", Format.Sanitize(reason)));
             await user.SendMessageAsync(text);
         }
         catch (Discord.Net.HttpException)
@@ -374,13 +376,13 @@ public sealed class TicketAutoCloseService(
 
             audit.FromSystem(guild.Id, "tickets", "Auto-closed inactive ticket",
                 $"{project.Name} · {guild.GetUser(ticket.UserId)?.DisplayName ?? ticket.UserId.ToString()}");
-            await tickets.CloseAsync(ticket, "auto-closed", null, $"No messages for {days} day(s)");
+            await tickets.CloseAsync(ticket, "auto-closed", null, $"No messages for {days} day(s)"); // причина в архиве (видна только админам)
             return;
         }
 
         if (now - lastActivity < TimeSpan.FromDays(days) - Grace) return;
         await channel.SendMessageAsync(
-            $"⏳ This ticket has been quiet for a while. It will be **closed automatically in 24 hours** unless someone writes here. <@{ticket.UserId}>",
+            Tx.Get(guild.Id, "ticket.autoCloseWarning", ("applicant", $"<@{ticket.UserId}>")),
             allowedMentions: new AllowedMentions { UserIds = [ticket.UserId] });
         store.UpdateTicket(ticket.Id, t => t.WarnedAt = DateTimeOffset.UtcNow);
     }

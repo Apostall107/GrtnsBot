@@ -84,9 +84,10 @@ public sealed class BotService(
         logger.LogWarning("Interaction {Command} failed: {Error} {Reason}",
             command?.Name, result.Error, result.ErrorReason);
 
+        var gid = context.Interaction.GuildId ?? 0;
         var text = result.Error == InteractionCommandError.UnmetPrecondition
-            ? $"Access denied: {result.ErrorReason}"
-            : "Something went wrong. Please try again.";
+            ? Tx.Get(gid, "bot.accessDenied", ("reason", result.ErrorReason))
+            : Tx.Get(gid, "bot.error");
 
         if (context.Interaction.HasResponded)
             await context.Interaction.FollowupAsync(text, ephemeral: true);

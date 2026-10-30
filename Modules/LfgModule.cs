@@ -30,9 +30,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
     private async Task SetDmPreferenceAsync(bool enabled)
     {
         notifyPrefs.SetEnabled(Context.Guild.Id, Context.User.Id, enabled);
-        await RespondAsync(enabled
-            ? "🔔 DMs on: you will get a DM when a group is started for your roles."
-            : "🔕 DMs off: you will no longer get LFG DMs on this server.", ephemeral: true);
+        await RespondAsync(T(enabled ? "lfg.dmPref.on" : "lfg.dmPref.off"), ephemeral: true);
     }
 
     [SlashCommand("lfg", "Start a group / raid signup")]
@@ -67,7 +65,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         var project = projects.Effective(Context.Guild.Id, projectKey);
         if (!LfgProjectStore.CanUse(Context.Guild.GetUser(Context.User.Id), project))
         {
-            await RespondAsync($"Groups here are for **{project!.Name}** — you need {string.Join(" or ", project.RoleIds.Select(id => $"<@&{id}>"))}.",
+            await RespondAsync(T("lfg.wiz.projectRole", ("project", project!.Name), ("roles", string.Join(T("lfg.or"), project.RoleIds.Select(id => $"<@&{id}>")))),
                 ephemeral: true, allowedMentions: AllowedMentions.None);
             return;
         }
@@ -101,7 +99,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         if (await GetDraftAsync(draftId) is not { } d) return;
         if (templates.Find(d.GuildId, values[0]) is not { } t)
         {
-            await RespondAsync("This template was deleted. Pick another one.", ephemeral: true);
+            await RespondAsync(T("lfg.wiz.templateGone"), ephemeral: true);
             return;
         }
 
@@ -122,14 +120,14 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
 
         if (values[0] == LfgRenderer.CustomActivityValue)
         {
-            await RespondWithModalAsync<CustomActivityModal>($"lfg:custom:{d.Id}");
+            await RespondWithModalAsync(LfgRenderer.CustomActivityModal(d.GuildId, $"lfg:custom:{d.Id}"));
             return;
         }
 
         var activity = activities.Find(d.GuildId, values[0]);
         if (activity is null)
         {
-            await RespondAsync("This activity was deleted. Pick another one.", ephemeral: true);
+            await RespondAsync(T("lfg.wiz.activityGone"), ephemeral: true);
             return;
         }
 
@@ -176,7 +174,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
     public async Task OnCancel(string draftId)
     {
         store.Drafts.TryRemove(draftId, out _);
-        await ShowAsync(new Screen("Signup cancelled.", null, new ComponentBuilder().Build()));
+        await ShowAsync(new Screen(T("lfg.wiz.cancelled"), null, new ComponentBuilder().Build()));
     }
 
     // ================= Шаг 4: время =================
@@ -251,7 +249,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
     public async Task OnTimeModal(string draftId)
     {
         if (await GetDraftAsync(draftId) is not { } d) return;
-        await RespondWithModalAsync<TimeModal>($"lfg:timeset:{d.Id}");
+        await RespondWithModalAsync(LfgRenderer.TimeModal(d.GuildId, $"lfg:timeset:{d.Id}"));
     }
 
     [ModalInteraction("lfg:timeset:*")]
@@ -268,7 +266,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         }
         else
         {
-            warning = $"Could not parse \"{Format.Sanitize(modal.When)}\". Use `21:30` or `15.10 21:30` (day.month).";
+            warning = T("lfg.wiz.badTime", ("text", Format.Sanitize(modal.When)));
         }
 
         var s = TimeScreen(d, warning);
@@ -282,7 +280,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
     {
         var startsAt = StartsAt(d);
         if (warning is null && startsAt is { } st && st < DateTimeOffset.UtcNow)
-            warning = "This time is in the past. Pick another one.";
+            warning = T("lfg.wiz.pastTime");
         return LfgRenderer.TimeStep(d, time.Today, startsAt, time.ZoneName, warning);
     }
 
@@ -300,13 +298,13 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
 
         if (await GetChannelAsync(draft.ChannelId) is not { } channel)
         {
-            await RespondAsync(NoAccessText, ephemeral: true);
+            await RespondAsync(T("lfg.noAccess"), ephemeral: true);
             return;
         }
 
         if (!store.Drafts.TryRemove(draftId, out var d))
         {
-            await RespondAsync("This draft has expired. Start again.", ephemeral: true);
+            await RespondAsync(T("lfg.wiz.expired"), ephemeral: true);
             return;
         }
 
@@ -317,20 +315,20 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         audit.FromDiscord(d.GuildId, Context.User, "lfg", "Created LFG group",
             $"{group.ActivityName} · {group.Slots.Count} slots · {(startsAt is { } at ? at.ToString("u") : "no time")}");
 
-        var result = $"✅ Published: {jumpUrl}";
-        if (dmsStarted) result += "\n🔔 Sending DMs to members with the activity role…";
-        if (group.VoiceChannelId is { } vc) result += $"\n🔊 Voice room: <#{vc}>";
+        var result = T("lfg.wiz.published", ("link", jumpUrl));
+        if (dmsStarted) result += "\n" + T("lfg.wiz.dmsSending");
+        if (group.VoiceChannelId is { } vc) result += "\n" + T("lfg.wiz.voiceCreated", ("channel", $"<#{vc}>"));
 
         // Админ бота может продублировать пост в другие каналы
         var comps = new ComponentBuilder();
         if (Context.User is IGuildUser gu && admins.IsAdmin(gu))
         {
-            result += "\n-# Optional: duplicate the post to other channels — pick them below.";
+            result += Tx.Line(Context.Guild.Id, "lfg.wiz.mirrorHint");
             comps.WithSelectMenu(new SelectMenuBuilder()
                 .WithCustomId($"lfg:mirror:{group.Id}")
                 .WithType(ComponentType.ChannelSelect)
                 .WithChannelTypes(ChannelType.Text, ChannelType.News, ChannelType.Voice)
-                .WithPlaceholder("📢 Also post this group in…")
+                .WithPlaceholder(T("lfg.wiz.mirrorPlaceholder"))
                 .WithMinValues(1)
                 .WithMaxValues(5));
         }
@@ -342,14 +340,13 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
     {
         if (!store.Groups.TryGetValue(groupId, out var group) || Context.User is not IGuildUser gu || !admins.IsAdmin(gu))
         {
-            await RespondAsync("This group is no longer active.", ephemeral: true);
+            await RespondAsync(T("lfg.gone"), ephemeral: true);
             return;
         }
         await DeferAsync(ephemeral: true);
         var added = await publisher.AddMirrorsAsync(group, values.Select(ulong.Parse));
         audit.FromDiscord(group.GuildId, Context.User, "lfg", "Duplicated LFG post", $"{group.ActivityName} → {added} channel(s)");
-        await FollowupAsync(added > 0 ? $"📢 Posted in {added} more channel(s). Copies stay in sync and are deleted with the group."
-            : "Nothing posted — I can't write in those channels or they already have the post.", ephemeral: true);
+        await FollowupAsync(added > 0 ? T("lfg.wiz.mirrored", ("count", added)) : T("lfg.wiz.mirrorNone"), ephemeral: true);
     }
 
     // ================= Опубликованный сбор =================
@@ -359,7 +356,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
     {
         if (!store.Groups.TryGetValue(groupId, out var group))
         {
-            await RespondAsync("This group is no longer active.", ephemeral: true);
+            await RespondAsync(T("lfg.gone"), ephemeral: true);
             return;
         }
 
@@ -385,7 +382,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         var saved = profile.PickerList(group, Context.User.Id);
         if (saved.Count == 0)
         {
-            await RespondWithModalAsync<CharacterModal>($"lfg:charnew:{groupId}:{role}");
+            await RespondWithModalAsync(LfgRenderer.CharacterModal(group.GuildId, $"lfg:charnew:{groupId}:{role}"));
             return;
         }
 
@@ -398,7 +395,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
     {
         if (values[0] == LfgRenderer.NewCharacterValue)
         {
-            await RespondWithModalAsync<CharacterModal>($"lfg:charnew:{groupId}:{role}");
+            await RespondWithModalAsync(LfgRenderer.CharacterModal(Context.Guild.Id, $"lfg:charnew:{groupId}:{role}"));
             return;
         }
 
@@ -412,7 +409,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         var controls = ProfileControls(groupId);
         await Component.UpdateAsync(m =>
         {
-            m.Content = result + (controls is null ? "" : ProfileHint);
+            m.Content = result + (controls is null ? "" : ProfileHint(Context.Guild.Id));
             m.Components = controls ?? new ComponentBuilder().Build();
             m.AllowedMentions = AllowedMentions.None;
         });
@@ -430,7 +427,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         var name = modal.Name.Replace("`", "").Trim();
         if (name.Length == 0)
         {
-            await RespondAsync("Character name cannot be empty.", ephemeral: true);
+            await RespondAsync(T("lfg.sign.emptyName"), ephemeral: true);
             return;
         }
 
@@ -442,12 +439,12 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         characters.Add(Context.Guild.Id, Context.User.Id, name, ScopeOf(groupId));
         var result = await JoinAsync(groupId, Enum.Parse<SlotRole>(role), name);
         var controls = ProfileControls(groupId);
-        await RespondAsync(result + (controls is null ? "" : ProfileHint), components: controls, ephemeral: true,
+        await RespondAsync(result + (controls is null ? "" : ProfileHint(Context.Guild.Id)), components: controls, ephemeral: true,
             allowedMentions: AllowedMentions.None);
     }
 
     /// <summary>Под ответом о записи: выбрать класс-роль и добавить заметку к персонажу.</summary>
-    public const string ProfileHint = "\n-# Optional: pick your class role (its icon is shown next to your name) and set GS / a personal note for this character below.";
+    public static string ProfileHint(ulong guildId) => Tx.Line(guildId, "lfg.sign.profileHint");
 
     private MessageComponent? ProfileControls(string groupId) =>
         store.Groups.TryGetValue(groupId, out var group) ? profile.Controls(group, Context.User.Id) : null;
@@ -463,7 +460,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
     {
         if (!store.Groups.TryGetValue(groupId, out var group))
         {
-            await RespondAsync("This group is no longer active.", ephemeral: true);
+            await RespondAsync(T("lfg.gone"), ephemeral: true);
             return;
         }
 
@@ -495,14 +492,14 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
     public Task OnManageMoveToReserve(string groupId, string[] values)
     {
         var userId = ulong.Parse(values[0]);
-        return ManageAsync(groupId, g => g.MoveToReserve(userId), $"🔽 <@{userId}> was moved to the reserve.");
+        return ManageAsync(groupId, g => g.MoveToReserve(userId), T("lfg.manage.movedToReserve", ("user", $"<@{userId}>")));
     }
 
     [ComponentInteraction("lfg:mremove:*")]
     public Task OnManageRemoveReserve(string groupId, string[] values)
     {
         var userId = ulong.Parse(values[0]);
-        return ManageAsync(groupId, g => g.RemoveFromReserve(userId), $"✖️ <@{userId}> was removed from the reserve.");
+        return ManageAsync(groupId, g => g.RemoveFromReserve(userId), T("lfg.manage.removedFromReserve", ("user", $"<@{userId}>")));
     }
 
     [ComponentInteraction("lfg:mpromote:*")]
@@ -511,7 +508,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         var userId = ulong.Parse(values[0]);
         Slot? promoted = null;
         var group = await ManageAsync(groupId, g => g.Promote(userId, out promoted),
-            $"⬆️ <@{userId}> was moved from the reserve into the group and got a DM.");
+            T("lfg.manage.promoted", ("user", $"<@{userId}>")));
 
         if (group is not null && promoted is not null)
             await signup.NotifyPromotedAsync(group, userId, promoted);
@@ -560,13 +557,13 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
     {
         if (!store.Groups.TryGetValue(groupId, out var group))
         {
-            await RespondAsync("This group is no longer active.", ephemeral: true);
+            await RespondAsync(T("lfg.gone"), ephemeral: true);
             return null;
         }
 
         if (!IsOrganizer(group))
         {
-            await RespondAsync("Only the organizer can manage this group.", ephemeral: true);
+            await RespondAsync(T("lfg.manage.onlyOrganizer"), ephemeral: true);
             return null;
         }
 
@@ -578,12 +575,13 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
     {
         if (!store.Groups.TryGetValue(groupId, out var group))
         {
-            await RespondAsync("This group is no longer active.", ephemeral: true);
+            await RespondAsync(T("lfg.gone"), ephemeral: true);
             return;
         }
         await DeferAsync(ephemeral: true);
+        var voiceBefore = group.VoiceChannelId;
         var result = await signup.CreateVoiceAsync(group, Context.User);
-        if (result.StartsWith("🔊")) audit.FromDiscord(group.GuildId, Context.User, "lfg", "Created group voice room", group.ActivityName);
+        if (group.VoiceChannelId is not null && group.VoiceChannelId != voiceBefore) audit.FromDiscord(group.GuildId, Context.User, "lfg", "Created group voice room", group.ActivityName);
         await FollowupAsync(result, ephemeral: true);
     }
 
@@ -595,7 +593,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         {
             foreach (var s in g.Slots.Where(s => s.UserId is not null)) s.Attended = came.Contains(s.UserId!.Value);
             return null;
-        }, $"✅ Attendance saved: {came.Count} came.");
+        }, T("lfg.manage.attendanceSaved", ("count", came.Count)));
     }
 
     [ComponentInteraction("lfg:resched:*")]
@@ -604,10 +602,10 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         if (await GetOwnedGroupAsync(groupId) is not { } group) return;
         var current = group.StartsAt is { } st ? TimeZoneInfo.ConvertTime(st, time.Zone).ToString("dd.MM HH:mm") : "";
         var modal = new ModalBuilder()
-            .WithTitle("Change the start time")
+            .WithTitle(T("lfg.manage.timeTitle"))
             .WithCustomId($"lfg:reschedok:{group.Id}")
-            .AddTextInput("New time (server time zone), empty = none", "when", TextInputStyle.Short,
-                placeholder: "21:30 or 15.10 21:30", maxLength: 20, required: false, value: current)
+            .AddTextInput(T("lfg.manage.timeLabel"), "when", TextInputStyle.Short,
+                placeholder: T("lfg.wiz.timeHint"), maxLength: 20, required: false, value: current)
             .Build();
         await RespondWithModalAsync(modal);
     }
@@ -617,7 +615,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
     {
         if (!store.Groups.TryGetValue(groupId, out var group) || !IsOrganizer(group))
         {
-            await RespondAsync("This group is no longer active.", ephemeral: true);
+            await RespondAsync(T("lfg.gone"), ephemeral: true);
             return;
         }
 
@@ -627,13 +625,13 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         {
             if (!time.TryParse(text, out var date, out var hour, out var minute))
             {
-                await RespondAsync("I couldn't read the time. Use `21:30` or `15.10 21:30`.", ephemeral: true);
+                await RespondAsync(T("lfg.manage.badTime"), ephemeral: true);
                 return;
             }
             startsAt = time.ToUtc(date, hour, minute);
             if (startsAt < DateTimeOffset.UtcNow.AddMinutes(-1))
             {
-                await RespondAsync("This time is in the past.", ephemeral: true);
+                await RespondAsync(T("lfg.manage.pastTime"), ephemeral: true);
                 return;
             }
         }
@@ -643,7 +641,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         if (error is null)
             audit.FromDiscord(group.GuildId, Context.User, "lfg", "Changed LFG time",
                 $"{group.ActivityName} → {(startsAt is { } t ? t.ToString("u") : "no time")}");
-        await FollowupAsync(error ?? $"🕒 New start: {(startsAt is { } s ? LfgRenderer.FormatTime(s) : "no time")}. Everyone in the group got a DM.",
+        await FollowupAsync(error ?? T("lfg.manage.rescheduled", ("time", startsAt is { } s ? LfgRenderer.FormatTime(s) : T("lfg.noTime"))),
             ephemeral: true);
     }
 
@@ -657,13 +655,13 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
     {
         if (!store.Groups.TryGetValue(groupId, out var group))
         {
-            await RespondAsync("This group is no longer active.", ephemeral: true);
+            await RespondAsync(T("lfg.gone"), ephemeral: true);
             return;
         }
 
         if (!IsOrganizer(group))
         {
-            await RespondAsync("Only the organizer can close this group.", ephemeral: true);
+            await RespondAsync(T("lfg.close.onlyOrganizer"), ephemeral: true);
             return;
         }
 
@@ -673,11 +671,11 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         finally { group.Gate.Release(); }
 
         var buttons = new ComponentBuilder()
-            .WithButton("Close & delete post", $"lfg:closeok:{groupId}", ButtonStyle.Danger, new Emoji("🗑️"))
-            .WithButton("Keep", $"lfg:closeno:{groupId}", ButtonStyle.Secondary)
+            .WithButton(T("lfg.close.confirm"), $"lfg:closeok:{groupId}", ButtonStyle.Danger, new Emoji("🗑️"))
+            .WithButton(T("lfg.close.keep"), $"lfg:closeno:{groupId}", ButtonStyle.Secondary)
             .Build();
 
-        await RespondAsync("Close this group? The post will be deleted. Copy the invites below first if you need them.",
+        await RespondAsync(T("lfg.close.question"),
             embed: invites, components: buttons, ephemeral: true);
     }
 
@@ -686,13 +684,13 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
     {
         if (!store.Groups.TryGetValue(groupId, out var group))
         {
-            await ShowAsync(new Screen("This group is no longer active.", null, new ComponentBuilder().Build()));
+            await ShowAsync(new Screen(T("lfg.gone"), null, new ComponentBuilder().Build()));
             return;
         }
 
         if (!IsOrganizer(group))
         {
-            await RespondAsync("Only the organizer can close this group.", ephemeral: true);
+            await RespondAsync(T("lfg.close.onlyOrganizer"), ephemeral: true);
             return;
         }
 
@@ -714,7 +712,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         // Список инвайтов остаётся в эфемерном сообщении, убираем только кнопки
         await Component.UpdateAsync(m =>
         {
-            m.Content = "✅ Group closed and the post was deleted.";
+            m.Content = T("lfg.close.done");
             m.Components = new ComponentBuilder().Build();
         });
     }
@@ -723,7 +721,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
     public Task OnCloseCancelled(string groupId) =>
         Component.UpdateAsync(m =>
         {
-            m.Content = "Group kept open.";
+            m.Content = T("lfg.close.kept");
             m.Embeds = Array.Empty<Embed>();
             m.Components = new ComponentBuilder().Build();
         });
@@ -734,7 +732,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
     {
         if (!store.Groups.TryGetValue(groupId, out var group))
         {
-            await RespondAsync("This group is no longer active.", ephemeral: true);
+            await RespondAsync(T("lfg.gone"), ephemeral: true);
             return;
         }
 
@@ -761,12 +759,13 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
     private async Task<string> JoinAsync(string groupId, SlotRole role, string characterName)
     {
         if (!store.Groups.TryGetValue(groupId, out var group))
-            return "This group is no longer active.";
+            return T("lfg.gone");
         return await signup.JoinAsync(group, Context.User.Id, role, characterName);
     }
 
-    private const string NoAccessText =
-        "I can't access this channel. Give the bot **View Channel**, **Send Messages** and **Embed Links** here.";
+    private string NoAccessText => T("lfg.noAccess");
+
+    private string T(string key, params (string Name, object? Value)[] args) => Tx.Get(Context.Guild?.Id ?? 0, key, args);
 
     /// <summary>ID канала берётся из самого взаимодействия: Context.Channel бывает null, если канала нет в кэше.</summary>
     private ulong ChannelId => Context.Interaction.ChannelId
@@ -789,7 +788,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
     private async Task<LfgDraft?> GetDraftAsync(string draftId)
     {
         if (store.Drafts.TryGetValue(draftId, out var draft)) return draft;
-        await RespondAsync("This draft has expired. Start again.", ephemeral: true);
+        await RespondAsync(T("lfg.wiz.expired"), ephemeral: true);
         return null;
     }
 

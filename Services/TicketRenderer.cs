@@ -15,7 +15,7 @@ public static class TicketRenderer
         var def = PanelDefs.Tickets;
         var embed = new EmbedBuilder()
             .WithTitle(def.Title(text))
-            .WithColor(Color.Orange)
+            .WithColor(def.Color(text))
             .WithDescription(def.Description(text))
             .Build();
 
@@ -27,14 +27,17 @@ public static class TicketRenderer
     }
 
     // ---------- Выбор проекта ----------
-    public static MessageComponent ProjectPicker(IReadOnlyList<TicketProject> projects)
+    public static MessageComponent ProjectPicker(ulong gid, IReadOnlyList<TicketProject> projects)
     {
         var menu = new SelectMenuBuilder()
             .WithCustomId("ticket:project")
-            .WithPlaceholder("Choose a project");
+            .WithPlaceholder(Tx.Get(gid, "ticket.pickPlaceholder"));
 
         foreach (var p in projects.Take(TicketStore.MaxProjects))
-            menu.AddOption(p.Name, p.Key, $"Apply to {p.Name}");
+        {
+            var desc = Tx.Clip(Tx.Get(gid, "ticket.pickOption", ("project", p.Name)), 100);
+            menu.AddOption(p.Name, p.Key, desc.Length == 0 ? null : desc);
+        }
 
         return new ComponentBuilder().WithSelectMenu(menu).Build();
     }
@@ -48,31 +51,35 @@ public static class TicketRenderer
     /// </summary>
     public static (Embed[] Embeds, MessageComponent Components) TicketMessage(Ticket t, TicketProject? p)
     {
+        var gid = t.GuildId;
         var sb = new StringBuilder();
-        sb.AppendLine($"Applicant: <@{t.UserId}>");
-        sb.AppendLine($"Voice: <#{t.VoiceChannelId}>");
+        sb.AppendLine(Tx.Get(gid, "ticket.msg.applicant", ("user", $"<@{t.UserId}>")));
+        sb.AppendLine(Tx.Get(gid, "ticket.msg.voice", ("channel", $"<#{t.VoiceChannelId}>")));
         if (p is { StaffRoleIds.Count: > 0 })
-            sb.AppendLine($"Leadership: {string.Join(", ", p.StaffRoleIds.Select(r => $"<@&{r}>"))}");
+            sb.AppendLine(Tx.Get(gid, "ticket.msg.leadership", ("roles", string.Join(", ", p.StaffRoleIds.Select(r => $"<@&{r}>")))));
         if (p is { MemberRoleIds.Count: > 0 })
-            sb.AppendLine($"Roles on approve: {string.Join(", ", p.MemberRoleIds.Select(r => $"<@&{r}>"))}");
-        sb.AppendLine();
-        sb.AppendLine(t.ApprovedBy is { } by
-            ? $"✅ **Approved** by <@{by}>"
-            : "Leadership can **Approve** (the role is given and the ticket closes) or **Deny** (with a reason sent to the applicant). " +
-              "Anyone here can **Close** the ticket.");
+            sb.AppendLine(Tx.Get(gid, "ticket.msg.roles", ("roles", string.Join(", ", p.MemberRoleIds.Select(r => $"<@&{r}>")))));
+        var status = t.ApprovedBy is { } by
+            ? Tx.Get(gid, "ticket.msg.approved", ("user", $"<@{by}>"))
+            : Tx.Get(gid, "ticket.msg.howTo");
+        if (status.Length > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine(status);
+        }
 
         var embed = new EmbedBuilder()
-            .WithTitle($"🎫 {p?.Name ?? "Project"} — application")
+            .WithTitle(Tx.Get(gid, "ticket.msg.title", ("project", p?.Name ?? "Project")))
             .WithDescription(sb.ToString())
-            .WithColor(t.ApprovedBy is null ? Color.Orange : Color.Green)
-            .WithFooter($"Ticket {t.Id}")
+            .WithColor(Tx.Color(gid, t.ApprovedBy is null ? "color.ticket.open" : "color.ticket.approved"))
+            .WithFooter(Tx.Get(gid, "ticket.msg.footer", ("id", t.Id)))
             .WithTimestamp(t.CreatedAt)
             .Build();
 
         var embeds = new List<Embed> { embed };
         if (t.Answers.Count > 0)
         {
-            var form = new EmbedBuilder().WithTitle("📝 Application form").WithColor(Color.Blue);
+            var form = new EmbedBuilder().WithTitle(Tx.Get(gid, "ticket.msg.formTitle")).WithColor(Tx.Color(gid, "color.ticket.form"));
             foreach (var a in t.Answers.Take(25))
                 form.AddField(Clip(a.Question, 256), Clip(a.Answer, 1024));
             embeds.Add(form.Build());
@@ -80,7 +87,7 @@ public static class TicketRenderer
         if (!string.IsNullOrWhiteSpace(p?.CustomText))
             embeds.Add(new EmbedBuilder()
                 .WithDescription(ApplyPlaceholders(p.CustomText, t, p))
-                .WithColor(Color.LightGrey)
+                .WithColor(Tx.Color(gid, "color.ticket.custom"))
                 .Build());
 
         var comps = new ComponentBuilder()
@@ -98,9 +105,9 @@ public static class TicketRenderer
         string.IsNullOrWhiteSpace(text) ? "—" : text.Length <= max ? text : text[..(max - 1)] + "…";
 
     /// <summary>Окно анкеты проекта (вопросы → поля q0..q4).</summary>
-    public static Modal FormModal(TicketProject p)
+    public static Modal FormModal(ulong gid, TicketProject p)
     {
-        var title = $"Application — {p.Name}";
+        var title = Tx.Get(gid, "ticket.formTitle", ("project", p.Name));
         var modal = new ModalBuilder()
             .WithTitle(title.Length <= 45 ? title : title[..45])
             .WithCustomId($"ticket:form:{p.Key}");
@@ -114,11 +121,11 @@ public static class TicketRenderer
     }
 
     /// <summary>Окно причины отказа.</summary>
-    public static Modal DenyModal(string ticketId) => new ModalBuilder()
-        .WithTitle("Deny the application")
+    public static Modal DenyModal(ulong gid, string ticketId) => new ModalBuilder()
+        .WithTitle(Tx.Get(gid, "ticket.deny.title"))
         .WithCustomId($"ticket:denyok:{ticketId}")
-        .AddTextInput("Reason (sent to the applicant)", "reason", TextInputStyle.Paragraph,
-            placeholder: "Optional", maxLength: 500, required: false)
+        .AddTextInput(Tx.Get(gid, "ticket.deny.label"), "reason", TextInputStyle.Paragraph,
+            placeholder: Tx.Get(gid, "ticket.deny.hint"), maxLength: 500, required: false)
         .Build();
 
     private static string ApplyPlaceholders(string text, Ticket t, TicketProject p)
@@ -134,7 +141,7 @@ public static class TicketRenderer
 
     public static string VoiceChannelName(TicketProject p, IGuildUser user)
     {
-        var name = $"🎙 {p.Name} • {user.DisplayName}";
+        var name = Tx.Get(user.GuildId, "ticket.voiceName", ("project", p.Name), ("user", user.DisplayName));
         return name.Length <= 100 ? name : name[..100];
     }
 

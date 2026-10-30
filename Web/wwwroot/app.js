@@ -2612,6 +2612,8 @@ function textCard(p) {
   const counter = h("span", { class: "muted small" }, `${desc.value.length}/${p.maxDescription}`);
   desc.addEventListener("input", () => { counter.textContent = `${desc.value.length}/${p.maxDescription}`; });
 
+  const color = colorField(p.color, p.defaultColor);
+
   const labelInputs = p.labels.map(l => {
     const input = h("input", { maxlength: String(l.max), placeholder: l.default, value: l.value || l.default });
     return { l, input, el: h("div", { class: "field" }, h("label", {}, l.name), input) };
@@ -2631,7 +2633,7 @@ function textCard(p) {
   save.addEventListener("click", async () => {
     const labels = {};
     for (const { l, input } of labelInputs) labels[l.id] = input.value;
-    const res = await act(save, () => gApi("PUT", `/texts/${p.key}`, { title: title.value, description: desc.value, labels }));
+    const res = await act(save, () => gApi("PUT", `/texts/${p.key}`, { title: title.value, description: desc.value, labels, color: color.value() }));
     resultToast(res, "Saved.");
   });
   const reset = h("button", { class: "btn secondary" }, "↩️ Reset to default");
@@ -2643,7 +2645,7 @@ function textCard(p) {
     refresh();
   });
 
-  const custom = p.title || p.description || p.labels.some(l => l.value);
+  const custom = p.title || p.description || p.color || p.labels.some(l => l.value);
   return h("div", { class: "card" },
     h("div", { class: "card-head" }, h("h2", {}, p.name),
       custom ? h("span", { class: "badge wait" }, "custom") : h("span", { class: "badge ok" }, "default"),
@@ -2654,8 +2656,169 @@ function textCard(p) {
       h("span", { class: "muted small" }, "Plain text — Discord doesn't apply markdown in titles. Leave it empty for no title and put headings (# , ## , -# ) at the start of the text. Reset to default brings the standard title back.")),
     labelsOnly ? null : h("div", { class: "field" }, h("label", {}, "Text (Discord markdown)"), desc,
       h("div", { class: "row" }, counter, p.placeholders ? h("span", { class: "muted small" }, `· ${p.placeholders}`) : null)),
+    labelsOnly ? null : h("div", { class: "field" }, h("label", {}, "Stripe color"), color.el,
+      h("span", { class: "muted small" }, "The colored line on the left of the panel in Discord.")),
     labelInputs.length ? h("div", { class: "grid2" }, labelInputs.map(x => x.el)) : null,
     h("div", { class: "row" }, save, reset));
+}
+
+/** Color picker: swatch + #hex field + reset. value() → "#rrggbb" or "" (= default). */
+function colorField(value, def, onChange) {
+  const norm = v => /^#?[0-9a-f]{6}$/i.test((v || "").trim()) ? "#" + v.trim().replace("#", "").toLowerCase() : null;
+  let current = norm(value) || "";
+  const swatch = h("input", { type: "color", value: current || def, title: "Pick a color" });
+  const hex = h("input", { class: "color-hex", maxlength: "7", placeholder: def, value: current, spellcheck: "false" });
+  const preview = h("span", { class: "embed-preview" }, h("span", { class: "embed-stripe" }), h("span", { class: "embed-lines" }, h("i"), h("i"), h("i")));
+  const paint = () => preview.style.setProperty("--stripe", current || def);
+  const set = (v, from) => {
+    current = v ? norm(v) || current : "";
+    if (from !== swatch) swatch.value = current || def;
+    if (from !== hex) hex.value = current;
+    hex.classList.toggle("bad", !!hex.value && !norm(hex.value));
+    paint();
+    onChange?.(current);
+  };
+  swatch.addEventListener("input", () => set(swatch.value, swatch));
+  hex.addEventListener("input", () => { if (!hex.value || norm(hex.value)) set(hex.value, hex); else hex.classList.add("bad"); });
+  const reset = h("button", { type: "button", class: "btn ghost icon-only sm", title: `Default (${def})`, onclick: () => set("", null) }, icon("undo-2", 15));
+  paint();
+  return { el: h("div", { class: "color-field" }, swatch, hex, preview, reset), value: () => current === def ? "" : current, set };
+}
+
+// ================= Bot messages: every reply, DM, window and color =================
+
+const BOT_TEXT_ICONS = [["LFG — group post", "swords"], ["LFG — creating", "circle-plus"], ["LFG — signing", "user-plus"],
+  ["LFG — class", "drama"], ["LFG — organizer", "crown"], ["LFG — DMs", "mail-plus"], ["Tickets — ticket", "ticket"],
+  ["Tickets — creating", "clipboard-list"], ["Tickets — approve", "shield-check"], ["Temp voice", "headphones"],
+  ["Characters", "users"], ["Verification", "bot"]];
+
+async function pageBotTexts(main) {
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "💬 Bot messages"),
+    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
+  main.append(h("p", { class: "muted" },
+    "Every text the bot writes to members — replies, DMs, group posts, ticket messages, menus, buttons and windows — and the stripe colors of its messages. ",
+    "Words in {braces} are filled in by the bot. Empty field = default text; in fields marked “- = hide” a single - removes the line."));
+
+  const holder = h("div", {}, skeletonLines(4));
+  main.append(holder);
+  let items;
+  try { items = await gApi("GET", "/texts/bot"); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
+
+  const dirty = new Map(); // key → new value ("" = back to default)
+  const rows = [];
+  const search = h("input", { type: "search", placeholder: "Search texts… (e.g. reserve, DM, Approve)", style: "flex:1;min-width:200px" });
+  const onlyCustom = h("input", { type: "checkbox" });
+  const saveBtn = h("button", { class: "btn" }, icon("save", 16), " Save changes");
+  const discard = h("button", { class: "btn secondary" }, "Discard");
+  const bar = h("div", { class: "save-bar" }, h("span", { class: "save-count" }), discard, saveBtn);
+  const resetAll = h("button", { class: "btn ghost danger-text" }, icon("undo-2", 15), " Reset all to default");
+
+  const updateBar = () => {
+    bar.classList.toggle("show", dirty.size > 0);
+    bar.querySelector(".save-count").textContent = `${dirty.size} unsaved change${dirty.size === 1 ? "" : "s"}`;
+  };
+
+  // Groups → cards (collapsed; search opens the matching ones)
+  const groups = [];
+  for (const it of items) {
+    let g = groups.find(x => x.name === it.group);
+    if (!g) groups.push(g = { name: it.group, items: [] });
+    g.items.push(it);
+  }
+
+  const cards = groups.map(g => {
+    const ic = (BOT_TEXT_ICONS.find(([p]) => g.name.startsWith(p)) || [, "message-square-text"])[1];
+    const body = h("div", { class: "bt-list" });
+    const badge = h("span", { class: "badge wait" });
+    const head = h("button", { type: "button", class: "bt-head" }, toneChip(ic, 16), h("b", {}, g.name),
+      h("span", { class: "muted small" }, `${g.items.length} texts`), badge, h("span", { class: "bt-chevron" }, icon("chevron-down", 18)));
+    const card = h("div", { class: "card bt-card" }, head, body);
+    const groupRows = g.items.map(it => {
+      const row = botTextRow(it, v => {
+        const original = it.value || "";
+        if ((v || "") === original) dirty.delete(it.key); else dirty.set(it.key, v || "");
+        row.el.classList.toggle("changed", dirty.has(it.key));
+        updateBar();
+      });
+      rows.push({ it, row, card });
+      return row;
+    });
+    body.append(...groupRows.map(r => r.el));
+    const countCustom = () => {
+      const n = g.items.filter(x => x.value).length;
+      badge.textContent = `${n} changed`;
+      badge.style.display = n ? "" : "none";
+    };
+    countCustom();
+    head.addEventListener("click", () => card.classList.toggle("open"));
+    return { card, g, countCustom };
+  });
+
+  const filter = () => {
+    const q = search.value.trim().toLowerCase();
+    for (const c of cards) {
+      let visible = 0;
+      for (const r of rows.filter(r => r.card === c.card)) {
+        const hay = `${r.it.name} ${r.it.default} ${r.it.value || ""} ${r.it.key}`.toLowerCase();
+        const show = (!q || hay.includes(q)) && (!onlyCustom.checked || r.it.value || dirty.has(r.it.key));
+        r.row.el.style.display = show ? "" : "none";
+        if (show) visible++;
+      }
+      c.card.style.display = visible ? "" : "none";
+      if (q || onlyCustom.checked) c.card.classList.toggle("open", visible > 0);
+    }
+  };
+  search.addEventListener("input", filter);
+  onlyCustom.addEventListener("change", filter);
+
+  discard.addEventListener("click", () => { refresh(); });
+  saveBtn.addEventListener("click", async () => {
+    const values = Object.fromEntries(dirty);
+    const res = await act(saveBtn, () => gApi("PUT", "/texts/bot", { values }));
+    if (res === undefined) return;
+    toast(res.postsTotal ? `Saved. Updated ${res.postsUpdated} of ${res.postsTotal} posted message(s).` : "Saved. New messages use it.",
+      res.postsUpdated === res.postsTotal ? "ok" : "warn");
+    refresh();
+  });
+  resetAll.addEventListener("click", async () => {
+    const n = items.filter(x => x.value).length;
+    if (!n) return toast("Everything is already the default.");
+    if (!await confirmDialog("Reset all bot messages?", `${n} changed text(s) and color(s) go back to the defaults. Active group posts and open tickets are updated.`, "Reset all")) return;
+    const res = await act(resetAll, () => gApi("POST", "/texts/bot/reset", { keys: [] }), "All bot messages are back to default.");
+    if (res !== undefined) refresh();
+  });
+
+  holder.replaceChildren(
+    h("div", { class: "card bt-tools" }, h("div", { class: "row" }, icon("search", 18), search,
+      h("label", { class: "toggle-line" }, onlyCustom, h("span", {}, "Only changed")), resetAll)),
+    ...cards.map(c => c.card), bar);
+  if (cards[0]) cards[0].card.classList.add("open");
+}
+
+/** One editable bot text (textarea) or color (swatch). onChange(value) — "" = default. */
+function botTextRow(it, onChange) {
+  const custom = h("span", { class: "badge wait" }, "custom");
+  custom.style.display = it.value ? "" : "none";
+  let control, value;
+  if (it.color) {
+    const c = colorField(it.value, it.default, v => onChange(v === it.default ? "" : v));
+    control = c.el;
+  } else {
+    const area = h("textarea", { class: "bt-text", maxlength: String(it.max), rows: "1", spellcheck: "false", placeholder: it.default });
+    area.value = it.value || it.default;
+    const fit = () => { area.style.height = "auto"; area.style.height = Math.min(area.scrollHeight + 2, 320) + "px"; };
+    const counter = h("span", { class: "muted small" });
+    const upd = () => { counter.textContent = `${area.value.length}/${it.max}`; };
+    area.addEventListener("input", () => { fit(); upd(); onChange(area.value === it.default ? "" : area.value); });
+    requestAnimationFrame(fit); upd();
+    const reset = h("button", { type: "button", class: "btn ghost icon-only sm", title: "Back to default",
+      onclick: () => { area.value = it.default; fit(); upd(); onChange(""); } }, icon("undo-2", 15));
+    control = h("div", { class: "bt-control" }, area, h("div", { class: "bt-meta" },
+      it.placeholders ? h("span", { class: "bt-ph" }, ...it.placeholders.split(/,\s*/).map(p => h("code", {}, p))) : null,
+      it.optional ? h("span", { class: "muted small" }, "- = hide") : null, h("span", { style: "flex:1" }), counter, reset));
+  }
+  const el = h("div", { class: "bt-row" }, h("div", { class: "bt-name" }, h("span", {}, it.name), custom), control);
+  return { el };
 }
 
 // ================= Posts: panels and bot messages =================
@@ -3108,14 +3271,16 @@ async function applyDialog() {
 // ================= Admin: panels & posts =================
 
 async function pageContent(main) {
-  const sub = store.get("gb.content") === "posts" && can("posts") ? "posts" : can("texts") ? "texts" : "posts";
+  const saved = store.get("gb.content");
+  const sub = saved === "posts" && can("posts") ? "posts" : saved === "bottexts" && can("texts") ? "bottexts" : can("texts") ? "texts" : "posts";
   const tabsRow = h("div", { class: "tabs" },
     can("texts") ? h("button", { class: `btn secondary${sub === "texts" ? " active-tab" : ""}`, onclick: () => { store.set("gb.content", "texts"); refresh(); } }, "📝 Panel texts") : null,
+    can("texts") ? h("button", { class: `btn secondary${sub === "bottexts" ? " active-tab" : ""}`, onclick: () => { store.set("gb.content", "bottexts"); refresh(); } }, "💬 Bot messages") : null,
     can("posts") ? h("button", { class: `btn secondary${sub === "posts" ? " active-tab" : ""}`, onclick: () => { store.set("gb.content", "posts"); refresh(); } }, "📌 Posts & messages") : null);
   main.append(h("div", { class: "card-head" }, h("h1", {}, "📌 Panels & posts")), tabsRow);
   const inner = h("div", {});
   main.append(inner);
-  await (sub === "texts" ? pageTexts(inner) : pagePosts(inner));
+  await (sub === "texts" ? pageTexts(inner) : sub === "bottexts" ? pageBotTexts(inner) : pagePosts(inner));
   // The section's own heading becomes a sub-heading
   const h1 = inner.querySelector("h1");
   if (h1) h1.replaceWith(h("h2", { class: "sub-title" }, h1.textContent.replace(/^[^\p{L}\p{N}]+/u, "")));
@@ -3731,7 +3896,14 @@ const HELP = {
       "Button labels under **LFG group posts** (Leave, Invite…, Manage, Close, Voice room) and in **ticket messages** (Approve, Deny, Close).",
       "Saving updates the panels already posted in Discord. **Reset to default** restores the original text.",
       "The title is plain text (Discord shows no markdown there); leave it **empty** for no title and put headings (# / ## / -#) in the text. In Discord: `/panel-text`.",
-      "LFG panel placeholders: `{hours}` — auto-delete hours, `{reminder}` — reminder minutes."
+      "LFG panel placeholders: `{hours}` — auto-delete hours, `{reminder}` — reminder minutes.",
+      "**Stripe color** — the colored line on the left of each panel (the swatch, a #hex code, or ↩ for the default)."
+    ]], ["Bot messages", [
+      "**💬 Bot messages** — every other text the bot writes: replies, DMs, group posts, ticket messages, reminders, menu placeholders, buttons and window (modal) titles and fields.",
+      "Grouped by module; search finds a text by its name or words, **Only changed** shows what you edited.",
+      "Words in `{braces}` are filled in by the bot — keep them where you need the value. In fields marked “- = hide”, a single `-` removes the line.",
+      "Stripe colors of group posts (recruiting / full / closed), tickets, DMs, invites and the verification are set here too.",
+      "**Save changes** saves everything at once; texts of group posts and ticket messages update the active posts right away. ↩ returns one text to the default, **Reset all to default** — every text."
     ]]],
     discord: [["Where it shows", [
       "Panels posted by `/lfg-panel`, `/ticket-panel`, `/tempvoice panel`, `/admin` or this site use your text; `/room panel` too.",
@@ -3739,6 +3911,8 @@ const HELP = {
     ]]],
     panel: [["Editing", [
       "Change the fields of a panel → **Save & update panels**. Empty field = default text.",
+      "Bot messages: open a group, edit the text or color (the row turns yellow), then **Save changes** at the bottom.",
+      "In Discord, `/panel-text` edits the title, text and stripe color of a panel.",
       "Panels posted before the bot started remembering them: click **Find posted panels** once."
     ]]]
   },

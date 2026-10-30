@@ -30,16 +30,16 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
 
             var name = Format.Sanitize(characterName);
             var activity = Format.Sanitize(group.ActivityName);
+            var gid = group.GuildId;
+            var roleText = $"{role.Emoji()} **{role.Label()}**";
             if (!reserved)
-                return $"✅ Signed up for **{activity}**: {role.Emoji()} **{role.Label()}** — **{name}**";
+                return Tx.Get(gid, "lfg.sign.joined", ("activity", activity), ("role", roleText), ("name", name));
 
             var position = group.Reserve.FindIndex(r => r.UserId == userId) + 1;
             if (unmet is not null && group.Slots.All(s => s.UserId != userId))
-                return $"🕓 This group requires {unmet} — you are on the **reserve** list (#{position}) for **{activity}** as **{name}**. " +
-                       "The organizer can still move you into the group.";
-            return $"🕓 No free slot for {role.Emoji()} **{role.Label()}** — you are on the **reserve** list " +
-                   $"(#{position}) for **{activity}** as **{name}**. The organizer can move you into the group; " +
-                   "you'll get a DM if that happens.";
+                return Tx.Get(gid, "lfg.sign.reserveRequirements", ("requirements", unmet), ("position", position),
+                    ("activity", activity), ("name", name));
+            return Tx.Get(gid, "lfg.sign.reserveFull", ("role", roleText), ("position", position), ("activity", activity), ("name", name));
         }
         finally
         {
@@ -91,8 +91,8 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
                 missing.Add(string.Join(" / ", group.RequiredRoleIds.Select(id => $"<@&{id}>")));
         }
         if (group.MinGs is { } min && (characters.GetInfo(group.GuildId, userId, characterName, Scope(group))?.Gs ?? 0) < min)
-            missing.Add($"GS {min}+ (set it with `/character gs`)");
-        return missing.Count == 0 ? null : string.Join(" and ", missing);
+            missing.Add(Tx.Get(group.GuildId, "lfg.sign.gsRequirement", ("gs", min)));
+        return missing.Count == 0 ? null : string.Join(Tx.Get(group.GuildId, "lfg.and"), missing);
     }
 
     /// <summary>Перенос времени сбора: новое время, автоудаление, напоминание, пост и ЛС всем записавшимся.</summary>
@@ -102,7 +102,7 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
         await group.Gate.WaitAsync();
         try
         {
-            if (group.IsClosed) return "This group is closed.";
+            if (group.IsClosed) return Tx.Get(group.GuildId, "lfg.err.groupClosed");
             group.StartsAt = startsAt;
             group.ExpiresAt = time.ExpiresAt(startsAt);
             group.Reminded = !time.ReminderNeeded(startsAt);
@@ -116,13 +116,14 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
             group.Gate.Release();
         }
 
-        var when = startsAt is { } t ? LfgRenderer.FormatTime(t) : "*no time*";
+        var gid = group.GuildId;
+        var when = startsAt is { } t ? LfgRenderer.FormatTime(t) : Tx.Get(gid, "lfg.noTime");
         var embed = new EmbedBuilder()
-            .WithTitle($"🕒 Time changed: {group.ActivityName}")
-            .WithDescription($"<@{by.Id}> moved the group.\nNew start: {when}")
-            .WithColor(Color.Orange)
+            .WithTitle(Tx.Get(gid, "lfg.dm.timeChangedTitle", ("activity", group.ActivityName)))
+            .WithDescription(Tx.Get(gid, "lfg.dm.timeChanged", ("user", $"<@{by.Id}>"), ("time", when)))
+            .WithColor(Tx.Color(gid, "color.lfg.timeChanged"))
             .Build();
-        var buttons = new ComponentBuilder().WithButton("Open the group", style: ButtonStyle.Link, url: JumpUrl(group)).Build();
+        var buttons = new ComponentBuilder().WithButton(Tx.Get(gid, "lfg.dm.openGroup"), style: ButtonStyle.Link, url: JumpUrl(group)).Build();
         _ = Task.Run(async () =>
         {
             foreach (var id in members)
@@ -150,7 +151,8 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
     {
         var project = projects.Effective(group.GuildId, group.ProjectKey);
         if (LfgProjectStore.CanUse(client.GetGuild(group.GuildId)?.GetUser(userId), project)) return null;
-        return $"This group is for **{project!.Name}** — you need {string.Join(" or ", project.RoleIds.Select(id => $"<@&{id}>"))} to sign up.";
+        return Tx.Get(group.GuildId, "lfg.sign.projectRole", ("project", project!.Name),
+            ("roles", string.Join(Tx.Get(group.GuildId, "lfg.or"), project.RoleIds.Select(id => $"<@&{id}>"))));
     }
 
     /// <summary>Юникод-эмодзи роли (иконка-эмодзи из настроек роли), если есть.</summary>
@@ -202,20 +204,21 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
             var user = client.GetUser(userId) as IUser ?? await client.Rest.GetUserAsync(userId);
             if (user is null) return;
 
+            var gid = group.GuildId;
             var role = slot.TakenAs ?? slot.Role;
             var sb = new System.Text.StringBuilder();
-            sb.AppendLine($"<@{group.OwnerId}> moved you from the reserve into the group.");
-            sb.AppendLine($"Role: {role.Emoji()} **{role.Label()}** — **{Format.Sanitize(slot.CharacterName ?? "-")}**");
+            sb.AppendLine(Tx.Get(gid, "lfg.dm.promoted", ("user", $"<@{group.OwnerId}>"),
+                ("role", $"{role.Emoji()} **{role.Label()}**"), ("name", Format.Sanitize(slot.CharacterName ?? "-"))));
             if (group.StartsAt is { } startsAt)
-                sb.AppendLine($"🕒 Starts: {LfgRenderer.FormatTime(startsAt)}");
+                sb.AppendLine(Tx.Get(gid, "lfg.post.starts", ("time", LfgRenderer.FormatTime(startsAt))));
 
             var embed = new EmbedBuilder()
-                .WithTitle($"✅ You're in: {group.ActivityName}")
+                .WithTitle(Tx.Get(gid, "lfg.dm.promotedTitle", ("activity", group.ActivityName)))
                 .WithDescription(sb.ToString())
-                .WithColor(Color.Green)
+                .WithColor(Tx.Color(gid, "color.lfg.promoted"))
                 .Build();
             var buttons = new ComponentBuilder()
-                .WithButton("Open the group", style: ButtonStyle.Link, url: JumpUrl(group))
+                .WithButton(Tx.Get(gid, "lfg.dm.openGroup"), style: ButtonStyle.Link, url: JumpUrl(group))
                 .Build();
 
             await user.SendMessageAsync(embed: embed, components: buttons);
@@ -241,8 +244,8 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
             {
                 var mentions = string.Join(" ", members.Select(id => $"<@{id}>"));
                 var message = await channel.SendMessageAsync(
-                    $"⏰ **{Format.Sanitize(group.ActivityName)}** starts <t:{startsAt.ToUnixTimeSeconds()}:R>! {mentions}\n" +
-                    "-# Organizer: press 📋 Invite to group or 🏰 Invite to dungeon under the post.",
+                    Tx.Get(group.GuildId, "lfg.reminder", ("activity", Format.Sanitize(group.ActivityName)),
+                        ("time", $"<t:{startsAt.ToUnixTimeSeconds()}:R>"), ("members", mentions)),
                     allowedMentions: new AllowedMentions { UserIds = members },
                     messageReference: new MessageReference(group.MessageId, failIfNotExists: false));
                 group.ReminderMessageId = message.Id;
@@ -265,13 +268,14 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
         await group.Gate.WaitAsync();
         try
         {
-            if (group.IsClosed) return "This group is closed.";
+            var gid = group.GuildId;
+            if (group.IsClosed) return Tx.Get(gid, "lfg.err.groupClosed");
             var guild = client.GetGuild(group.GuildId);
             if (guild is null) return "Server not found.";
             if (group.VoiceChannelId is { } existing && guild.GetVoiceChannel(existing) is not null)
-                return $"The voice room already exists: <#{existing}>";
+                return Tx.Get(gid, "lfg.voice.exists", ("channel", $"<#{existing}>"));
             if (by.Id != group.OwnerId && group.Slots.All(s => s.UserId != by.Id))
-                return "Only members of the group can create its voice room.";
+                return Tx.Get(gid, "lfg.voice.onlyMembers");
 
             var postChannel = guild.GetTextChannel(group.ChannelId);
             var name = $"🔊 {group.ActivityName}";
@@ -288,11 +292,11 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
             group.VoiceChannelId = channel.Id;
             store.SaveGroups();
             await RefreshPostAsync(group);
-            return $"🔊 Voice room created: <#{channel.Id}> — everyone can join and listen, only the group can speak.";
+            return Tx.Get(group.GuildId, "lfg.voice.created", ("channel", $"<#{channel.Id}>"));
         }
         catch (Discord.Net.HttpException)
         {
-            return "I couldn't create the voice room — the bot needs Manage Channels (and Manage Roles) in this category.";
+            return Tx.Get(group.GuildId, "lfg.voice.failed");
         }
         finally
         {

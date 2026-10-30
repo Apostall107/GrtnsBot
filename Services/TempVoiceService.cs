@@ -138,8 +138,9 @@ public sealed class TempVoiceService(
         {
             try
             {
-                var (embed, comps) = TempRoomManager.Panel();
-                await roomChat.SendMessageAsync($"<@{user.Id}>, this is your room.", embed: embed, components: comps,
+                var (embed, comps) = TempRoomManager.Panel(PanelTextStore.Instance?.GetText(guild.Id, PanelDefs.Rooms.Key));
+                var greeting = Tx.Get(guild.Id, "room.welcome", ("user", $"<@{user.Id}>"));
+                await roomChat.SendMessageAsync(greeting.Length == 0 ? null : greeting, embed: embed, components: comps,
                     allowedMentions: new AllowedMentions { UserIds = [user.Id] });
             }
             catch (Discord.Net.HttpException ex)

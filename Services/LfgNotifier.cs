@@ -48,8 +48,8 @@ public sealed class LfgNotifier(DiscordSocketClient client, LfgNotifyStore prefs
                 builder.WithButton(slotRole.Label(), $"lfgdm:join:{group.Id}:{slotRole}",
                     group.CanJoinAs(slotRole) ? ButtonStyle.Primary : ButtonStyle.Secondary,
                     new Emoji(slotRole.Emoji()), row: 0);
-            builder.WithButton("Open the group", style: ButtonStyle.Link, url: jumpUrl, row: 1);
-            builder.WithButton("Turn off these DMs", $"lfgdm:off:{guild.Id}", ButtonStyle.Secondary, new Emoji("🔕"), row: 1);
+            builder.WithButton(Tx.Get(guild.Id, "lfg.dm.openGroup"), style: ButtonStyle.Link, url: jumpUrl, row: 1);
+            builder.WithButton(Tx.Get(guild.Id, "lfg.dm.turnOff"), $"lfgdm:off:{guild.Id}", ButtonStyle.Secondary, new Emoji("🔕"), row: 1);
             var buttons = builder.Build();
 
             int sent = 0, failed = 0;

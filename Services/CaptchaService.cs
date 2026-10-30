@@ -54,14 +54,14 @@ public sealed class CaptchaService(CaptchaStore store, BotOwner owner, IServiceP
 
         var userId = interaction.User.Id;
         if (owner.Is(userId) || !store.IsListed(userId)) return false;
+        var gid = interaction.GuildId ?? 0;
 
         try
         {
             if (BlockedUntil(userId) is { } until)
             {
                 await interaction.RespondAsync(
-                    $"⛔ You failed the verification. You can use the bot again <t:{until.ToUnixTimeSeconds()}:R>.",
-                    ephemeral: true);
+                    Tx.Get(gid, "captcha.blocked", ("time", $"<t:{until.ToUnixTimeSeconds()}:R>")), ephemeral: true);
                 return true;
             }
 
@@ -79,8 +79,7 @@ public sealed class CaptchaService(CaptchaStore store, BotOwner owner, IServiceP
                     _challenges.TryRemove(userId, out _);
                     var blockedUntil = Block(userId, settings);
                     await interaction.RespondAsync(
-                        "⛔ Time ran out and there are no attempts left. " +
-                        $"You can use the bot again <t:{blockedUntil.ToUnixTimeSeconds()}:R>.", ephemeral: true);
+                        Tx.Get(gid, "captcha.timeoutBlocked", ("time", $"<t:{blockedUntil.ToUnixTimeSeconds()}:R>")), ephemeral: true);
                     if (settings.TimeoutOnFail && interaction.User is SocketGuildUser member)
                         await services.GetRequiredService<CaptchaVoiceGuard>()
                             .PunishAsync(member, TimeSpan.FromMinutes(Math.Max(1, settings.BlockMinutes)));
@@ -88,7 +87,7 @@ public sealed class CaptchaService(CaptchaStore store, BotOwner owner, IServiceP
                 }
 
                 previous.Deadline = NewDeadline(settings);
-                notice = "⏰ Time ran out on the previous picture — that counted as a wrong attempt.";
+                notice = Tx.Get(gid, "captcha.previousTimedOut");
             }
 
             var challenge = _challenges.AddOrUpdate(userId,
@@ -96,7 +95,7 @@ public sealed class CaptchaService(CaptchaStore store, BotOwner owner, IServiceP
                     { Deadline = NewDeadline(settings) },
                 (_, existing) => { existing.Code = CaptchaImage.NewCode(settings.CodeLength, settings.Mirror); return existing; });
 
-            var (embed, components) = BuildMessage(challenge, settings, notice);
+            var (embed, components) = BuildMessage(challenge, settings, notice, gid);
             using var image = new MemoryStream(Render(challenge.Code, settings));
             await interaction.RespondWithFileAsync(new FileAttachment(image, FileName),
                 embed: embed, components: components, ephemeral: true);
@@ -113,12 +112,12 @@ public sealed class CaptchaService(CaptchaStore store, BotOwner owner, IServiceP
     public bool HasChallenge(ulong userId) => _challenges.ContainsKey(userId);
 
     /// <summary>Новая картинка с новым кодом, попытки сохраняются. null — задания нет.</summary>
-    public (Embed Embed, MessageComponent Components, FileAttachment File)? Regenerate(ulong userId, string? notice = null)
+    public (Embed Embed, MessageComponent Components, FileAttachment File)? Regenerate(ulong userId, string? notice = null, ulong gid = 0)
     {
         if (!_challenges.TryGetValue(userId, out var challenge)) return null;
         var settings = store.Get();
         challenge.Code = CaptchaImage.NewCode(settings.CodeLength, settings.Mirror);
-        var (embed, components) = BuildMessage(challenge, settings, notice);
+        var (embed, components) = BuildMessage(challenge, settings, notice, gid);
         return (embed, components, new FileAttachment(new MemoryStream(Render(challenge.Code, settings)), FileName));
     }
 
@@ -126,11 +125,11 @@ public sealed class CaptchaService(CaptchaStore store, BotOwner owner, IServiceP
         CaptchaImage.RenderPng(code, settings.Mirror, settings.DistortionPercent);
 
     /// <summary>Подсказка, как читать картинку.</summary>
-    public static string HowToRead(int length, bool mirror)
+    public static string HowToRead(int length, bool mirror, ulong gid = 0)
     {
-        var rows = length > CaptchaImage.PerRow ? $" in {(length + CaptchaImage.PerRow - 1) / CaptchaImage.PerRow} rows" : "";
-        return $"The picture has **{length} characters**{rows}." +
-               (mirror ? " Every character is **mirrored** — read them left to right as usual." : "");
+        var rows = length > CaptchaImage.PerRow ? Tx.Get(gid, "captcha.rows", ("rows", (length + CaptchaImage.PerRow - 1) / CaptchaImage.PerRow)) : "";
+        return Tx.Get(gid, "captcha.length", ("length", length), ("rows", rows)) +
+               (mirror ? Tx.Get(gid, "captcha.mirrored") : "");
     }
 
     /// <summary>Проверить ввод. input = null — время вышло без ввода (нажал Enter code слишком поздно).</summary>
@@ -218,27 +217,24 @@ public sealed class CaptchaService(CaptchaStore store, BotOwner owner, IServiceP
     };
 
     private static (Embed Embed, MessageComponent Components) BuildMessage(Challenge challenge, CaptchaSettings settings,
-        string? notice)
+        string? notice, ulong gid)
     {
         var attemptsLeft = challenge.AttemptsLeft;
         var embed = new EmbedBuilder()
-            .WithTitle("🤖 Verification required")
-            .WithColor(Color.Orange)
+            .WithTitle(Tx.Get(gid, "captcha.title"))
+            .WithColor(Tx.Color(gid, "color.captcha"))
             .WithDescription(
                 (notice is null ? "" : notice + "\n\n") +
-                "Before using the bot, type the code from the picture.\n" +
-                HowToRead(challenge.Code.Length, settings.Mirror) + "\n" +
-                "Click **Enter code**. Case and spaces don't matter. Can't read it? Click **New picture**.\n\n" +
-                $"Attempts left: **{attemptsLeft}**" +
+                Tx.Get(gid, "captcha.text", ("howto", HowToRead(challenge.Code.Length, settings.Mirror, gid)), ("attempts", attemptsLeft)) +
                 (challenge.Deadline is { } d
-                    ? $"\n⏱️ Time limit: <t:{d.ToUnixTimeSeconds()}:R> — after that the attempt counts as wrong."
+                    ? "\n" + Tx.Get(gid, "captcha.timeLimit", ("time", $"<t:{d.ToUnixTimeSeconds()}:R>"))
                     : ""))
             .WithImageUrl($"attachment://{FileName}")
             .Build();
 
         var components = new ComponentBuilder()
-            .WithButton("Enter code", "captcha:enter", ButtonStyle.Success, new Emoji("⌨️"))
-            .WithButton("New picture", "captcha:new", ButtonStyle.Secondary, new Emoji("🔄"))
+            .WithButton(Tx.Get(gid, "captcha.enter"), "captcha:enter", ButtonStyle.Success, new Emoji("⌨️"))
+            .WithButton(Tx.Get(gid, "captcha.new"), "captcha:new", ButtonStyle.Secondary, new Emoji("🔄"))
             .Build();
 
         return (embed, components);
