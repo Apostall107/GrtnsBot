@@ -393,101 +393,136 @@ async function pageOverview(main) {
 async function pageLfg(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "📣 LFG"), h("button", { class: "btn secondary", onclick: refresh }, "🔄 Refresh")));
 
-  // Projects (games): activities and classes can belong to a project
+  // Projects (games): every project has its own tab — activities, panel, classes, templates, schedules, groups, stats.
+  // ⚙️ General — projects, settings and everything shared by all projects.
   let lfgProjects = { projects: [], panels: [] };
   try { lfgProjects = await gApi("GET", "/lfg/projects"); } catch { /* shown in the card */ }
-  const projOptions = (sel, value) => {
-    const el = h("select", {}, h("option", { value: "" }, "🌐 All projects"), lfgProjects.projects.map(p => h("option", { value: p.key }, `🎮 ${p.name}`)));
-    el.value = value || "";
+  const projects = lfgProjects.projects;
+  const defKey = projects.length ? (projects.find(p => p.isDefault) || projects[0]).key : null;
+  let tab = store.get("gb.lfgProject") || (defKey || "general");
+  if (tab !== "general" && !projects.some(p => p.key === tab)) tab = defKey || "general";
+  const P = tab === "general" ? null : tab;              // current project
+  const mode = !projects.length ? "all" : P ? "project" : "shared";
+  const project = projects.find(p => p.key === P);
+
+  if (projects.length) main.append(h("div", { class: "row", style: "margin-bottom:16px" },
+    [...projects.map(p => [p.key, `🎮 ${p.name}`]), ["general", "⚙️ General"]].map(([k, label]) =>
+      h("button", { class: `btn secondary${k === tab ? " active-tab" : ""}`,
+        onclick: () => { store.set("gb.lfgProject", k); refresh(); } }, label))));
+
+  const [acts, templates] = await Promise.all([
+    gApi("GET", "/lfg/activities").catch(() => []),
+    gApi("GET", "/lfg/templates").catch(() => [])
+  ]);
+  const ofProject = key => (key || defKey) === P;       // groups / schedules / panels: no project = default project
+
+  // --- Activities: the project's own + 🌐 shared (all projects)
+  const shared = h("span", { class: "badge wait", title: "Offered in every project — manage in ⚙️ General" }, "🌐 all projects");
+  const actList = mode === "all" ? acts : mode === "shared" ? acts.filter(a => !a.projectKey) : acts.filter(a => a.projectKey === P || !a.projectKey);
+  const actCard = h("div", { class: "card" }, h("div", { class: "card-head" },
+    h("h2", {}, mode === "shared" ? "🌐 Shared activities" : mode === "project" ? `Activities · ${project.name}` : "Activities")),
+    h("p", { class: "muted small" }, "Members with the role are pinged and get a DM when a group for the activity is posted. ",
+      mode === "project" ? "Shown in this project's groups only; 🌐 ones are shared by all projects." :
+        mode === "shared" ? "Shared activities are offered in every project's groups." : ""));
+  const moveSel = a => {
+    const el = h("select", { title: "Move to a project" }, h("option", { value: "" }, "🌐 All projects"),
+      projects.map(p => h("option", { value: p.key }, `🎮 ${p.name}`)));
+    el.value = a.projectKey || "";
+    el.addEventListener("change", async () => {
+      if (await act(el, () => gApi("PUT", `/lfg/activities/${encodeURIComponent(a.key)}/project`, { projectKey: el.value || null }), "Activity moved.") !== undefined) refresh();
+    });
     return el;
   };
-
-  // --- Activities
-  const actCard = h("div", { class: "card" }, h("div", { class: "card-head" }, h("h2", {}, "Activities")),
-    h("p", { class: "muted small" }, "Members with the role are pinged and get a DM when a group for the activity is posted. ",
-      "An activity of a project is offered only in that project's groups; «All projects» — everywhere."));
-  const actBody = h("div", {}, h("div", { class: "muted" }, "Loading…"));
+  actCard.append(actList.length ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
+    h("thead", {}, h("tr", {}, h("th", {}, "Activity"), h("th", {}, "Ping role"), projects.length ? h("th", {}, "Project") : null, h("th", {}))),
+    h("tbody", {}, actList.map(a => {
+      const rm = h("button", { class: "btn ghost" }, "Remove");
+      rm.addEventListener("click", async () => {
+        if (!await confirmDialog(`Remove ${a.name}?`, "Groups that are already posted are not affected.", "Remove")) return;
+        if (await act(rm, () => gApi("DELETE", `/lfg/activities/${encodeURIComponent(a.key)}`), "Activity removed.") !== undefined) refresh();
+      });
+      return h("tr", {}, h("td", {}, a.name, mode === "project" && !a.projectKey ? h("div", {}, shared.cloneNode(true)) : null),
+        h("td", {}, roleChip(a.role)), projects.length ? h("td", {}, moveSel(a)) : null, h("td", { class: "actions" }, rm));
+    })))) : empty("No activities yet."));
   const nameIn = h("input", { placeholder: "Activity name, e.g. Fire Temple", maxlength: "100" });
   const roleIn = roleSelect("Role to ping…");
-  const projIn = lfgProjects.projects.length ? projOptions() : null;
   const addBtn = h("button", { class: "btn" }, "➕ Add");
   addBtn.addEventListener("click", async () => {
-    const ok = await act(addBtn, () => gApi("POST", "/lfg/activities",
-      { name: nameIn.value, roleId: roleIn.value, projectKey: projIn ? projIn.value || null : null }), "Activity added.");
+    const ok = await act(addBtn, () => gApi("POST", "/lfg/activities", { name: nameIn.value, roleId: roleIn.value, projectKey: P }),
+      mode === "project" ? `Activity added to ${project.name}.` : "Activity added.");
     if (ok !== undefined) refresh();
   });
-  actCard.append(actBody, h("div", { class: "row", style: "margin-top:12px" }, h("div", { class: "grow" }, nameIn), roleIn, projIn, addBtn));
+  actCard.append(h("div", { class: "row", style: "margin-top:12px" }, h("div", { class: "grow" }, nameIn), roleIn, addBtn));
 
-  // Channel for groups created by members on the site
-  const chCard = h("div", { class: "card" }, h("h3", {}, "Channel for groups"),
-    h("p", { class: "muted small" }, "Groups that members create on the site (Member → Groups) are always posted here — members can't pick the channel."));
-  const chSel = channelSelect("text", "Not set — use the LFG panel channel");
-  const chSave = h("button", { class: "btn" }, "💾 Save");
-  const chInfo = h("div", { class: "muted small", style: "margin-top:6px" });
-  chSave.addEventListener("click", async () => {
-    if (await act(chSave, () => gApi("PUT", "/lfg/channel", { channelId: chSel.value || null }), "Channel saved.") !== undefined) refresh();
-  });
-  chCard.append(h("div", { class: "row" }, h("div", { class: "grow" }, chSel), chSave), chInfo);
-  gApi("GET", "/lfg/channel").then(c => {
-    if (c.channelId) chSel.value = c.channelId;
-    chInfo.textContent = c.effective
-      ? `Now: #${c.effective.name}${c.fromPanel ? " (the LFG panel's channel)" : ""}`
-      : "Now: not set — members can't create groups until you pick a channel or post the LFG panel.";
-  }).catch(e => { chInfo.textContent = e.message; });
+  // --- LFG panel of the project (posted panels are linked to it right away)
+  const panelCard = () => {
+    const card = postPanelCard(mode === "project" ? `LFG panel · ${project.name}` : "LFG panel",
+      mode === "project" ? "Posts the “Create LFG” panel for this project — groups created with it belong to the project."
+        : "Posts the message with the “Create LFG” button.",
+      mode === "project" ? `/lfg/panel?project=${encodeURIComponent(P)}` : "/lfg/panel");
+    if (mode === "project") {
+      const mine = lfgProjects.panels.filter(x => ofProject(x.projectKey));
+      card.append(h("div", { class: "muted small", style: "margin-top:10px" }, "Panels of this project:"),
+        mine.length ? h("div", {}, mine.map(x => h("div", { class: "row", style: "margin-top:4px" },
+          x.channel ? `#${x.channel}` : h("span", { class: "chip warn" }, "deleted channel"),
+          h("a", { class: "btn ghost", href: x.jumpUrl, target: "_blank", rel: "noopener" }, "Open"))))
+          : h("div", { class: "muted small" }, "none yet"));
+    }
+    return card;
+  };
 
-  main.append(h("div", { class: "grid-main" }, actCard,
-    h("div", {}, postPanelCard("LFG panel", "Posts the message with the “Create LFG” button.", "/lfg/panel"), chCard)));
+  // --- Channel for groups created by members on the site (General)
+  const channelCard = () => {
+    const chCard = h("div", { class: "card" }, h("h3", {}, "Channel for groups"),
+      h("p", { class: "muted small" }, "Groups that members create on the site (Member → Groups) go to the channel of their project's LFG panel; if it has none — here."));
+    const chSel = channelSelect("text", "Not set — use the LFG panel channel");
+    const chSave = h("button", { class: "btn" }, "💾 Save");
+    const chInfo = h("div", { class: "muted small", style: "margin-top:6px" });
+    chSave.addEventListener("click", async () => {
+      if (await act(chSave, () => gApi("PUT", "/lfg/channel", { channelId: chSel.value || null }), "Channel saved.") !== undefined) refresh();
+    });
+    chCard.append(h("div", { class: "row" }, h("div", { class: "grow" }, chSel), chSave), chInfo);
+    gApi("GET", "/lfg/channel").then(c => {
+      if (c.channelId) chSel.value = c.channelId;
+      chInfo.textContent = c.effective
+        ? `Now: #${c.effective.name}${c.fromPanel ? " (the LFG panel's channel)" : ""}`
+        : "Now: not set — members can't create groups until you pick a channel or post the LFG panel.";
+    }).catch(e => { chInfo.textContent = e.message; });
+    return chCard;
+  };
 
-  // --- Schedules (creating one-off groups is in Member → Groups)
-  const recCard = h("div", { class: "card" });
-  main.append(recCard);
-
-  // --- Groups
+  const card = () => h("div", { class: "card" });
+  const classCard = card(), tplCard = card(), recCard = card(), statsCard = card();
   const groupsCard = h("div", { class: "card" }, h("div", { class: "card-head" }, h("h2", {}, "Active groups")));
   const groupsBody = h("div", {}, h("div", { class: "muted" }, "Loading…"));
   groupsCard.append(groupsBody);
-  main.append(groupsCard);
 
-  let acts = [];
-  try {
-    acts = await gApi("GET", "/lfg/activities");
-    actBody.replaceChildren(acts.length ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
-      h("thead", {}, h("tr", {}, h("th", {}, "Activity"), h("th", {}, "Ping role"), lfgProjects.projects.length ? h("th", {}, "Project") : null, h("th", {}))),
-      h("tbody", {}, acts.map(a => {
-        const proj = lfgProjects.projects.length ? projOptions(null, a.projectKey) : null;
-        if (proj) proj.addEventListener("change", () => act(proj,
-          () => gApi("PUT", `/lfg/activities/${encodeURIComponent(a.key)}/project`, { projectKey: proj.value || null }), "Activity moved."));
-        const rm = h("button", { class: "btn ghost" }, "Remove");
-        rm.addEventListener("click", async () => {
-          if (!await confirmDialog(`Remove ${a.name}?`, "Groups that are already posted are not affected.", "Remove")) return;
-          if (await act(rm, () => gApi("DELETE", `/lfg/activities/${encodeURIComponent(a.key)}`), "Activity removed.") !== undefined) refresh();
-        });
-        return h("tr", {}, h("td", {}, a.name), h("td", {}, roleChip(a.role)), proj ? h("td", {}, proj) : null, h("td", { class: "actions" }, rm));
-      })))) : empty("No activities yet."));
-  } catch (e) { actBody.replaceChildren(empty(e.message)); }
+  if (mode === "shared") {
+    // ⚙️ General: projects, settings, channel, shared activities / templates, common classes
+    const projCard = card(), lfgSettingsCard = card();
+    main.append(projCard, h("div", { class: "grid-main" }, actCard, h("div", {}, channelCard())), lfgSettingsCard, classCard, tplCard);
+    renderProjects(projCard, lfgProjects);
+    renderLfgSettings(lfgSettingsCard);
+    renderClasses(classCard, projects, "", { noTabs: true });
+    renderTemplates(tplCard, acts, templates, null, "shared");
+    return;
+  }
 
-  // Schedules
-  let templates = [];
-  try { templates = await gApi("GET", "/lfg/templates"); } catch { /* shown in the card */ }
-  const projCard = h("div", { class: "card" });
-  const classCard = h("div", { class: "card" });
-  main.insertBefore(projCard, recCard);
-  main.insertBefore(classCard, recCard);
-  const lfgSettingsCard = h("div", { class: "card" });
-  main.insertBefore(lfgSettingsCard, projCard);
-  renderLfgSettings(lfgSettingsCard);
-  renderProjects(projCard, lfgProjects);
-  renderClasses(classCard, lfgProjects.projects);
-  renderRecurring(recCard, acts, templates, lfgProjects.projects);
-  const tplCard = h("div", { class: "card" });
-  const statsCard = h("div", { class: "card" });
-  main.insertBefore(tplCard, recCard);
-  main.append(statsCard);
-  renderTemplates(tplCard, acts, templates);
-  renderStats(statsCard);
+  main.append(h("div", { class: "grid-main" }, actCard, h("div", {}, panelCard(), mode === "all" ? channelCard() : null)));
+  if (mode === "all") {
+    const projCard = card(), lfgSettingsCard = card();
+    main.append(lfgSettingsCard, projCard);
+    renderLfgSettings(lfgSettingsCard);
+    renderProjects(projCard, lfgProjects);
+  }
+  main.append(classCard, tplCard, recCard, groupsCard, statsCard);
+  renderClasses(classCard, projects, P || "", { noTabs: true });
+  renderTemplates(tplCard, acts, templates, P, mode);
+  renderRecurring(recCard, acts, templates, projects, P);
+  renderStats(statsCard, P);
 
   try {
-    const groups = await gApi("GET", "/lfg/groups");
+    const groups = (await gApi("GET", "/lfg/groups")).filter(g => mode === "all" || ofProject(g.projectKey));
     groupsBody.replaceChildren(groups.length ? h("div", { class: "grid2" }, groups.map(groupCard)) : empty("No active groups."));
   } catch (e) { groupsBody.replaceChildren(empty(e.message)); }
 }
@@ -506,30 +541,14 @@ function lfgForm(acts, opts) {
   const channelEl = channel.el || channel;
   if (v.channelId) channel.value = v.channelId;
 
-  // Project (game): characters of this project are used; members need its role
-  const projectSel = opts.projects && opts.projects.length
+  // Project (game): characters of this project are used; members need its role.
+  // lockProject (admin, inside a project tab): the project is fixed, no select
+  const locked = "lockProject" in opts;
+  const projectSel = !locked && opts.projects && opts.projects.length
     ? h("select", {}, opts.projects.map(p => h("option", { value: p.key }, p.name)))
     : null;
-  if (projectSel) {
-    projectSel.value = v.projectKey || (opts.projects.find(p => p.isDefault) || opts.projects[0]).key;
-    fillActivities(projectSel.value);
-    if (!v.activityKey && !v.activity) {
-      const first = [...activity.options].find(o => o.value);
-      if (first) activity.value = first.value;
-    }
-    projectSel.addEventListener("change", () => { fillActivities(projectSel.value); syncCustom(); });
-    if (opts.fixedChannel) {
-      // The post goes to the channel of the project's LFG panel
-      const syncChannel = () => {
-        const p = opts.projects.find(x => x.key === projectSel.value);
-        const c = (p && p.channel) || opts.fixedChannel;
-        channel.value = c ? c.id : "";
-        channel.el.textContent = c ? `#${c.name}` : "not set — ask an admin";
-      };
-      projectSel.addEventListener("change", syncChannel);
-      syncChannel();
-    }
-  }
+  if (projectSel) projectSel.value = v.projectKey || (opts.projects.find(p => p.isDefault) || opts.projects[0]).key;
+  const currentProject = () => locked ? opts.lockProject : projectSel ? projectSel.value : null;
   // Admins: duplicate the post to other channels
   const mirrorBoxes = (opts.mirrorChannels || []).map(c => {
     const cb = h("input", { type: "checkbox" });
@@ -547,7 +566,7 @@ function lfgForm(acts, opts) {
         .map(a => h("option", { value: a.key }, `${a.name}  ·  @${a.role.name}`)));
     if ([...activity.options].some(o => o.value === keep)) activity.value = keep;
   };
-  fillActivities(null);
+  fillActivities(currentProject());
   const custom = h("input", { placeholder: "Activity name", maxlength: "100" });
   if (v.activityKey !== undefined) {
     activity.value = v.activityKey || "";
@@ -555,10 +574,28 @@ function lfgForm(acts, opts) {
   } else if (v.activity) {
     const match = acts.find(a => a.name === v.activity);
     if (match) activity.value = match.key; else custom.value = v.activity;
-  } else if (acts.length) activity.value = acts[0].key;
+  } else {
+    const first = [...activity.options].find(o => o.value);
+    if (first) activity.value = first.value;
+  }
   const syncCustom = () => { custom.style.display = activity.value ? "none" : ""; };
   activity.addEventListener("change", syncCustom);
   syncCustom();
+
+  if (projectSel) {
+    projectSel.addEventListener("change", () => { fillActivities(projectSel.value); fillTemplates(); syncCustom(); });
+    if (opts.fixedChannel) {
+      // The post goes to the channel of the project's LFG panel
+      const syncChannel = () => {
+        const p = opts.projects.find(x => x.key === projectSel.value);
+        const c = (p && p.channel) || opts.fixedChannel;
+        channel.value = c ? c.id : "";
+        channel.el.textContent = c ? `#${c.name}` : "not set — ask an admin";
+      };
+      projectSel.addEventListener("change", syncChannel);
+      syncChannel();
+    }
+  }
 
   // Slots
   let slots = v.slots ? v.slots.slice() : ["Any", "Any", "Any", "Any"];
@@ -588,9 +625,15 @@ function lfgForm(acts, opts) {
   const minGs = h("input", { type: "number", min: "0", max: "99999", placeholder: "none", value: v.minGs ?? "", style: "width:110px" });
 
   // Templates: prefill activity, slots and requirements
-  const tplSel = opts.templates && opts.templates.length
-    ? h("select", {}, h("option", { value: "" }, "— no template —"), opts.templates.map(t => h("option", { value: t.key }, t.name)))
-    : null;
+  // Only templates of the current project (+ the ones for all projects)
+  const tplSel = opts.templates && opts.templates.length ? h("select", {}) : null;
+  const fillTemplates = () => {
+    if (!tplSel) return;
+    const key = currentProject();
+    tplSel.replaceChildren(h("option", { value: "" }, "— no template —"),
+      ...opts.templates.filter(t => !key || !t.projectKey || t.projectKey === key).map(t => h("option", { value: t.key }, t.name)));
+  };
+  fillTemplates();
   if (tplSel) tplSel.addEventListener("change", () => {
     const t = opts.templates.find(x => x.key === tplSel.value);
     if (!t) return;
@@ -672,21 +715,24 @@ function lfgForm(acts, opts) {
       channelId: channel.value || null, activityKey: activity.value || null, customName: activity.value ? null : custom.value,
       slots: slots.slice(), notifyByDm: dm.checked, seatOwner: seat.checked,
       requiredRoleIds: req.value(), minGs: minGs.value === "" ? null : Number(minGs.value),
-      projectKey: projectSel ? projectSel.value : null, createVoice: voice.checked,
+      projectKey: currentProject(), createVoice: voice.checked,
       mirrorChannelIds: mirrorBoxes.filter(x => x.cb.checked).map(x => x.id), ...extra()
     })
   };
 }
 
-async function renderRecurring(card, acts, templates = [], projects = []) {
+async function renderRecurring(card, acts, templates = [], projects = [], projectKey = null) {
   const add = h("button", { class: "btn" }, "➕ Add schedule");
-  add.addEventListener("click", () => recurringDialog(acts, null, templates, projects));
+  add.addEventListener("click", () => recurringDialog(acts, null, templates, projects, projectKey));
+  const defKey = projects.length ? (projects.find(p => p.isDefault) || projects[0]).key : null;
   const body = h("div", {}, h("div", { class: "muted" }, "Loading…"));
   card.replaceChildren(h("div", { class: "card-head" }, h("h2", {}, "🔁 Recurring groups"), add),
     h("p", { class: "muted small" }, "Posted automatically on the chosen days, the set number of hours before the start."), body);
 
   let list;
   try { list = await gApi("GET", "/lfg/recurring"); } catch (e) { body.replaceChildren(empty(e.message)); return; }
+  // Only this project's schedules (no project = default project)
+  if (projectKey) list = list.filter(r => (r.projectKey || defKey) === projectKey);
   if (!list.length) { body.replaceChildren(empty("No schedules yet.")); return; }
 
   const dayNames = d => DAYS.filter(([n]) => d.includes(n)).map(([, l]) => l).join(", ");
@@ -694,7 +740,7 @@ async function renderRecurring(card, acts, templates = [], projects = []) {
     h("thead", {}, h("tr", {}, h("th", {}, "Activity"), h("th", {}, "When"), h("th", {}, "Next post"), h("th", {}, "Status"), h("th", {}))),
     h("tbody", {}, list.map(r => {
       const edit = h("button", { class: "btn secondary" }, "Edit");
-      edit.addEventListener("click", () => recurringDialog(acts, r, templates, projects));
+      edit.addEventListener("click", () => recurringDialog(acts, r, templates, projects, projectKey));
       const rm = h("button", { class: "btn ghost" }, "Delete");
       rm.addEventListener("click", async () => {
         if (!await confirmDialog(`Delete the ${r.activity} schedule?`, "Groups that are already posted stay.", "Delete")) return;
@@ -711,9 +757,11 @@ async function renderRecurring(card, acts, templates = [], projects = []) {
     })))));
 }
 
-function recurringDialog(acts, r, templates = [], projects = []) {
+function recurringDialog(acts, r, templates = [], projects = [], projectKey = null) {
   const d = dialog();
-  const form = lfgForm(acts, { mode: "recurring", initial: r || {}, templates, projects });
+  const form = lfgForm(acts, projectKey
+    ? { mode: "recurring", initial: r || {}, templates, lockProject: projectKey }
+    : { mode: "recurring", initial: r || {}, templates, projects });
   const save = h("button", { class: "btn" }, r ? "💾 Save" : "➕ Add");
   save.addEventListener("click", async () => {
     const res = await act(save, () => r ? gApi("PUT", `/lfg/recurring/${r.id}`, form.value()) : gApi("POST", "/lfg/recurring", form.value()),
@@ -814,17 +862,17 @@ function projectDialog(p) {
   d.showModal();
 }
 
-async function renderClasses(card, projectList = [], projectKey = store.get("gb.classProject") || "") {
+async function renderClasses(card, projectList = [], projectKey = store.get("gb.classProject") || "", opts = {}) {
   if (projectKey && !projectList.some(p => p.key === projectKey)) projectKey = "";
   card.replaceChildren(h("h2", {}, "🎭 Classes"), h("div", { class: "muted" }, "Loading…"));
   let data;
   const q = projectKey ? `?project=${encodeURIComponent(projectKey)}` : "";
   try { data = await gApi("GET", `/lfg/classes${q}`); } catch (e) { card.replaceChildren(h("h2", {}, "🎭 Classes"), empty(e.message)); return; }
   // Common classes + each project's own (a project without its own uses the common list)
-  const tabs = projectList.length ? h("div", { class: "row", style: "margin-bottom:10px" },
+  const tabs = projectList.length && !opts.noTabs ? h("div", { class: "row", style: "margin-bottom:10px" },
     [["", "🌐 Common"], ...projectList.map(p => [p.key, `🎮 ${p.name}`])].map(([k, label]) =>
       h("button", { class: `btn secondary${k === projectKey ? " active-tab" : ""}`,
-        onclick: () => { store.set("gb.classProject", k); renderClasses(card, projectList, k); } }, label))) : null;
+        onclick: () => { store.set("gb.classProject", k); renderClasses(card, projectList, k, opts); } }, label))) : null;
   const roleIcons = data.roleIcons || {};
   let rows = data.classes.map(c => ({ roleId: c.role.id, role: c.role, icon: c.icon }));
   const list = h("div", {});
@@ -878,46 +926,66 @@ async function renderClasses(card, projectList = [], projectKey = store.get("gb.
   save.addEventListener("click", () => act(save, () => gApi("PUT", `/lfg/classes${q}`, { classes: rows.map(r => ({ roleId: r.roleId, icon: r.icon })) }),
     "Classes saved. New signups use the icons; existing posts update when someone changes their class."));
   draw();
-  card.replaceChildren(h("h2", {}, "🎭 Classes"), tabs,
+  const projName = (projectList.find(p => p.key === projectKey) || {}).name;
+  const title = opts.noTabs ? (projectKey ? `🎭 Classes · ${projName}` : "🎭 Common classes") : "🎭 Classes";
+  // A project without its own list uses the common one — copy it here to start a separate list
+  let copy = null;
+  if (projectKey && !rows.length) {
+    copy = h("button", { class: "btn secondary" }, "📋 Copy the common list");
+    copy.addEventListener("click", async () => {
+      const common = await act(copy, () => gApi("GET", "/lfg/classes"));
+      if (!common) return;
+      rows = common.classes.map(c => ({ roleId: c.role.id, role: c.role, icon: c.icon }));
+      draw();
+      toast(rows.length ? "Copied — edit and press Save classes." : "The common list is empty.", rows.length ? "ok" : "warn");
+    });
+  }
+  card.replaceChildren(...[h("h2", {}, title), tabs,
+    projectKey && !rows.length ? h("div", { class: "chip", style: "margin-bottom:8px" }, "Now uses the common list (⚙️ General → Common classes)") : null,
     h("p", { class: "muted small" }, "Roles that count as classes and their icon shown next to the player's name. If the list is not empty, players pick any of these as their class (they don't need the role); if empty — only roles they have. ",
       projectKey ? "This project's own classes — if empty, the common list is used." : "Common classes — used by every project that has no classes of its own. ",
       "Use a unicode emoji, a server emoji, or 🎨 Use role icons — the roles' own icons from Discord (image icons are uploaded as the bot's emojis, no server emoji slots used)."),
-    list, h("div", { class: "row", style: "margin-top:8px" }, addSel, fromRoles, save));
+    list, h("div", { class: "row", style: "margin-top:8px" }, addSel, copy, fromRoles, save)].filter(Boolean));
 }
 
 // ----- LFG templates (admin) -----
 
-function renderTemplates(card, acts, templates) {
+function renderTemplates(card, acts, templates, projectKey = null, mode = "all") {
+  // Project tab: its own templates + 🌐 shared ones; General: shared only
+  if (mode === "project") templates = templates.filter(t => !t.projectKey || t.projectKey === projectKey);
+  else if (mode === "shared") templates = templates.filter(t => !t.projectKey);
   const add = h("button", { class: "btn" }, "➕ Add template");
-  add.addEventListener("click", () => templateDialog(acts, null));
+  add.addEventListener("click", () => templateDialog(acts, null, mode === "project" ? projectKey : null));
   card.replaceChildren(h("div", { class: "card-head" }, h("h2", {}, "📋 Templates"), add),
-    h("p", { class: "muted small" }, "Activity + slots + requirements in one click — offered in /lfg (Step 1) and in Create a group on the site."),
+    h("p", { class: "muted small" }, "Activity + slots + requirements in one click — offered in /lfg (Step 1) and in Create a group on the site. ",
+      mode === "project" ? "Templates of this project; 🌐 ones are offered in every project." : mode === "shared" ? "Shared templates are offered in every project." : ""),
     templates.length ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
       h("tbody", {}, templates.map(t => {
         const act = acts.find(a => a.key === t.activityKey);
-        const edit = h("button", { class: "btn secondary", onclick: () => templateDialog(acts, t) }, "Edit");
+        const edit = h("button", { class: "btn secondary", onclick: () => templateDialog(acts, t, t.projectKey || null) }, "Edit");
         const rm = h("button", { class: "btn ghost" }, "Delete");
         rm.addEventListener("click", async () => {
           if (!await confirmDialog(`Delete the template ${t.name}?`, "Posted groups are not affected.", "Delete")) return;
           if (await act(rm, () => gApi("DELETE", `/lfg/templates/${t.key}`), "Template deleted.") !== undefined) refresh();
         });
         return h("tr", {},
-          h("td", {}, h("b", {}, t.name), h("div", { class: "muted small" }, act ? act.name : (t.customActivity || "custom"))),
+          h("td", {}, h("b", {}, t.name), mode === "project" && !t.projectKey ? h("span", { class: "badge wait", style: "margin-left:6px" }, "🌐 all projects") : null,
+            h("div", { class: "muted small" }, act ? act.name : (t.customActivity || "custom"))),
           h("td", { class: "small" }, t.slots.map(x => (SLOT_ROLES.find(r => r[0] === x) || [x, x])[1]).join(" · ")),
           h("td", { class: "small" }, t.requiredRoles.map(r => roleChip(r)), t.minGs ? h("span", { class: "chip" }, `GS ${t.minGs}+`) : null),
           h("td", { class: "actions" }, edit, " ", rm));
       })))) : empty("No templates yet."));
 }
 
-function templateDialog(acts, t) {
+function templateDialog(acts, t, projectKey = null) {
   const d = dialog();
-  const form = lfgForm(acts, { mode: "template", initial: t || {} });
+  const form = lfgForm(acts, { mode: "template", initial: t || {}, lockProject: projectKey });
   const save = h("button", { class: "btn" }, t ? "💾 Save" : "➕ Add");
   save.addEventListener("click", async () => {
     const v = form.value();
     const res = await act(save, () => gApi("PUT", `/lfg/templates/${t ? t.key : "new"}`, {
       name: v.name, activityKey: v.activityKey, customActivity: v.customActivity, slots: v.slots,
-      requiredRoleIds: v.requiredRoleIds, minGs: v.minGs
+      requiredRoleIds: v.requiredRoleIds, minGs: v.minGs, projectKey
     }), "Template saved.");
     if (res !== undefined) { d.close(); refresh(); }
   });
@@ -930,14 +998,14 @@ function templateDialog(acts, t) {
 
 // ----- LFG statistics (admin) -----
 
-async function renderStats(card) {
+async function renderStats(card, projectKey = null) {
   const period = h("select", {}, [[7, "Last 7 days"], [30, "Last 30 days"], [90, "Last 90 days"], [0, "All time"]]
     .map(([v, l]) => h("option", { value: v, selected: v === 30 }, l)));
   const body = h("div", {});
   const load = async () => {
     body.replaceChildren(h("div", { class: "muted" }, "Loading…"));
     let st;
-    try { st = await gApi("GET", `/lfg/stats?days=${period.value}`); } catch (e) { body.replaceChildren(empty(e.message)); return; }
+    try { st = await gApi("GET", `/lfg/stats?days=${period.value}${projectKey ? `&project=${encodeURIComponent(projectKey)}` : ""}`); } catch (e) { body.replaceChildren(empty(e.message)); return; }
     const table = (title, rows, cols) => h("div", {}, h("h3", {}, title), rows.length
       ? h("table", { class: "table" }, h("tbody", {}, rows.map(r => h("tr", {}, cols.map(c => h("td", {}, c(r)))))))
       : empty("—"));
@@ -2195,6 +2263,11 @@ const HELP = {
       ]],
       ["LFG settings", [
         "**⚙️ LFG settings** — server time zone (start times, recurring groups), delete posts after N hours, reminder N minutes before the start (0 = off)."
+      ]],
+      ["Project tabs", [
+        "Each project (game) has its own tab at the top: its **activities**, **LFG panel** (posted panels are linked to the project), **classes**, **templates**, **recurring groups**, **active groups** and **statistics** — nothing from other projects.",
+        "🌐 **all projects** items (activities, templates) are shared and shown in every project; manage them in **⚙️ General**.",
+        "**⚙️ General** — projects, LFG settings, channel for groups, shared activities and templates, common classes."
       ]],
       ["Projects & classes", [
         "**🎮 Projects** — name + required role(s), one is the default (older characters belong to it). Link each LFG panel to its project.",
