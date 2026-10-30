@@ -1214,3 +1214,18 @@ input[type=file]::file-selector-button {
   border: 1px solid rgba(255, 255, 255, .16);
 }
 input[type=file]::file-selector-button:hover { border-color: rgba(175, 150, 255, .5); }
+
+/* =====================================================================
+   Fixes: popups inside dialogs, hidden checkboxes scrolling their container
+   ===================================================================== */
+
+/* A backdrop-filter on <dialog> makes it the containing block of position:fixed popups
+   (select lists, calendars) — they got clipped and misplaced. Dialogs use solid glass instead. */
+dialog, dialog[open] { -webkit-backdrop-filter: none; backdrop-filter: none; background-color: rgba(22, 26, 40, .97); }
+dialog::backdrop { -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+
+/* Visually hidden checkboxes stay inside their label — otherwise focusing one scrolled the dialog
+   (or page) to a far-away point and the content looked empty */
+.chip, .check-list label, .row-check, .filter-chip { position: relative; }
+.chip input[type=checkbox], .check-list input[type=checkbox] { left: 0; top: 0; }
+dialog[open]:has(.check-list, .pick-list, .guide-body) { overflow: clip; }
