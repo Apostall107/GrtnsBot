@@ -27,13 +27,13 @@ public static class BotTextCatalog
     {
         // ================= LFG: group post =================
         Group("LFG — group post", "lfgpost");
-        T("lfg.post.organizer", "Organizer line", "Organizer: {user}", "{user}", Embed);
-        T("lfg.post.starts", "Start time line (also in DMs)", "🕒 Starts: {time}", "{time}", Embed);
-        T("lfg.post.roster", "Roster line (also in DMs)", "Roster: **{filled}/{total}**", "{filled}, {total}", Embed);
-        T("lfg.post.requirements", "Requirements line", "📋 Requirements: {list} — others go to the reserve", "{list}", Embed);
-        T("lfg.post.voice", "Voice room line", "🔊 Voice room: {channel}", "{channel}", Embed);
+        T("lfg.post.organizer", "Organizer line (- = hide)", "Organizer: {user}", "{user}", Embed, optional: true);
+        T("lfg.post.starts", "Start time line (also in DMs) (- = hide)", "🕒 Starts: {time}", "{time}", Embed, optional: true);
+        T("lfg.post.roster", "Roster line (also in DMs) (- = hide)", "Roster: **{filled}/{total}**", "{filled}, {total}", Embed, optional: true);
+        T("lfg.post.requirements", "Requirements line (- = hide)", "📋 Requirements: {list} — others go to the reserve", "{list}", Embed, optional: true);
+        T("lfg.post.voice", "Voice room line (- = hide)", "🔊 Voice room: {channel}", "{channel}", Embed, optional: true);
         T("lfg.post.open", "Free slot", "*open*", null, 200);
-        T("lfg.post.reserve", "Reserve heading", "**Reserve ({count}):**", "{count}", 200);
+        T("lfg.post.reserve", "Reserve heading (- = hide)", "**Reserve ({count}):**", "{count}", 200, optional: true);
         T("lfg.post.expires", "Auto-delete line (- = hide)", "-# Post will be removed {time}", "{time}", Embed, optional: true);
         T("lfg.post.recruiting", "Status: recruiting", "📝 Recruiting", null, 200);
         T("lfg.post.full", "Status: full", "✅ Group is full", null, 200);
@@ -62,16 +62,16 @@ public static class BotTextCatalog
         T("lfg.wiz.customLabel", "Custom activity window: field", "Name", null, ModalTitle);
         T("lfg.wiz.customHint", "Custom activity window: placeholder", "e.g. World boss farm", null, 100);
         T("lfg.wiz.step3", "Step 3 text", "**Step 3/4** — select slots in the list and click a role. All slots are «All» by default. Slot 1 is yours.", null, 2000);
-        T("lfg.wiz.ping", "Step 3: ping line", "Ping: {role}", "{role}", 500);
-        T("lfg.wiz.noPing", "Step 3: no ping", "Ping: *none (custom activity)*", null, 500);
+        T("lfg.wiz.ping", "Step 3: ping line (- = hide)", "Ping: {role}", "{role}", 500, optional: true);
+        T("lfg.wiz.noPing", "Step 3: no ping (- = hide)", "Ping: *none (custom activity)*", null, 500, optional: true);
         T("lfg.wiz.you", "Step 3: “(you)” mark", "*(you)*", null, 100);
         T("lfg.wiz.slotsPlaceholder", "Slots menu placeholder", "Select slots, then click a role", null, Placeholder);
         T("lfg.wiz.slotOption", "Slot option", "Slot {n}: {role}", "{n}, {role}", Option);
         C("color.lfg.draft", "Stripe color: draft", 0x206694);
-        T("lfg.wiz.step4", "Step 4 text", "**Step 4/4** — start time in the server time zone (`{zone}`).\n-# Everyone will see the time converted to their own time zone.", "{zone}", 1000);
-        T("lfg.wiz.selected", "Step 4: selected time", "Selected: {time}", "{time}", 500);
-        T("lfg.wiz.selectedNone", "Step 4: no time selected", "Selected: *no time*", null, 500);
-        T("lfg.wiz.requirements", "Step 4: requirements line", "📋 Requirements: {list} — others go to the reserve", "{list}", 500);
+        T("lfg.wiz.step4", "Step 4 text (- = hide)", "**Step 4/4** — start time in the server time zone (`{zone}`).\n-# Everyone will see the time converted to their own time zone.", "{zone}", 1000, optional: true);
+        T("lfg.wiz.selected", "Step 4: selected time (- = hide)", "Selected: {time}", "{time}", 500, optional: true);
+        T("lfg.wiz.selectedNone", "Step 4: no time selected (- = hide)", "Selected: *no time*", null, 500, optional: true);
+        T("lfg.wiz.requirements", "Step 4: requirements line (- = hide)", "📋 Requirements: {list} — others go to the reserve", "{list}", 500, optional: true);
         T("lfg.wiz.datePlaceholder", "Date menu placeholder", "Date", null, Placeholder);
         T("lfg.wiz.today", "“Today”", "Today", null, Option);
         T("lfg.wiz.tomorrow", "“Tomorrow”", "Tomorrow", null, Option);
@@ -157,7 +157,7 @@ public static class BotTextCatalog
 
         // ================= LFG: organizer =================
         Group("LFG — organizer");
-        T("lfg.manage.head", "Manage menu text", "**Manage {activity}** — free slots: **{free}**, reserve: **{reserve}**.", "{activity}, {free}, {reserve}", 1000);
+        T("lfg.manage.head", "Manage menu text (- = hide)", "**Manage {activity}** — free slots: **{free}**, reserve: **{reserve}**.", "{activity}, {free}, {reserve}", 1000, optional: true);
         T("lfg.manage.hint", "Manage menu hint (- = hide)", "-# Move someone to the reserve to free a slot, then move a member from the reserve into it. Members moved into the group get a DM.", null, 500, optional: true);
         T("lfg.manage.toReserve", "“Move to reserve” placeholder", "🔽 Move from the group to the reserve", null, Placeholder);
         T("lfg.manage.promote", "“Move into the group” placeholder", "⬆️ Move from the reserve into the group", null, Placeholder);
@@ -171,7 +171,7 @@ public static class BotTextCatalog
         T("lfg.manage.noShow", "Attendance: didn't come", "didn't come", null, Option);
         T("lfg.manage.notMarked", "Attendance: not marked", "not marked", null, Option);
         T("lfg.manage.changeTime", "“Change time” button", "Change time", null, Button);
-        T("lfg.manage.nobody", "Nobody to manage", "Nobody to manage yet.", null, 300);
+        T("lfg.manage.nobody", "Nobody to manage (- = hide)", "Nobody to manage yet.", null, 300, optional: true);
         T("lfg.manage.movedToReserve", "Moved to reserve", "🔽 {user} was moved to the reserve.", "{user}", 500);
         T("lfg.manage.removedFromReserve", "Removed from reserve", "✖️ {user} was removed from the reserve.", "{user}", 500);
         T("lfg.manage.promoted", "Moved into the group", "⬆️ {user} was moved from the reserve into the group and got a DM.", "{user}", 500);
@@ -197,7 +197,7 @@ public static class BotTextCatalog
         T("lfg.invites.groupFooter", "Group invites: footer", "Copy a line and paste it into the game chat", null, Footer);
         T("lfg.invites.dungeonTitle", "Dungeon invites: title", "🏰 Dungeon invites — {activity}", "{activity}", Title);
         T("lfg.invites.dungeonFooter", "Dungeon invites: footer", "Copy a name into the dungeon invite field", null, Footer);
-        T("lfg.invites.nobody", "Nobody to invite", "Nobody to invite yet.", null, 300);
+        T("lfg.invites.nobody", "Nobody to invite (- = hide)", "Nobody to invite yet.", null, 300, optional: true);
         T("lfg.invites.noName", "Without a character name (- = hide)", "-# Without a character name: {count}", "{count}", 300, optional: true);
         C("color.lfg.invites", "Stripe color: invites", 0xF1C40F);
         T("lfg.voice.created", "Group voice room created", "🔊 Voice room created: {channel} — everyone can join and listen, only the group can speak.", "{channel}", 500);
@@ -208,9 +208,9 @@ public static class BotTextCatalog
         // ================= LFG: DMs and reminders =================
         Group("LFG — DMs & reminders");
         T("lfg.dm.title", "New group DM: title", "📣 LFG: {activity}", "{activity}", Title);
-        T("lfg.dm.started", "New group DM: first line", "{user} started a group on **{server}**.", "{user}, {server}", 500);
-        T("lfg.dm.openSlots", "New group DM: open slots", "Open slots: {list}", "{list}", 1000);
-        T("lfg.dm.full", "New group DM: full", "The group is full — you can still join the reserve.", null, 500);
+        T("lfg.dm.started", "New group DM: first line (- = hide)", "{user} started a group on **{server}**.", "{user}, {server}", 500, optional: true);
+        T("lfg.dm.openSlots", "New group DM: open slots (- = hide)", "Open slots: {list}", "{list}", 1000, optional: true);
+        T("lfg.dm.full", "New group DM: full (- = hide)", "The group is full — you can still join the reserve.", null, 500, optional: true);
         T("lfg.dm.footer", "New group DM: footer", "Sign up right here with the role buttons. Don't want these DMs? Press \"DMs off\" on the LFG panel.", null, Footer);
         C("color.lfg.dm", "Stripe color: new group DM", 0x3498DB);
         T("lfg.dm.openGroup", "“Open the group” button", "Open the group", null, Button);
@@ -222,7 +222,7 @@ public static class BotTextCatalog
         T("lfg.dm.offFromDm", "DMs turned off (from a DM)", "🔕 DMs off: you will no longer get LFG DMs from **{server}**. You can turn them back on here, with 🔔 on the LFG panel or `/lfg-dm on`.", "{server}", 1000);
         T("lfg.dm.notMember", "Not a member of the server", "You are not a member of this group's server.", null, 500);
         T("lfg.dm.promotedTitle", "Moved into the group DM: title", "✅ You're in: {activity}", "{activity}", Title);
-        T("lfg.dm.promoted", "Moved into the group DM: text", "{user} moved you from the reserve into the group.\nRole: {role} — **{name}**", "{user}, {role}, {name}", 1000);
+        T("lfg.dm.promoted", "Moved into the group DM: text (- = hide)", "{user} moved you from the reserve into the group.\nRole: {role} — **{name}**", "{user}, {role}, {name}", 1000, optional: true);
         C("color.lfg.promoted", "Stripe color: moved into the group", 0x2ECC71);
         T("lfg.dm.timeChangedTitle", "Time changed DM: title", "🕒 Time changed: {activity}", "{activity}", Title);
         T("lfg.dm.timeChanged", "Time changed DM: text", "{user} moved the group.\nNew start: {time}", "{user}, {time}", 1000);
@@ -233,10 +233,10 @@ public static class BotTextCatalog
         Group("Tickets — ticket message", "ticketmsg");
         T("ticket.msg.pings", "Pings above the message (- = none)", "{applicant} {leadership}", "{applicant}, {leadership}", 2000, optional: true);
         T("ticket.msg.title", "Title", "🎫 {project} — application", "{project}", Title);
-        T("ticket.msg.applicant", "Applicant line", "Applicant: {user}", "{user}", 500);
-        T("ticket.msg.voice", "Voice line", "Voice: {channel}", "{channel}", 500);
-        T("ticket.msg.leadership", "Leadership line", "Leadership: {roles}", "{roles}", 1000);
-        T("ticket.msg.roles", "Roles-on-approve line", "Roles on approve: {roles}", "{roles}", 1000);
+        T("ticket.msg.applicant", "Applicant line (- = hide)", "Applicant: {user}", "{user}", 500, optional: true);
+        T("ticket.msg.voice", "Voice line (- = hide)", "Voice: {channel}", "{channel}", 500, optional: true);
+        T("ticket.msg.leadership", "Leadership line (- = hide)", "Leadership: {roles}", "{roles}", 1000, optional: true);
+        T("ticket.msg.roles", "Roles-on-approve line (- = hide)", "Roles on approve: {roles}", "{roles}", 1000, optional: true);
         T("ticket.msg.howTo", "How it works (- = hide)", "Leadership can **Approve** (the role is given and the ticket closes) or **Deny** (with a reason sent to the applicant). Anyone here can **Close** the ticket.", null, 2000, optional: true);
         T("ticket.msg.approved", "Approved line", "✅ **Approved** by {user}", "{user}", 500);
         T("ticket.msg.footer", "Footer", "Ticket {id}", "{id}", Footer);

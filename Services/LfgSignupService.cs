@@ -207,10 +207,10 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
             var gid = group.GuildId;
             var role = slot.TakenAs ?? slot.Role;
             var sb = new System.Text.StringBuilder();
-            sb.AppendLine(Tx.Get(gid, "lfg.dm.promoted", ("user", $"<@{group.OwnerId}>"),
+            sb.AppendText(Tx.Get(gid, "lfg.dm.promoted", ("user", $"<@{group.OwnerId}>"),
                 ("role", $"{role.Emoji()} **{role.Label()}**"), ("name", Format.Sanitize(slot.CharacterName ?? "-"))));
             if (group.StartsAt is { } startsAt)
-                sb.AppendLine(Tx.Get(gid, "lfg.post.starts", ("time", LfgRenderer.FormatTime(startsAt))));
+                sb.AppendText(Tx.Get(gid, "lfg.post.starts", ("time", LfgRenderer.FormatTime(startsAt))));
 
             var embed = new EmbedBuilder()
                 .WithTitle(Tx.Get(gid, "lfg.dm.promotedTitle", ("activity", group.ActivityName)))

@@ -98,7 +98,7 @@ public static class LfgRenderer
     {
         var gid = d.GuildId;
         var sb = new StringBuilder();
-        sb.AppendLine(d.PingRoleId is { } roleId ? Tx.Get(gid, "lfg.wiz.ping", ("role", $"<@&{roleId}>")) : Tx.Get(gid, "lfg.wiz.noPing"));
+        sb.AppendText(d.PingRoleId is { } roleId ? Tx.Get(gid, "lfg.wiz.ping", ("role", $"<@&{roleId}>")) : Tx.Get(gid, "lfg.wiz.noPing"));
         sb.AppendLine();
         for (var i = 0; i < d.Slots.Count; i++)
         {
@@ -190,8 +190,8 @@ public static class LfgRenderer
         var comps = builder.Build();
 
         var sb = new StringBuilder();
-        sb.AppendLine(Tx.Get(gid, "lfg.wiz.step4", ("zone", zoneName)));
-        sb.AppendLine(startsAt is { } st
+        sb.AppendText(Tx.Get(gid, "lfg.wiz.step4", ("zone", zoneName)));
+        sb.AppendText(startsAt is { } st
             ? Tx.Get(gid, "lfg.wiz.selected", ("time", FormatTime(st)))
             : Tx.Get(gid, "lfg.wiz.selectedNone"));
         if (d.RequiredRoleIds.Count > 0 || d.MinGs is not null)
@@ -199,7 +199,7 @@ public static class LfgRenderer
             var req = new List<string>();
             if (d.RequiredRoleIds.Count > 0) req.Add(string.Join(" / ", d.RequiredRoleIds.Select(id => $"<@&{id}>")));
             if (d.MinGs is { } gs) req.Add($"GS {gs}+");
-            sb.AppendLine(Tx.Get(gid, "lfg.wiz.requirements", ("list", string.Join(" · ", req))));
+            sb.AppendText(Tx.Get(gid, "lfg.wiz.requirements", ("list", string.Join(" · ", req))));
         }
         if (warning is not null) sb.AppendLine($"⚠️ {warning}");
 
@@ -217,12 +217,12 @@ public static class LfgRenderer
     {
         var gid = g.GuildId;
         var sb = new StringBuilder();
-        sb.AppendLine(Tx.Get(gid, "lfg.post.organizer", ("user", $"<@{g.OwnerId}>")));
+        sb.AppendText(Tx.Get(gid, "lfg.post.organizer", ("user", $"<@{g.OwnerId}>")));
         if (g.StartsAt is { } startsAt)
-            sb.AppendLine(Tx.Get(gid, "lfg.post.starts", ("time", FormatTime(startsAt))));
-        sb.AppendLine(Tx.Get(gid, "lfg.post.roster", ("filled", g.FilledCount), ("total", g.Slots.Count)));
-        if (Requirements(g) is { } req) sb.AppendLine(Tx.Get(gid, "lfg.post.requirements", ("list", req)));
-        if (g.VoiceChannelId is { } voice) sb.AppendLine(Tx.Get(gid, "lfg.post.voice", ("channel", $"<#{voice}>")));
+            sb.AppendText(Tx.Get(gid, "lfg.post.starts", ("time", FormatTime(startsAt))));
+        sb.AppendText(Tx.Get(gid, "lfg.post.roster", ("filled", g.FilledCount), ("total", g.Slots.Count)));
+        if (Requirements(g) is { } req) sb.AppendText(Tx.Get(gid, "lfg.post.requirements", ("list", req)));
+        if (g.VoiceChannelId is { } voice) sb.AppendText(Tx.Get(gid, "lfg.post.voice", ("channel", $"<#{voice}>")));
         sb.AppendLine();
         // Заметки к персонажам в посте не показываются — их видит владелец при выборе персонажа
         sb.Append(Roster(g, withComments: false));
@@ -300,7 +300,7 @@ public static class LfgRenderer
         var noName = Tx.Get(gid, "lfg.manage.noName");
         var sb = new StringBuilder();
         if (note is not null) sb.AppendLine(note);
-        sb.AppendLine(Tx.Get(gid, "lfg.manage.head", ("activity", Format.Sanitize(g.ActivityName)),
+        sb.AppendText(Tx.Get(gid, "lfg.manage.head", ("activity", Format.Sanitize(g.ActivityName)),
             ("free", g.Slots.Count(s => s.IsFree)), ("reserve", g.Reserve.Count)));
         if (Tx.Get(gid, "lfg.manage.hint") is { Length: > 0 } hint) sb.AppendLine(hint);
 
@@ -366,7 +366,7 @@ public static class LfgRenderer
         builder.WithButton(Tx.Get(gid, "lfg.manage.changeTime"), $"lfg:resched:{g.Id}", ButtonStyle.Secondary, new Emoji("🕒"), row: Math.Min(row, 4));
 
         if (members.Count == 0 && g.Reserve.Count == 0)
-            sb.AppendLine(Tx.Get(gid, "lfg.manage.nobody"));
+            sb.AppendText(Tx.Get(gid, "lfg.manage.nobody"));
 
         return new Screen(sb.ToString(), null, builder.Build());
     }
@@ -419,7 +419,7 @@ public static class LfgRenderer
             sb.AppendLine(withCommand ? $"```\n/invite {name}\n```" : $"```\n{name}\n```");
         }
 
-        if (count == 0) sb.AppendLine(Tx.Get(gid, "lfg.invites.nobody"));
+        if (count == 0) sb.AppendText(Tx.Get(gid, "lfg.invites.nobody"));
         if (withoutNick > 0 && Tx.Get(gid, "lfg.invites.noName", ("count", withoutNick)) is { Length: > 0 } nn) sb.AppendLine(nn);
 
         return new EmbedBuilder()
@@ -435,16 +435,16 @@ public static class LfgRenderer
     {
         var gid = g.GuildId;
         var sb = new StringBuilder();
-        sb.AppendLine(Tx.Get(gid, "lfg.dm.started", ("user", $"<@{g.OwnerId}>"), ("server", Format.Sanitize(guildName))));
+        sb.AppendText(Tx.Get(gid, "lfg.dm.started", ("user", $"<@{g.OwnerId}>"), ("server", Format.Sanitize(guildName))));
         if (g.StartsAt is { } startsAt)
-            sb.AppendLine(Tx.Get(gid, "lfg.post.starts", ("time", FormatTime(startsAt))));
-        sb.AppendLine(Tx.Get(gid, "lfg.post.roster", ("filled", g.FilledCount), ("total", g.Slots.Count)));
+            sb.AppendText(Tx.Get(gid, "lfg.post.starts", ("time", FormatTime(startsAt))));
+        sb.AppendText(Tx.Get(gid, "lfg.post.roster", ("filled", g.FilledCount), ("total", g.Slots.Count)));
 
         var open = g.Slots.Where(s => s.IsFree)
             .GroupBy(s => s.Role)
             .Select(gr => $"{gr.Key.Emoji()} {gr.Key.Label()} ×{gr.Count()}")
             .ToList();
-        sb.AppendLine(open.Count > 0
+        sb.AppendText(open.Count > 0
             ? Tx.Get(gid, "lfg.dm.openSlots", ("list", string.Join(", ", open)))
             : Tx.Get(gid, "lfg.dm.full"));
 
@@ -470,7 +470,7 @@ public static class LfgRenderer
         if (g.Reserve.Count > 0)
         {
             sb.AppendLine();
-            sb.AppendLine(Tx.Get(g.GuildId, "lfg.post.reserve", ("count", g.Reserve.Count)));
+            sb.AppendText(Tx.Get(g.GuildId, "lfg.post.reserve", ("count", g.Reserve.Count)));
             foreach (var r in g.Reserve)
             {
                 sb.AppendLine($"{r.Role.Emoji()} <@{r.UserId}>{ClassIcon(r.ClassIcon)} **{Format.Sanitize(r.CharacterName ?? "-")}**{GsText(r.Gs)}");
