@@ -44,7 +44,7 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
             builder.WithSelectMenu(menu, row: 0);
         }
 
-        builder.WithButton(string.IsNullOrEmpty(current.Value.Comment) ? "Add a note" : "Edit the note",
+        builder.WithButton(string.IsNullOrEmpty(current.Value.Comment) ? "Note & GS" : "Edit note & GS",
             $"lfgp:note:{group.Id}", ButtonStyle.Secondary, new Emoji("💬"), row: 1);
         return builder.Build();
     }
@@ -53,11 +53,14 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
     public Modal? NoteModal(LfgGroup group, ulong userId)
     {
         if (CurrentEntry(group, userId) is not { } current) return null;
+        var gs = characters.GetInfo(group.GuildId, userId, current.Name)?.Gs;
         return new ModalBuilder()
-            .WithTitle("Character note")
+            .WithTitle("Character note & GS")
             .WithCustomId($"lfgp:notemodal:{group.Id}")
+            .AddTextInput("GS (gear score, empty = remove)", "gs", TextInputStyle.Short,
+                placeholder: "e.g. 1450", maxLength: 6, required: false, value: gs?.ToString())
             .AddTextInput("Note (empty = remove)", "note", TextInputStyle.Paragraph,
-                placeholder: "e.g. 2.1k gear, can lead, healer alt", maxLength: CharacterStore.MaxCommentLength,
+                placeholder: "e.g. can lead, healer alt", maxLength: CharacterStore.MaxCommentLength,
                 required: false, value: current.Comment)
             .Build();
     }
@@ -78,11 +81,19 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
             roleId is { } r ? $"🎭 Class set: <@&{r}>" : "🎭 Class removed.");
     }
 
-    public Task<string> SetCommentAsync(string groupId, ulong userId, string? comment)
+    public Task<string> SetCommentAsync(string groupId, ulong userId, string? comment, string? gsText = null)
     {
         if (!store.Groups.TryGetValue(groupId, out var group)) return Task.FromResult("This group is no longer active.");
         var text = string.IsNullOrWhiteSpace(comment) ? null : comment.Trim();
-        return UpdateAsync(group, userId, info => (false, null, true, text), text is null ? "💬 Note removed." : "💬 Note saved.");
+        int? gs = null;
+        if (!string.IsNullOrWhiteSpace(gsText))
+        {
+            if (!int.TryParse(gsText.Trim(), out var v) || v is < 0 or > 99999) return Task.FromResult("GS must be a number (0–99999).");
+            gs = v;
+        }
+        return UpdateAsync(group, userId, info => (false, null, true, text),
+            $"💬 Saved: note {(text is null ? "removed" : "set")}, GS {(gs?.ToString() ?? "removed")}",
+            name => characters.SetGs(group.GuildId, userId, name, gs));
     }
 
     /// <summary>
@@ -112,7 +123,8 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
     }
 
     private async Task<string> UpdateAsync(LfgGroup group, ulong userId,
-        Func<CharacterInfo?, (bool SetClass, ulong? ClassRoleId, bool SetComment, string? Comment)> change, string okText)
+        Func<CharacterInfo?, (bool SetClass, ulong? ClassRoleId, bool SetComment, string? Comment)> change, string okText,
+        Action<string>? extra = null)
     {
         string? name;
         await group.Gate.WaitAsync();
@@ -124,6 +136,7 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
 
             var (setClass, classRoleId, setComment, comment) = change(characters.GetInfo(group.GuildId, userId, name));
             characters.SetInfo(group.GuildId, userId, name, setClass, classRoleId, setComment, comment);
+            extra?.Invoke(name);
             signup.ApplyProfile(group, userId);
             store.SaveGroups();
             await signup.RefreshPostAsync(group);

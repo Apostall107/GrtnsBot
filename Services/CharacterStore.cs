@@ -8,6 +8,8 @@ public sealed class CharacterInfo
 {
     public ulong? ClassRoleId { get; set; }
     public string? Comment { get; set; }
+    /// <summary>Gear score персонажа (для требований сборов).</summary>
+    public int? Gs { get; set; }
 }
 
 /// <summary>
@@ -51,7 +53,7 @@ public sealed class CharacterStore
         if (string.IsNullOrWhiteSpace(name)) return null;
         lock (_lock)
             return _info.TryGetValue(InfoKey(guildId, userId, name), out var i)
-                ? new CharacterInfo { ClassRoleId = i.ClassRoleId, Comment = i.Comment }
+                ? new CharacterInfo { ClassRoleId = i.ClassRoleId, Comment = i.Comment, Gs = i.Gs }
                 : null;
     }
 
@@ -69,7 +71,22 @@ public sealed class CharacterStore
             if (setClass) info.ClassRoleId = classRoleId;
             if (setComment) info.Comment = comment;
 
-            if (info.ClassRoleId is null && info.Comment is null) _info.Remove(key);
+            if (info.ClassRoleId is null && info.Comment is null && info.Gs is null) _info.Remove(key);
+            else _info[key] = info;
+            SaveInfo();
+        }
+    }
+
+    /// <summary>GS персонажа: null — убрать.</summary>
+    public void SetGs(ulong guildId, ulong userId, string name, int? gs)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return;
+        lock (_lock)
+        {
+            var key = InfoKey(guildId, userId, name);
+            if (!_info.TryGetValue(key, out var info)) info = new CharacterInfo();
+            info.Gs = gs is { } v ? Math.Clamp(v, 0, 99999) : null;
+            if (info.ClassRoleId is null && info.Comment is null && info.Gs is null) _info.Remove(key);
             else _info[key] = info;
             SaveInfo();
         }

@@ -75,7 +75,9 @@ public static class PanelDefs
         "• Group posts are removed automatically {hours} h after the start time " +
         "(or after creation if no time was set).\n" +
         "• 📋 **Invite to group** shows ready-to-copy `/invite Name` commands for everyone in the group (except you).\n" +
-        "• 🏰 **Invite to dungeon** shows just the character names, ready to copy into the dungeon invite.\n\n" +
+        "• 🏰 **Invite to dungeon** shows just the character names, ready to copy into the dungeon invite.\n" +
+        "• 🔊 **Voice room** creates a voice channel for the group: everyone can join and listen, only the group can speak.\n" +
+        "• Some groups have **requirements** (a role or minimum GS) — set your GS with `/character gs`.\n\n" +
         "**Characters:** `/character list`, `/character add`, `/character class`, `/character note`, `/character remove`",
         [
             new("start", "“Create LFG” button", "Create LFG"),

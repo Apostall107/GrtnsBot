@@ -26,10 +26,11 @@ public sealed class CharacterModule(CharacterStore store, LfgProfileService prof
         {
             var info = store.GetInfo(Context.Guild.Id, Context.User.Id, name);
             var cls = info?.ClassRoleId is { } r ? $" — <@&{r}>" : "";
-            sb.AppendLine($"• **{Format.Sanitize(name)}**{cls}");
+            var gsText = info?.Gs is { } g ? $" · GS {g}" : "";
+            sb.AppendLine($"• **{Format.Sanitize(name)}**{cls}{gsText}");
             if (!string.IsNullOrWhiteSpace(info?.Comment)) sb.AppendLine($"-# 💬 {Format.Sanitize(info.Comment)}");
         }
-        sb.AppendLine("-# Set a class with `/character class`, a note with `/character note`.");
+        sb.AppendLine("-# Set a class with `/character class`, GS with `/character gs`, a note with `/character note`.");
         await RespondAsync(sb.ToString(), ephemeral: true, allowedMentions: AllowedMentions.None);
     }
 
@@ -89,6 +90,30 @@ public sealed class CharacterModule(CharacterStore store, LfgProfileService prof
         await FollowupAsync((string.IsNullOrWhiteSpace(text) ? $"Note removed from **{Format.Sanitize(exact)}**." : $"Note saved for **{Format.Sanitize(exact)}**.") +
                             (groups > 0 ? $" Updated {groups} active group(s)." : ""),
             ephemeral: true);
+    }
+
+    [SlashCommand("gs", "Set the gear score (GS) of a character — used by group requirements; empty = remove")]
+    public async Task GsAsync(
+        [Summary("name", "Character name"), Autocomplete(typeof(CharacterAutocomplete))] string name,
+        [Summary("gs", "Gear score, e.g. 1450")] int? gs = null)
+    {
+        if (gs is < 0 or > 99999)
+        {
+            await RespondAsync("GS must be 0–99999.", ephemeral: true);
+            return;
+        }
+        if (!HasCharacter(name, out var exact))
+        {
+            await RespondAsync("Character not found — add it with `/character add` first.", ephemeral: true);
+            return;
+        }
+
+        await DeferAsync(ephemeral: true);
+        store.SetGs(Context.Guild.Id, Context.User.Id, exact, gs);
+        var groups = await profiles.RefreshCharacterAsync(Context.Guild.Id, Context.User.Id, exact);
+        audit.FromDiscord(Context.Guild.Id, Context.User, "lfg", "Set character GS", $"{exact}: {gs?.ToString() ?? "removed"}");
+        await FollowupAsync((gs is null ? $"GS removed from **{Format.Sanitize(exact)}**." : $"**{Format.Sanitize(exact)}** — GS {gs}.") +
+                            (groups > 0 ? $" Updated {groups} active group(s)." : ""), ephemeral: true);
     }
 
     private bool HasCharacter(string name, out string exact)

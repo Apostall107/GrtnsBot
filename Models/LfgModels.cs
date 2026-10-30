@@ -45,6 +45,10 @@ public sealed class Slot
     public string? ClassIcon { get; set; }
     /// <summary>Заметка игрока о персонаже.</summary>
     public string? Comment { get; set; }
+    /// <summary>GS персонажа (снимок на момент записи).</summary>
+    public int? Gs { get; set; }
+    /// <summary>Явка (отмечает организатор после старта): true — пришёл, false — не пришёл, null — не отмечено.</summary>
+    public bool? Attended { get; set; }
     [JsonIgnore] public bool IsFree => UserId is null;
 
     public void Clear()
@@ -55,6 +59,8 @@ public sealed class Slot
         ClassRoleId = null;
         ClassIcon = null;
         Comment = null;
+        Gs = null;
+        Attended = null;
     }
 }
 
@@ -66,6 +72,7 @@ public sealed class ReserveEntry
     public ulong? ClassRoleId { get; set; }
     public string? ClassIcon { get; set; }
     public string? Comment { get; set; }
+    public int? Gs { get; set; }
     public DateTimeOffset JoinedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
@@ -91,6 +98,9 @@ public sealed class LfgDraft(ulong guildId, ulong channelId, ulong ownerId)
     public HashSet<int> Selected { get; set; } = [];
     /// <summary>Разослать ЛС всем с ролью активности при публикации.</summary>
     public bool NotifyByDm { get; set; } = true;
+    /// <summary>Требования (из шаблона): нужна одна из ролей; минимальный GS персонажа.</summary>
+    public List<ulong> RequiredRoleIds { get; set; } = [];
+    public int? MinGs { get; set; }
 
     // Время начала в часовом поясе сервера (Lfg:TimeZone)
     public DateOnly? EventDate { get; set; }
@@ -121,6 +131,8 @@ public sealed class LfgGroup
         ActivityName = draft.ActivityName ?? "Activity";
         PingRoleId = draft.PingRoleId;
         Slots = draft.Slots.Select(s => new Slot { Role = s.Role }).ToList();
+        RequiredRoleIds = draft.RequiredRoleIds.ToList();
+        MinGs = draft.MinGs;
     }
 
     // Сеттеры нужны для сохранения сборов в файл (data/lfg-groups.json)
@@ -138,8 +150,15 @@ public sealed class LfgGroup
     /// <summary>Запас: записались, когда подходящих слотов не было.</summary>
     public List<ReserveEntry> Reserve { get; set; } = [];
     public bool IsClosed { get; set; }
+    /// <summary>Требования: у игрока одна из этих ролей (пусто — любой). Не подходит — запись только в резерв.</summary>
+    public List<ulong> RequiredRoleIds { get; set; } = [];
+    /// <summary>Минимальный GS персонажа (из /character gs или сайта). Не указан или меньше — резерв.</summary>
+    public int? MinGs { get; set; }
+    [JsonIgnore] public bool HasRequirements => RequiredRoleIds.Count > 0 || MinGs is not null;
     /// <summary>Напоминание за 10 минут уже отправлено (или не нужно).</summary>
     public bool Reminded { get; set; }
+    /// <summary>Голосовая комната сбора (кнопка 🔊 в посте): все видят и могут зайти, говорить — только участники группы.</summary>
+    public ulong? VoiceChannelId { get; set; }
     /// <summary>Сообщение-напоминание бота, удаляется вместе с постом.</summary>
     public ulong? ReminderMessageId { get; set; }
 
@@ -189,10 +208,10 @@ public sealed class LfgGroup
 
         if (current.TakenAs == wanted) return null; // смена персонажа на той же роли
 
-        var snapshot = (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment);
+        var snapshot = (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment, current.Gs);
         current.Clear();
         var fits = FindFreeSlot(wanted) >= 0;
-        (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment) = snapshot;
+        (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment, current.Gs) = snapshot;
 
         return fits ? null : $"No free slots for {wanted.Emoji()} {wanted.Label()}.";
     }
@@ -201,7 +220,8 @@ public sealed class LfgGroup
     /// Записывает в слот или, если места нет, в резерв. Возвращает текст ошибки или null;
     /// reserved = true, если человек попал (или остался) в резерве.
     /// </summary>
-    public string? TryJoin(ulong userId, SlotRole wanted, string characterName, out bool reserved)
+    /// <param name="forceReserve">Игрок не подходит под требования сбора — только резерв (если он ещё не в группе).</param>
+    public string? TryJoin(ulong userId, SlotRole wanted, string characterName, out bool reserved, bool forceReserve = false)
     {
         reserved = false;
         if (IsClosed) return "Signups are closed.";
@@ -213,7 +233,24 @@ public sealed class LfgGroup
             return null;
         }
 
-        var snapshot = current is null ? default : (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment);
+        if (forceReserve && current is null)
+        {
+            var existing = FindReserve(userId);
+            if (existing is null)
+            {
+                if (Reserve.Count >= MaxReserve) return "The reserve list is full.";
+                Reserve.Add(new ReserveEntry { UserId = userId, Role = wanted, CharacterName = characterName });
+            }
+            else
+            {
+                existing.Role = wanted;
+                existing.CharacterName = characterName;
+            }
+            reserved = true;
+            return null;
+        }
+
+        var snapshot = current is null ? default : (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment, current.Gs);
         current?.Clear();
 
         var index = FindFreeSlot(wanted);
@@ -229,7 +266,7 @@ public sealed class LfgGroup
         if (current is not null)
         {
             // Уже в группе: не выкидываем в резерв из-за смены роли
-            (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment) = snapshot;
+            (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment, current.Gs) = snapshot;
             return $"No free slots for {wanted.Emoji()} {wanted.Label()}.";
         }
 
@@ -291,7 +328,8 @@ public sealed class LfgGroup
             CharacterName = slot.CharacterName,
             ClassRoleId = slot.ClassRoleId,
             ClassIcon = slot.ClassIcon,
-            Comment = slot.Comment
+            Comment = slot.Comment,
+            Gs = slot.Gs
         });
         slot.Clear();
         return null;
@@ -323,6 +361,7 @@ public sealed class LfgGroup
         slot.ClassRoleId = entry.ClassRoleId;
         slot.ClassIcon = entry.ClassIcon;
         slot.Comment = entry.Comment;
+        slot.Gs = entry.Gs;
         return null;
     }
 }

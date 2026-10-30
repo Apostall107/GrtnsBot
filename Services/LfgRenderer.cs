@@ -37,7 +37,7 @@ public static class LfgRenderer
     }
 
     // ---------- Шаг 1: размер ----------
-    public static Screen SizeStep(LfgDraft d)
+    public static Screen SizeStep(LfgDraft d, IReadOnlyList<LfgTemplate>? templates = null)
     {
         var menu = new SelectMenuBuilder()
             .WithCustomId($"lfg:size:{d.Id}")
@@ -45,12 +45,30 @@ public static class LfgRenderer
         for (var i = MinSize; i <= MaxSize; i++)
             menu.AddOption($"{i} players", i.ToString());
 
-        var comps = new ComponentBuilder()
-            .WithSelectMenu(menu, row: 0)
-            .WithButton("Cancel", $"lfg:cancel:{d.Id}", ButtonStyle.Secondary, row: 1)
-            .Build();
+        var builder = new ComponentBuilder();
+        var row = 0;
+        // Шаблоны: активность + слоты + требования одним выбором → сразу к выбору времени
+        if (templates is { Count: > 0 })
+        {
+            var tpl = new SelectMenuBuilder()
+                .WithCustomId($"lfg:tpl:{d.Id}")
+                .WithPlaceholder("📋 Use a template");
+            foreach (var t in templates.Take(LfgTemplateStore.MaxPerGuild))
+            {
+                var roles = string.Join("/", t.Slots.Select(r => r.Label()));
+                var desc = $"{t.Slots.Count} slots: {roles}";
+                tpl.AddOption(Trim(t.Name), t.Key, Trim(desc), new Emoji("📋"));
+            }
+            builder.WithSelectMenu(tpl, row: row++);
+        }
 
-        return new Screen("**Step 1/4** — choose the group size.", null, comps);
+        builder.WithSelectMenu(menu, row: row++)
+            .WithButton("Cancel", $"lfg:cancel:{d.Id}", ButtonStyle.Secondary, row: row);
+
+        var text = templates is { Count: > 0 }
+            ? "**Step 1/4** — pick a template (activity, slots and requirements in one go) or choose the group size."
+            : "**Step 1/4** — choose the group size.";
+        return new Screen(text, null, builder.Build());
     }
 
     // ---------- Шаг 2: активность ----------
@@ -175,6 +193,13 @@ public static class LfgRenderer
         sb.AppendLine(startsAt is { } st
             ? $"Selected: {FormatTime(st)}"
             : "Selected: *no time*");
+        if (d.RequiredRoleIds.Count > 0 || d.MinGs is not null)
+        {
+            var req = new List<string>();
+            if (d.RequiredRoleIds.Count > 0) req.Add(string.Join(" / ", d.RequiredRoleIds.Select(id => $"<@&{id}>")));
+            if (d.MinGs is { } gs) req.Add($"GS {gs}+");
+            sb.AppendLine($"📋 Requirements: {string.Join(" · ", req)} — others go to the reserve");
+        }
         if (warning is not null) sb.AppendLine($"⚠️ {warning}");
 
         return new Screen(sb.ToString(), null, comps);
@@ -194,6 +219,7 @@ public static class LfgRenderer
         if (g.StartsAt is { } startsAt)
             sb.AppendLine($"🕒 Starts: {FormatTime(startsAt)}");
         sb.AppendLine($"Roster: **{g.FilledCount}/{g.Slots.Count}**");
+        if (Requirements(g) is { } req) sb.AppendLine($"📋 Requirements: {req}");
         sb.AppendLine();
         // Заметки к персонажам могут не влезть в лимит embed (4096) — тогда показываем без них
         var roster = Roster(g, withComments: true);
@@ -220,6 +246,12 @@ public static class LfgRenderer
             builder.WithButton(role.Label(), $"lfg:join:{g.Id}:{role}",
                 g.CanJoinAs(role) ? ButtonStyle.Primary : ButtonStyle.Secondary,
                 new Emoji(role.Emoji()), disabled: g.IsClosed, row: 0);
+        // Голосовая комната сбора: нет — создать (участник группы), есть — ссылка
+        if (g.VoiceChannelId is { } voiceId)
+            builder.WithButton("Voice room", style: ButtonStyle.Link, url: $"https://discord.com/channels/{g.GuildId}/{voiceId}",
+                emote: new Emoji("🔊"), row: 0);
+        else
+            builder.WithButton("Voice room", $"lfg:voice:{g.Id}", ButtonStyle.Secondary, new Emoji("🔊"), disabled: g.IsClosed, row: 0);
 
         builder
             .WithButton("Leave", $"lfg:leave:{g.Id}", ButtonStyle.Secondary, disabled: g.IsClosed, row: 1)
@@ -299,8 +331,27 @@ public static class LfgRenderer
             }
 
             builder.WithSelectMenu(promote, row++);
-            builder.WithSelectMenu(remove, row);
+            builder.WithSelectMenu(remove, row++);
         }
+
+        // Явка: после старта (или в сборе без времени) — кто пришёл; остальные отмечаются как не пришедшие
+        var seated = g.Slots.Where(s => s.UserId is not null).ToList();
+        if (seated.Count > 0 && (g.StartsAt is null || g.StartsAt <= DateTimeOffset.UtcNow))
+        {
+            var attend = new SelectMenuBuilder()
+                .WithCustomId($"lfg:attend:{g.Id}")
+                .WithPlaceholder("✅ Attendance: who came?")
+                .WithMinValues(0)
+                .WithMaxValues(seated.Count);
+            foreach (var s in seated)
+                attend.AddOption(Trim(s.CharacterName ?? "no name"), s.UserId!.Value.ToString(),
+                    s.Attended switch { true => "came", false => "didn't come", _ => "not marked" },
+                    new Emoji((s.TakenAs ?? s.Role).Emoji()), isDefault: s.Attended == true);
+            builder.WithSelectMenu(attend, row++);
+            sb.AppendLine("-# Attendance: select everyone who came — the others are marked as no-show.");
+        }
+
+        builder.WithButton("Change time", $"lfg:resched:{g.Id}", ButtonStyle.Secondary, new Emoji("🕒"), row: Math.Min(row, 4));
 
         if (members.Count == 0 && g.Reserve.Count == 0)
             sb.AppendLine("Nobody to manage yet.");
@@ -386,7 +437,7 @@ public static class LfgRenderer
             sb.AppendLine($"**Reserve ({g.Reserve.Count}):**");
             foreach (var r in g.Reserve)
             {
-                sb.AppendLine($"{r.Role.Emoji()} {ClassPrefix(r.ClassIcon, r.ClassRoleId)}<@{r.UserId}> **{Format.Sanitize(r.CharacterName ?? "-")}**");
+                sb.AppendLine($"{r.Role.Emoji()} {ClassPrefix(r.ClassIcon, r.ClassRoleId)}<@{r.UserId}> **{Format.Sanitize(r.CharacterName ?? "-")}**{GsText(r.Gs)}");
                 if (withComments) AppendComment(sb, r.Comment);
             }
         }
@@ -410,7 +461,19 @@ public static class LfgRenderer
         var takenAs = s.Role == SlotRole.Any && s.TakenAs is { } t && t != SlotRole.Any
             ? $" ({t.Emoji()} {t.Label()})"
             : "";
-        var character = s.CharacterName is { } name ? $" **{Format.Sanitize(name)}**" : "";
-        return $"{SlotHead(i, s)} — {ClassPrefix(s.ClassIcon, s.ClassRoleId)}<@{userId}>{character}{takenAs}";
+        var character = s.CharacterName is { } name ? $" **{Format.Sanitize(name)}**{GsText(s.Gs)}" : "";
+        var attended = s.Attended switch { true => " ✅", false => " ❌", _ => "" };
+        return $"{SlotHead(i, s)} — {ClassPrefix(s.ClassIcon, s.ClassRoleId)}<@{userId}>{character}{takenAs}{attended}";
+    }
+
+    private static string GsText(int? gs) => gs is { } v ? $" · GS {v}" : "";
+
+    /// <summary>Требования сбора текстом: роли (любая из) и минимальный GS.</summary>
+    public static string? Requirements(LfgGroup g)
+    {
+        var parts = new List<string>();
+        if (g.RequiredRoleIds.Count > 0) parts.Add(string.Join(" / ", g.RequiredRoleIds.Select(id => $"<@&{id}>")));
+        if (g.MinGs is { } min) parts.Add($"GS {min}+");
+        return parts.Count == 0 ? null : string.Join(" · ", parts) + " — others go to the reserve";
     }
 }

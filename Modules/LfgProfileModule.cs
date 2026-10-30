@@ -37,7 +37,7 @@ public sealed class LfgProfileModule(LfgProfileService profiles, LfgStore store,
     public async Task OnNoteSubmitted(string groupId, LfgNoteModal modal)
     {
         await DeferAsync(ephemeral: true);
-        var result = await profiles.SetCommentAsync(groupId, Context.User.Id, modal.Note);
+        var result = await profiles.SetCommentAsync(groupId, Context.User.Id, modal.Note, modal.Gs);
         if (store.Groups.TryGetValue(groupId, out var group))
             audit.FromDiscord(group.GuildId, Context.User, "lfg", "Set character note", result);
         await FollowupAsync(result, ephemeral: true, allowedMentions: AllowedMentions.None);
@@ -52,4 +52,9 @@ public sealed class LfgNoteModal : IModal
     [RequiredInput(false)]
     [ModalTextInput("note", TextInputStyle.Paragraph, maxLength: CharacterStore.MaxCommentLength)]
     public string? Note { get; set; }
+
+    [InputLabel("GS")]
+    [RequiredInput(false)]
+    [ModalTextInput("gs", TextInputStyle.Short, maxLength: 6)]
+    public string? Gs { get; set; }
 }

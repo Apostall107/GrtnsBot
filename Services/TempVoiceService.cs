@@ -15,6 +15,7 @@ public sealed class TempVoiceService(
     DiscordSocketClient client,
     TempVoiceStore store,
     TempRoomManager rooms,
+    RoomPrefsStore prefs,
     ILogger<TempVoiceService> logger) : IHostedService
 {
     // Все операции с голосовыми каналами по очереди — без гонок при массовых заходах
@@ -103,23 +104,30 @@ public sealed class TempVoiceService(
         overwrites.Add(new Overwrite(user.Id, PermissionTarget.User, OwnerPermissions));
         overwrites.Add(new Overwrite(botId, PermissionTarget.User, BotPermissions));
 
-        var name = BuildRoomName(creator.NameTemplate, creatorChannel.Name, user.DisplayName);
+        // Мои настройки комнаты (сайт → Home или /room defaults) важнее настроек канала-создателя
+        var mine = prefs.Get(guild.Id, user.Id);
+        var name = !string.IsNullOrWhiteSpace(mine?.Name)
+            ? mine!.Name!.Replace("{user}", user.DisplayName)
+            : BuildRoomName(creator.NameTemplate, creatorChannel.Name, user.DisplayName);
+        if (name.Length > 100) name = name[..100];
+        var userLimit = mine?.Limit is { } myLimit ? (myLimit > 0 ? myLimit : (int?)null) : creator.UserLimit;
 
         var room = await guild.CreateVoiceChannelAsync(name, p =>
         {
             p.CategoryId = creatorChannel.CategoryId;
             p.PermissionOverwrites = new Optional<IEnumerable<Overwrite>>(overwrites);
             p.Bitrate = creatorChannel.Bitrate;
-            if (creator.UserLimit is { } limit) p.UserLimit = limit;
+            if (userLimit is { } limit) p.UserLimit = limit;
         });
 
-        store.AddRoom(new TempVoiceRoom
+        var stored = new TempVoiceRoom
         {
             GuildId = guild.Id,
             ChannelId = room.Id,
             OwnerId = user.Id,
             CreatorChannelId = creatorChannel.Id
-        });
+        };
+        store.AddRoom(stored);
         logger.LogInformation("Temp room {Room} created for {User}", name, user.Username);
 
         // Создатели вверху категории, комнаты сразу под ними
@@ -143,6 +151,9 @@ public sealed class TempVoiceService(
         try
         {
             await MoveAsync(user, room.Id);
+            // «Сразу закрыть» — после переноса, чтобы владелец уже был внутри
+            if (mine?.Locked == true && guild.GetVoiceChannel(room.Id) is { } socketRoom)
+                await rooms.LockAsync(new RoomRef(socketRoom, stored));
         }
         catch (Discord.Net.HttpException)
         {

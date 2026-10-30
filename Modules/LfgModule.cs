@@ -8,7 +8,8 @@ using LfgBot.Services;
 namespace LfgBot.Modules;
 
 [RequireContext(ContextType.Guild)]
-public sealed class LfgModule(PanelService panels, LfgPublisher publisher, AuditLog audit, LfgProfileService profile, LfgStore store, ActivityStore activities, CharacterStore characters, TimeService time,
+public sealed class LfgModule(PanelService panels, LfgPublisher publisher, AuditLog audit, LfgProfileService profile,
+    LfgTemplateStore templates, LfgStore store, ActivityStore activities, CharacterStore characters, TimeService time,
     LfgNotifyStore notifyPrefs, LfgNotifier notifier, LfgSignupService signup, BotOwner botOwner)
     : InteractionModuleBase<SocketInteractionContext>
 {
@@ -60,7 +61,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         var draft = new LfgDraft(Context.Guild.Id, ChannelId, Context.User.Id);
         store.Drafts[draft.Id] = draft;
 
-        var s = LfgRenderer.SizeStep(draft);
+        var s = LfgRenderer.SizeStep(draft, templates.Get(Context.Guild.Id));
         await RespondAsync(s.Content, embed: s.Embed, components: s.Components, ephemeral: true);
     }
 
@@ -76,6 +77,26 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         d.Selected.Clear();
 
         await ShowAsync(LfgRenderer.ActivityStep(d, activities.Get(d.GuildId)));
+    }
+
+    [ComponentInteraction("lfg:tpl:*")]
+    public async Task OnTemplate(string draftId, string[] values)
+    {
+        if (await GetDraftAsync(draftId) is not { } d) return;
+        if (templates.Find(d.GuildId, values[0]) is not { } t)
+        {
+            await RespondAsync("This template was deleted. Pick another one.", ephemeral: true);
+            return;
+        }
+
+        var activity = t.ActivityKey is { } key ? activities.Find(d.GuildId, key) : null;
+        d.ActivityName = activity?.Name ?? t.CustomActivity ?? t.Name;
+        d.PingRoleId = activity?.RoleId;
+        d.Slots = t.Slots.Select(r => new Slot { Role = r }).ToList();
+        d.Selected.Clear();
+        d.RequiredRoleIds = t.RequiredRoleIds.ToList();
+        d.MinGs = t.MinGs;
+        await ShowAsync(TimeScreen(d));
     }
 
     [ComponentInteraction("lfg:act:*")]
@@ -475,6 +496,80 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         return group;
     }
 
+    [ComponentInteraction("lfg:voice:*")]
+    public async Task OnVoiceRoom(string groupId)
+    {
+        if (!store.Groups.TryGetValue(groupId, out var group))
+        {
+            await RespondAsync("This group is no longer active.", ephemeral: true);
+            return;
+        }
+        await DeferAsync(ephemeral: true);
+        var result = await signup.CreateVoiceAsync(group, Context.User);
+        if (result.StartsWith("🔊")) audit.FromDiscord(group.GuildId, Context.User, "lfg", "Created group voice room", group.ActivityName);
+        await FollowupAsync(result, ephemeral: true);
+    }
+
+    [ComponentInteraction("lfg:attend:*")]
+    public Task OnAttendance(string groupId, string[] values)
+    {
+        var came = values.Select(ulong.Parse).ToHashSet();
+        return ManageAsync(groupId, g =>
+        {
+            foreach (var s in g.Slots.Where(s => s.UserId is not null)) s.Attended = came.Contains(s.UserId!.Value);
+            return null;
+        }, $"✅ Attendance saved: {came.Count} came.");
+    }
+
+    [ComponentInteraction("lfg:resched:*")]
+    public async Task OnReschedule(string groupId)
+    {
+        if (await GetOwnedGroupAsync(groupId) is not { } group) return;
+        var current = group.StartsAt is { } st ? TimeZoneInfo.ConvertTime(st, time.Zone).ToString("dd.MM HH:mm") : "";
+        var modal = new ModalBuilder()
+            .WithTitle("Change the start time")
+            .WithCustomId($"lfg:reschedok:{group.Id}")
+            .AddTextInput("New time (server time zone), empty = none", "when", TextInputStyle.Short,
+                placeholder: "21:30 or 15.10 21:30", maxLength: 20, required: false, value: current)
+            .Build();
+        await RespondWithModalAsync(modal);
+    }
+
+    [ModalInteraction("lfg:reschedok:*")]
+    public async Task OnRescheduleSubmitted(string groupId)
+    {
+        if (!store.Groups.TryGetValue(groupId, out var group) || !IsOrganizer(group))
+        {
+            await RespondAsync("This group is no longer active.", ephemeral: true);
+            return;
+        }
+
+        var text = ((SocketModal)Context.Interaction).Data.Components.FirstOrDefault(c => c.CustomId == "when")?.Value?.Trim() ?? "";
+        DateTimeOffset? startsAt = null;
+        if (text.Length > 0)
+        {
+            if (!time.TryParse(text, out var date, out var hour, out var minute))
+            {
+                await RespondAsync("I couldn't read the time. Use `21:30` or `15.10 21:30`.", ephemeral: true);
+                return;
+            }
+            startsAt = time.ToUtc(date, hour, minute);
+            if (startsAt < DateTimeOffset.UtcNow.AddMinutes(-1))
+            {
+                await RespondAsync("This time is in the past.", ephemeral: true);
+                return;
+            }
+        }
+
+        await DeferAsync(ephemeral: true);
+        var error = await signup.RescheduleAsync(group, startsAt, time, Context.User);
+        if (error is null)
+            audit.FromDiscord(group.GuildId, Context.User, "lfg", "Changed LFG time",
+                $"{group.ActivityName} → {(startsAt is { } t ? t.ToString("u") : "no time")}");
+        await FollowupAsync(error ?? $"🕒 New start: {(startsAt is { } s ? LfgRenderer.FormatTime(s) : "no time")}. Everyone in the group got a DM.",
+            ephemeral: true);
+    }
+
     [ComponentInteraction("lfg:leave:*")]
     public Task OnLeave(string groupId) =>
         WithGroupAsync(groupId, g => g.Leave(Context.User.Id));
@@ -528,6 +623,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         try
         {
             group.IsClosed = true;
+            store.RecordClosed(group, "closed");
             store.Groups.TryRemove(groupId, out _);
             store.SaveGroups();
             await signup.DeleteMessagesAsync(group); // пост и напоминание

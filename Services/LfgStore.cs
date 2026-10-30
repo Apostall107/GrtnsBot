@@ -20,12 +20,18 @@ public sealed class LfgStore
     public ConcurrentDictionary<string, LfgDraft> Drafts { get; } = new();
     public ConcurrentDictionary<string, LfgGroup> Groups { get; } = new();
 
-    public LfgStore(IConfiguration config, ILogger<LfgStore> logger)
+    private readonly LfgHistoryStore _history;
+
+    public LfgStore(IConfiguration config, ILogger<LfgStore> logger, LfgHistoryStore history)
     {
         _logger = logger;
+        _history = history;
         _path = config["Storage:LfgGroupsPath"] ?? "data/lfg-groups.json";
         Load();
     }
+
+    /// <summary>Сбор закрыт (организатором, админом, по таймеру) — в историю для явки и статистики.</summary>
+    public void RecordClosed(LfgGroup group, string how) => _history.Record(group, how);
 
     public void PruneDrafts(TimeSpan ttl)
     {

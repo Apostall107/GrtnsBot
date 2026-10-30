@@ -43,7 +43,8 @@ public static partial class PanelApi
             try
             {
                 var (group, jumpUrl, dms) = await publisher.PublishAsync(new LfgPublishRequest(
-                    guildId, channelId, ownerId, name!, pingRole, slots!, startsAt, body.NotifyByDm, body.SeatOwner));
+                    guildId, channelId, ownerId, name!, pingRole, slots!, startsAt, body.NotifyByDm, body.SeatOwner,
+                    Requirements(guild, body.RequiredRoleIds), body.MinGs is > 0 ? body.MinGs : null));
                 return Results.Ok(new { id = group.Id, jumpUrl, dmsStarted = dms });
             }
             catch (Exception ex) when (ex is InvalidOperationException or Discord.Net.HttpException)
@@ -58,6 +59,72 @@ public static partial class PanelApi
             if (!lfg.Groups.TryGetValue(groupId, out var group) || group.GuildId != guildId) return Error("This group is no longer active.");
             var error = await RosterAsync(group, body, lfg, signup, AdminRosterActions);
             return error is null ? Results.Ok() : Error(error);
+        });
+
+        // ----- Шаблоны сборов -----
+        g.MapGet("/templates", (ulong guildId, DiscordSocketClient client, LfgTemplateStore templates) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            return Results.Ok(TemplatesDto(guild, templates));
+        });
+
+        g.MapPut("/templates/{key}", (ulong guildId, string key, TemplateBody body, DiscordSocketClient client,
+            ActivityStore activities, LfgTemplateStore templates) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            var name = (body.Name ?? "").Trim();
+            if (name.Length is 0 or > 80) return Error("Template name: 1–80 characters.");
+            if (!string.IsNullOrWhiteSpace(body.ActivityKey) && activities.Find(guildId, body.ActivityKey) is null) return Error("Activity not found.");
+            var slots = new List<SlotRole>();
+            foreach (var t in body.Slots ?? [])
+            {
+                if (!Enum.TryParse<SlotRole>(t, true, out var r)) return Error($"Unknown slot role '{t}'.");
+                slots.Add(r);
+            }
+            if (slots.Count is < LfgRenderer.MinSize or > LfgRenderer.MaxSize) return Error($"A group has {LfgRenderer.MinSize}–{LfgRenderer.MaxSize} slots.");
+            if (body.MinGs is < 0 or > 99999) return Error("Minimum GS: 0–99999.");
+
+            var error = templates.Save(guildId, new LfgTemplate
+            {
+                Key = key == "new" ? IdGen.New() : key,
+                Name = name,
+                ActivityKey = string.IsNullOrWhiteSpace(body.ActivityKey) ? null : body.ActivityKey,
+                CustomActivity = string.IsNullOrWhiteSpace(body.ActivityKey) ? (body.CustomActivity ?? name).Trim() : null,
+                Slots = slots,
+                RequiredRoleIds = Requirements(guild, body.RequiredRoleIds) ?? [],
+                MinGs = body.MinGs is > 0 ? body.MinGs : null
+            });
+            return error is null ? Results.Ok() : Error(error);
+        });
+
+        g.MapDelete("/templates/{key}", (ulong guildId, string key, LfgTemplateStore templates) =>
+            templates.Remove(guildId, key) ? Results.Ok() : Error("Template not found."));
+
+        // ----- Перенос времени и явка (админ — любой сбор) -----
+        g.MapPost("/groups/{groupId}/time", (ulong guildId, string groupId, TimeBody body, ClaimsPrincipal user, DiscordSocketClient client,
+            LfgStore lfg, LfgSignupService signup, [FromServices] TimeService time) =>
+            RescheduleEndpointAsync(guildId, groupId, body, user, client, lfg, signup, time, organizerOnly: false));
+
+        g.MapPost("/groups/{groupId}/attendance", (ulong guildId, string groupId, AttendanceBody body, LfgStore lfg, LfgSignupService signup) =>
+            AttendanceAsync(guildId, groupId, body, lfg, signup, null));
+
+        // ----- Статистика -----
+        g.MapGet("/stats", (ulong guildId, int? days, DiscordSocketClient client, LfgHistoryStore history) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            var since = days is > 0 ? DateTimeOffset.UtcNow.AddDays(-days.Value) : (DateTimeOffset?)null;
+            var list = history.Get(guildId, since);
+            var players = LfgStats.Players(list);
+            return Results.Ok(new
+            {
+                groups = list.Count,
+                attendanceMarked = list.Sum(e => e.Members.Count(m => m.Attended is not null)),
+                activities = list.GroupBy(e => e.Activity).OrderByDescending(x => x.Count())
+                    .Select(x => new { name = x.Key, groups = x.Count(), avgFilled = Math.Round(x.Average(e => e.Members.Count), 1) }),
+                topPlayers = players.Where(p => p.Groups > 0).OrderByDescending(p => p.Groups).Take(15).Select(p => StatsDto(guild, p)),
+                topOrganizers = players.Where(p => p.Organized > 0).OrderByDescending(p => p.Organized).Take(10).Select(p => StatsDto(guild, p)),
+                noShows = players.Where(p => p.NoShows > 0).OrderByDescending(p => p.NoShows).Take(10).Select(p => StatsDto(guild, p))
+            });
         });
 
         // Канал, куда уходят сборы, созданные участниками на сайте
@@ -110,6 +177,8 @@ public static partial class PanelApi
                     postHoursBefore = r.PostHoursBefore,
                     notifyByDm = r.NotifyByDm,
                     seatOwner = r.SeatOwner,
+                    requiredRoles = r.RequiredRoleIds.Select(id => Role(guild, id)),
+                    minGs = r.MinGs,
                     enabled = r.Enabled,
                     nextStart = next?.ToUnixTimeMilliseconds(),
                     nextPost = next?.AddHours(-r.PostHoursBefore).ToUnixTimeMilliseconds(),
@@ -155,6 +224,8 @@ public static partial class PanelApi
                 r.PostHoursBefore = draft.PostHoursBefore;
                 r.NotifyByDm = draft.NotifyByDm;
                 r.SeatOwner = draft.SeatOwner;
+                r.RequiredRoleIds = draft.RequiredRoleIds;
+                r.MinGs = draft.MinGs;
                 r.Enabled = draft.Enabled;
                 if (timeChanged && r.LastStart > DateTimeOffset.UtcNow) r.LastStart = null;
                 r.LastError = null;
@@ -240,6 +311,7 @@ public static partial class PanelApi
             if (lfg.Groups.TryRemove(group.Id, out _))
             {
                 group.IsClosed = true;
+                lfg.RecordClosed(group, "closed");
                 lfg.SaveGroups();
                 await signup.DeleteMessagesAsync(group);
             }
@@ -248,6 +320,82 @@ public static partial class PanelApi
         {
             group.Gate.Release();
         }
+    }
+
+    private static List<ulong>? Requirements(SocketGuild guild, List<string>? roleIds)
+    {
+        var ids = ParseIds(roleIds).Where(id => guild.GetRole(id) is not null).Take(10).ToList();
+        return ids.Count == 0 ? null : ids;
+    }
+
+    private static object TemplatesDto(SocketGuild guild, LfgTemplateStore templates) =>
+        templates.Get(guild.Id).Select(t => new
+        {
+            key = t.Key,
+            name = t.Name,
+            activityKey = t.ActivityKey,
+            customActivity = t.CustomActivity,
+            slots = t.Slots.Select(s => s.ToString()),
+            requiredRoles = t.RequiredRoleIds.Select(id => Role(guild, id)),
+            minGs = t.MinGs
+        }).ToList();
+
+    private static object StatsDto(SocketGuild guild, PlayerStats p) => new
+    {
+        member = Member(guild, p.UserId),
+        groups = p.Groups,
+        organized = p.Organized,
+        attended = p.Attended,
+        noShows = p.NoShows,
+        unmarked = p.Unmarked,
+        reliability = p.Reliability
+    };
+
+    /// <summary>Перенос времени сбора (админ — любой, организатор — свой). Всем записавшимся уходит ЛС.</summary>
+    private static async Task<IResult> RescheduleEndpointAsync(ulong guildId, string groupId, TimeBody body, ClaimsPrincipal user,
+        DiscordSocketClient client, LfgStore lfg, LfgSignupService signup, TimeService time, bool organizerOnly)
+    {
+        if (!lfg.Groups.TryGetValue(groupId, out var group) || group.GuildId != guildId) return Error("This group is no longer active.");
+        var me = user.UserId()!.Value;
+        if (organizerOnly && group.OwnerId != me) return Error("Only the organizer can change the time.");
+
+        DateTimeOffset? startsAt = null;
+        if (!string.IsNullOrWhiteSpace(body.Date) || !string.IsNullOrWhiteSpace(body.Time))
+        {
+            if (!DateOnly.TryParseExact(body.Date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date) ||
+                !TimeOnly.TryParseExact(body.Time, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var t))
+                return Error("Set both the date and the time, or leave both empty.");
+            startsAt = time.ToUtc(date, t.Hour, t.Minute);
+            if (startsAt < DateTimeOffset.UtcNow.AddMinutes(-1)) return Error("This time is in the past.");
+        }
+
+        IUser by = client.GetUser(me) as IUser ?? await client.Rest.GetUserAsync(me);
+        var error = await signup.RescheduleAsync(group, startsAt, time, by);
+        return error is null ? Results.Ok() : Error(error);
+    }
+
+    /// <summary>Отметка явки участника слота (после старта или в сборе без времени).</summary>
+    private static async Task<IResult> AttendanceAsync(ulong guildId, string groupId, AttendanceBody body, LfgStore lfg,
+        LfgSignupService signup, ulong? organizerId)
+    {
+        if (!lfg.Groups.TryGetValue(groupId, out var group) || group.GuildId != guildId) return Error("This group is no longer active.");
+        if (organizerId is { } o && group.OwnerId != o) return Error("Only the organizer can mark attendance.");
+        if (group.StartsAt > DateTimeOffset.UtcNow) return Error("Attendance can be marked after the start.");
+        if (ParseId(body.UserId) is not { } userId) return Error("Unknown member.");
+
+        await group.Gate.WaitAsync();
+        try
+        {
+            if (group.Slots.Find(s => s.UserId == userId) is not { } slot) return Error("This member is not in the group.");
+            slot.Attended = body.Attended;
+            lfg.SaveGroups();
+            await signup.RefreshPostAsync(group);
+        }
+        finally
+        {
+            group.Gate.Release();
+        }
+        return Results.Ok();
     }
 
     /// <summary>Общая проверка формы сбора: канал, активность (с ролью) или своё название, слоты.</summary>
@@ -307,6 +455,9 @@ public static partial class PanelApi
         item.PostHoursBefore = body.PostHoursBefore;
         item.NotifyByDm = body.NotifyByDm;
         item.SeatOwner = body.SeatOwner;
+        item.RequiredRoleIds = ParseIds(body.RequiredRoleIds).Where(id => guild.GetRole(id) is not null).Take(10).ToList();
+        if (body.MinGs is < 0 or > 99999) return "Minimum GS: 0–99999.";
+        item.MinGs = body.MinGs is > 0 ? body.MinGs : null;
         item.Enabled = body.Enabled;
         item.OwnerId = ownerId;
         return null;
@@ -388,6 +539,12 @@ public static partial class PanelApi
         ("POST", "/lfg/create", "lfg", "Created LFG group"),
         ("POST", "/lfg/panel", "lfg", "Posted LFG panel"),
         ("PUT", "/lfg/channel", "lfg", "Set channel for groups"),
+        ("PUT", "/lfg/templates/{key}", "lfg", "Saved LFG template"),
+        ("DELETE", "/lfg/templates/{key}", "lfg", "Removed LFG template"),
+        ("POST", "/lfg/groups/{groupId}/time", "lfg", "Changed LFG time"),
+        ("POST", "/lfg/groups/{groupId}/attendance", "lfg", "Marked attendance"),
+        ("POST", "/me/groups/{groupId}/time", "lfg", "Organizer changed time (site)"),
+        ("POST", "/me/groups/{groupId}/attendance", "lfg", "Organizer marked attendance (site)"),
         ("POST", "/lfg/recurring", "lfg", "Added recurring LFG"),
         ("PUT", "/lfg/recurring/{id}", "lfg", "Edited recurring LFG"),
         ("DELETE", "/lfg/recurring/{id}", "lfg", "Removed recurring LFG"),
@@ -410,6 +567,7 @@ public static partial class PanelApi
         ("PUT", "/access/{userId}", "access", "Set panel access"),
         ("DELETE", "/access/{userId}", "access", "Removed panel access"),
         ("PUT", "/settings/", "settings", "Changed bot settings"),
+        ("POST", "/backup/restore", "settings", "Uploaded a data backup"),
         ("PUT", "/member-roles/", "settings", "Set member roles"),
         ("POST", "/me/groups/{groupId}/join", "lfg", "Signed up (site)"),
         ("POST", "/me/groups/{groupId}/leave", "lfg", "Left group (site)"),
@@ -420,7 +578,9 @@ public static partial class PanelApi
         ("POST", "/me/create", "lfg", "Created LFG group (site)"),
         ("POST", "/me/groups/{groupId}/roster", "lfg", "Organizer changed roster (site)"),
         ("POST", "/me/groups/{groupId}/close", "lfg", "Organizer closed group (site)"),
-        ("POST", "/me/room", "voice", "Changed own room (site)")
+        ("POST", "/me/room", "voice", "Changed own room (site)"),
+        ("POST", "/me/tickets", "tickets", "Applied (site)"),
+        ("PUT", "/me/room-prefs", "voice", "Saved room defaults (site)")
     ];
 
     private static readonly JsonSerializerOptions AuditJson = new(JsonSerializerDefaults.Web);
@@ -520,9 +680,13 @@ public static partial class PanelApi
 }
 
 public sealed record LfgCreateBody(string? ChannelId, string? ActivityKey, string? CustomName, List<string>? Slots,
-    string? Date, string? Time, bool NotifyByDm = true, bool SeatOwner = true);
+    string? Date, string? Time, bool NotifyByDm = true, bool SeatOwner = true, List<string>? RequiredRoleIds = null, int? MinGs = null);
 public sealed record RosterBody(string? Action, string? UserId, string? Character);
 public sealed record RecurringBody(string? ChannelId, string? ActivityKey, string? CustomName, List<string>? Slots,
     List<int>? Days, string? Time, int PostHoursBefore = 24, bool NotifyByDm = true, bool SeatOwner = true, bool Enabled = true,
-    string? OwnerId = null);
+    string? OwnerId = null, List<string>? RequiredRoleIds = null, int? MinGs = null);
+public sealed record TemplateBody(string? Name, string? ActivityKey, string? CustomActivity, List<string>? Slots,
+    List<string>? RequiredRoleIds, int? MinGs);
+public sealed record TimeBody(string? Date, string? Time);
+public sealed record AttendanceBody(string? UserId, bool? Attended);
 public sealed record SettingsBody(string? TimeZone, int? AutoDeleteHours, int? ReminderMinutes);
