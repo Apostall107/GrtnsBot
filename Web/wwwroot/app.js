@@ -612,7 +612,9 @@ function renderShell() {
   const NAV_TONES = { home: "violet", play: "violet", chars: "cyan", lfg: "violet", tickets: "amber", voice: "teal", content: "blue",
     announce: "pink", overview: "green", log: "blue", settings: "cyan", access: "amber" };
   const navButton = ([key, ic, label]) => h("button", {
-    class: `nav-item tone-${NAV_TONES[key] || "violet"}${state.tab === key ? " active" : ""}`, title: label, "aria-current": state.tab === key ? "page" : null,
+    // Tooltip only when the menu is collapsed to icons (labels are visible otherwise)
+    class: `nav-item tone-${NAV_TONES[key] || "violet"}${state.tab === key ? " active" : ""}`, title: collapsed ? label : null, "aria-label": label,
+    "aria-current": state.tab === key ? "page" : null,
     onclick: () => { state.tab = key; store.set("gb.tab", key); renderShell(); }
   }, icon(ic, 18), h("span", { class: "nav-label" }, label));
   const navItems = [];
