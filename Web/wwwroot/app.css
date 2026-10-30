@@ -35,7 +35,7 @@
   --danger: #EF5B67;
   --danger-soft: rgba(239, 91, 103, .14);
   --text-primary: #F1F3F8;
-  --text-secondary: #929BAE;
+  --text-secondary: #A2ABBF;
   --border: #262D3B;
   --border-strong: #38415A;
 
@@ -592,3 +592,83 @@ h2.with-icon .tone-chip { width: 30px; height: 30px; border-radius: 9px; }
 /* Sidebar icons carry their module tone (muted until hover/active) */
 .nav-item .icon { color: var(--tone, currentColor); opacity: .8; transition: opacity var(--ease); }
 .nav-item:hover .icon, .nav-item.active .icon { opacity: 1; color: var(--tone, var(--primary-text)); }
+
+/* =====================================================================
+   Glass & a touch of neon: ambient light behind translucent surfaces
+   ===================================================================== */
+
+:root {
+  --glass: rgba(22, 27, 40, .58);
+  --glass-strong: rgba(24, 29, 44, .78);
+  --glass-border: rgba(255, 255, 255, .08);
+  --glass-highlight: rgba(255, 255, 255, .06);
+  --blur: blur(14px) saturate(150%);
+  --neon: 0 0 18px rgba(137, 110, 255, .45);
+}
+
+/* Ambient light — fixed behind everything, gives the glass something to blur */
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(38% 42% at 12% 8%, rgba(118, 87, 246, .3), transparent 70%),
+    radial-gradient(30% 36% at 92% 14%, rgba(240, 96, 158, .17), transparent 70%),
+    radial-gradient(36% 40% at 78% 92%, rgba(76, 155, 255, .15), transparent 70%),
+    radial-gradient(30% 34% at 30% 85%, rgba(43, 205, 180, .08), transparent 70%),
+    var(--background);
+}
+html, body { background: transparent; }
+html { background: var(--background); }
+
+/* Glass surfaces */
+.card, .stat, .quick-action, .home-hero, dialog, .user-pop, .mention-pop {
+  background-color: var(--glass);
+  border-color: var(--glass-border);
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 10px 30px rgba(0, 0, 0, .28);
+}
+.card {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, .04), rgba(255, 255, 255, 0) 140px);
+}
+.card .card, .stats.compact .stat, .char-card, .empty-state {
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+  background-color: rgba(9, 11, 16, .45); border-color: var(--glass-border);
+}
+dialog, .user-pop, .mention-pop { background-color: var(--glass-strong); }
+.topbar { background: rgba(9, 11, 16, .62); border-bottom-color: var(--glass-border); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); }
+.nav { background: rgba(14, 17, 24, .55); border-right-color: var(--glass-border); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); }
+input, select, textarea { background: rgba(7, 9, 13, .7); border-color: rgba(255, 255, 255, .09); }
+
+/* Neon accents — only on what matters: active, primary, status, focus */
+.nav-item.active { background: linear-gradient(90deg, rgba(118, 87, 246, .28), rgba(118, 87, 246, .08)); box-shadow: inset 0 0 0 1px rgba(137, 110, 255, .35); }
+.nav-item.active::before { box-shadow: 0 0 12px 1px var(--primary); }
+.btn:not(.secondary):not(.ghost):not(.danger):not(.btn-refresh):not(.btn-guide) {
+  background: linear-gradient(180deg, #8467FF, #6C4CF0);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18), 0 4px 14px rgba(118, 87, 246, .35);
+}
+.btn:not(.secondary):not(.ghost):not(.danger):not(.btn-refresh):not(.btn-guide):hover { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), var(--neon); }
+.btn.secondary { background: rgba(255, 255, 255, .05); border-color: rgba(255, 255, 255, .1); }
+.btn.secondary:hover { background: rgba(255, 255, 255, .09); border-color: rgba(255, 255, 255, .18); }
+.btn.btn-refresh:hover { box-shadow: 0 0 14px rgba(34, 197, 139, .35); }
+.btn.btn-guide:hover { box-shadow: 0 0 14px rgba(245, 185, 66, .32); }
+.btn.active-tab, .tabs .btn.secondary.active-tab { box-shadow: 0 0 14px rgba(118, 87, 246, .3); }
+input:focus, select:focus, textarea:focus { box-shadow: 0 0 0 3px var(--primary-soft), 0 0 14px rgba(118, 87, 246, .25); }
+
+.tone-chip, .stat-icon, .qa-icon, .es-icon { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone, var(--primary)) 40%, transparent), 0 0 14px color-mix(in srgb, var(--tone, var(--primary)) 28%, transparent); }
+.stat::before { box-shadow: 0 0 12px 1px var(--tone, var(--primary)); }
+.stat .value { text-shadow: 0 0 18px color-mix(in srgb, var(--tone, var(--primary)) 35%, transparent); }
+.stat.clickable:hover, .quick-action:hover { box-shadow: inset 0 1px 0 var(--glass-highlight), 0 0 22px color-mix(in srgb, var(--tone, var(--primary)) 22%, transparent); }
+.status-pill.ok .dot { box-shadow: 0 0 0 3px var(--success-soft), 0 0 10px var(--success); }
+.cap-bar > span { box-shadow: 0 0 8px var(--primary); }
+.capacity.full .cap-bar > span { box-shadow: 0 0 8px var(--success); }
+.badge.ok { box-shadow: inset 0 0 0 1px rgba(34, 197, 139, .3); }
+.badge.wait { box-shadow: inset 0 0 0 1px rgba(245, 185, 66, .3); }
+.badge.lock { box-shadow: inset 0 0 0 1px rgba(239, 91, 103, .3); }
+.home-hero { border-color: rgba(137, 110, 255, .45); box-shadow: inset 0 1px 0 var(--glass-highlight), 0 0 32px rgba(118, 87, 246, .18); }
+.page-head h1 .icon, .card-head h1 .icon { filter: drop-shadow(0 0 8px rgba(137, 110, 255, .6)); }
+.brand-logo img { box-shadow: 0 0 14px rgba(118, 87, 246, .45); }
+
+/* Browsers without backdrop-filter: solid, still readable */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .card, .stat, .quick-action, .home-hero, dialog, .user-pop, .mention-pop { background-color: var(--surface); }
+}
