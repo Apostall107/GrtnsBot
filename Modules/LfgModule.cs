@@ -10,7 +10,7 @@ namespace LfgBot.Modules;
 [RequireContext(ContextType.Guild)]
 public sealed class LfgModule(PanelService panels, LfgPublisher publisher, AuditLog audit, LfgProfileService profile,
     LfgTemplateStore templates, LfgStore store, ActivityStore activities, CharacterStore characters, TimeService time,
-    LfgNotifyStore notifyPrefs, LfgNotifier notifier, LfgSignupService signup, BotOwner botOwner,
+    LfgNotifyStore notifyPrefs, LfgSignupService signup, BotOwner botOwner,
     LfgProjectStore projects, PanelTextStore panelStore, AdminStore admins)
     : InteractionModuleBase<SocketInteractionContext>
 {

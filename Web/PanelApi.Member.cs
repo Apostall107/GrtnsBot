@@ -196,7 +196,7 @@ public static partial class PanelApi
                 {
                     id = r.Id.ToString(),
                     name = r.Name,
-                    color = r.Color.RawValue == 0 ? null : $"#{r.Color.RawValue:x6}",
+                    color = r.Colors.PrimaryColor.RawValue == 0 ? null : $"#{r.Colors.PrimaryColor.RawValue:x6}",
                     icon = profiles.Icon(guildId, r, current?.Key)
                 }),
                 characters = characters.Get(guildId, me, scope).Select(name =>
@@ -372,7 +372,7 @@ public static partial class PanelApi
                 templates = TemplatesDto(guild, templates),
                 // Роли для требований сбора (организатор выбирает, какие нужны)
                 roles = guild.Roles.Where(r => !r.IsEveryone && !r.IsManaged).OrderByDescending(r => r.Position)
-                    .Select(r => new { id = r.Id.ToString(), name = r.Name, color = r.Color.RawValue == 0 ? null : $"#{r.Color.RawValue:x6}" }),
+                    .Select(r => new { id = r.Id.ToString(), name = r.Name, color = r.Colors.PrimaryColor.RawValue == 0 ? null : $"#{r.Colors.PrimaryColor.RawValue:x6}" }),
                 channel = channel is null ? null : new { id = channel.Id.ToString(), name = channel.Name }
             });
         });
