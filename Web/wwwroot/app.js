@@ -532,10 +532,31 @@ async function pageLfg(main) {
   const groupsBody = h("div", {}, h("div", { class: "muted" }, "Loading…"));
   groupsCard.append(groupsBody);
 
+  // --- Category for group voice rooms (project's own, otherwise the common one, otherwise the post channel's category)
+  const voiceCard = () => {
+    const vc = h("div", { class: "card" }, h("h3", {}, mode === "project" ? `🔊 Voice rooms · ${project.name}` : "🔊 Voice rooms"),
+      h("p", { class: "muted small" }, mode === "project"
+        ? "Category where 🔊 Voice rooms of this project's groups are created. Empty = the common one (⚙️ General), otherwise the category of the post's channel."
+        : "Category for 🔊 Voice rooms of all groups (a project can set its own). Empty = the category of the post's channel."));
+    const sel = channelSelect("categories", mode === "project" ? "Not set — use the common category" : "Not set — the post channel's category");
+    const save = h("button", { class: "btn" }, "💾 Save");
+    const info = h("div", { class: "muted small", style: "margin-top:6px" });
+    const q = mode === "project" ? `?project=${encodeURIComponent(P)}` : "";
+    save.addEventListener("click", async () => {
+      if (await act(save, () => gApi("PUT", `/lfg/voice-category${q}`, { channelId: sel.value || null }), "Voice room category saved.") !== undefined) refresh();
+    });
+    vc.append(h("div", { class: "row" }, h("div", { class: "grow" }, sel), save), info);
+    gApi("GET", `/lfg/voice-category${q}`).then(c => {
+      if (c.categoryId) sel.value = c.categoryId;
+      info.textContent = c.effective ? `Now: ${c.effective.name}${c.inherited ? " (common)" : ""}` : "Now: the category of the post's channel.";
+    }).catch(e => { info.textContent = e.message; });
+    return vc;
+  };
+
   if (mode === "shared") {
     // ⚙️ General: projects, settings, channel, shared activities / templates, common classes
     const projCard = card(), lfgSettingsCard = card();
-    main.append(projCard, h("div", { class: "grid-main" }, actCard, h("div", {}, channelCard())), lfgSettingsCard, classCard, tplCard);
+    main.append(projCard, h("div", { class: "grid-main" }, actCard, h("div", {}, channelCard(), voiceCard())), lfgSettingsCard, classCard, tplCard);
     renderProjects(projCard, lfgProjects);
     renderLfgSettings(lfgSettingsCard);
     renderClasses(classCard, projects, "", { noTabs: true });
@@ -543,7 +564,7 @@ async function pageLfg(main) {
     return;
   }
 
-  main.append(h("div", { class: "grid-main" }, actCard, h("div", {}, panelCard(), mode === "all" ? channelCard() : null)));
+  main.append(h("div", { class: "grid-main" }, actCard, h("div", {}, panelCard(), mode === "all" ? channelCard() : null, voiceCard())));
   if (mode === "all") {
     const projCard = card(), lfgSettingsCard = card();
     main.append(lfgSettingsCard, projCard);
@@ -1180,6 +1201,7 @@ function groupCard(g) {
           })))))) : null,
     h("div", { class: "row", style: "margin-top:12px" },
       h("a", { class: "btn secondary", href: g.jumpUrl, target: "_blank", rel: "noopener" }, "Open in Discord"),
+      g.voiceUrl ? h("a", { class: "btn btn-refresh", href: g.voiceUrl, target: "_blank", rel: "noopener", title: "Open the group's voice room in Discord" }, "🔊 Voice room") : null,
       h("button", { class: "btn secondary", onclick: () => rescheduleDialog(g, `/lfg/groups/${encodeURIComponent(g.id)}/time`) }, "🕒 Time"),
       close));
 }
@@ -2053,6 +2075,7 @@ function playCard(g) {
       h("div", { class: "row", style: "margin-top:12px" }, role, charSel, newChar, join, g.me && !org ? leave : null),
     h("div", { class: "row", style: "margin-top:8px" },
       h("a", { class: "btn ghost", href: g.jumpUrl, target: "_blank", rel: "noopener" }, "Open in Discord"),
+      g.voiceUrl ? h("a", { class: "btn btn-refresh", href: g.voiceUrl, target: "_blank", rel: "noopener", title: "Open the group's voice room in Discord" }, "🔊 Voice room") : null,
       org ? h("button", { class: "btn secondary", onclick: () => rescheduleDialog(g, `/me/groups/${encodeURIComponent(g.id)}/time`) }, "🕒 Time") : null,
       closeBtn));
 }
@@ -2361,7 +2384,8 @@ const HELP = {
       ["Project tabs", [
         "Each project (game) has its own tab at the top: its **activities**, **LFG panel** (posted panels are linked to the project), **classes**, **templates**, **recurring groups**, **active groups** and **statistics** — nothing from other projects.",
         "🌐 **all projects** items (activities, templates) are shared and shown in every project; manage them in **⚙️ General**.",
-        "**⚙️ General** — projects, LFG settings, channel for groups, shared activities and templates, common classes.",
+        "**⚙️ General** — projects, LFG settings, channel for groups, shared activities and templates, common classes. and the common 🔊 voice room category.",
+        "**🔊 Voice rooms** — the category where group voice rooms are created: per project (its tab) or common (General). The room link is in the post and on the group card on the site.",
         "Everything can be edited: ✏️ **Edit** on activities (name, role), ✏️ **Edit <project>** next to the tabs, templates and schedules — **Edit**.",
         "**🎭 Classes** → **➕ Add class roles…** — tick several roles at once."
       ]],

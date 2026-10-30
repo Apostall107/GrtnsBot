@@ -113,6 +113,39 @@ public static partial class PanelApi
             return panels.SetPanelProject(guildId, "lfg", messageId, key) ? Results.Ok() : Error("Panel not found — use Find posted panels first.");
         });
 
+        // ----- Категория голосовых комнат сборов: ?project=key — проекта, без project — общая -----
+        g.MapGet("/voice-category", (ulong guildId, string? project, DiscordSocketClient client, LfgProjectStore projects) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            var key = string.IsNullOrWhiteSpace(project) ? null : project;
+            var own = projects.VoiceCategory(guildId, key);
+            var effective = projects.EffectiveVoiceCategory(guildId, key);
+            return Results.Ok(new
+            {
+                categoryId = own?.ToString(),
+                effective = effective is { } e && guild.GetCategoryChannel(e) is { } c ? new { id = c.Id.ToString(), name = c.Name } : null,
+                inherited = own is null && effective is not null
+            });
+        });
+
+        g.MapPut("/voice-category", (ulong guildId, string? project, ChannelBody body, DiscordSocketClient client, LfgProjectStore projects) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            var key = string.IsNullOrWhiteSpace(project) ? null : project;
+            if (key is not null && projects.Find(guildId, key) is null) return Error("Project not found.");
+            ulong? id = null;
+            if (ParseId(body.ChannelId) is { } cid)
+            {
+                if (guild.GetCategoryChannel(cid) is not { } cat) return Error("Category not found.");
+                var perms = guild.CurrentUser.GetPermissions(cat);
+                if (!perms.ManageChannel || !perms.ManageRoles)
+                    return Error("The bot needs Manage Channels and Manage Roles (Manage Permissions) in this category.");
+                id = cid;
+            }
+            projects.SetVoiceCategory(guildId, key, id);
+            return Results.Ok();
+        });
+
         // ----- Классы: какие роли — классы и их иконки (эмодзи или эмодзи сервера) -----
         // ?project=key — классы проекта; без project — общие (действуют в проектах без своих классов)
         g.MapGet("/classes", async (ulong guildId, string? project, DiscordSocketClient client, LfgProjectStore projects) =>
@@ -722,6 +755,7 @@ public static partial class PanelApi
         ("DELETE", "/lfg/projects/{key}", "lfg", "Removed LFG project"),
         ("PUT", "/lfg/panels/{messageId}/project", "lfg", "Linked LFG panel to a project"),
         ("PUT", "/lfg/classes", "lfg", "Saved class icons"),
+        ("PUT", "/lfg/voice-category", "lfg", "Set voice room category"),
         ("POST", "/lfg/classes/role-icons", "lfg", "Imported class icons from roles"),
         ("PUT", "/lfg/activities/{key}/project", "lfg", "Moved activity to a project"),
         ("PUT", "/lfg/activities/{key}", "lfg", "Edited activity"),
