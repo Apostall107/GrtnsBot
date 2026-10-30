@@ -36,7 +36,11 @@ public sealed record PanelDef(string Key, string Name, string DefaultTitle, stri
     public const int MaxTitle = 256;
     public const int MaxDescription = 4000;
 
-    public string Title(PanelText? t) => string.IsNullOrWhiteSpace(t?.Title) ? DefaultTitle : t.Title!;
+    /// <summary>Заголовок эмбеда — простой текст (Discord не применяет в нём разметку). "-" — без заголовка.</summary>
+    public const string NoTitle = "-";
+
+    public string? Title(PanelText? t) =>
+        string.IsNullOrWhiteSpace(t?.Title) ? DefaultTitle : t.Title!.Trim() == NoTitle ? null : t.Title;
 
     public string Description(PanelText? t) => string.IsNullOrWhiteSpace(t?.Description) ? DefaultDescription : t.Description!;
 
