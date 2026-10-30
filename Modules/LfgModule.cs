@@ -613,7 +613,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
     }
 
     [ModalInteraction("lfg:reschedok:*")]
-    public async Task OnRescheduleSubmitted(string groupId, LfgRescheduleModal _)
+    public async Task OnRescheduleSubmitted(string groupId, LfgRescheduleModal modal)
     {
         if (!store.Groups.TryGetValue(groupId, out var group) || !IsOrganizer(group))
         {
