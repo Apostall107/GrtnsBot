@@ -731,7 +731,10 @@ public static partial class PanelApi
             if (PanelDefs.Find(key) is not { } def) return Error("Unknown panel.");
             var labelsOnly = PanelDefs.Messages.Contains(def);
 
-            var title = labelsOnly ? null : Clean(body.Title, def.DefaultTitle);
+            // Пустой заголовок = панель без заголовка ("-" тоже); стандартный — кнопкой Reset to default
+            var title = labelsOnly ? null
+                : body.Title is not null && (string.IsNullOrWhiteSpace(body.Title) || body.Title.Trim() == PanelDef.NoTitle) ? PanelDef.NoTitle
+                : Clean(body.Title, def.DefaultTitle);
             var description = labelsOnly ? null : Clean(body.Description, def.DefaultDescription);
             if (title is { Length: > PanelDef.MaxTitle }) return Error($"The title is limited to {PanelDef.MaxTitle} characters.");
             if (description is { Length: > PanelDef.MaxDescription }) return Error($"The text is limited to {PanelDef.MaxDescription} characters.");

@@ -2538,7 +2538,8 @@ async function pageTexts(main) {
 }
 
 function textCard(p) {
-  const title = h("input", { maxlength: String(p.maxTitle), placeholder: p.defaults.title, value: p.title || p.defaults.title });
+  // Empty title = the panel has no title (headings go into the text)
+  const title = h("input", { maxlength: String(p.maxTitle), placeholder: "No title", value: p.title === "-" ? "" : (p.title || p.defaults.title) });
   const desc = h("textarea", { maxlength: String(p.maxDescription), style: "min-height:260px" });
   desc.value = p.description || p.defaults.description;
   const counter = h("span", { class: "muted small" }, `${desc.value.length}/${p.maxDescription}`);
@@ -2583,7 +2584,7 @@ function textCard(p) {
     labelsOnly ? h("p", { class: "muted small" }, p.key === "lfgpost"
       ? "Buttons under every LFG group post. Saving updates the active groups." : "Buttons in every ticket message. Saving updates the open tickets.") : null,
     labelsOnly ? null : h("div", { class: "field" }, h("label", {}, "Title"), title,
-      h("span", { class: "muted small" }, "Plain text — Discord doesn't apply markdown in titles. Put headings (# , ## , -# ) at the start of the text instead; type - here for no title.")),
+      h("span", { class: "muted small" }, "Plain text — Discord doesn't apply markdown in titles. Leave it empty for no title and put headings (# , ## , -# ) at the start of the text. Reset to default brings the standard title back.")),
     labelsOnly ? null : h("div", { class: "field" }, h("label", {}, "Text (Discord markdown)"), desc,
       h("div", { class: "row" }, counter, p.placeholders ? h("span", { class: "muted small" }, `· ${p.placeholders}`) : null)),
     labelInputs.length ? h("div", { class: "grid2" }, labelInputs.map(x => x.el)) : null,
@@ -3662,7 +3663,7 @@ const HELP = {
       "Edit the title, text and button labels of the **LFG**, **Ticket** and **Room controls** panels.",
       "Button labels under **LFG group posts** (Leave, Invite…, Manage, Close, Voice room) and in **ticket messages** (Approve, Deny, Close).",
       "Saving updates the panels already posted in Discord. **Reset to default** restores the original text.",
-      "The title is plain text (Discord shows no markdown there); type **-** for no title and put headings (# / ## / -#) in the text. In Discord: `/panel-text`.",
+      "The title is plain text (Discord shows no markdown there); leave it **empty** for no title and put headings (# / ## / -#) in the text. In Discord: `/panel-text`.",
       "LFG panel placeholders: `{hours}` — auto-delete hours, `{reminder}` — reminder minutes."
     ]]],
     discord: [["Where it shows", [
