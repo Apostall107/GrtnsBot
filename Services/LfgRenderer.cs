@@ -250,15 +250,15 @@ public static class LfgRenderer
                 new Emoji(role.Emoji()), disabled: g.IsClosed, row: 0);
         // Голосовая комната — только если её выбрали при создании: ссылка на неё
         if (g.VoiceChannelId is { } voiceId)
-            builder.WithButton("Voice room", style: ButtonStyle.Link, url: $"https://discord.com/channels/{g.GuildId}/{voiceId}",
+            builder.WithButton(PanelDefs.Label(g.GuildId, PanelDefs.LfgPost, "voice"), style: ButtonStyle.Link, url: $"https://discord.com/channels/{g.GuildId}/{voiceId}",
                 emote: new Emoji("🔊"), row: 0);
 
         builder
-            .WithButton("Leave", $"lfg:leave:{g.Id}", ButtonStyle.Secondary, disabled: g.IsClosed, row: 1)
-            .WithButton("Invite to group", $"lfg:invites:{g.Id}", ButtonStyle.Secondary, new Emoji("📋"), row: 1)
-            .WithButton("Invite to dungeon", $"lfg:dungeon:{g.Id}", ButtonStyle.Secondary, new Emoji("🏰"), row: 1)
-            .WithButton("Manage", $"lfg:manage:{g.Id}", ButtonStyle.Secondary, new Emoji("⚙️"), disabled: g.IsClosed, row: 1)
-            .WithButton("Close", $"lfg:close:{g.Id}", ButtonStyle.Danger, disabled: g.IsClosed, row: 1);
+            .WithButton(PanelDefs.Label(g.GuildId, PanelDefs.LfgPost, "leave"), $"lfg:leave:{g.Id}", ButtonStyle.Secondary, disabled: g.IsClosed, row: 1)
+            .WithButton(PanelDefs.Label(g.GuildId, PanelDefs.LfgPost, "invites"), $"lfg:invites:{g.Id}", ButtonStyle.Secondary, new Emoji("📋"), row: 1)
+            .WithButton(PanelDefs.Label(g.GuildId, PanelDefs.LfgPost, "dungeon"), $"lfg:dungeon:{g.Id}", ButtonStyle.Secondary, new Emoji("🏰"), row: 1)
+            .WithButton(PanelDefs.Label(g.GuildId, PanelDefs.LfgPost, "manage"), $"lfg:manage:{g.Id}", ButtonStyle.Secondary, new Emoji("⚙️"), disabled: g.IsClosed, row: 1)
+            .WithButton(PanelDefs.Label(g.GuildId, PanelDefs.LfgPost, "close"), $"lfg:close:{g.Id}", ButtonStyle.Danger, disabled: g.IsClosed, row: 1);
 
         return new Screen(null, embed, builder.Build());
     }

@@ -132,11 +132,11 @@ function tabsRow(items, current, storeKey, ...extra) {
 }
 
 /** Pick several roles at once (checkboxes + search). Resolves with the chosen roles or null. */
-function pickRolesDialog(title, exclude = []) {
+function pickRolesDialog(title, exclude = [], pool = state.roles) {
   return new Promise(resolve => {
     const d = dialog();
     const search = h("input", { placeholder: "Search roles…", style: "width:100%" });
-    const items = state.roles.filter(r => !exclude.includes(r.id)).map(r => {
+    const items = pool.filter(r => !exclude.includes(r.id)).map(r => {
       const cb = h("input", { type: "checkbox" });
       return { r, cb, el: h("label", {}, cb, roleChip(r)) };
     });
@@ -256,7 +256,8 @@ function attachMentions(ta, onInsert) {
 
   const close = () => { pop.style.display = "none"; trigger = null; items = []; };
   const draw = () => {
-    if (!items.length) { close(); return; }
+    // Nothing yet (people are still being searched) — hide the list but keep waiting for results
+    if (!items.length) { pop.style.display = "none"; return; }
     pop.replaceChildren(...items.map((it, i) => h("div", { class: `mention-item${i === active ? " active" : ""}`,
       onmousedown: e => { e.preventDefault(); pick(i); } }, it.icon, h("span", {}, it.label), it.hint ? h("span", { class: "muted small", style: "margin-left:auto" }, it.hint) : null)));
     const c = caretCoords(ta);
@@ -350,8 +351,12 @@ function roleListEditor(initial, pool = state.roles) {
   for (const r of pool) known.set(r.id, { ...r, exists: true });
   const el = h("div", {});
   const draw = () => {
-    const sel = roleSelect("+ Add role…", ids, pool);
-    sel.addEventListener("change", () => { if (sel.value) { ids.push(sel.value); draw(); } });
+    // Search + tick several roles at once (the plain dropdown was too long)
+    const sel = h("button", { class: "btn secondary", type: "button" }, "➕ Add roles…");
+    sel.addEventListener("click", async () => {
+      const picked = await pickRolesDialog("Add roles", ids, pool);
+      if (picked) { ids.push(...picked.map(r => r.id)); draw(); }
+    });
     el.replaceChildren(
       h("div", {}, ids.length ? ids.map(id => roleChip(known.get(id) || { id, name: "deleted role", exists: false }, () => { ids = ids.filter(x => x !== id); draw(); }))
                               : h("span", { class: "muted" }, "not set")),
@@ -1942,7 +1947,7 @@ async function pageTexts(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "📝 Panel texts"),
     h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
   main.append(h("p", { class: "muted" },
-    "Edit the text of the panels the bot posts. Saving updates the panels already posted on the server. ",
+    "Edit the text of the panels the bot posts and the button labels of group posts and tickets. Saving updates what is already posted. ",
     "Panels posted before this feature are unknown to the bot — click “Find posted panels” once to pick them up."));
 
   const discover = h("button", { class: "btn secondary" }, "🔍 Find posted panels");
@@ -1975,15 +1980,17 @@ function textCard(p) {
     return { l, input, el: h("div", { class: "field" }, h("label", {}, l.name), input) };
   });
 
-  const resultToast = (res, what) => {
+  const labelsOnly = p.kind === "labels";
+  const what = p.key === "lfgpost" ? "active group post(s)" : p.key === "ticketmsg" ? "open ticket(s)" : "posted panel(s)";
+  const resultToast = (res, done) => {
     if (!res) return;
     toast(res.panelsTotal
-      ? `${what} Updated ${res.panelsUpdated} of ${res.panelsTotal} posted panel(s).`
-      : `${what} No posted panels to update yet — post the panel from its module tab.`,
+      ? `${done} Updated ${res.panelsUpdated} of ${res.panelsTotal} ${what}.`
+      : labelsOnly ? `${done} New posts will use it.` : `${done} No posted panels to update yet — post the panel from its module tab.`,
       res.panelsUpdated === res.panelsTotal ? "ok" : "warn");
   };
 
-  const save = h("button", { class: "btn" }, "💾 Save & update panels");
+  const save = h("button", { class: "btn" }, labelsOnly ? "💾 Save & update posts" : "💾 Save & update panels");
   save.addEventListener("click", async () => {
     const labels = {};
     for (const { l, input } of labelInputs) labels[l.id] = input.value;
@@ -1992,7 +1999,7 @@ function textCard(p) {
   });
   const reset = h("button", { class: "btn secondary" }, "↩️ Reset to default");
   reset.addEventListener("click", async () => {
-    if (!await confirmDialog(`Reset ${p.name}?`, "The default text is restored and posted panels are updated.", "Reset", false)) return;
+    if (!await confirmDialog(`Reset ${p.name}?`, `The default text is restored and ${what} are updated.`, "Reset", false)) return;
     const res = await act(reset, () => gApi("DELETE", `/texts/${p.key}`));
     if (res === undefined) return;
     resultToast(res, "Reset.");
@@ -2003,9 +2010,11 @@ function textCard(p) {
   return h("div", { class: "card" },
     h("div", { class: "card-head" }, h("h2", {}, p.name),
       custom ? h("span", { class: "badge wait" }, "custom") : h("span", { class: "badge ok" }, "default"),
-      h("span", { class: "muted small" }, `${p.posted} posted`)),
-    h("div", { class: "field" }, h("label", {}, "Title"), title),
-    h("div", { class: "field" }, h("label", {}, "Text (Discord markdown)"), desc,
+      labelsOnly ? null : h("span", { class: "muted small" }, `${p.posted} posted`)),
+    labelsOnly ? h("p", { class: "muted small" }, p.key === "lfgpost"
+      ? "Buttons under every LFG group post. Saving updates the active groups." : "Buttons in every ticket message. Saving updates the open tickets.") : null,
+    labelsOnly ? null : h("div", { class: "field" }, h("label", {}, "Title"), title),
+    labelsOnly ? null : h("div", { class: "field" }, h("label", {}, "Text (Discord markdown)"), desc,
       h("div", { class: "row" }, counter, p.placeholders ? h("span", { class: "muted small" }, `· ${p.placeholders}`) : null)),
     labelInputs.length ? h("div", { class: "grid2" }, labelInputs.map(x => x.el)) : null,
     h("div", { class: "row" }, save, reset));
@@ -2943,6 +2952,7 @@ const HELP = {
     title: "Panel texts",
     features: [["What it can do", [
       "Edit the title, text and button labels of the **LFG**, **Ticket** and **Room controls** panels.",
+      "Button labels under **LFG group posts** (Leave, Invite…, Manage, Close, Voice room) and in **ticket messages** (Approve, Deny, Close).",
       "Saving updates the panels already posted in Discord. **Reset to default** restores the original text.",
       "LFG panel placeholders: `{hours}` — auto-delete hours, `{reminder}` — reminder minutes."
     ]]],
