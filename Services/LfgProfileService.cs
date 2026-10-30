@@ -13,14 +13,20 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
 {
     public const string NoClassValue = "0";
 
-    /// <summary>Роли игрока, которые можно выбрать классом (без @everyone и ролей ботов/интеграций), сверху — старшие.</summary>
-    /// <remarks>Если админ задал иконки классов (LFG → Classes) — только эти роли.</remarks>
+    /// <summary>Роли, которые можно выбрать классом в проекте, сверху — старшие.</summary>
+    /// <remarks>Заданы классы (LFG → Classes, свои у проекта или общие) — любой из них, роль иметь не нужно.
+    /// Не заданы — роли самого игрока (без @everyone и ролей ботов/интеграций).</remarks>
     public IReadOnlyList<SocketRole> ClassRoles(ulong guildId, ulong userId, string? projectKey = null)
     {
-        if (client.GetGuild(guildId)?.GetUser(userId) is not { } member) return new List<SocketRole>();
+        if (client.GetGuild(guildId) is not { } guild) return new List<SocketRole>();
+        // Классы проекта (свои или общие) — любой из них, иметь роль не нужно
         var configured = projects.EffectiveClassIcons(guildId, projectKey);
-        return member.Roles
-            .Where(r => !r.IsEveryone && !r.IsManaged && (configured.Count == 0 || configured.ContainsKey(r.Id)))
+        if (configured.Count > 0)
+            return configured.Keys.Select(guild.GetRole).OfType<SocketRole>()
+                .OrderByDescending(r => r.Position).ToList();
+        // Классы не настроены — как раньше: роли самого игрока
+        if (guild.GetUser(userId) is not { } member) return new List<SocketRole>();
+        return member.Roles.Where(r => !r.IsEveryone && !r.IsManaged)
             .OrderByDescending(r => r.Position).ToList();
     }
 
@@ -95,7 +101,7 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
         if (value != NoClassValue)
         {
             if (!ulong.TryParse(value, out var id) || ClassRoles(group.GuildId, userId, group.ProjectKey).All(r => r.Id != id))
-                return Task.FromResult("You don't have this role.");
+                return Task.FromResult("This class is not available in this project.");
             roleId = id;
         }
 

@@ -879,7 +879,7 @@ async function renderClasses(card, projectList = [], projectKey = store.get("gb.
     "Classes saved. New signups use the icons; existing posts update when someone changes their class."));
   draw();
   card.replaceChildren(h("h2", {}, "🎭 Classes"), tabs,
-    h("p", { class: "muted small" }, "Roles that count as classes and their icon shown next to the player's name. If the list is not empty, players can only pick these roles as their class. ",
+    h("p", { class: "muted small" }, "Roles that count as classes and their icon shown next to the player's name. If the list is not empty, players pick any of these as their class (they don't need the role); if empty — only roles they have. ",
       projectKey ? "This project's own classes — if empty, the common list is used." : "Common classes — used by every project that has no classes of its own. ",
       "Use a unicode emoji, a server emoji, or 🎨 Use role icons — the roles' own icons from Discord (image icons are uploaded as the bot's emojis, no server emoji slots used)."),
     list, h("div", { class: "row", style: "margin-top:8px" }, addSel, fromRoles, save));
@@ -1934,9 +1934,18 @@ async function pageChars(main) {
   });
 
   const rows = data.characters.map(c => {
+    // <option> can't show images: unicode icons go in the text, server/bot emojis are shown next to the list
+    const isCustom = icon => /^<a?:[^:]+:\d+>$/.test(icon || "");
     const cls = h("select", {}, h("option", { value: "" }, "No class"),
-      data.classRoles.map(r => h("option", { value: r.id }, `${r.icon ? r.icon + " " : ""}${r.name}`)));
+      data.classRoles.map(r => h("option", { value: r.id }, `${r.icon && !isCustom(r.icon) ? r.icon + " " : ""}${r.name}`)));
     if (c.classRole) cls.value = c.classRole.id;
+    const clsIcon = h("span", { style: "display:inline-flex;width:20px;justify-content:center" });
+    const syncIcon = () => {
+      const r = data.classRoles.find(x => x.id === cls.value);
+      clsIcon.replaceChildren(...[r ? classMark({ classIcon: r.icon, classRole: r }) : null].filter(Boolean));
+    };
+    cls.addEventListener("change", syncIcon);
+    syncIcon();
     const note = h("input", { maxlength: String(data.maxComment), placeholder: "Note, e.g. can lead", value: c.comment || "", style: "width:100%" });
     const gs = h("input", { type: "number", min: "0", max: "99999", placeholder: "GS", value: c.gs ?? "", style: "width:90px" });
     const save = h("button", { class: "btn secondary" }, "Save");
@@ -1948,7 +1957,7 @@ async function pageChars(main) {
       if (!await confirmDialog(`Remove ${c.name}?`, "The character, its class and note are deleted.", "Remove")) return;
       if (await act(rm, () => gApi("DELETE", `/me/characters/${encodeURIComponent(c.name)}${pq}`), "Removed.") !== undefined) refresh();
     });
-    return h("tr", {}, h("td", {}, h("b", {}, c.name)), h("td", {}, cls), h("td", {}, gs), h("td", { style: "min-width:220px" }, note),
+    return h("tr", {}, h("td", {}, h("b", {}, c.name)), h("td", {}, h("div", { class: "row", style: "flex-wrap:nowrap" }, clsIcon, cls)), h("td", {}, gs), h("td", { style: "min-width:220px" }, note),
       h("td", { class: "actions" }, save, " ", rm));
   });
 
@@ -1957,7 +1966,7 @@ async function pageChars(main) {
       h("label", { class: "row" }, dm, "Get a DM when a group is posted for an activity whose role I have"),
       h("p", { class: "muted small" }, "Same as 🔔 / 🔕 under the LFG panel or /lfg-dm.")),
     h("div", { class: "card" }, tabsRow,
-      h("p", { class: "muted small" }, "Each game (project) has its own characters. Class = its icon is shown next to your name in group posts. GS is checked by group requirements. The note is only for you — you see it when picking a character."),
+      h("p", { class: "muted small" }, "Each game (project) has its own characters. Class — any class of this project (no role needed); its icon is shown next to your name in group posts. GS is checked by group requirements. The note is only for you — you see it when picking a character."),
       data.characters.length ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
         h("thead", {}, h("tr", {}, h("th", {}, "Character"), h("th", {}, "Class"), h("th", {}, "GS"), h("th", {}, "Note"), h("th", {}))),
         h("tbody", {}, rows))) : empty("No characters yet."),

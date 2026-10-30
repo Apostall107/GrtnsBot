@@ -59,17 +59,17 @@ public sealed class CharacterModule(CharacterStore store, LfgProfileService prof
         await RespondAsync($"Added: **{Format.Sanitize(name.Trim())}**{scope.Label}", ephemeral: true);
     }
 
-    [SlashCommand("class", "Set the class role of a character (one of your roles); empty = remove")]
+    [SlashCommand("class", "Set the class of a character (one of the project's classes); empty = remove")]
     public async Task ClassAsync(
         [Summary("name", "Character name"), Autocomplete(typeof(CharacterAutocomplete))] string name,
-        [Summary("role", "One of your class roles, shown as an icon next to your name")] IRole? role = null,
+        [Summary("role", "One of the project's class roles, shown as an icon next to your name")] IRole? role = null,
         [Summary("project", "Game / project (empty = default)"), Autocomplete(typeof(ProjectAutocomplete))] string? project = null)
     {
         if (await ScopeAsync(project) is not { } scope || await ExactAsync(name, scope.Value) is not { } exact) return;
 
         if (role is not null && profiles.ClassRoles(Context.Guild.Id, Context.User.Id, scope.ProjectKey).All(r => r.Id != role.Id))
         {
-            await RespondAsync("You can only pick a class role you have (see LFG → Classes on the site).", ephemeral: true);
+            await RespondAsync("This class is not available in this project (see LFG → Classes on the site).", ephemeral: true);
             return;
         }
 
