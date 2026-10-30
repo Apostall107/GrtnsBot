@@ -124,7 +124,7 @@ public static partial class PanelApi
             return Results.Ok(guild.Roles
                 .Where(r => !r.IsEveryone && !r.IsManaged)
                 .OrderByDescending(r => r.Position)
-                .Select(r => new { id = r.Id.ToString(), name = r.Name, color = r.Color.RawValue == 0 ? null : $"#{r.Color.RawValue:x6}" }));
+                .Select(r => new { id = r.Id.ToString(), name = r.Name, color = r.Colors.PrimaryColor.RawValue == 0 ? null : $"#{r.Colors.PrimaryColor.RawValue:x6}" }));
         });
 
         yield return g.MapGet("/channels", (ulong guildId, DiscordSocketClient client) =>
@@ -932,7 +932,7 @@ public static partial class PanelApi
         {
             id = id.ToString(),
             name = role?.Name ?? "deleted role",
-            color = role is null || role.Color.RawValue == 0 ? null : $"#{role.Color.RawValue:x6}",
+            color = role is null || role.Colors.PrimaryColor.RawValue == 0 ? null : $"#{role.Colors.PrimaryColor.RawValue:x6}",
             exists = role is not null
         };
     }
