@@ -29,6 +29,8 @@ public sealed class GuildLfgSetup
     public Dictionary<string, Dictionary<ulong, string>> ProjectClassIcons { get; set; } = new();
     /// <summary>Категория для голосовых комнат сборов: "" — общая, иначе ключ проекта.</summary>
     public Dictionary<string, ulong> VoiceCategories { get; set; } = new();
+    /// <summary>Куда автоматически дублировать посты сборов (текстовые и голосовые каналы): "" — общий список, иначе ключ проекта.</summary>
+    public Dictionary<string, List<ulong>> AutoMirrors { get; set; } = new();
 }
 
 /// <summary>data/lfg-setup.json — проекты, проект по умолчанию, иконки классов (по серверам).</summary>
@@ -167,6 +169,32 @@ public sealed class LfgProjectStore
     {
         var key = Effective(guildId, projectKey)?.Key;
         return (key is null ? null : VoiceCategory(guildId, key)) ?? VoiceCategory(guildId, null);
+    }
+
+    /// <summary>Автодубли как заданы: projectKey null — общие, иначе только проекта.</summary>
+    public IReadOnlyList<ulong> AutoMirrors(ulong guildId, string? projectKey)
+    {
+        lock (_lock)
+            return Guild(guildId).AutoMirrors.TryGetValue(projectKey ?? "", out var list) ? list.ToList() : [];
+    }
+
+    /// <summary>Каналы для автодублей сбора: свои у проекта, иначе общие.</summary>
+    public IReadOnlyList<ulong> EffectiveAutoMirrors(ulong guildId, string? projectKey)
+    {
+        var key = Effective(guildId, projectKey)?.Key;
+        IReadOnlyList<ulong> own = key is null ? Array.Empty<ulong>() : AutoMirrors(guildId, key);
+        return own.Count > 0 ? own : AutoMirrors(guildId, null);
+    }
+
+    public void SetAutoMirrors(ulong guildId, string? projectKey, List<ulong> channelIds)
+    {
+        lock (_lock)
+        {
+            var g = Guild(guildId);
+            if (channelIds.Count == 0) g.AutoMirrors.Remove(projectKey ?? "");
+            else g.AutoMirrors[projectKey ?? ""] = channelIds;
+            Write();
+        }
     }
 
     public void SetVoiceCategory(ulong guildId, string? projectKey, ulong? categoryId)

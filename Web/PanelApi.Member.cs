@@ -364,9 +364,10 @@ public static partial class PanelApi
                 }),
                 // Админ может продублировать пост в другие каналы
                 mirrorChannels = access.IsAdmin(me)
-                    ? guild.TextChannels.Where(c => c is not SocketVoiceChannel and not SocketThreadChannel)
+                    ? guild.TextChannels.Where(c => c is not SocketThreadChannel)
                         .Where(c => guild.CurrentUser.GetPermissions(c) is { ViewChannel: true, SendMessages: true, EmbedLinks: true })
-                        .OrderBy(c => c.Position).Select(c => new { id = c.Id.ToString(), name = c.Name })
+                        .OrderBy(c => c is SocketVoiceChannel).ThenBy(c => c.Position)
+                        .Select(c => new { id = c.Id.ToString(), name = c is SocketVoiceChannel ? $"🔊 {c.Name}" : c.Name })
                     : null,
                 activities = activities.Get(guildId).Select(a => new { key = a.Key, name = a.Name, role = Role(guild, a.RoleId), projectKey = a.ProjectKey }),
                 templates = TemplatesDto(guild, templates),
@@ -411,7 +412,7 @@ public static partial class PanelApi
                     Requirements(guild, body.RequiredRoleIds), body.MinGs is > 0 and <= 99999 ? body.MinGs : null,
                     project?.Key,
                     // Дублировать пост в другие каналы может только админ
-                    access.IsAdmin(me) ? ParseIds(body.MirrorChannelIds).Where(id => guild.GetTextChannel(id) is not null).Take(5).ToList() : null,
+                    access.IsAdmin(me) ? ParseIds(body.MirrorChannelIds).Where(id => guild.GetTextChannel(id) is not null).Take(LfgPublisher.MaxMirrors).ToList() : null,
                     body.CreateVoice));
                 return Results.Ok(new { id = group.Id, jumpUrl, dmsStarted = dms });
             }

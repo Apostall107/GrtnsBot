@@ -329,7 +329,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
             comps.WithSelectMenu(new SelectMenuBuilder()
                 .WithCustomId($"lfg:mirror:{group.Id}")
                 .WithType(ComponentType.ChannelSelect)
-                .WithChannelTypes(ChannelType.Text, ChannelType.News)
+                .WithChannelTypes(ChannelType.Text, ChannelType.News, ChannelType.Voice)
                 .WithPlaceholder("📢 Also post this group in…")
                 .WithMinValues(1)
                 .WithMaxValues(5));
