@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Reflection;
 using System.Security.Claims;
 using System.Text.Json;
+using Discord;
 using Discord.WebSocket;
 using LfgBot.Services;
 using Microsoft.AspNetCore.Authentication;
@@ -38,6 +39,7 @@ public static class WebPanel
         var loginConfigured = !string.IsNullOrWhiteSpace(config["Web:ClientId"]) &&
                               !string.IsNullOrWhiteSpace(config["Web:ClientSecret"]);
         services.AddSingleton(new WebPanelState(loginConfigured));
+        services.AddHttpClient();
         services.AddSingleton<WebAccessStore>();
         services.AddSingleton<PanelAccess>();
         services.AddSingleton<IAuthorizationHandler, PanelAccessHandler>();
@@ -154,6 +156,14 @@ public static class WebPanel
         MapStatic(app, "/app.js", "app.js", "text/javascript; charset=utf-8");
         MapStatic(app, "/app.css", "app.css", "text/css; charset=utf-8");
 
+        // Иконка сайта = аватар бота (берётся из Discord, кэшируется на час)
+        app.MapGet("/favicon.png", async (DiscordSocketClient client, IHttpClientFactory http) =>
+        {
+            var bytes = await BotAvatar.GetAsync(client, http);
+            return bytes is null ? Results.NotFound() : Results.Bytes(bytes, "image/png");
+        });
+        app.MapGet("/favicon.ico", () => Results.Redirect("/favicon.png"));
+
         PanelApi.Map(app);
     }
 
@@ -183,6 +193,38 @@ public static class WebPanel
 }
 
 public sealed record WebPanelState(bool LoginConfigured);
+
+/// <summary>Аватар бота для иконки сайта: скачивается с CDN Discord и держится в памяти час.</summary>
+public static class BotAvatar
+{
+    private static byte[]? _bytes;
+    private static DateTimeOffset _loadedAt;
+    private static readonly SemaphoreSlim Gate = new(1, 1);
+
+    public static async Task<byte[]?> GetAsync(DiscordSocketClient client, IHttpClientFactory http)
+    {
+        if (_bytes is not null && DateTimeOffset.UtcNow - _loadedAt < TimeSpan.FromHours(1)) return _bytes;
+        if (client.CurrentUser is not { } bot) return _bytes;
+
+        await Gate.WaitAsync();
+        try
+        {
+            if (_bytes is not null && DateTimeOffset.UtcNow - _loadedAt < TimeSpan.FromHours(1)) return _bytes;
+            var url = bot.GetAvatarUrl(ImageFormat.Png, 128) ?? bot.GetDefaultAvatarUrl();
+            _bytes = await http.CreateClient().GetByteArrayAsync(url);
+            _loadedAt = DateTimeOffset.UtcNow;
+        }
+        catch (HttpRequestException)
+        {
+            // CDN недоступен — отдаём то, что было
+        }
+        finally
+        {
+            Gate.Release();
+        }
+        return _bytes;
+    }
+}
 
 public static class PanelClaims
 {

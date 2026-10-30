@@ -260,7 +260,7 @@ function renderLogin(message) {
   if (failed) history.replaceState(null, "", "/");
   document.getElementById("app").replaceChildren(
     h("div", { class: "card login" },
-      h("div", { class: "logo" }, "🛠️"),
+      h("img", { class: "logo-img", src: "/favicon.png", alt: "" }),
       h("h1", {}, "Greatness Bot"),
       h("p", {}, "Admin panel. Log in with your Discord account."),
       failed ? h("p", { class: "error-text" }, "Login was cancelled or failed. Try again.") : null,
@@ -344,7 +344,9 @@ function renderShell() {
 
   document.getElementById("app").replaceChildren(
     h("header", { class: "topbar" },
-      h("div", { class: "brand" }, h("span", { class: `dot ${connected ? "ok" : "bad"}`, title: `Bot: ${state.connection || "unknown"}` }), isAdmin() ? "Greatness Bot · Admin" : "Greatness Bot"),
+      h("div", { class: "brand" }, h("span", { class: "brand-logo" },
+        h("img", { src: "/favicon.png", alt: "" }), h("span", { class: `dot ${connected ? "ok" : "bad"}`, title: `Bot: ${state.connection || "unknown"}` })),
+        isAdmin() ? "Greatness Bot · Admin" : "Greatness Bot"),
       state.guilds.length ? guildSel : h("span", { class: "muted" }, "The bot is on no servers"),
       h("div", { class: "user" },
         state.me.avatarUrl ? h("img", { class: "avatar", src: state.me.avatarUrl, alt: "" }) : null,
