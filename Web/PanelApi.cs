@@ -88,6 +88,8 @@ public static partial class PanelApi
         MapLfgExtra(guild.MapGroup("/lfg").AddEndpointFilter(Require(PanelPermissions.Lfg)));
         MapLog(guild.MapGroup("/log").AddEndpointFilter(Require(PanelPermissions.Log)));
         MapSettings(api.MapGroup("/settings").AddEndpointFilter(Require(PanelPermissions.Settings)));
+        // Часовой пояс, автоудаление, напоминание — это настройки LFG: на сайте они во вкладке LFG (право LFG)
+        MapSettings(guild.MapGroup("/lfg/settings").AddEndpointFilter(Require(PanelPermissions.Lfg)));
         MapPosts(guild.MapGroup("/posts").AddEndpointFilter(Require(PanelPermissions.Posts)));
         MapBackup(api.MapGroup("/backup").AddEndpointFilter(Require(PanelPermissions.Access)));
         MapAccess(api.MapGroup("/access").AddEndpointFilter(Require(PanelPermissions.Access)));
