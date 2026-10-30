@@ -30,7 +30,7 @@ public sealed class TicketMessageService(DiscordSocketClient client, TicketStore
         return (updated, open.Count);
     }
 
-    private async Task<bool> RefreshAsync(Ticket ticket, TicketProject? project)
+    public async Task<bool> RefreshAsync(Ticket ticket, TicketProject? project)
     {
         if (client.GetGuild(ticket.GuildId)?.GetTextChannel(ticket.TextChannelId) is not { } channel) return false;
 

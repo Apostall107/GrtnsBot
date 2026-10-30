@@ -472,6 +472,81 @@ public static partial class PanelApi
             return Results.Ok();
         });
 
+        // Approve / Deny с сайта — как кнопки в тикете: роли или ЛС с причиной, сообщение в тикете, закрытие через 15 с
+        g.MapPost("/open/{ticketId}/approve", async (ulong guildId, string ticketId, ClaimsPrincipal user, DiscordSocketClient client,
+            TicketStore tickets, TicketService service, TicketMessageService messages) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            var t = tickets.FindTicket(ticketId);
+            if (t is null || t.GuildId != guildId) return Error("This ticket is already closed.");
+            if (t.ApprovedBy is not null) return Error("This application is already approved.");
+            var project = tickets.FindProject(guildId, t.ProjectKey);
+            if (project is null) return Error("This project was deleted.");
+            var roleIds = project.MemberRoleIds.Where(id => guild.GetRole(id) is not null).ToList();
+            if (roleIds.Count == 0) return Error("This project has no roles to give on Approve.");
+
+            IGuildUser? applicant = guild.GetUser(t.UserId);
+            applicant ??= await client.Rest.GetGuildUserAsync(guildId, t.UserId);
+            if (applicant is null) return Error("The applicant has left the server.");
+
+            var failed = new List<ulong>();
+            foreach (var roleId in roleIds)
+            {
+                try { await applicant.AddRoleAsync(roleId); }
+                catch (Discord.Net.HttpException) { failed.Add(roleId); }
+            }
+            if (failed.Count == roleIds.Count)
+                return Error("I couldn't give the roles — the bot needs Manage Roles and its role above them in Server Settings → Roles.");
+
+            var me = user.UserId()!.Value;
+            var by = (IUser?)client.GetUser(me) ?? await client.Rest.GetUserAsync(me);
+            var updated = tickets.UpdateTicket(ticketId, x => x.ApprovedBy = me) ?? t;
+            try { await messages.RefreshAsync(updated, project); } catch (Exception) { /* сообщение тикета могли удалить */ }
+
+            var granted = roleIds.Except(failed).ToList();
+            var mentions = string.Join(", ", granted.Select(r => $"<@&{r}>"));
+            var channel = guild.GetTextChannel(t.TextChannelId);
+            if (failed.Count > 0)
+            {
+                if (channel is not null)
+                    await channel.SendMessageAsync($"🎉 <@{t.UserId}> approved by <@{me}> (website) — {mentions} granted.\n" +
+                        $"⚠️ Couldn't give {string.Join(", ", failed.Select(r => $"<@&{r}>"))} — the ticket stays open.",
+                        allowedMentions: new AllowedMentions { UserIds = [t.UserId] });
+                return Results.Ok(new { closed = false, warning = "Some roles couldn't be given — the ticket stays open." });
+            }
+
+            if (channel is not null)
+                await channel.SendMessageAsync($"🎉 <@{t.UserId}> approved by <@{me}> (website) — {mentions} granted.\n" +
+                    $"🔒 This ticket will close in {(int)TicketService.CloseDelay.TotalSeconds} seconds.",
+                    allowedMentions: new AllowedMentions { UserIds = [t.UserId] });
+            await service.NotifyApprovedAsync(updated, project, granted);
+            service.CloseLater(updated, by, "approved", null);
+            return Results.Ok(new { closed = true });
+        });
+
+        g.MapPost("/open/{ticketId}/deny", async (ulong guildId, string ticketId, DenyBody body, ClaimsPrincipal user, DiscordSocketClient client,
+            TicketStore tickets, TicketService service) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            var t = tickets.FindTicket(ticketId);
+            if (t is null || t.GuildId != guildId) return Error("This ticket is already closed.");
+            if (t.ApprovedBy is not null) return Error("This application is already approved.");
+            var project = tickets.FindProject(guildId, t.ProjectKey);
+            var reason = string.IsNullOrWhiteSpace(body.Reason) ? null : body.Reason.Trim();
+            if (reason is { Length: > 500 }) return Error("Reason: up to 500 characters.");
+
+            var me = user.UserId()!.Value;
+            var by = (IUser?)client.GetUser(me) ?? await client.Rest.GetUserAsync(me);
+            if (guild.GetTextChannel(t.TextChannelId) is { } channel)
+                await channel.SendMessageAsync($"❌ <@{t.UserId}>'s application was denied by <@{me}> (website)." +
+                    (reason is null ? "" : $"\n**Reason:** {Format.Sanitize(reason)}") +
+                    $"\n🔒 This ticket will close in {(int)TicketService.CloseDelay.TotalSeconds} seconds.",
+                    allowedMentions: new AllowedMentions { UserIds = [t.UserId] });
+            await service.NotifyDeniedAsync(t, project, reason);
+            service.CloseLater(t, by, "denied", reason);
+            return Results.Ok();
+        });
+
         g.MapPost("/panel", (ulong guildId, ChannelBody body, DiscordSocketClient client, PanelService panels) =>
             PostAsync(client, guildId, body.ChannelId, ch => panels.PostAsync(ch, guildId, "tickets")));
     }
@@ -1088,3 +1163,5 @@ public sealed record CreatorBody(string? Template, int? Limit);
 public sealed record PanelTextBody(string? Title, string? Description, Dictionary<string, string>? Labels);
 public sealed record AccessBody(List<string>? Permissions);
 public sealed record DeleteMessagesBody(List<string>? MessageIds);
+
+public sealed record DenyBody(string? Reason);
