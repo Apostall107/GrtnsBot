@@ -199,9 +199,18 @@ function pickMemberDialog(title) {
 
 // ================= Shared UI pieces =================
 
+/** Tone (color) of an icon's module: sections are told apart by color, not only by text. */
+const ICON_TONES = {
+  "users": "blue", "users-round": "violet", "swords": "violet", "circle-plus": "violet", "user-round": "cyan", "user-plus": "cyan",
+  "ticket": "amber", "inbox": "amber", "file-pen-line": "amber", "headphones": "teal", "volume-2": "teal", "sliders-horizontal": "teal",
+  "megaphone": "pink", "chart-column": "green", "circle-check": "green", "crown": "amber"
+};
+const toneOf = ic => `tone-${ICON_TONES[ic] || "violet"}`;
+function toneChip(ic, size = 16) { return h("span", { class: `tone-chip ${toneOf(ic)}` }, icon(ic, size)); }
+
 /** Card heading with an icon and actions on the right. */
 function cardHead(ic, title, ...actions) {
-  return h("div", { class: "card-head" }, h("h2", { class: "with-icon" }, icon(ic, 18), title), ...actions);
+  return h("div", { class: "card-head" }, h("h2", { class: "with-icon" }, toneChip(ic, 16), title), ...actions);
 }
 
 /** Small uppercase label above a group of cards. */
@@ -209,14 +218,14 @@ function sectionLabel(text) { return h("div", { class: "section-label" }, text);
 
 /** Statistic card: icon, label, value, supporting text; clickable when onClick is given. */
 function statCard(ic, label, value, sub, onClick) {
-  return h(onClick ? "button" : "div", { class: `stat${onClick ? " clickable" : ""}`, onclick: onClick || null },
+  return h(onClick ? "button" : "div", { class: `stat ${toneOf(ic)}${onClick ? " clickable" : ""}`, onclick: onClick || null },
     h("div", { class: "stat-top" }, h("span", { class: "label" }, label), h("span", { class: "stat-icon" }, icon(ic, 16))),
     h("div", { class: "value" }, value), sub ? h("div", { class: "sub" }, sub) : null);
 }
 
 /** Empty state: what's missing and what to do next. */
 function emptyState(ic, title, text, action) {
-  return h("div", { class: "empty-state" }, h("span", { class: "es-icon" }, icon(ic, 20)),
+  return h("div", { class: "empty-state" }, h("span", { class: `es-icon ${toneOf(ic)}` }, icon(ic, 20)),
     h("div", {}, h("b", {}, title), text ? h("div", { class: "muted small" }, text) : null), action || null);
 }
 
@@ -562,8 +571,10 @@ function renderShell() {
   // ----- Sidebar: sections, Lucide icons, active route; collapses to icons on desktop, drawer on mobile
   const layout = h("div", { class: `layout${collapsed ? " collapsed" : ""}` });
   const closeDrawer = () => layout.classList.remove("drawer-open");
+  const NAV_TONES = { home: "violet", play: "violet", chars: "cyan", lfg: "violet", tickets: "amber", voice: "teal", content: "blue",
+    announce: "pink", overview: "green", log: "blue", settings: "cyan", access: "amber" };
   const navButton = ([key, ic, label]) => h("button", {
-    class: `nav-item${state.tab === key ? " active" : ""}`, title: label, "aria-current": state.tab === key ? "page" : null,
+    class: `nav-item tone-${NAV_TONES[key] || "violet"}${state.tab === key ? " active" : ""}`, title: label, "aria-current": state.tab === key ? "page" : null,
     onclick: () => { state.tab = key; store.set("gb.tab", key); renderShell(); }
   }, icon(ic, 18), h("span", { class: "nav-label" }, label));
   const navItems = [];
@@ -2374,7 +2385,7 @@ async function pageHome(main) {
     can("announce") ? ["megaphone", "Announcement", "Post as the bot", go("announce")] : null
   ].filter(Boolean);
   main.append(sectionLabel("Quick actions"), h("div", { class: "quick-actions" }, quick.map(([ic, title, sub, fn]) =>
-    h("button", { class: "quick-action", onclick: fn }, h("span", { class: "qa-icon" }, icon(ic, 18)),
+    h("button", { class: `quick-action ${toneOf(ic)}`, onclick: fn }, h("span", { class: "qa-icon" }, icon(ic, 18)),
       h("span", { class: "qa-text" }, h("b", {}, title), h("span", { class: "muted small" }, sub))))));
 
   // C. Personal activity
