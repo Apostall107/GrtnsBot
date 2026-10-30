@@ -203,7 +203,7 @@ function pickMemberDialog(title) {
 const ICON_TONES = {
   "users": "blue", "users-round": "violet", "swords": "violet", "circle-plus": "violet", "user-round": "cyan", "user-plus": "cyan",
   "ticket": "amber", "inbox": "amber", "file-pen-line": "amber", "headphones": "teal", "volume-2": "teal", "sliders-horizontal": "teal",
-  "megaphone": "pink", "chart-column": "green", "circle-check": "green", "crown": "amber"
+  "megaphone": "pink", "chart-column": "green", "circle-check": "green", "crown": "amber", "bell": "amber"
 };
 const toneOf = ic => `tone-${ICON_TONES[ic] || "violet"}`;
 function toneChip(ic, size = 16) { return h("span", { class: `tone-chip ${toneOf(ic)}` }, icon(ic, size)); }
@@ -2731,14 +2731,15 @@ function playCard(g) {
 // ================= Member: characters =================
 
 async function pageChars(main) {
-  main.append(h("div", { class: "card-head" }, h("h1", {}, "🧙 My characters"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
-  const holder = h("div", {}, h("div", { class: "muted" }, "Loading…"));
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "My characters"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
+  const holder = h("div", {}, h("div", { class: "card" }, skeletonLines(3)));
   main.append(holder);
 
   let data;
   const wanted = store.get("gb.charProject") || "";
   try { data = await gApi("GET", `/me/characters?project=${encodeURIComponent(wanted)}`); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
   const pq = data.project ? `?project=${encodeURIComponent(data.project)}` : "";
+  const project = data.projects.find(p => p.key === data.project);
 
   // Projects (games): each has its own characters; locked without the project role
   const projTabs = data.projects.length ? h("div", { class: "tabs" },
@@ -2746,64 +2747,80 @@ async function pageChars(main) {
       class: `btn secondary${p.key === data.project ? " active-tab" : ""}`, disabled: !p.allowed,
       title: p.allowed ? "" : `Needs ${p.roles.map(r => "@" + r.name).join(" or ")}`,
       onclick: () => { store.set("gb.charProject", p.key); refresh(); }
-    }, p.allowed ? p.name : `🔒 ${p.name}`))) : null;
+    }, icon(p.allowed ? "gamepad-2" : "lock", 15), p.name))) : null;
 
-  const dm = h("input", { type: "checkbox", checked: data.dmEnabled });
+  // Notifications
+  const dm = h("input", { type: "checkbox", class: "switch", checked: data.dmEnabled, "aria-label": "Group DMs" });
   dm.addEventListener("change", () => act(null, () => gApi("PUT", "/me/dm", { enabled: dm.checked }),
     dm.checked ? "Group DMs turned on." : "Group DMs turned off."));
+  const prefs = h("div", { class: "card pref-row" }, toneChip("bell", 16),
+    h("div", { class: "grow" }, h("b", {}, "Group DMs"),
+      h("div", { class: "muted small" }, "Get a DM when a group is posted for an activity whose role you have. Same as 🔔 / 🔕 under the LFG panel or /lfg-dm.")),
+    dm);
 
-  const nameIn = h("input", { placeholder: "Character name", maxlength: "32" });
-  const add = h("button", { class: "btn" }, "➕ Add character");
-  add.addEventListener("click", async () => {
-    if (await act(add, () => gApi("POST", `/me/characters${pq}`, { name: nameIn.value }), "Character added.") !== undefined) refresh();
-  });
-
-  const rows = data.characters.map(c => {
-    // <option> can't show images: unicode icons go in the text, server/bot emojis are shown next to the list
-    const isCustom = icon => /^<a?:[^:]+:\d+>$/.test(icon || "");
-    const cls = h("select", {}, h("option", { value: "" }, "No class"),
+  const isCustom = ic => /^<a?:[^:]+:\d+>$/.test(ic || "");
+  const cards = data.characters.map(c => {
+    // <option> can't show images: unicode icons go in the text, server/bot emojis are shown in the card header
+    const cls = h("select", { "aria-label": "Class" }, h("option", { value: "" }, "No class"),
       data.classRoles.map(r => h("option", { value: r.id }, `${r.icon && !isCustom(r.icon) ? r.icon + " " : ""}${r.name}`)));
     if (c.classRole) cls.value = c.classRole.id;
-    const clsIcon = h("span", { style: "display:inline-flex;width:20px;justify-content:center" });
+    const badge = h("span", { class: "char-icon big" });
+    const clsName = h("span", { class: "muted small" });
     const syncIcon = () => {
       const r = data.classRoles.find(x => x.id === cls.value);
-      clsIcon.replaceChildren(...[r ? classMark({ classIcon: r.icon, classRole: r }) : null].filter(Boolean));
+      badge.replaceChildren(r && r.icon ? classMark({ classIcon: r.icon, classRole: r }) : icon("user-round", 18));
+      clsName.textContent = r ? r.name : "No class";
     };
     cls.addEventListener("change", syncIcon);
     syncIcon();
-    const note = h("input", { maxlength: String(data.maxComment), placeholder: "Note, e.g. can lead", value: c.comment || "", style: "width:100%" });
-    const gs = h("input", { type: "number", min: "0", max: "99999", placeholder: "GS", value: c.gs ?? "", style: "width:90px" });
-    const save = h("button", { class: "btn secondary" }, "Save");
-    save.addEventListener("click", () => act(save,
-      () => gApi("PUT", `/me/characters/${encodeURIComponent(c.name)}${pq}`, { classRoleId: cls.value || null, comment: note.value, gs: gs.value === "" ? null : Number(gs.value) }),
-      r => r.groupsUpdated ? `Saved. Updated ${r.groupsUpdated} active group(s).` : "Saved."));
-    const rm = h("button", { class: "btn ghost" }, "Remove");
+    const note = h("input", { maxlength: String(data.maxComment), placeholder: "e.g. can lead, healer alt", value: c.comment || "" });
+    const gs = h("input", { type: "number", min: "0", max: "99999", placeholder: "—", value: c.gs ?? "" });
+    const save = h("button", { class: "btn" }, icon("save", 15), "Save");
+    save.addEventListener("click", () => {
+      if (gs.value !== "" && (Number(gs.value) < 0 || Number(gs.value) > 99999)) return toast("GS: 0–99999.", "warn");
+      act(save, () => gApi("PUT", `/me/characters/${encodeURIComponent(c.name)}${pq}`, { classRoleId: cls.value || null, comment: note.value, gs: gs.value === "" ? null : Number(gs.value) }),
+        r => r.groupsUpdated ? `Saved. Updated ${r.groupsUpdated} active group(s).` : "Saved.");
+    });
+    const rm = h("button", { class: "btn danger" }, icon("trash-2", 15), "Remove");
     rm.addEventListener("click", async () => {
       if (!await confirmDialog(`Remove ${c.name}?`, "The character, its class and note are deleted.", "Remove")) return;
       if (await act(rm, () => gApi("DELETE", `/me/characters/${encodeURIComponent(c.name)}${pq}`), "Removed.") !== undefined) refresh();
     });
     // Rename: class, note, GS and active groups follow the new name
-    const rename = h("button", { class: "btn ghost", title: "Rename", style: "padding:2px 6px" }, "✏️");
+    const rename = h("button", { class: "btn ghost icon-only sm", title: "Rename", "aria-label": `Rename ${c.name}` }, icon("pencil", 15));
     rename.addEventListener("click", async () => {
       const name = await promptDialog(`Rename ${c.name}`, c.name);
       if (!name || name === c.name) return;
       if (await act(rename, () => gApi("POST", `/me/characters/${encodeURIComponent(c.name)}/rename${pq}`, { name }),
         r => r.groupsUpdated ? `Renamed. Updated ${r.groupsUpdated} active group(s).` : "Renamed.") !== undefined) refresh();
     });
-    return h("tr", {}, h("td", {}, h("div", { class: "row", style: "flex-wrap:nowrap;gap:4px" }, h("b", {}, c.name), rename)), h("td", {}, h("div", { class: "row", style: "flex-wrap:nowrap" }, clsIcon, cls)), h("td", {}, gs), h("td", { style: "min-width:220px" }, note),
-      h("td", { class: "actions" }, save, " ", rm));
+    return h("div", { class: "card char-edit" },
+      h("div", { class: "char-edit-head" }, badge,
+        h("div", { class: "grow" }, h("div", { class: "row", style: "gap:4px;flex-wrap:nowrap" }, h("b", { class: "char-name" }, c.name), rename), clsName),
+        c.gs ? h("span", { class: "gs big" }, `GS ${c.gs}`) : null),
+      h("div", { class: "char-fields" },
+        h("div", { class: "field" }, h("label", {}, "Class"), cls),
+        h("div", { class: "field gs-field" }, h("label", {}, "GS"), gs)),
+      h("div", { class: "field" }, h("label", {}, "Personal note — only you see it"), note),
+      h("div", { class: "char-actions" }, save, h("span", { class: "spacer" }), rm));
   });
 
-  holder.replaceChildren(
-    h("div", { class: "card" },
-      h("label", { class: "row" }, dm, "Get a DM when a group is posted for an activity whose role I have"),
-      h("p", { class: "muted small" }, "Same as 🔔 / 🔕 under the LFG panel or /lfg-dm.")),
-    h("div", { class: "card" }, projTabs,
-      h("p", { class: "muted small" }, "Each game (project) has its own characters. Class — any class of this project (no role needed); its icon is shown next to your name in group posts. GS is checked by group requirements. The note is only for you — you see it when picking a character."),
-      data.characters.length ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
-        h("thead", {}, h("tr", {}, h("th", {}, "Character"), h("th", {}, "Class"), h("th", {}, "GS"), h("th", {}, "Note"), h("th", {}))),
-        h("tbody", {}, rows))) : empty("No characters yet."),
-      h("div", { class: "row", style: "margin-top:12px" }, nameIn, add)));
+  // Add a character
+  const nameIn = h("input", { placeholder: "Character name", maxlength: "32" });
+  const add = h("button", { class: "btn" }, icon("plus", 15), "Add");
+  const doAdd = async () => {
+    if (!nameIn.value.trim()) return toast("Enter a name.", "warn");
+    if (await act(add, () => gApi("POST", `/me/characters${pq}`, { name: nameIn.value }), "Character added.") !== undefined) refresh();
+  };
+  add.addEventListener("click", doAdd);
+  nameIn.addEventListener("keydown", e => { if (e.key === "Enter") doAdd(); });
+  const addCard = h("div", { class: "card char-add" }, h("span", { class: "es-icon tone-cyan" }, icon("user-plus", 20)),
+    h("div", { class: "grow" }, h("b", {}, "New character"), h("div", { class: "muted small" }, project ? `In ${project.name}` : "Saved for sign-ups")),
+    h("div", { class: "row" }, h("div", { class: "grow" }, nameIn), add));
+
+  holder.replaceChildren(prefs, projTabs,
+    h("p", { class: "muted small", style: "margin:-6px 0 14px" }, "Each game has its own characters. Class — any class of the project (its icon is shown after your name in group posts). GS is checked by group requirements."),
+    h("div", { class: "char-edit-grid" }, cards, addCard));
 }
 
 // ================= Access (owner only) =================
