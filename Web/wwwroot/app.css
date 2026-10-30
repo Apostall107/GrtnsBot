@@ -1229,3 +1229,17 @@ dialog::backdrop { -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px
 .chip, .check-list label, .row-check, .filter-chip { position: relative; }
 .chip input[type=checkbox], .check-list input[type=checkbox] { left: 0; top: 0; }
 dialog[open]:has(.check-list, .pick-list, .guide-body) { overflow: clip; }
+
+/* Owner: «view as member» */
+.menu-item.view-as { cursor: pointer; }
+.view-as-pill {
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 999px; cursor: pointer;
+  font: inherit; font-size: 12.5px; font-weight: 600; color: #FFD98A;
+  background: linear-gradient(180deg, rgba(255, 187, 51, .24), rgba(255, 187, 51, .08)); border: 1px solid rgba(255, 187, 51, .5);
+  box-shadow: 0 0 12px rgba(255, 187, 51, .2);
+}
+.view-as-pill:hover { box-shadow: 0 0 18px rgba(255, 187, 51, .4); color: #fff; }
+@media (max-width: 640px) { .view-as-pill { padding: 0 8px; font-size: 0; gap: 2px; } .view-as-pill .icon { font-size: 12px; } }
+.user-pop { min-width: 260px; z-index: 50; background-color: rgba(22, 26, 40, .98); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.user-pop .who span { display: block; }
+.menu-item.view-as span { white-space: nowrap; }

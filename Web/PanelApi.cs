@@ -36,6 +36,7 @@ public static partial class PanelApi
                 authenticated = true,
                 allowed = access.IsAllowed(id),
                 isOwner = access.IsOwner(id),
+                viewAsMember = access.ViewingAsMember(id),
                 isAdmin = access.IsAdmin(id),
                 permissions = access.Permissions(id),
                 memberGuilds = access.MemberGuilds(id).Select(x => x.ToString()),
