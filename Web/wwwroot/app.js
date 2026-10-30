@@ -1684,10 +1684,11 @@ function rescheduleDialog(g, url) {
 /** Attendance toggle for a seated member: not marked → came → no-show → not marked. */
 function attendanceButton(s, url) {
   const next = s.attended === null || s.attended === undefined ? true : s.attended ? false : null;
-  const label = s.attended === true ? "✅" : s.attended === false ? "❌" : "◻️";
+  const ic = s.attended === true ? "circle-check" : s.attended === false ? "circle-x" : "circle-dot";
+  const cls = s.attended === true ? " att-came" : s.attended === false ? " att-miss" : "";
   const title = s.attended === true ? "Came — click: no-show" : s.attended === false ? "No-show — click: clear" : "Not marked — click: came";
-  return h("button", { class: "btn ghost", title, style: "padding:2px 6px",
-    onclick: () => act(null, () => gApi("POST", url, { userId: s.member.id, attended: next })).then(r => { if (r !== undefined) refresh(); }) }, label);
+  return h("button", { class: `btn ghost icon-only sm${cls}`, title, "aria-label": title,
+    onclick: () => act(null, () => gApi("POST", url, { userId: s.member.id, attended: next })).then(r => { if (r !== undefined) refresh(); }) }, icon(ic, 16));
 }
 
 function requirementsLine(req) {
@@ -2582,7 +2583,7 @@ async function pagePlay(main) {
   // Create a group (like /lfg) — collapsed by default
   const createBody = h("div", { style: "display:none" });
   const toggle = h("button", { class: "btn" }, "➕ Create a group");
-  const createCard = h("div", { class: "card" }, h("div", { class: "card-head" }, h("h2", {}, "Create a group"), toggle),
+  const createCard = h("div", { class: "card" }, cardHead("circle-plus", "Create a group", toggle),
     h("p", { class: "muted small" }, "Posted like /lfg in Discord. You are the organizer and take slot 1 with your last used character."),
     createBody);
   let formLoaded = false;
@@ -2616,46 +2617,62 @@ async function pagePlay(main) {
   let data;
   try { data = await gApi("GET", "/me/groups"); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
   if (tab !== "all") data.groups = data.groups.filter(g => g.projectKey === tab);
-  holder.replaceChildren(h("h2", {}, "Active groups"), data.groups.length
+  holder.replaceChildren(sectionLabel(`Active groups · ${data.groups.length}`), data.groups.length
     ? h("div", { class: "grid2" }, data.groups.map(g => playCard(g)))
-    : h("div", { class: "card" }, empty("No active groups right now.")));
+    : h("div", { class: "card" }, emptyState("users-round", "No active groups right now", "Be the first — create a group and others will join.",
+      h("button", { class: "btn", onclick: () => { if (createBody.style.display === "none") toggle.click(); window.scrollTo({ top: 0, behavior: "smooth" }); } }, icon("plus", 15), "Create a group"))));
+}
+
+/** Role pill for a slot: DD / Tank / Sup / All — icon + text, color only as an extra hint. */
+const ROLE_STYLE = { DD: ["swords", "role-dd"], Tank: ["shield", "role-tank"], Sup: ["circle-plus", "role-sup"], All: ["users", "role-all"] };
+function rolePill(label) {
+  const [ic, cls] = ROLE_STYLE[label] || ROLE_STYLE.All;
+  return h("span", { class: `role-pill ${cls}` }, icon(ic, 12), label);
 }
 
 function playCard(g) {
   const characters = g.characters || [];
+  const gid = encodeURIComponent(g.id);
   // Organizer tools (like ⚙️ Manage in Discord): group ⇄ reserve
   const roster$ = (action, m, okText) => act(null,
-    () => gApi("POST", `/me/groups/${encodeURIComponent(g.id)}/roster`, { action, userId: m.id }), okText)
+    () => gApi("POST", `/me/groups/${gid}/roster`, { action, userId: m.id }), okText)
     .then(r => { if (r !== undefined) refresh(); });
-  const tool = (icon, title, fn) => h("button", { class: "btn ghost", title, onclick: fn, style: "padding:2px 6px" }, icon);
+  const tool = (ic, title, fn) => h("button", { class: "btn ghost icon-only sm", title, "aria-label": title, onclick: fn }, icon(ic, 15));
   const org = g.isOrganizer;
+  const meId = state.me && state.me.id;
 
-  const roster = h("ul", { class: "slots" }, g.slots.map((s, i) => h("li", {},
-    h("span", { class: "num" }, i + 1), h("span", {}, s.emoji),
-    s.member ? h("span", { class: "row", style: "gap:4px" }, member(s.member), classMark(s)) : h("span", { class: "free" }, `free (${s.slotRole})`),
-    h("span", { class: "char" }, s.character || "", s.gs ? ` · GS ${s.gs}` : ""),
-    org && s.member && g.started ? attendanceButton(s, `/me/groups/${encodeURIComponent(g.id)}/attendance`) : null,
-    org && s.member && s.member.id !== g.owner.id ? tool("⬇️", "Move to reserve", () => roster$("toReserve", s.member, "Moved to the reserve.")) : null)));
-  const reserve = g.reserve.length ? h("div", { style: "margin-top:8px" }, h("div", { class: "muted small" }, `Reserve (${g.reserve.length})`),
-    h("ul", { class: "slots" }, g.reserve.map(r => h("li", {}, h("span", {}, r.emoji),
-      h("span", { class: "row", style: "gap:4px" }, member(r.member), classMark(r)),
-      h("span", { class: "char" }, r.character || "", r.gs ? ` · GS ${r.gs}` : ""),
-      org ? h("span", {},
-        tool("⬆️", "Move into the group (sends a DM)", () => roster$("promote", r.member, "Moved into the group, DM sent.")),
-        tool("✖️", "Remove from the reserve", async () => {
-          if (await confirmDialog(`Remove ${r.member.name} from the reserve?`, "They are taken out of this group.", "Remove")) roster$("removeReserve", r.member, "Removed from the reserve.");
-        })) : null)))) : null;
-  const closeBtn = org ? h("button", { class: "btn danger" }, "🗑️ Close group") : null;
+  // Roster: taken slots and open slots look different (not only by color)
+  const roster = h("div", { class: "roster" }, g.slots.map((s, i) => s.member
+    ? h("div", { class: `slot taken${s.member.id === meId ? " me" : ""}` },
+        h("span", { class: "slot-num" }, i + 1), rolePill(s.role || s.slotRole),
+        h("span", { class: "slot-who" }, member(s.member), classMark(s)),
+        h("span", { class: "slot-char" }, s.character || "", s.gs ? h("span", { class: "gs" }, `GS ${s.gs}`) : null),
+        org && g.started ? attendanceButton(s, `/me/groups/${gid}/attendance`) : null,
+        org && s.member.id !== g.owner.id ? tool("arrow-right", "Move to reserve", () => roster$("toReserve", s.member, "Moved to the reserve.")) : null)
+    : h("div", { class: "slot open" },
+        h("span", { class: "slot-num" }, i + 1), rolePill(s.slotRole),
+        h("span", { class: "slot-open-text" }, icon("circle-plus", 14), "Open slot"))));
+  const reserve = g.reserve.length ? h("details", { class: "reserve", open: org },
+    h("summary", {}, icon("clock", 14), `Reserve · ${g.reserve.length}`),
+    h("div", { class: "roster" }, g.reserve.map(r => h("div", { class: "slot taken reserve-row" },
+      rolePill(r.role || "All"), h("span", { class: "slot-who" }, member(r.member), classMark(r)),
+      h("span", { class: "slot-char" }, r.character || "", r.gs ? h("span", { class: "gs" }, `GS ${r.gs}`) : null),
+      org ? tool("arrow-left", "Move into the group (sends a DM)", () => roster$("promote", r.member, "Moved into the group, DM sent.")) : null,
+      org ? tool("x", "Remove from the reserve", async () => {
+        if (await confirmDialog(`Remove ${r.member.name} from the reserve?`, "They are taken out of this group.", "Remove")) roster$("removeReserve", r.member, "Removed from the reserve.");
+      }) : null)))) : null;
+
+  const closeBtn = org ? h("button", { class: "btn danger" }, icon("trash-2", 15), "Close group") : null;
   if (closeBtn) closeBtn.addEventListener("click", async () => {
     if (!await confirmDialog(`Close ${g.activity}?`, "The post is deleted in Discord. Copy the invites first if you need them.", "Close & delete")) return;
-    if (await act(closeBtn, () => gApi("POST", `/me/groups/${encodeURIComponent(g.id)}/close`), "Group closed.") !== undefined) refresh();
+    if (await act(closeBtn, () => gApi("POST", `/me/groups/${gid}/close`), "Group closed.") !== undefined) refresh();
   });
 
   // Sign-up form: role + character (saved or new)
   const free = v => g.canJoin[v] || (g.me && g.me.status === "group" && g.me.role === v);
-  const role = h("select", {}, ROLE_CHOICES.map(([v, l]) => h("option", { value: v }, free(v) ? l : `${l} (reserve)`)));
-  const charSel = h("select", {}, characters.map(c => h("option", { value: c }, c)), h("option", { value: "" }, "➕ New character…"));
-  const newChar = h("input", { placeholder: "Character name", maxlength: "32", style: "width:160px" });
+  const role = h("select", { "aria-label": "Role" }, ROLE_CHOICES.map(([v, l]) => h("option", { value: v }, free(v) ? l : `${l} (reserve)`)));
+  const charSel = h("select", { "aria-label": "Character" }, characters.map(c => h("option", { value: c }, c)), h("option", { value: "" }, "+ New character…"));
+  const newChar = h("input", { placeholder: "Character name", maxlength: "32", style: "width:160px", "aria-label": "New character name" });
   const sync = () => { newChar.style.display = charSel.value ? "none" : ""; };
   charSel.addEventListener("change", sync);
   if (g.me) {
@@ -2664,41 +2681,51 @@ function playCard(g) {
   }
   sync();
 
-  const join = h("button", { class: "btn" }, g.me ? "🔁 Switch" : "✅ Sign up");
+  const join = h("button", { class: "btn" }, icon(g.me ? "repeat" : "check", 15), g.me ? "Switch" : "Sign up");
   join.addEventListener("click", async () => {
     const character = charSel.value || newChar.value.trim();
     if (!character) return toast("Pick or enter a character.", "warn");
-    const res = await act(join, () => gApi("POST", `/me/groups/${encodeURIComponent(g.id)}/join`, { role: role.value, character }));
+    const res = await act(join, () => gApi("POST", `/me/groups/${gid}/join`, { role: role.value, character }));
     if (res === undefined) return;
     toast(res.message);
     refresh();
   });
-  const leave = h("button", { class: "btn secondary" }, "Leave");
+  const leave = h("button", { class: "btn secondary" }, icon("log-out", 15), "Leave");
   leave.addEventListener("click", async () => {
     if (!await confirmDialog(`Leave ${g.activity}?`, "Your slot becomes free.", "Leave")) return;
-    if (await act(leave, () => gApi("POST", `/me/groups/${encodeURIComponent(g.id)}/leave`), "You left the group.") !== undefined) refresh();
+    if (await act(leave, () => gApi("POST", `/me/groups/${gid}/leave`), "You left the group.") !== undefined) refresh();
   });
 
-  const status = org ? h("span", { class: "badge ok" }, "organizer")
-    : g.me ? h("span", { class: `badge ${g.me.status === "group" ? "ok" : "wait"}` }, g.me.status === "group" ? "you're in" : "reserve")
+  const full = g.filled >= g.size;
+  const status = g.closed ? h("span", { class: "badge lock" }, icon("lock", 12), "Closed")
+    : full ? h("span", { class: "badge ok" }, icon("check", 12), "Full")
+    : h("span", { class: "badge recruiting" }, h("span", { class: "pulse" }), "Recruiting");
+  const mine = org ? h("span", { class: "badge" }, icon("crown", 12), "Organizer")
+    : g.me ? h("span", { class: `badge ${g.me.status === "group" ? "ok" : "wait"}` }, icon(g.me.status === "group" ? "user-check" : "clock", 12), g.me.status === "group" ? "You're in" : "Reserve")
     : null;
+  const req = g.requirements ? h("div", { class: "meta-item" }, icon("shield", 14),
+    g.requirements.roles.map(r => roleChip(r)), g.requirements.minGs ? h("span", { class: "chip" }, `GS ${g.requirements.minGs}+`) : null) : null;
 
-  return h("div", { class: "card", style: "margin:0" },
-    h("div", { class: "card-head" }, h("h3", {}, g.activity), status, h("span", { class: "badge ok" }, `${g.filled}/${g.size}`)),
-    g.project ? h("div", { class: "muted small" }, `🎮 ${g.project}`) : null,
-    h("div", { class: "muted small" }, "Organizer: ", member(g.owner)),
-    h("div", { class: "muted small" }, `Start: ${fmtDate(g.startsAt)}`, g.channel ? ` · #${g.channel}` : ""),
-    requirementsLine(g.requirements),
-    h("div", { style: "margin-bottom:8px" }),
+  return h("div", { class: `card group-card${full ? " is-full" : ""}`, style: "margin:0" },
+    h("div", { class: "group-head" },
+      h("div", { class: "group-title" },
+        g.project ? h("span", { class: "project-chip" }, icon("gamepad-2", 12), g.project) : null,
+        h("h3", {}, g.activity)),
+      h("div", { class: "group-state" }, status, capacity(g.filled, g.size))),
+    h("div", { class: "group-meta" },
+      h("div", { class: "meta-item" }, icon("crown", 14), member(g.owner)),
+      h("div", { class: "meta-item" }, icon("calendar-clock", 14), g.startsAt ? fmtDate(g.startsAt) : "No time set"),
+      g.channel ? h("div", { class: "meta-item" }, icon("hash", 14), g.channel) : null,
+      mine, req),
     roster, reserve,
-    g.closed ? h("div", { class: "muted", style: "margin-top:10px" }, "Signups are closed.") :
-      g.blocked && !g.me ? h("div", { class: "muted small", style: "margin-top:10px" }, `🔒 ${g.blocked}`) :
-      h("div", { class: "row", style: "margin-top:12px" }, role, charSel, newChar, join, g.me && !org ? leave : null),
-    h("div", { class: "row", style: "margin-top:8px" },
-      h("a", { class: "btn ghost", href: g.jumpUrl, target: "_blank", rel: "noopener" }, "Open in Discord"),
-      g.voiceUrl ? h("a", { class: "btn btn-refresh", href: g.voiceUrl, target: "_blank", rel: "noopener", title: "Open the group's voice room in Discord" }, "🔊 Voice room") : null,
-      org ? h("button", { class: "btn secondary", onclick: () => rescheduleDialog(g, `/me/groups/${encodeURIComponent(g.id)}/time`) }, "🕒 Time") : null,
-      closeBtn));
+    g.closed ? h("div", { class: "muted small group-note" }, icon("lock", 14), "Signups are closed.") :
+      g.blocked && !g.me ? h("div", { class: "muted small group-note" }, icon("lock", 14), g.blocked) :
+      h("div", { class: "group-join" }, role, charSel, newChar, join, g.me && !org ? leave : null),
+    h("div", { class: "group-actions" },
+      h("a", { class: "btn secondary", href: g.jumpUrl, target: "_blank", rel: "noopener" }, icon("external-link", 15), "Open in Discord"),
+      g.voiceUrl ? h("a", { class: "btn secondary tone-teal voice-btn", href: g.voiceUrl, target: "_blank", rel: "noopener", title: "Open the group's voice room in Discord" }, icon("volume-2", 15), "Voice room") : null,
+      org ? h("button", { class: "btn secondary", onclick: () => rescheduleDialog(g, `/me/groups/${gid}/time`) }, icon("clock", 15), "Time") : null,
+      closeBtn ? h("span", { class: "spacer" }) : null, closeBtn));
 }
 
 // ================= Member: characters =================

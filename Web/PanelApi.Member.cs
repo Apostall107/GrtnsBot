@@ -102,6 +102,7 @@ public static partial class PanelApi
                         {
                             emoji = (s.TakenAs ?? s.Role).Emoji(),
                             slotRole = s.Role.Label(),
+                            role = (s.TakenAs ?? s.Role).Label(),
                             member = s.UserId is { } u ? Member(guild, u) : null,
                             character = s.CharacterName,
                             classRole = s.ClassRoleId is { } cr ? Role(guild, cr) : null,
@@ -112,6 +113,7 @@ public static partial class PanelApi
                         reserve = x.Reserve.Select(r => new
                         {
                             emoji = r.Role.Emoji(),
+                            role = r.Role.Label(),
                             member = Member(guild, r.UserId),
                             character = r.CharacterName,
                             classRole = r.ClassRoleId is { } rr ? Role(guild, rr) : null,
