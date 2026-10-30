@@ -233,7 +233,7 @@ public static partial class PanelApi
 
             ulong? roleId = ParseId(body.ClassRoleId);
             if (roleId is { } r && profiles.ClassRoles(guildId, me, projects.Effective(guildId, string.IsNullOrWhiteSpace(project) ? null : project)?.Key)
-                    .All(x => x.Id != r)) return Error("You can't pick this class role.");
+                    .All(x => x.Id != r)) return Error("This class is not available in this project.");
             if (body.Comment is { Length: > CharacterStore.MaxCommentLength }) return Error($"Note: up to {CharacterStore.MaxCommentLength} characters.");
             if (body.Gs is < 0 or > 99999) return Error("GS: 0–99999.");
 
