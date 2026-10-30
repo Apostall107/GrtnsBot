@@ -285,3 +285,17 @@ select { max-width: 100%; text-overflow: ellipsis; }
 .check-list label { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
 .check-list label:hover { background: var(--panel-2); }
 .badge { white-space: nowrap; }
+
+/* @ / # suggestions in text fields */
+.mention-wrap { position: relative; }
+.mention-pop {
+  position: absolute; z-index: 30; width: 280px; max-height: 260px; overflow-y: auto;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.45); padding: 4px;
+}
+.mention-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; white-space: nowrap; overflow: hidden; }
+.mention-item.active, .mention-item:hover { background: var(--accent); color: #fff; }
+.mention-item.active .muted, .mention-item:hover .muted { color: #e3e5ff; }
+.swatch-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+.mention { border-radius: 4px; padding: 0 3px; font-weight: 500; }
+.mention.role, .mention.user { background: rgba(88,101,242,.3); color: #c9cdfb; }
+.mention.channel { background: rgba(88,101,242,.2); color: #c9cdfb; }

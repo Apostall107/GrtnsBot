@@ -197,6 +197,136 @@ function pickMemberDialog(title) {
   });
 }
 
+// ================= Mentions: @ / # suggestions in text fields =================
+
+const knownUsers = new Map(); // id → name (for showing <@id> as @name)
+const MENTION_RE = /<@&(\d+)>|<@!?(\d+)>|<#(\d+)>|@everyone|@here/g;
+
+/** Name of a mention code for display. */
+function mentionName(m, roleId, userId, channelId) {
+  if (roleId) { const r = state.roles.find(x => x.id === roleId); return { cls: "role", text: `@${r ? r.name : "unknown role"}` }; }
+  if (userId) return { cls: "user", text: `@${knownUsers.get(userId) || "user " + userId.slice(-4)}` };
+  if (channelId) {
+    const c = [...state.channels.text, ...state.channels.voice].find(x => x.id === channelId);
+    return { cls: "channel", text: c ? `#${c.name}` : "#unknown" };
+  }
+  return { cls: "role", text: m };
+}
+
+/** Text with mention codes shown as highlighted names. */
+function renderMentions(text) {
+  const out = [];
+  let last = 0;
+  for (const m of text.matchAll(MENTION_RE)) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    const n = mentionName(m[0], m[1], m[2], m[3]);
+    out.push(h("span", { class: `mention ${n.cls}`, title: m[0] }, n.text));
+    last = m.index + m[0].length;
+  }
+  out.push(text.slice(last));
+  return out;
+}
+
+/** Caret position (px) inside a textarea — via a hidden mirror element. */
+function caretCoords(ta) {
+  const cs = getComputedStyle(ta);
+  const mirror = h("div", {});
+  for (const p of ["fontFamily", "fontSize", "fontWeight", "lineHeight", "letterSpacing", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+    "borderTopWidth", "borderLeftWidth", "boxSizing", "whiteSpace", "wordWrap", "tabSize"]) mirror.style[p] = cs[p];
+  Object.assign(mirror.style, { position: "absolute", visibility: "hidden", whiteSpace: "pre-wrap", wordWrap: "break-word", width: `${ta.clientWidth}px`, top: "0", left: "-9999px" });
+  mirror.textContent = ta.value.slice(0, ta.selectionStart);
+  const marker = h("span", {}, "​");
+  mirror.append(marker);
+  document.body.append(mirror);
+  const pos = { top: marker.offsetTop - ta.scrollTop, left: marker.offsetLeft, line: parseFloat(cs.lineHeight) || 20 };
+  mirror.remove();
+  return pos;
+}
+
+/**
+ * Discord-like suggestions in a textarea: type @ → @everyone/@here, roles, people; # → channels.
+ * Arrows + Enter/Tab pick, Esc closes. Inserts <@&role>, <@user>, <#channel>. onInsert(kind) is called after an insert.
+ */
+function attachMentions(ta, onInsert) {
+  const wrap = h("div", { class: "mention-wrap" });
+  const pop = h("div", { class: "mention-pop", style: "display:none" });
+  ta.replaceWith(wrap);
+  wrap.append(ta, pop);
+  let items = [], active = 0, trigger = null, timer = 0, seq = 0;
+
+  const close = () => { pop.style.display = "none"; trigger = null; items = []; };
+  const draw = () => {
+    if (!items.length) { close(); return; }
+    pop.replaceChildren(...items.map((it, i) => h("div", { class: `mention-item${i === active ? " active" : ""}`,
+      onmousedown: e => { e.preventDefault(); pick(i); } }, it.icon, h("span", {}, it.label), it.hint ? h("span", { class: "muted small", style: "margin-left:auto" }, it.hint) : null)));
+    const c = caretCoords(ta);
+    pop.style.top = `${Math.min(c.top + c.line + 4, ta.clientHeight)}px`;
+    pop.style.left = `${Math.min(c.left, Math.max(0, ta.clientWidth - 260))}px`;
+    pop.style.display = "";
+  };
+  const pick = i => {
+    const it = items[i];
+    if (!it || !trigger) return;
+    const before = ta.value.slice(0, trigger.start), after = ta.value.slice(ta.selectionStart);
+    const insert = it.code + " ";
+    ta.value = before + insert + after;
+    const caret = before.length + insert.length;
+    ta.setSelectionRange(caret, caret);
+    close();
+    ta.focus();
+    ta.dispatchEvent(new Event("input"));
+    if (onInsert) onInsert(it.kind);
+  };
+  const update = () => {
+    const upto = ta.value.slice(0, ta.selectionStart);
+    const m = /(^|[\s(])([@#])([^\s@#<>]{0,32})$/.exec(upto);
+    if (!m) { close(); return; }
+    trigger = { start: upto.length - m[3].length - 1, sign: m[2], q: m[3].toLowerCase() };
+    const q = trigger.q;
+    active = 0;
+    if (trigger.sign === "#") {
+      items = [...state.channels.text.map(c => ({ ...c, voice: false })), ...state.channels.voice.map(c => ({ ...c, voice: true }))]
+        .filter(c => c.name.toLowerCase().includes(q)).slice(0, 10)
+        .map(c => ({ kind: "channel", code: `<#${c.id}>`, icon: h("span", { class: "muted" }, c.voice ? "🔊" : "#"), label: c.name, hint: c.category || "" }));
+      draw();
+      return;
+    }
+    const special = ["everyone", "here"].filter(x => x.startsWith(q))
+      .map(x => ({ kind: "everyone", code: `@${x}`, icon: h("span", {}, "📢"), label: `@${x}`, hint: x === "here" ? "online members" : "all members" }));
+    const roles = state.roles.filter(r => r.name.toLowerCase().includes(q)).slice(0, 8)
+      .map(r => ({ kind: "role", code: `<@&${r.id}>`, icon: h("span", { class: "swatch-dot", style: r.color ? `background:${r.color}` : null }), label: `@${r.name}`, hint: "role" }));
+    items = [...special, ...roles];
+    draw();
+    // People: searched on the server (debounced)
+    clearTimeout(timer);
+    const my = ++seq;
+    timer = setTimeout(async () => {
+      try {
+        const members = await gApi("GET", `/members?q=${encodeURIComponent(q)}`);
+        if (my !== seq || !trigger) return;
+        for (const m of members) knownUsers.set(m.id, m.name);
+        const people = members.slice(0, 8).map(m => ({ kind: "user", code: `<@${m.id}>`,
+          icon: m.avatarUrl ? h("img", { class: "avatar sm", src: m.avatarUrl, alt: "" }) : h("span", { class: "avatar sm" }),
+          label: m.name, hint: m.username ? `@${m.username}` : "" }));
+        items = [...special, ...roles, ...people];
+        draw();
+      } catch { /* suggestions are optional */ }
+    }, 200);
+  };
+
+  ta.addEventListener("input", update);
+  ta.addEventListener("click", update);
+  ta.addEventListener("blur", () => setTimeout(close, 150));
+  ta.addEventListener("keydown", e => {
+    if (pop.style.display === "none" || !items.length) return;
+    if (e.key === "ArrowDown") { active = (active + 1) % items.length; draw(); e.preventDefault(); }
+    else if (e.key === "ArrowUp") { active = (active - 1 + items.length) % items.length; draw(); e.preventDefault(); }
+    else if (e.key === "Enter" || e.key === "Tab") { pick(active); e.preventDefault(); }
+    else if (e.key === "Escape") { close(); e.preventDefault(); }
+  });
+  return wrap;
+}
+
 // ================= Form controls =================
 
 function roleSelect(placeholder = "Choose a role…", exclude = [], pool = state.roles) {
@@ -412,15 +542,26 @@ async function pageAnnounce(main) {
       .map(c => h("option", { value: c.id }, `# ${c.name}${c.category ? `  ·  ${c.category}` : ""}`))),
     h("optgroup", { label: "Voice channels (their chat)" }, state.channels.voice
       .map(c => h("option", { value: c.id }, `🔊 ${c.name}${c.category ? `  ·  ${c.category}` : ""}`))));
-  const text = h("textarea", { maxlength: "20000", placeholder: "Markdown works: **bold**, *italic*, # Heading, - lists, > quotes, ```code```, <@&role> / <@user> mentions…", style: "min-height:260px" });
+  const text = h("textarea", { maxlength: "20000", placeholder: "Type @ to mention a role or a person, # for a channel. Markdown works: **bold**, *italic*, # Heading, - lists, > quotes, ```code```", style: "min-height:260px" });
   const counter = h("span", { class: "muted small" });
+  // Mentions written in the text, shown by name (the text itself keeps Discord codes like <@&123>)
+  const inText = h("div", { class: "small", style: "margin-top:4px" });
   const syncCounter = () => {
     const n = text.value.trim().length;
     counter.textContent = `${n} / 20000 characters${n > 2000 ? ` · will be split into ~${Math.ceil(n / 1900)} messages` : ""}`;
+    const found = [...new Set([...text.value.matchAll(MENTION_RE)].map(m => m[0]))];
+    inText.replaceChildren(...(found.length ? [h("span", { class: "muted" }, "Mentions in the text: "), ...found.flatMap(code => renderMentions(code).concat(" "))] : []));
   };
   text.addEventListener("input", syncCounter);
   syncCounter();
   const pings = h("input", { type: "checkbox" });
+  // @ suggestions: a role/person picked in the text pings by default (the box can be unticked)
+  const textBox = attachMentions(text, kind => {
+    if (kind !== "channel" && !pings.checked) {
+      pings.checked = true;
+      toast("Mentions in the text will ping (untick «Ping mentions written in the text» to keep them silent).");
+    }
+  });
 
   // Whom to ping: @everyone/@here, roles, people — a mention line at the top of the post
   const ping = { everyone: "", roles: [], users: [] };
@@ -447,6 +588,7 @@ async function pageAnnounce(main) {
     if (m && !ping.users.some(u => u.id === m.id)) { ping.users.push(m); drawPing(); }
   });
   const setPing = p => {
+    for (const u of p.pingUsers || []) knownUsers.set(u.id, u.name);
     ping.everyone = p.pingEveryone || "";
     ping.roles = (p.pingRoles || []).slice();
     ping.users = (p.pingUsers || []).slice();
@@ -495,7 +637,7 @@ async function pageAnnounce(main) {
           preview.count > 1 ? "The text is longer than Discord allows (2000) — it is split at paragraphs/lines; code blocks are kept whole." : ""),
         h("div", { class: "guide-body" }, preview.blocks.map((b, i) => h("div", { class: "card", style: "padding:10px;margin-bottom:8px" },
           h("div", { class: "muted small", style: "margin-bottom:4px" }, `Message ${i + 1}/${preview.count} · ${b.length} characters`),
-          h("div", { style: "white-space:pre-wrap;word-break:break-word" }, b)))),
+          h("div", { style: "white-space:pre-wrap;word-break:break-word" }, renderMentions(b))))),
         h("div", { class: "actions" },
           h("button", { class: "btn secondary", onclick: () => { d.close(); resolve(false); } }, "Cancel"),
           h("button", { class: "btn", onclick: () => { d.close(); resolve(true); } }, editing ? "💾 Save" : later ? "📅 Schedule" : "✅ Send")));
@@ -551,10 +693,10 @@ async function pageAnnounce(main) {
     h("p", { class: "muted small" }, "The bot posts your text in a channel (or a voice channel's chat). Longer than 2000 characters — split into several messages automatically. You see the preview and confirm before anything is sent."),
     h("div", { class: "row", style: "margin-bottom:12px" }, h("div", { class: "grow" }, tplSel), saveTpl),
     h("div", { class: "field" }, h("label", {}, "Channel"), channel),
-    h("div", { class: "field" }, h("label", {}, "Text"), text, counter),
+    h("div", { class: "field" }, h("label", {}, "Text — type @ or # for suggestions"), textBox, counter, inText),
     h("div", { class: "field" }, h("label", {}, "🔔 Ping (a line with mentions at the top of the post)"), pingChips,
       h("div", { class: "row" }, everyoneSel, addRoles, addUser)),
-    h("label", { class: "row", style: "margin-bottom:10px" }, pings, "Also ping mentions written in the text — off: they are shown but nobody is notified"),
+    h("label", { class: "row", style: "margin-bottom:10px" }, pings, "Ping mentions written in the text (@ suggestions turn this on) — off: they are shown but nobody is notified"),
     h("div", { class: "row", style: "margin-bottom:12px" }, when, whenBox),
     h("div", { class: "row" }, go)));
 
@@ -2569,6 +2711,7 @@ const HELP = {
       "Posts are sent as the bot. To edit a sent post: delete its messages here and send a corrected one."
     ]]],
     panel: [["Using it", [
+      "In the text type **@** → pick @everyone/@here, a role or a person (↑↓ + Enter or click); **#** → a channel. The text keeps Discord codes like `<@&123>`; under the field and in the preview they are shown by name.",
       "Optionally **📄 Load a template**. Pick the channel, write the text (Markdown works), add whom to **🔔 ping**, choose **Send now** or **📅 Schedule** → **👁 Preview & send** → check the messages → **✅ Send** / **📅 Schedule**.",
       "**💾 Save as template** stores the form (for a loaded template — update it or save a copy). **📄 Templates**: Use, ✏️ rename, Delete.",
       "**📅 Scheduled**: ✏️ Edit (loads it into the form → Preview & save), **Send now**, **Cancel** (asks first).",
