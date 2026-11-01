@@ -2,6 +2,7 @@ using Discord;
 using Discord.Interactions;
 using Discord.WebSocket;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -50,6 +51,27 @@ public sealed class BotService(
         // Команды регистрируются на каждый сервер отдельно — появляются мгновенно
         foreach (var guild in client.Guilds)
             await RegisterToGuildAsync(guild);
+
+        // Перерисовать опубликованные панели: встроенная кнопка «Website» появляется в старых панелях без ручного обновления
+        _ = Task.Run(RefreshPanelsAsync);
+    }
+
+    private async Task RefreshPanelsAsync()
+    {
+        var panels = services.GetRequiredService<PanelService>();
+        foreach (var guild in client.Guilds)
+        foreach (var def in PanelDefs.All)
+        {
+            try
+            {
+                var (updated, total) = await panels.RefreshAsync(guild.Id, def.Key);
+                if (total > 0) logger.LogInformation("Panels {Key} on {Guild}: refreshed {Updated}/{Total}", def.Key, guild.Name, updated, total);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to refresh {Key} panels on {Guild}", def.Key, guild.Name);
+            }
+        }
     }
 
     private Task OnJoinedGuildAsync(SocketGuild guild) => RegisterToGuildAsync(guild);

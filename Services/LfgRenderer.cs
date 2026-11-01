@@ -31,6 +31,7 @@ public static class LfgRenderer
             .WithButton(def.Label(text, "start"), "lfg:start", ButtonStyle.Success, new Emoji("📣"))
             .WithButton(def.Label(text, "dmon"), "lfg:dmpref:on", ButtonStyle.Secondary, new Emoji("🔔"))
             .WithButton(def.Label(text, "dmoff"), "lfg:dmpref:off", ButtonStyle.Secondary, new Emoji("🔕"))
+            .WithSiteButton()
             .Build();
 
         return new Screen(null, embed, comps);
@@ -456,7 +457,15 @@ public static class LfgRenderer
             .Build();
     }
 
-    private static string SlotHead(int i, Slot s) => $"`{i + 1,2}.` {s.Role.Emoji()} **{s.Role.Label()}**";
+    private static string SlotHead(int i, Slot s) => $"`{i + 1,2}.` {s.Role.Emoji()} **{s.Role.Label()}**{SlotRequirementText(s)}";
+
+    /// <summary>Своё требование слота: 🔒 роль — нужна именно она; 🔓 — слот без требования роли.</summary>
+    private static string SlotRequirementText(Slot s) => s.Requirement switch
+    {
+        SlotRequirement.Inherit => "",
+        SlotRequirement.Open => " 🔓",
+        var id => $" 🔒 <@&{id}>"
+    };
 
     private static string Roster(LfgGroup g, bool withComments)
     {
@@ -507,7 +516,9 @@ public static class LfgRenderer
     public static string? Requirements(LfgGroup g)
     {
         var parts = new List<string>();
-        if (g.RequiredRoleIds.Count > 0) parts.Add(string.Join(" / ", g.RequiredRoleIds.Select(id => $"<@&{id}>")));
+        // Общие роли — только если есть слоты без своего требования
+        if (g.RequiredRoleIds.Count > 0 && g.Slots.Any(s => s.Requirement == SlotRequirement.Inherit))
+            parts.Add(string.Join(" / ", g.RequiredRoleIds.Select(id => $"<@&{id}>")));
         if (g.MinGs is { } min) parts.Add($"GS {min}+");
         return parts.Count == 0 ? null : string.Join(" · ", parts);
     }

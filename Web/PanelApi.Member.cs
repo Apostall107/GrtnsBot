@@ -108,7 +108,9 @@ public static partial class PanelApi
                             classRole = s.ClassRoleId is { } cr ? Role(guild, cr) : null,
                             classIcon = s.ClassIcon,
                             gs = s.Gs,
-                            attended = s.Attended
+                            attended = s.Attended,
+                            requiredRole = SlotRequiredRole(guild, s),
+                            noRequirement = x.RequiredRoleIds.Count > 0 && s.Requirement == SlotRequirement.Open
                         }),
                         reserve = x.Reserve.Select(r => new
                         {
@@ -388,6 +390,8 @@ public static partial class PanelApi
                     : null,
                 activities = activities.Get(guildId).Select(a => new { key = a.Key, name = a.Name, role = Role(guild, a.RoleId), projectKey = a.ProjectKey }),
                 templates = TemplatesDto(guild, templates),
+                // Роли, связанные с каждым проектом — их показывают первыми при выборе требуемых ролей
+                relatedRoles = RelatedRoles(guild, activities, projects),
                 // Роли для требований сбора (организатор выбирает, какие нужны)
                 roles = guild.Roles.Where(r => !r.IsEveryone && !r.IsManaged).OrderByDescending(r => r.Position)
                     .Select(r => new { id = r.Id.ToString(), name = r.Name, color = r.Colors.PrimaryColor.RawValue == 0 ? null : $"#{r.Colors.PrimaryColor.RawValue:x6}" }),
@@ -424,13 +428,15 @@ public static partial class PanelApi
 
             try
             {
+                var required = Requirements(guild, body.RequiredRoleIds);
                 var (group, jumpUrl, dms) = await publisher.PublishAsync(new LfgPublishRequest(
                     guildId, channelId, me, name!, pingRole, slots!, startsAt, body.NotifyByDm, true,
-                    Requirements(guild, body.RequiredRoleIds), body.MinGs is > 0 and <= 99999 ? body.MinGs : null,
+                    required, body.MinGs is > 0 and <= 99999 ? body.MinGs : null,
                     project?.Key,
                     // Дублировать пост в другие каналы может только админ
                     access.IsAdmin(me) ? ParseIds(body.MirrorChannelIds).Where(id => guild.GetTextChannel(id) is not null).Take(LfgPublisher.MaxMirrors).ToList() : null,
-                    body.CreateVoice));
+                    body.CreateVoice,
+                    SlotRequirement.Parse(body.SlotRequirements, slots!.Count, required ?? [])));
                 return Results.Ok(new { id = group.Id, jumpUrl, dmsStarted = dms });
             }
             catch (Exception ex) when (ex is InvalidOperationException or Discord.Net.HttpException)

@@ -109,6 +109,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         d.Slots = t.Slots.Select(r => new Slot { Role = r }).ToList();
         d.Selected.Clear();
         d.RequiredRoleIds = t.RequiredRoleIds.ToList();
+        SlotRequirement.Apply(d.Slots, d.RequiredRoleIds.Count > 0 ? t.SlotRequirements : null);
         d.MinGs = t.MinGs;
         await ShowAsync(TimeScreen(d));
     }
@@ -311,7 +312,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         var (group, jumpUrl, dmsStarted) = await publisher.PublishAsync(new LfgPublishRequest(
             d.GuildId, d.ChannelId, d.OwnerId, d.ActivityName ?? "Activity", d.PingRoleId,
             d.Slots.Select(x => x.Role).ToList(), startsAt, d.NotifyByDm, true, d.RequiredRoleIds, d.MinGs,
-            d.ProjectKey, null, d.CreateVoice));
+            d.ProjectKey, null, d.CreateVoice, SlotRequirement.Of(d.Slots)));
         audit.FromDiscord(d.GuildId, Context.User, "lfg", "Created LFG group",
             $"{group.ActivityName} · {group.Slots.Count} slots · {(startsAt is { } at ? at.ToString("u") : "no time")}");
 

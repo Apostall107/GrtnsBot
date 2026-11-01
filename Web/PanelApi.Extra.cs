@@ -42,9 +42,11 @@ public static partial class PanelApi
 
             try
             {
+                var required = Requirements(guild, body.RequiredRoleIds);
                 var (group, jumpUrl, dms) = await publisher.PublishAsync(new LfgPublishRequest(
                     guildId, channelId, ownerId, name!, pingRole, slots!, startsAt, body.NotifyByDm, body.SeatOwner,
-                    Requirements(guild, body.RequiredRoleIds), body.MinGs is > 0 ? body.MinGs : null));
+                    required, body.MinGs is > 0 ? body.MinGs : null,
+                    SlotRequirements: SlotRequirement.Parse(body.SlotRequirements, slots!.Count, required ?? [])));
                 return Results.Ok(new { id = group.Id, jumpUrl, dmsStarted = dms });
             }
             catch (Exception ex) when (ex is InvalidOperationException or Discord.Net.HttpException)
@@ -281,6 +283,10 @@ public static partial class PanelApi
         });
 
         // ----- Шаблоны сборов -----
+        // Роли, связанные с проектами (для требуемых ролей в шаблонах и расписаниях)
+        g.MapGet("/related-roles", (ulong guildId, DiscordSocketClient client, ActivityStore activities, LfgProjectStore projects) =>
+            client.GetGuild(guildId) is { } guild ? Results.Ok(RelatedRoles(guild, activities, projects)) : GuildNotFound());
+
         g.MapGet("/templates", (ulong guildId, DiscordSocketClient client, LfgTemplateStore templates) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
@@ -305,6 +311,7 @@ public static partial class PanelApi
             if (slots.Count is < LfgRenderer.MinSize or > LfgRenderer.MaxSize) return Error($"A group has {LfgRenderer.MinSize}–{LfgRenderer.MaxSize} slots.");
             if (body.MinGs is < 0 or > 99999) return Error("Minimum GS: 0–99999.");
 
+            var required = Requirements(guild, body.RequiredRoleIds) ?? [];
             var error = templates.Save(guildId, new LfgTemplate
             {
                 Key = key == "new" ? IdGen.New() : key,
@@ -312,7 +319,8 @@ public static partial class PanelApi
                 ActivityKey = string.IsNullOrWhiteSpace(body.ActivityKey) ? null : body.ActivityKey,
                 CustomActivity = string.IsNullOrWhiteSpace(body.ActivityKey) ? (body.CustomActivity ?? name).Trim() : null,
                 Slots = slots,
-                RequiredRoleIds = Requirements(guild, body.RequiredRoleIds) ?? [],
+                RequiredRoleIds = required,
+                SlotRequirements = SlotRequirement.Parse(body.SlotRequirements, slots.Count, required),
                 MinGs = body.MinGs is > 0 ? body.MinGs : null,
                 ProjectKey = projectKey
             });
@@ -408,6 +416,7 @@ public static partial class PanelApi
                     seatOwner = r.SeatOwner,
                     projectKey = r.ProjectKey,
                     requiredRoles = r.RequiredRoleIds.Select(id => Role(guild, id)),
+                    slotRequirements = SlotRequirement.ToDto(r.SlotRequirements, r.Slots.Count),
                     minGs = r.MinGs,
                     enabled = r.Enabled,
                     nextStart = next?.ToUnixTimeMilliseconds(),
@@ -456,6 +465,7 @@ public static partial class PanelApi
                 r.SeatOwner = draft.SeatOwner;
                 r.ProjectKey = draft.ProjectKey;
                 r.RequiredRoleIds = draft.RequiredRoleIds;
+                r.SlotRequirements = draft.SlotRequirements;
                 r.MinGs = draft.MinGs;
                 r.Enabled = draft.Enabled;
                 if (timeChanged && r.LastStart > DateTimeOffset.UtcNow) r.LastStart = null;
@@ -587,9 +597,35 @@ public static partial class PanelApi
             customActivity = t.CustomActivity,
             slots = t.Slots.Select(s => s.ToString()),
             requiredRoles = t.RequiredRoleIds.Select(id => Role(guild, id)),
+            slotRequirements = SlotRequirement.ToDto(t.SlotRequirements, t.Slots.Count),
             minGs = t.MinGs,
             projectKey = t.ProjectKey
         }).ToList();
+
+    /// <summary>
+    /// Роли, связанные с проектом, — для выбора требуемых ролей сбора: роли доступа проекта, роли его активностей
+    /// (и активностей для всех проектов) и роли классов проекта. Ключ "" — без проекта (всё вместе).
+    /// </summary>
+    internal static Dictionary<string, List<string>> RelatedRoles(SocketGuild guild, ActivityStore activities, LfgProjectStore projects)
+    {
+        var acts = activities.Get(guild.Id);
+        var list = projects.GetProjects(guild.Id);
+        IEnumerable<ulong> For(LfgProject? p) => p is null
+            ? list.SelectMany(x => x.RoleIds)
+                .Concat(acts.Select(a => a.RoleId))
+                .Concat(projects.ClassIcons(guild.Id).Keys)
+                .Concat(list.SelectMany(x => projects.ClassIcons(guild.Id, x.Key).Keys))
+            : p.RoleIds
+                .Concat(acts.Where(a => a.ProjectKey is null || a.ProjectKey == p.Key).Select(a => a.RoleId))
+                .Concat(projects.EffectiveClassIcons(guild.Id, p.Key).Keys);
+        List<string> Ids(LfgProject? p) => For(p).Distinct()
+            .Where(id => guild.GetRole(id) is { IsEveryone: false, IsManaged: false })
+            .Select(id => id.ToString()).ToList();
+
+        var result = new Dictionary<string, List<string>> { [""] = Ids(null) };
+        foreach (var p in list) result[p.Key] = Ids(p);
+        return result;
+    }
 
     private static object StatsDto(SocketGuild guild, PlayerStats p) => new
     {
@@ -708,6 +744,7 @@ public static partial class PanelApi
         item.SeatOwner = body.SeatOwner;
         item.ProjectKey = string.IsNullOrWhiteSpace(body.ProjectKey) ? null : body.ProjectKey;
         item.RequiredRoleIds = ParseIds(body.RequiredRoleIds).Where(id => guild.GetRole(id) is not null).Take(10).ToList();
+        item.SlotRequirements = SlotRequirement.Parse(body.SlotRequirements, item.Slots.Count, item.RequiredRoleIds);
         if (body.MinGs is < 0 or > 99999) return "Minimum GS: 0–99999.";
         item.MinGs = body.MinGs is > 0 ? body.MinGs : null;
         item.Enabled = body.Enabled;
@@ -957,11 +994,12 @@ public static partial class PanelApi
 
 public sealed record LfgCreateBody(string? ChannelId, string? ActivityKey, string? CustomName, List<string>? Slots,
     string? Date, string? Time, bool NotifyByDm = true, bool SeatOwner = true, List<string>? RequiredRoleIds = null, int? MinGs = null,
-    string? ProjectKey = null, List<string>? MirrorChannelIds = null, bool CreateVoice = false);
+    string? ProjectKey = null, List<string>? MirrorChannelIds = null, bool CreateVoice = false, List<string?>? SlotRequirements = null);
 public sealed record RosterBody(string? Action, string? UserId, string? Character);
 public sealed record RecurringBody(string? ChannelId, string? ActivityKey, string? CustomName, List<string>? Slots,
     List<int>? Days, string? Time, int PostHoursBefore = 24, bool NotifyByDm = true, bool SeatOwner = true, bool Enabled = true,
-    string? OwnerId = null, List<string>? RequiredRoleIds = null, int? MinGs = null, string? ProjectKey = null);
+    string? OwnerId = null, List<string>? RequiredRoleIds = null, int? MinGs = null, string? ProjectKey = null,
+    List<string?>? SlotRequirements = null);
 public sealed record LfgProjectBody(string? Name, List<string>? RoleIds, bool IsDefault = false);
 public sealed record LfgPanelProjectBody(string? ProjectKey);
 public sealed record ClassIconBody(string? RoleId, string? Icon);
@@ -969,7 +1007,7 @@ public sealed record ClassIconsBody(List<ClassIconBody>? Classes);
 public sealed record ClassRoleIconsBody(List<string>? RoleIds);
 public sealed record EmojiDto(string Name, string Code, string Url, bool App);
 public sealed record TemplateBody(string? Name, string? ActivityKey, string? CustomActivity, List<string>? Slots,
-    List<string>? RequiredRoleIds, int? MinGs, string? ProjectKey = null);
+    List<string>? RequiredRoleIds, int? MinGs, string? ProjectKey = null, List<string?>? SlotRequirements = null);
 public sealed record TimeBody(string? Date, string? Time);
 public sealed record AttendanceBody(string? UserId, bool? Attended);
 public sealed record SettingsBody(string? TimeZone, int? AutoDeleteHours, int? ReminderMinutes);

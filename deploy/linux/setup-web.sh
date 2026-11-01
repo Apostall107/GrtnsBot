@@ -56,6 +56,10 @@ if [ "$REPLACE" = "1" ]; then
     chmod 600 "$ENV_FILE"
 fi
 
+# Адрес сайта для кнопки «Website» в панелях бота
+sed -i '/^Web__PublicUrl=/d' "$ENV_FILE"
+printf 'Web__PublicUrl=https://%s\n' "$DOMAIN" >> "$ENV_FILE"
+
 echo "=== 3/5 Caddy (HTTPS reverse proxy) ==="
 if ! command -v caddy >/dev/null 2>&1; then
     apt-get update

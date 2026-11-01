@@ -258,7 +258,9 @@ public static partial class PanelApi
                     classIcon = s.ClassIcon,
                     comment = s.Comment,
                     gs = s.Gs,
-                    attended = s.Attended
+                    attended = s.Attended,
+                    requiredRole = SlotRequiredRole(guild, s),
+                    noRequirement = x.RequiredRoleIds.Count > 0 && s.Requirement == SlotRequirement.Open
                 }),
                 reserve = x.Reserve.Select(r => new
                 {
@@ -1167,6 +1169,10 @@ public static partial class PanelApi
     private static bool ValidLimit(int? limit) => limit is null or (>= 0 and <= 99);
 
     private static string? Template(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim()[..Math.Min(text.Trim().Length, MaxNameLength)];
+
+    /// <summary>Своя требуемая роль слота (null — общее требование сбора или без требования).</summary>
+    private static object? SlotRequiredRole(SocketGuild guild, Slot s) =>
+        s.Requirement > SlotRequirement.Open ? Role(guild, s.Requirement) : null;
 
     private static object Role(SocketGuild guild, ulong id)
     {

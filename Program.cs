@@ -12,6 +12,9 @@ using Microsoft.Extensions.Configuration;
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddUserSecrets<Program>(optional: true);
 
+// Кнопка «Website» в панелях модулей — адрес сайта бота
+SiteLink.Configure(builder.Configuration["Web:PublicUrl"]);
+
 // Под systemd (Linux-сервер): логи в формате journald и корректная остановка службы.
 // При обычном запуске (Windows, консоль) не делает ничего.
 builder.Services.AddSystemd();

@@ -14,6 +14,8 @@ public sealed class LfgTemplate
     public string? CustomActivity { get; set; }
     public List<SlotRole> Slots { get; set; } = [];
     public List<ulong> RequiredRoleIds { get; set; } = [];
+    /// <summary>Требование роли по слотам (коды <see cref="SlotRequirement"/>; пусто — у всех общее).</summary>
+    public List<ulong> SlotRequirements { get; set; } = [];
     public int? MinGs { get; set; }
     /// <summary>Проект (игра). null — во всех проектах.</summary>
     public string? ProjectKey { get; set; }
