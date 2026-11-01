@@ -28,6 +28,51 @@ public static class SlotRoleExtensions
     };
 }
 
+/// <summary>
+/// Требование роли для отдельного слота. Хранится кодом: <see cref="Inherit"/> — любая из требуемых ролей сбора,
+/// <see cref="Open"/> — слот без требования роли, иначе — id конкретной роли (одной из требуемых ролей сбора).
+/// На сайте: "" — общее, "none" — без требования, "&lt;id&gt;" — роль.
+/// </summary>
+public static class SlotRequirement
+{
+    public const ulong Inherit = 0;
+    public const ulong Open = 1;
+    public const string OpenDto = "none";
+
+    /// <summary>Коды для <paramref name="count"/> слотов из значений сайта. Роль слота — только из требуемых ролей сбора.</summary>
+    public static List<ulong> Parse(IEnumerable<string?>? raw, int count, IReadOnlyCollection<ulong> groupRoles)
+    {
+        var list = (raw ?? []).Take(count).Select(v =>
+        {
+            if (groupRoles.Count == 0 || string.IsNullOrWhiteSpace(v)) return Inherit;
+            if (v == OpenDto) return Open;
+            return ulong.TryParse(v, out var id) && groupRoles.Contains(id) ? id : Inherit;
+        }).ToList();
+        while (list.Count < count) list.Add(Inherit);
+        return list.All(x => x == Inherit) ? [] : list;
+    }
+
+    /// <summary>Значения для сайта: по одному на слот.</summary>
+    public static IEnumerable<string> ToDto(IReadOnlyList<ulong>? codes, int count) =>
+        Enumerable.Range(0, count).Select(i => codes is not null && i < codes.Count ? ToDto(codes[i]) : "");
+
+    public static string ToDto(ulong code) => code switch { Inherit => "", Open => OpenDto, _ => code.ToString() };
+
+    /// <summary>Проставить коды слотам (лишние/недостающие — общее требование).</summary>
+    public static void Apply(IReadOnlyList<Slot> slots, IReadOnlyList<ulong>? codes)
+    {
+        for (var i = 0; i < slots.Count; i++)
+            slots[i].Requirement = codes is not null && i < codes.Count ? codes[i] : Inherit;
+    }
+
+    /// <summary>Коды слотов (пусто — у всех общее требование).</summary>
+    public static List<ulong> Of(IEnumerable<Slot> slots)
+    {
+        var list = slots.Select(s => s.Requirement).ToList();
+        return list.All(x => x == Inherit) ? [] : list;
+    }
+}
+
 public static class IdGen
 {
     public static string New() => Convert.ToHexString(RandomNumberGenerator.GetBytes(5)).ToLowerInvariant();
@@ -51,6 +96,11 @@ public sealed class Slot
     public int? Gs { get; set; }
     /// <summary>Явка (отмечает организатор после старта): true — пришёл, false — не пришёл, null — не отмечено.</summary>
     public bool? Attended { get; set; }
+    /// <summary>
+    /// Требование слота (настройка, не участник): код <see cref="SlotRequirement"/> —
+    /// 0 — общие требуемые роли сбора, 1 — без требования роли, иначе id одной из требуемых ролей.
+    /// </summary>
+    public ulong Requirement { get; set; }
     [JsonIgnore] public bool IsFree => UserId is null;
 
     public void Clear()
@@ -144,7 +194,7 @@ public sealed class LfgGroup
         OwnerId = draft.OwnerId;
         ActivityName = draft.ActivityName ?? "Activity";
         PingRoleId = draft.PingRoleId;
-        Slots = draft.Slots.Select(s => new Slot { Role = s.Role }).ToList();
+        Slots = draft.Slots.Select(s => new Slot { Role = s.Role, Requirement = s.Requirement }).ToList();
         RequiredRoleIds = draft.RequiredRoleIds.ToList();
         MinGs = draft.MinGs;
         ProjectKey = draft.ProjectKey;
@@ -170,6 +220,15 @@ public sealed class LfgGroup
     /// <summary>Минимальный GS персонажа (из /character gs или сайта). Не указан или меньше — резерв.</summary>
     public int? MinGs { get; set; }
     [JsonIgnore] public bool HasRequirements => RequiredRoleIds.Count > 0 || MinGs is not null;
+
+    /// <summary>Какие роли нужны для слота (любая из; пусто — без требования роли).</summary>
+    public IReadOnlyList<ulong> RequiredFor(Slot s) => s.Requirement switch
+    {
+        SlotRequirement.Inherit => RequiredRoleIds,
+        SlotRequirement.Open => [],
+        var id => [id]
+    };
+
     /// <summary>Напоминание за 10 минут уже отправлено (или не нужно).</summary>
     public bool Reminded { get; set; }
     /// <summary>Проект (игра) сбора: персонажи берутся из него, записаться можно только с ролью проекта.</summary>
@@ -191,16 +250,18 @@ public sealed class LfgGroup
     /// ДД/Танк/Хил: сначала слот с такой же ролью, потом слот «Любой».
     /// Любой: сначала слот «Любой», потом любой свободный слот.
     /// </summary>
-    public int FindFreeSlot(SlotRole wanted)
+    /// <param name="fits">Подходит ли игрок под требование слота (null — под любой).</param>
+    public int FindFreeSlot(SlotRole wanted, Func<Slot, bool>? fits = null)
     {
+        bool Free(Slot s) => s.IsFree && (fits is null || fits(s));
         if (wanted == SlotRole.Any)
         {
-            var anySlot = Slots.FindIndex(s => s.IsFree && s.Role == SlotRole.Any);
-            return anySlot >= 0 ? anySlot : Slots.FindIndex(s => s.IsFree);
+            var anySlot = Slots.FindIndex(s => Free(s) && s.Role == SlotRole.Any);
+            return anySlot >= 0 ? anySlot : Slots.FindIndex(Free);
         }
 
-        var exact = Slots.FindIndex(s => s.IsFree && s.Role == wanted);
-        return exact >= 0 ? exact : Slots.FindIndex(s => s.IsFree && s.Role == SlotRole.Any);
+        var exact = Slots.FindIndex(s => Free(s) && s.Role == wanted);
+        return exact >= 0 ? exact : Slots.FindIndex(s => Free(s) && s.Role == SlotRole.Any);
     }
 
     public bool CanJoinAs(SlotRole role) => !IsClosed && FindFreeSlot(role) >= 0;
@@ -240,7 +301,9 @@ public sealed class LfgGroup
     /// reserved = true, если человек попал (или остался) в резерве.
     /// </summary>
     /// <param name="forceReserve">Игрок не подходит под требования сбора — только резерв (если он ещё не в группе).</param>
-    public string? TryJoin(ulong userId, SlotRole wanted, string characterName, out bool reserved, bool forceReserve = false)
+    /// <param name="fits">Подходит ли игрок под требование роли слота (null — под любой).</param>
+    public string? TryJoin(ulong userId, SlotRole wanted, string characterName, out bool reserved, bool forceReserve = false,
+        Func<Slot, bool>? fits = null)
     {
         reserved = false;
         if (IsClosed) return Tx.Get(GuildId, "lfg.err.closed");
@@ -272,7 +335,7 @@ public sealed class LfgGroup
         var snapshot = current is null ? default : (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment, current.Gs);
         current?.Clear();
 
-        var index = FindFreeSlot(wanted);
+        var index = FindFreeSlot(wanted, fits);
         if (index >= 0)
         {
             Reserve.RemoveAll(r => r.UserId == userId); // из резерва — в группу

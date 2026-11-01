@@ -204,6 +204,7 @@ public sealed class TempRoomManager(TempVoiceStore store, DiscordSocketClient cl
             .WithButton(def.Label(text, "limit"), "room:limit", ButtonStyle.Secondary, new Emoji("👥"), row: 0)
             .WithButton(def.Label(text, "lock"), "room:lock", ButtonStyle.Secondary, new Emoji("🔒"), row: 0)
             .WithButton(def.Label(text, "claim"), "room:claim", ButtonStyle.Primary, new Emoji("👑"), row: 0)
+            .WithSiteButton(row: 0)
             .WithSelectMenu(permit, row: 1)
             .WithSelectMenu(kick, row: 2)
             .Build();

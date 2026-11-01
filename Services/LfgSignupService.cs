@@ -19,9 +19,11 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
         await group.Gate.WaitAsync();
         try
         {
-            // Требования сбора (роль / GS): не подходит — только резерв, организатор может перевести в группу
-            var unmet = Unmet(group, userId, characterName);
-            var error = group.TryJoin(userId, role, characterName, out var reserved, forceReserve: unmet is not null);
+            // Требования сбора: GS не хватает — только резерв; роль проверяется по слоту (у слота может быть своя).
+            // Организатор может перевести из резерва в группу в любом случае.
+            var gsUnmet = GsUnmet(group, userId, characterName);
+            var fits = SlotFilter(group, userId);
+            var error = group.TryJoin(userId, role, characterName, out var reserved, forceReserve: gsUnmet is not null, fits: fits);
             if (error is not null) return error;
             ApplyProfile(group, userId);
 
@@ -36,6 +38,7 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
                 return Tx.Get(gid, "lfg.sign.joined", ("activity", activity), ("role", roleText), ("name", name));
 
             var position = group.Reserve.FindIndex(r => r.UserId == userId) + 1;
+            var unmet = gsUnmet ?? RoleUnmet(group, role, fits);
             if (unmet is not null && group.Slots.All(s => s.UserId != userId))
                 return Tx.Get(gid, "lfg.sign.reserveRequirements", ("requirements", unmet), ("position", position),
                     ("activity", activity), ("name", name));
@@ -79,20 +82,42 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
         }
     }
 
-    /// <summary>Чего не хватает игроку для записи в группу (null — подходит).</summary>
-    public string? Unmet(LfgGroup group, ulong userId, string? characterName)
+    /// <summary>Не хватает GS персонажа (текст требования) или null.</summary>
+    public string? GsUnmet(LfgGroup group, ulong userId, string? characterName)
     {
-        if (!group.HasRequirements || userId == group.OwnerId) return null;
-        var missing = new List<string>();
-        if (group.RequiredRoleIds.Count > 0)
+        if (userId == group.OwnerId || group.MinGs is not { } min) return null;
+        return (characters.GetInfo(group.GuildId, userId, characterName, Scope(group))?.Gs ?? 0) < min
+            ? Tx.Get(group.GuildId, "lfg.sign.gsRequirement", ("gs", min))
+            : null;
+    }
+
+    /// <summary>
+    /// Под какие слоты игрок подходит по роли: у слота своя требуемая роль или общие роли сбора (любая из).
+    /// null — под все (требований роли нет или это организатор).
+    /// </summary>
+    public Func<Slot, bool>? SlotFilter(LfgGroup group, ulong userId)
+    {
+        if (userId == group.OwnerId || (group.RequiredRoleIds.Count == 0 && group.Slots.All(s => s.Requirement == SlotRequirement.Inherit)))
+            return null;
+        var member = client.GetGuild(group.GuildId)?.GetUser(userId);
+        var mine = member?.Roles.Select(r => r.Id).ToHashSet() ?? new HashSet<ulong>();
+        return s =>
         {
-            var member = client.GetGuild(group.GuildId)?.GetUser(userId);
-            if (member is null || member.Roles.All(r => !group.RequiredRoleIds.Contains(r.Id)))
-                missing.Add(string.Join(" / ", group.RequiredRoleIds.Select(id => $"<@&{id}>")));
-        }
-        if (group.MinGs is { } min && (characters.GetInfo(group.GuildId, userId, characterName, Scope(group))?.Gs ?? 0) < min)
-            missing.Add(Tx.Get(group.GuildId, "lfg.sign.gsRequirement", ("gs", min)));
-        return missing.Count == 0 ? null : string.Join(Tx.Get(group.GuildId, "lfg.and"), missing);
+            var need = group.RequiredFor(s);
+            return need.Count == 0 || need.Any(mine.Contains);
+        };
+    }
+
+    /// <summary>
+    /// Игрок попал в резерв, хотя свободный слот его роли есть — значит, не подошёл по требуемой роли слота.
+    /// Текст: роли этих слотов (любая из), иначе null (просто нет мест).
+    /// </summary>
+    private static string? RoleUnmet(LfgGroup group, SlotRole wanted, Func<Slot, bool>? fits)
+    {
+        if (fits is null || group.FindFreeSlot(wanted) < 0) return null;
+        var roles = group.Slots.Where(s => s.IsFree && !fits(s) && (wanted == SlotRole.Any || s.Role == wanted || s.Role == SlotRole.Any))
+            .SelectMany(s => group.RequiredFor(s)).Distinct().ToList();
+        return roles.Count == 0 ? null : string.Join(" / ", roles.Select(id => $"<@&{id}>"));
     }
 
     /// <summary>Перенос времени сбора: новое время, автоудаление, напоминание, пост и ЛС всем записавшимся.</summary>

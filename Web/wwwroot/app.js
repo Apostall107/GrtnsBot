@@ -133,25 +133,42 @@ function tabsRow(items, current, storeKey, ...extra) {
     ...extra);
 }
 
-/** Pick several roles at once (checkboxes + search). Resolves with the chosen roles or null. */
-function pickRolesDialog(title, exclude = [], pool = state.roles) {
+/**
+ * Pick several roles at once (checkboxes + search). Resolves with the chosen roles or null.
+ * fullPool: when given, `pool` is the short list (e.g. roles of the project) and a toggle shows all of fullPool.
+ */
+function pickRolesDialog(title, exclude = [], pool = state.roles, fullPool = null) {
   return new Promise(resolve => {
     const d = dialog();
     const search = h("input", { placeholder: "Search roles…", style: "width:100%" });
-    const items = pool.filter(r => !exclude.includes(r.id)).map(r => {
+    const shortIds = new Set(pool.map(r => r.id));
+    const all = fullPool && fullPool.length > pool.length ? fullPool : pool;
+    const items = all.filter(r => !exclude.includes(r.id)).map(r => {
       const cb = h("input", { type: "checkbox" });
-      return { r, cb, el: h("label", {}, cb, roleChip(r)) };
+      return { r, cb, short: shortIds.has(r.id), el: h("label", {}, cb, roleChip(r)) };
     });
-    const list = h("div", { class: "check-list" }, items.length ? items.map(x => x.el) : empty("No more roles."));
-    search.addEventListener("input", () => {
+    const showAll = h("input", { type: "checkbox" });
+    const toggle = all !== pool ? h("label", { class: "row small muted", style: "margin-top:6px" }, showAll, "Show all server roles") : null;
+    const none = empty("No more roles.");
+    const list = h("div", { class: "check-list" }, items.map(x => x.el), none);
+    const filter = () => {
       const q = search.value.trim().toLowerCase();
-      for (const x of items) x.el.style.display = !q || x.r.name.toLowerCase().includes(q) ? "" : "none";
-    });
+      let shown = 0;
+      for (const x of items) {
+        const visible = (showAll.checked || x.short || x.cb.checked) && (!q || x.r.name.toLowerCase().includes(q));
+        x.el.style.display = visible ? "" : "none";
+        if (visible) shown++;
+      }
+      none.style.display = shown ? "none" : "";
+    };
+    search.addEventListener("input", filter);
+    showAll.addEventListener("change", filter);
+    filter();
     const count = h("span", { class: "muted small", style: "margin-right:auto" }, "0 selected");
     list.addEventListener("change", () => { count.textContent = `${items.filter(x => x.cb.checked).length} selected`; });
     let result = null;
     const ok = h("button", { class: "btn", onclick: () => { result = items.filter(x => x.cb.checked).map(x => x.r); d.close(); } }, "➕ Add selected");
-    d.replaceChildren(h("h2", {}, title), search, list,
+    d.replaceChildren(h("h2", {}, title), search, toggle, list,
       h("div", { class: "actions" }, count, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), ok));
     d.onclose = () => resolve(result && result.length ? result : null);
     d.showModal();
@@ -805,26 +822,32 @@ function channelSelect(kind, placeholder) {
       `${kind === "categories" ? "" : "#"}${c.name}${c.category ? `  ·  ${c.category}` : ""}${kind === "text" && !c.canPost ? "  (no access)" : ""}`)));
 }
 
-/** Editable list of roles: chips + "add" dropdown. Returns { el, value() }. */
-function roleListEditor(initial, pool = state.roles) {
+/**
+ * Editable list of roles: chips + "add" picker. Returns { el, value(), roles() }.
+ * pool: array or a function returning the short list for the picker (e.g. roles of the current project);
+ * with fullPool the picker can also show all server roles. onChange — after add/remove.
+ */
+function roleListEditor(initial, pool = state.roles, onChange = null, fullPool = null) {
   let ids = initial.map(r => r.id);
   const known = new Map(initial.map(r => [r.id, r]));
-  for (const r of pool) known.set(r.id, { ...r, exists: true });
+  for (const r of fullPool || (typeof pool === "function" ? pool() : pool)) known.set(r.id, { ...r, exists: true });
   const el = h("div", {});
+  const changed = () => { draw(); if (onChange) onChange(); };
   const draw = () => {
     // Search + tick several roles at once (the plain dropdown was too long)
     const sel = h("button", { class: "btn secondary", type: "button" }, "➕ Add roles…");
     sel.addEventListener("click", async () => {
-      const picked = await pickRolesDialog("Add roles", ids, pool);
-      if (picked) { ids.push(...picked.map(r => r.id)); draw(); }
+      const short = typeof pool === "function" ? pool() : pool;
+      const picked = await pickRolesDialog("Add roles", ids, short, fullPool);
+      if (picked) { for (const r of picked) known.set(r.id, { ...r, exists: true }); ids.push(...picked.map(r => r.id)); changed(); }
     });
     el.replaceChildren(
-      h("div", {}, ids.length ? ids.map(id => roleChip(known.get(id) || { id, name: "deleted role", exists: false }, () => { ids = ids.filter(x => x !== id); draw(); }))
+      h("div", {}, ids.length ? ids.map(id => roleChip(known.get(id) || { id, name: "deleted role", exists: false }, () => { ids = ids.filter(x => x !== id); changed(); }))
                               : h("span", { class: "muted" }, "not set")),
       h("div", { style: "margin-top:6px" }, sel));
   };
   draw();
-  return { el, value: () => ids.slice() };
+  return { el, value: () => ids.slice(), roles: () => ids.map(id => known.get(id) || { id, name: "deleted role", exists: false }) };
 }
 
 /** "Post panel in channel" control. */
@@ -1650,17 +1673,46 @@ function lfgForm(acts, opts) {
     }
   }
 
-  // Slots
+  // Requirements: one of these roles, minimum character GS — others go to the reserve.
+  // The picker shows the roles of the current project first (access roles, its activities' roles, its classes);
+  // "Show all server roles" opens the rest.
+  const rolePool = opts.roles || state.roles;
+  let related = opts.relatedRoles || null;
+  if (!related) gApi("GET", "/lfg/related-roles").then(r => { related = r; }).catch(() => { related = {}; });
+  const projectRoles = () => {
+    const ids = related && related[currentProject() || ""];
+    return ids ? rolePool.filter(r => ids.includes(r.id)) : rolePool;
+  };
+  const makeReq = initial => roleListEditor(initial, projectRoles, () => drawSlots(), rolePool);
+
+  // Slots: role (DD/Tank/Sup/All) and — when the group has required roles — which of them this slot needs
   let slots = v.slots ? v.slots.slice() : ["Any", "Any", "Any", "Any"];
+  let slotReqs = (v.slotRequirements || []).slice();
   const size = h("select", {}, Array.from({ length: 24 }, (_, i) => i + 2).map(n => h("option", { value: n }, `${n} slots`)));
-  const slotBox = h("div", { class: "row", style: "gap:6px" });
+  const slotBox = h("div", { class: "row", style: "gap:6px;align-items:flex-start" });
+  let req = null;
   const drawSlots = () => {
     size.value = String(slots.length);
+    const reqRoles = req ? req.roles() : (v.requiredRoles || []);
+    const reqIds = reqRoles.map(r => r.id);
+    // Drop slot requirements whose role was removed from the list
+    slotReqs = slots.map((_, i) => {
+      const x = slotReqs[i] || "";
+      return x === "" || x === "none" || reqIds.includes(x) ? x : "";
+    });
+    if (!reqIds.length) slotReqs = slots.map(() => "");
     slotBox.replaceChildren(...slots.map((r, i) => {
       const sel = h("select", { title: `Slot ${i + 1}`, "data-render": "role" }, SLOT_ROLES.map(([val, label]) => h("option", { value: val }, `${i + 1}. ${label}`)));
       sel.value = r;
       sel.addEventListener("change", () => { slots[i] = sel.value; });
-      return sel;
+      if (!reqIds.length) return sel;
+      const rsel = h("select", { title: `Required role for slot ${i + 1}`, style: "max-width:170px" },
+        h("option", { value: "" }, reqIds.length > 1 ? "🔒 any required" : `🔒 @${reqRoles[0].name}`),
+        reqIds.length > 1 ? reqRoles.map(x => h("option", { value: x.id }, `🔒 @${x.name}`)) : null,
+        h("option", { value: "none" }, "🔓 no role needed"));
+      rsel.value = slotReqs[i];
+      rsel.addEventListener("change", () => { slotReqs[i] = rsel.value; });
+      return h("div", { style: "display:flex;flex-direction:column;gap:4px" }, sel, rsel);
     }));
   };
   size.addEventListener("change", () => {
@@ -1669,11 +1721,8 @@ function lfgForm(acts, opts) {
     while (slots.length < n) slots.push("Any");
     drawSlots();
   });
+  req = makeReq(v.requiredRoles || []);
   drawSlots();
-
-  // Requirements: one of these roles, minimum character GS — others go to the reserve
-  const rolePool = opts.roles || state.roles;
-  let req = roleListEditor(v.requiredRoles || [], rolePool);
   const reqBox = h("div", {}, req.el);
   const minGs = h("input", { type: "number", min: "0", max: "99999", placeholder: "none", value: v.minGs ?? "", style: "width:110px" });
 
@@ -1694,9 +1743,10 @@ function lfgForm(acts, opts) {
     custom.value = t.customActivity || "";
     syncCustom();
     slots = t.slots.slice();
-    drawSlots();
-    req = roleListEditor(t.requiredRoles || [], rolePool);
+    slotReqs = (t.slotRequirements || []).slice();
+    req = makeReq(t.requiredRoles || []);
     reqBox.replaceChildren(req.el);
+    drawSlots();
     minGs.value = t.minGs ?? "";
   });
 
@@ -1713,7 +1763,8 @@ function lfgForm(acts, opts) {
       h("div", { class: "field" }, h("label", {}, "Activity"), activity, custom)),
     h("div", { class: "field" }, h("label", {}, "Slots"), h("div", { class: "row", style: "margin-bottom:6px" }, size), slotBox),
     h("div", { class: "grid2" },
-      h("div", { class: "field" }, h("label", {}, "Required role (any of)"), reqBox),
+      h("div", { class: "field" }, h("label", {}, "Required role (any of)"), reqBox,
+        h("span", { class: "muted small" }, "Roles of this project are listed first. Once set, pick under each slot which role it needs.")),
       h("div", { class: "field" }, h("label", {}, "Minimum GS"), minGs,
         h("span", { class: "muted small" }, "Players without the role / GS go to the reserve; the organizer can still move them in.")))
   ];
@@ -1766,7 +1817,8 @@ function lfgForm(acts, opts) {
     value: () => ({
       channelId: channel.value || null, activityKey: activity.value || null, customName: activity.value ? null : custom.value,
       slots: slots.slice(), notifyByDm: dm.checked, seatOwner: seat.checked,
-      requiredRoleIds: req.value(), minGs: minGs.value === "" ? null : Number(minGs.value),
+      requiredRoleIds: req.value(), slotRequirements: req.value().length ? slotReqs.slice() : [],
+      minGs: minGs.value === "" ? null : Number(minGs.value),
       projectKey: currentProject(), createVoice: voice.checked,
       mirrorChannelIds: mirrorIds.slice(), ...extra()
     })
@@ -2115,6 +2167,13 @@ function attendanceButton(s, url) {
     onclick: () => act(null, () => gApi("POST", url, { userId: s.member.id, attended: next })).then(r => { if (r !== undefined) refresh(); }) }, icon(ic, 16));
 }
 
+/** Own requirement of an open slot: 🔒 the role it needs, or 🔓 when this slot needs no role. */
+function slotReqMark(s) {
+  if (s.requiredRole) return h("span", { title: "Only players with this role can take this slot" }, "🔒 ", roleChip(s.requiredRole));
+  if (s.noRequirement) return h("span", { class: "chip", title: "This slot needs no role" }, "🔓 any");
+  return null;
+}
+
 function requirementsLine(req) {
   if (!req) return null;
   return h("div", { class: "muted small" }, "📋 Requires: ", req.roles.map(r => roleChip(r)), req.minGs ? h("span", { class: "chip" }, `GS ${req.minGs}+`) : null);
@@ -2174,7 +2233,7 @@ function groupCard(g) {
           s.member.id !== g.owner.id ? tool("x", "Remove from the group", async () => {
             if (await confirmDialog(`Remove ${s.member.name}?`, "Their slot becomes free.", "Remove")) roster("remove", s.member, "Removed.");
           }) : null)
-      : h("div", { class: "slot open" }, h("span", { class: "slot-num" }, i + 1), rolePill(s.slotRole),
+      : h("div", { class: "slot open" }, h("span", { class: "slot-num" }, i + 1), rolePill(s.slotRole), slotReqMark(s),
           h("span", { class: "slot-open-text" }, icon("circle-plus", 14), "Open slot")))),
     g.reserve.length ? h("details", { class: "reserve", open: true }, h("summary", {}, icon("clock", 14), `Reserve · ${g.reserve.length}`),
       h("div", { class: "roster" }, g.reserve.map(r => h("div", { class: "slot taken reserve-row" },
@@ -3320,7 +3379,7 @@ async function pagePlay(main) {
       const opt = await gApi("GET", "/me/create-options");
       if (!opt.channel && !(opt.projects || []).some(p => p.channel)) { createBody.replaceChildren(empty("The channel for groups isn't set yet — ask an admin.")); return; }
       const form = lfgForm(opt.activities, { mode: "once", fixedChannel: opt.channel || { id: "", name: "" }, hideSeat: true,
-        templates: opt.templates, roles: opt.roles, projects: opt.projects, mirrorChannels: opt.mirrorChannels,
+        templates: opt.templates, roles: opt.roles, relatedRoles: opt.relatedRoles || {}, projects: opt.projects, mirrorChannels: opt.mirrorChannels,
         initial: tab !== "all" ? { projectKey: tab } : {} });
       const publish = h("button", { class: "btn" }, "📣 Publish");
       publish.addEventListener("click", async () => {
@@ -3372,7 +3431,7 @@ function playCard(g) {
         org && g.started ? attendanceButton(s, `/me/groups/${gid}/attendance`) : null,
         org && s.member.id !== g.owner.id ? tool("arrow-right", "Move to reserve", () => roster$("toReserve", s.member, "Moved to the reserve.")) : null)
     : h("div", { class: "slot open" },
-        h("span", { class: "slot-num" }, i + 1), rolePill(s.slotRole),
+        h("span", { class: "slot-num" }, i + 1), rolePill(s.slotRole), slotReqMark(s),
         h("span", { class: "slot-open-text" }, icon("circle-plus", 14), "Open slot"))));
   const reserve = g.reserve.length ? h("details", { class: "reserve", open: org },
     h("summary", {}, icon("clock", 14), `Reserve · ${g.reserve.length}`),

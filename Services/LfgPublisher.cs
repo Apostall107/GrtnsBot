@@ -19,7 +19,8 @@ public sealed record LfgPublishRequest(
     int? MinGs = null,
     string? ProjectKey = null,
     IReadOnlyList<ulong>? MirrorChannelIds = null,
-    bool CreateVoice = false);
+    bool CreateVoice = false,
+    IReadOnlyList<ulong>? SlotRequirements = null);
 
 /// <summary>Публикация сбора: пост с пингом роли, сохранение, ЛС участникам с ролью активности.</summary>
 public sealed class LfgPublisher(
@@ -46,6 +47,7 @@ public sealed class LfgPublisher(
             MinGs = r.MinGs,
             ProjectKey = r.ProjectKey
         };
+        SlotRequirement.Apply(draft.Slots, draft.RequiredRoleIds.Count > 0 ? r.SlotRequirements : null);
 
         var group = new LfgGroup(draft)
         {
