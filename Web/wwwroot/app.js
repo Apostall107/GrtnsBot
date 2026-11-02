@@ -2495,7 +2495,7 @@ function questionEditor(p) {
 function ticketArchiveCard() {
   const OUT = { approved: ["approved", "ok"], denied: ["denied", "lock"], closed: ["closed", ""], "auto-closed": ["auto-closed", "wait"] };
   const outcome = h("select", {}, h("option", { value: "" }, "All outcomes"), Object.keys(OUT).map(k => h("option", { value: k }, k)));
-  const q = h("input", { placeholder: "Search: name, project, reason, answers…", style: "flex:1 1 220px" });
+  const q = h("input", { placeholder: "Search: name, ID, project, reason, answers…", style: "flex:1 1 220px" });
   const tbody = h("tbody", {});
   const more = h("button", { class: "btn secondary", style: "display:none" }, "Load more");
   let skip = 0;
@@ -2514,7 +2514,10 @@ function ticketArchiveCard() {
           : h("span", { class: "muted" }, "No form answers.")));
       const toggle = h("button", { class: "btn ghost", onclick: () => { details.style.display = details.style.display === "none" ? "" : "none"; } }, "Form");
       tbody.append(h("tr", {},
-        h("td", {}, h("b", {}, e.userName), h("div", { class: "muted small" }, e.project)),
+        h("td", {}, h("b", {}, e.userName),
+          h("div", { class: "muted small" }, e.project),
+          h("div", { class: "muted small", style: "cursor:pointer;font-family:monospace", title: "Click to copy the user ID",
+            onclick: () => navigator.clipboard?.writeText(e.userId).then(() => toast("User ID copied."), () => {}) }, `ID ${e.userId}`)),
         h("td", {}, h("span", { class: `badge ${cls}` }, label), e.byName ? h("div", { class: "muted small" }, `by ${e.byName}`) : null),
         h("td", { class: "small" }, e.reason || ""),
         h("td", { class: "muted small", style: "white-space:nowrap" }, new Date(e.openedAt).toLocaleDateString(), " → ", new Date(e.closedAt).toLocaleString()),
@@ -3918,7 +3921,7 @@ const HELP = {
       ["⚙️ General", [
         "**Ticket panel** — publishes the message with the Create ticket button in a channel (all projects in one panel).",
         "**Open tickets** — **Approve** (gives the roles, DM, closes in 15 s), **Deny** (reason by DM, closes in 15 s), Open, **Force close** (deletes the channels without an outcome).",
-        "**🗄️ Archive** — filter by outcome, search by name, project, reason or answers; **Form** shows the answers."
+        "**🗄️ Archive** — filter by outcome, search by name, user ID, project, reason or answers; each row shows the user ID (click to copy); **Form** shows the answers."
       ]]
     ]
   },
