@@ -49,6 +49,7 @@ public sealed class TicketArchiveStore
             if (userId is { } u) q = q.Where(e => e.UserId == u);
             if (!string.IsNullOrWhiteSpace(search))
                 q = q.Where(e => e.UserName.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                                 e.UserId.ToString().Contains(search.Trim()) ||
                                  e.Project.Contains(search, StringComparison.OrdinalIgnoreCase) ||
                                  (e.ByName?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false) ||
                                  (e.Reason?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false) ||
