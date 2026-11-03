@@ -2153,7 +2153,6 @@ async function renderLfgPrefs(card) {
   const gsChannel = channelSelect("text", "No channel — DMs only");
   gsChannel.value = p.gsReminderChannelId || "";
   const gsDm = toggle(p.gsReminderDm, "Also by DM (each member gets a DM with their characters)");
-  const mRoster = toggle(p.memberRoster, "👥 Members see the guild roster (Member → Calendar → Roster: character, class, roles, GS)");
   const mTop = toggle(p.memberTop, "🏆 Members see the top active players of the last 30 days (no-shows not counted)");
   const gsBox = h("div", { class: "subcard" },
     h("div", { class: "row", style: "margin-bottom:8px" }, h("span", { class: "muted" }, "GS is outdated after"), gsDays, h("span", { class: "muted" }, "days (or not set)")),
@@ -2165,7 +2164,7 @@ async function renderLfgPrefs(card) {
   const save = h("button", { class: "btn" }, "💾 Save");
   const body = () => ({ readyCheck: ready.cb.checked, autoPromoteMinutes: Number(auto.value || 0), gsReminder: gsOn.cb.checked,
     gsReminderChannelId: gsChannel.value || null, gsReminderDays: Number(gsDays.value || 7), gsReminderDm: gsDm.cb.checked,
-    memberRoster: mRoster.cb.checked, memberTop: mTop.cb.checked });
+    memberTop: mTop.cb.checked });
   const tracker = track("Group options", body, async () => await act(save, () => gApi("PUT", "/lfg/prefs", body()), "Group options saved.") !== undefined);
   save.addEventListener("click", tracker.save);
   const runNow = h("button", { class: "btn secondary", title: "Send the GS reminder now (with the saved settings)" }, "📈 Send the GS reminder now");
@@ -2180,7 +2179,8 @@ async function renderLfgPrefs(card) {
       h("div", { class: "row" }, h("span", { class: "muted" }, "In the last"), auto, h("span", { class: "muted" }, "minutes before the start (0 = off)")),
       h("span", { class: "muted small" }, "When a slot frees up then, the first player from the reserve who fits (role, class, GS) moves in; the bot replies under the post. Earlier the organizer decides.")),
     gsOn.el, gsBox,
-    h("label", { class: "field-label", style: "margin-top:10px" }, "For members on the site"), mRoster.el, mTop.el,
+    h("label", { class: "field-label", style: "margin-top:10px" }, "For members on the site"), mTop.el,
+    h("p", { class: "muted small" }, "Members always see the guild roster of their own projects (Member → Calendar → Guild roster: character, class, roles, GS)."),
     h("div", { class: "row", style: "margin-top:8px" }, save, runNow));
   tracker.attach(card);
 }

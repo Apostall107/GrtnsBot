@@ -29,7 +29,6 @@ public static partial class PanelApi
                 gsReminderDays = p.GsReminderDays,
                 gsReminderLastRun = p.GsReminderLastRun?.ToUnixTimeMilliseconds(),
                 gsReminderDm = p.Dm.GsReminder,
-                memberRoster = p.MemberRoster,
                 memberTop = p.MemberTop
             });
         });
@@ -48,7 +47,6 @@ public static partial class PanelApi
                 p.GsReminderChannelId = channel;
                 p.GsReminderDays = body.GsReminderDays ?? p.GsReminderDays;
                 p.Dm.GsReminder = body.GsReminderDm;
-                p.MemberRoster = body.MemberRoster;
                 p.MemberTop = body.MemberTop;
             });
             return Results.Ok();
@@ -240,4 +238,4 @@ public static partial class PanelApi
 }
 
 public sealed record LfgPrefsBody(bool ReadyCheck, int? AutoPromoteMinutes, bool GsReminder, string? GsReminderChannelId, int? GsReminderDays,
-    bool GsReminderDm, bool MemberRoster = false, bool MemberTop = true);
+    bool GsReminderDm, bool MemberTop = true);

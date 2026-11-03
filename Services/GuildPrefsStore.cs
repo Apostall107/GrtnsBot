@@ -36,8 +36,6 @@ public sealed class GuildPrefs
     /// <summary>Когда напоминание отправлялось последний раз.</summary>
     public DateTimeOffset? GsReminderLastRun { get; set; }
 
-    /// <summary>Участникам на сайте (Member → Guild): состав гильдии (персонажи, классы, GS) — по умолчанию скрыт.</summary>
-    public bool MemberRoster { get; set; }
     /// <summary>Участникам на сайте: топ активных игроков за 30 дней (без no-show).</summary>
     public bool MemberTop { get; set; } = true;
 }
