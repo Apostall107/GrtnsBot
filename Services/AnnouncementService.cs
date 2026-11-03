@@ -358,6 +358,63 @@ public sealed class AnnouncementService(
         return result;
     }
 
+    /// <summary>
+    /// Изменить уже отправленный пост: сообщения редактируются на месте. Текст стал длиннее (больше сообщений) —
+    /// недостающие дописываются следом, короче — лишние удаляются. Пинги при редактировании Discord не рассылает.
+    /// Возвращает (ошибка, сколько сообщений добавлено).
+    /// </summary>
+    public async Task<(string? Error, int Added)> EditSentAsync(Announcement post, string content, List<ulong> roleIds, List<ulong> userIds,
+        string? everyone, bool allowMentions)
+    {
+        if (client.GetGuild(post.GuildId)?.GetTextChannel(post.ChannelId) is not { } channel) return ("The channel no longer exists.", 0);
+        var updated = new Announcement
+        {
+            Content = content, PingRoleIds = roleIds, PingUserIds = userIds, PingEveryone = everyone, AllowMentions = allowMentions
+        };
+        var blocks = PostSplitter.Split(updated.FullText());
+        var ids = post.MessageIds.ToList();
+        var mentions = updated.Mentions();
+        var added = 0;
+        try
+        {
+            for (var i = 0; i < Math.Min(blocks.Count, ids.Count); i++)
+            {
+                if (await channel.GetMessageAsync(ids[i]) is not IUserMessage message || message.Author.Id != client.CurrentUser.Id)
+                    return ("A message of this post was deleted in Discord — send it again instead (↩️ Reuse).", 0);
+                var text = blocks[i];
+                await message.ModifyAsync(m => { m.Content = text; m.AllowedMentions = mentions; });
+            }
+            // Длиннее — дописать следом; короче — лишние удалить
+            for (var i = ids.Count; i < blocks.Count; i++)
+            {
+                var message = await channel.SendMessageAsync(blocks[i], allowedMentions: mentions);
+                ids.Add(message.Id);
+                added++;
+            }
+            for (var i = ids.Count - 1; i >= blocks.Count; i--)
+            {
+                try { await channel.DeleteMessageAsync(ids[i]); } catch (Discord.Net.HttpException) { /* уже удалено */ }
+                ids.RemoveAt(i);
+            }
+        }
+        catch (Discord.Net.HttpException ex)
+        {
+            logger.LogWarning(ex, "Editing post {Id} failed", post.Id);
+            return ($"Discord refused the edit: {ex.Reason ?? ex.Message}", added);
+        }
+
+        store.Update(post.Id, a =>
+        {
+            a.Content = content;
+            a.PingRoleIds = roleIds;
+            a.PingUserIds = userIds;
+            a.PingEveryone = everyone;
+            a.AllowMentions = allowMentions;
+            a.MessageIds = ids;
+        });
+        return (null, added);
+    }
+
     /// <summary>Удалить отправленные сообщения поста.</summary>
     public async Task<int> DeleteMessagesAsync(Announcement post)
     {

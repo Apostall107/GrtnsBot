@@ -91,6 +91,18 @@ public static partial class PanelApi
             return Results.Ok();
         });
 
+        // Изменить уже отправленный пост (сообщения в Discord редактируются; канал не меняется)
+        g.MapPut("/{id}/sent", async (ulong guildId, string id, AnnounceBody body, AnnouncementStore store, AnnouncementService sender) =>
+        {
+            if (store.Find(id) is not { Status: "sent" } existing || existing.GuildId != guildId) return Error("This post isn't sent (or was removed).");
+            var content = (body.Content ?? "").Trim();
+            if (content.Length == 0) return Error("The text is empty.");
+            if (content.Length > PostSplitter.MaxTotalLength) return Error($"The post is limited to {PostSplitter.MaxTotalLength} characters.");
+            var (error, added) = await sender.EditSentAsync(existing, content, ParseIds(body.PingRoleIds), ParseIds(body.PingUserIds),
+                Everyone(body.PingEveryone), body.AllowMentions);
+            return error is null ? Results.Ok(new { added }) : Error(error);
+        });
+
         g.MapPost("/{id}/send-now", async (ulong guildId, string id, AnnouncementStore store, AnnouncementService sender) =>
         {
             if (store.Find(id) is not { Status: "scheduled" } existing || existing.GuildId != guildId)

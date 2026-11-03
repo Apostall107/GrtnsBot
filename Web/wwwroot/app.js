@@ -1345,6 +1345,7 @@ async function pageAnnounce(main) {
     h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
 
   let editing = null; // scheduled post being edited
+  let editingSent = null; // sent post being edited (messages are edited in Discord)
   const channel = h("select", {}, h("option", { value: "" }, "Channel…"),
     h("optgroup", { label: "Text channels" }, state.channels.text.filter(c => c.canPost)
       .map(c => h("option", { value: c.id }, `# ${c.name}${c.category ? `  ·  ${c.category}` : ""}`))),
@@ -1421,6 +1422,9 @@ async function pageAnnounce(main) {
   const go = h("button", { class: "btn" }, "👁 Preview & send");
   const resetForm = () => {
     editing = null;
+    editingSent = null;
+    channel.disabled = false;
+    whenBox.style.display = when.value === "later" ? "" : "none";
     title.textContent = "New post";
     cancelEdit.style.display = "none";
     go.textContent = "👁 Preview & send";
@@ -1431,7 +1435,7 @@ async function pageAnnounce(main) {
   // Preview: how the text is split → confirmation → send / schedule
   go.addEventListener("click", async () => {
     if (!channel.value) return toast("Choose a channel first.", "warn");
-    const later = editing || when.value === "later";
+    const later = !editingSent && (editing || when.value === "later");
     if (later && (!date.value || !time.value)) return toast("Pick the date and time.", "warn");
     const preview = await act(go, () => gApi("POST", "/announce/preview", { content: text.value, ...pingBody() }));
     if (!preview) return;
@@ -1440,7 +1444,7 @@ async function pageAnnounce(main) {
     const ok = await new Promise(resolve => {
       const d = dialog();
       d.classList.add("wide");
-      d.replaceChildren(h("h2", {}, `${editing ? "Save" : later ? "Schedule" : "Send"}: ${preview.count} message${preview.count > 1 ? "s" : ""} → ${chName}`),
+      d.replaceChildren(h("h2", {}, `${editing || editingSent ? "Save" : later ? "Schedule" : "Send"}: ${preview.count} message${preview.count > 1 ? "s" : ""} → ${chName}`),
         h("p", { class: "muted small" }, `${preview.length} characters · ${whenText} · ping: ${[ping.everyone && "@" + ping.everyone, ...ping.roles.map(r => "@" + r.name), ...ping.users.map(u => "@" + u.name)].filter(Boolean).join(", ") || "nobody"}${pings.checked ? " + all mentions in the text" : ""}. `,
           preview.count > 1 ? "The text is longer than Discord allows (2000) — it is split at paragraphs/lines; code blocks are kept whole." : ""),
         h("div", { class: "guide-body" }, preview.blocks.map((b, i) => h("div", { class: "card", style: "padding:10px;margin-bottom:8px" },
@@ -1448,14 +1452,17 @@ async function pageAnnounce(main) {
           h("div", { style: "white-space:pre-wrap;word-break:break-word" }, renderMentions(b))))),
         h("div", { class: "actions" },
           h("button", { class: "btn secondary", onclick: () => { d.close(); resolve(false); } }, "Cancel"),
-          h("button", { class: "btn", onclick: () => { d.close(); resolve(true); } }, editing ? "💾 Save" : later ? "📅 Schedule" : "✅ Send")));
+          editingSent ? h("p", { class: "muted small" }, "The messages in Discord are edited in place. Editing doesn't ping anyone again. If the text now needs more messages, the extra ones are posted below; fewer — the extra old ones are deleted.") : null,
+          h("button", { class: "btn", onclick: () => { d.close(); resolve(true); } }, editing || editingSent ? "💾 Save" : later ? "📅 Schedule" : "✅ Send")));
       d.onclose = () => { d.classList.remove("wide"); resolve(false); };
       d.showModal();
     });
     if (!ok) return;
     const body = { channelId: channel.value, content: text.value, allowMentions: pings.checked,
       date: later ? date.value : null, time: later ? time.value : null, ...pingBody() };
-    const res = editing
+    const res = editingSent
+      ? await act(go, () => gApi("PUT", `/announce/${editingSent}/sent`, body), r => r.added ? `Post edited in Discord (+${r.added} message(s) below).` : "Post edited in Discord.")
+      : editing
       ? await act(go, () => gApi("PUT", `/announce/${editing}`, body), "Scheduled post saved.")
       : await act(go, () => gApi("POST", "/announce", body), r => r.scheduled ? "Post scheduled." : `Sent — ${r.sent} message(s).`);
     if (res === undefined) return;
@@ -1565,7 +1572,16 @@ async function pageAnnounce(main) {
     pings.checked = p.allowMentions;
     setPing(p);
     syncCounter();
-    if (edit) {
+    if (edit === "sent") {
+      editingSent = p.id;
+      title.textContent = "Edit sent post";
+      cancelEdit.style.display = "";
+      go.textContent = "👁 Preview & save";
+      channel.disabled = true; // the messages stay where they are
+      when.value = "now";
+      when.disabled = true;
+      whenBox.style.display = "none";
+    } else if (edit) {
       editing = p.id;
       title.textContent = "Edit scheduled post";
       cancelEdit.style.display = "";
@@ -1604,6 +1620,8 @@ async function pageAnnounce(main) {
     h("thead", {}, h("tr", {}, h("th", {}, "Sent"), h("th", {}, "Channel"), h("th", {}, "Text"), h("th", {}, "Status"), h("th", {}))),
     h("tbody", {}, data.sent.map(p => {
       const again = h("button", { class: "btn secondary", title: "Copy into the form", onclick: () => loadIntoForm(p, false) }, "↩️ Reuse");
+      const editSent = p.status === "sent" && p.messages
+        ? h("button", { class: "btn secondary", title: "Change the text of the messages in Discord", onclick: () => loadIntoForm(p, "sent") }, "✏️ Edit") : null;
       const delMsgs = h("button", { class: "btn danger" }, "Delete messages");
       delMsgs.addEventListener("click", async () => {
         if (!await confirmDialog("Delete this post in Discord?", `${p.messages} message(s) in ${where(p)} will be deleted.`, "Delete")) return;
@@ -1621,7 +1639,7 @@ async function pageAnnounce(main) {
         h("td", {}, p.status === "sent" ? h("span", { class: "badge ok" }, `${p.messages} msg`) : h("span", { class: "badge lock", title: p.error || "" }, "failed"),
           p.error ? h("div", { class: "error-text small" }, p.error) : null),
         h("td", { class: "actions" }, p.jumpUrl ? h("a", { class: "btn ghost", href: p.jumpUrl, target: "_blank", rel: "noopener" }, "Open") : null,
-          " ", again, " ", p.messages ? delMsgs : null, " ", forget));
+          " ", editSent, " ", again, " ", p.messages ? delMsgs : null, " ", forget));
     })))) : empty("Nothing sent yet."));
 }
 
@@ -5260,7 +5278,7 @@ const HELP = {
       "Optionally **📄 Load a template**. Pick the channel, write the text (Markdown works), add whom to **🔔 ping**, choose **Send now** or **📅 Schedule** → **👁 Preview & send** → check the messages → **✅ Send** / **📅 Schedule**.",
       "**💾 Save as template** stores the form (for a loaded template — update it or save a copy). **📄 Templates**: Use, ✏️ rename, Delete.",
       "**📅 Scheduled**: ✏️ Edit (loads it into the form → Preview & save), **Send now**, **Cancel** (asks first).",
-      "**🗂️ Sent**: **Open**, **↩️ Reuse**, **Delete messages** (in Discord), **Remove** (only from this list).",
+      "**🗂️ Sent**: **Open**, **✏️ Edit** (changes the messages in Discord), **↩️ Reuse**, **Delete messages** (in Discord), **Remove** (only from this list).",
       "Access: the owner gives the ✍️ **Announcements** right in Access."
     ]]]
   },
