@@ -1410,3 +1410,30 @@ dialog.xwide { width: min(1240px, calc(100vw - 32px)); }
 .bt-bubble { display: none; margin-top: 6px; padding: 8px 10px; }
 .bt-bubble.show { display: block; }
 .bt-preview { margin: 0; }
+
+/* ===== Unsaved changes: sticky bar (Save all / Discard) + highlighted editors ===== */
+.pending-bar {
+  position: fixed; left: 50%; bottom: 18px; z-index: 60; transform: translate(-50%, 140%); opacity: 0; pointer-events: none;
+  display: flex; align-items: center; gap: 10px; width: min(760px, calc(100vw - 32px)); padding: 10px 12px 10px 16px; border-radius: 14px;
+  background: rgba(22, 26, 40, .97); border: 1px solid rgba(245, 185, 66, .45);
+  box-shadow: var(--shadow-pop), 0 0 28px rgba(245, 185, 66, .12); backdrop-filter: blur(8px);
+  transition: transform .22s ease, opacity .22s ease;
+}
+.pending-bar.show { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
+.pending-bar .pending-icon { color: var(--warning); flex: none; }
+.pending-text { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.3; }
+.pending-count { color: var(--warning); }
+.pending-names { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pending-bar .btn { flex: none; }
+body.has-pending .main { padding-bottom: 96px; }
+.unsaved { position: relative; }
+.card.unsaved, .editor-layout.unsaved > .card, .editor-layout.unsaved .editor-form > .card {
+  border-color: rgba(245, 185, 66, .55); box-shadow: 0 0 0 1px rgba(245, 185, 66, .25), 0 0 22px rgba(245, 185, 66, .07);
+}
+tr.unsaved > td { background: rgba(245, 185, 66, .07); }
+tr.unsaved > td:first-child { box-shadow: inset 3px 0 0 var(--warning); }
+@media (max-width: 720px) {
+  .pending-bar { bottom: 10px; flex-wrap: wrap; }
+  .pending-text { flex-basis: 100%; }
+  .pending-bar .btn { flex: 1; justify-content: center; }
+}
