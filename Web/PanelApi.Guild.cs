@@ -13,7 +13,7 @@ namespace LfgBot.Web;
 /// </summary>
 public static partial class PanelApi
 {
-    private static void MapGuildTools(RouteGroupBuilder lfg, RouteGroupBuilder dm)
+    private static void MapGuildTools(RouteGroupBuilder lfg, RouteGroupBuilder guildTools, RouteGroupBuilder dm)
     {
         // ----- Настройки LFG сервера -----
         lfg.MapGet("/prefs", (ulong guildId, DiscordSocketClient client, [FromServices] GuildPrefsStore prefs) =>
@@ -57,7 +57,7 @@ public static partial class PanelApi
             Results.Ok(new { members = await reminder.RunAsync(guildId) }));
 
         // ----- Посещаемость: по людям за период (из истории закрытых сборов) -----
-        lfg.MapGet("/attendance", async (ulong guildId, string? project, int? days, DiscordSocketClient client,
+        guildTools.MapGet("/attendance", async (ulong guildId, string? project, int? days, DiscordSocketClient client,
             [FromServices] LfgHistoryStore history, [FromServices] LfgProjectStore projects) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
@@ -87,7 +87,7 @@ public static partial class PanelApi
         });
 
         // ----- Календарь: сборы и регулярные сборы на 7 дней вперёд -----
-        lfg.MapGet("/calendar", async (ulong guildId, DiscordSocketClient client, [FromServices] LfgStore store,
+        guildTools.MapGet("/calendar", async (ulong guildId, DiscordSocketClient client, [FromServices] LfgStore store,
             [FromServices] RecurringLfgStore recurring, [FromServices] TimeService time, [FromServices] LfgProjectStore projects) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
@@ -96,7 +96,7 @@ public static partial class PanelApi
         });
 
         // ----- Ростер гильдии: персонажи, классы, роли в группе, GS, на сервере с, последняя активность -----
-        lfg.MapGet("/roster", async (ulong guildId, DiscordSocketClient client, [FromServices] CharacterStore characters,
+        guildTools.MapGet("/roster", async (ulong guildId, DiscordSocketClient client, [FromServices] CharacterStore characters,
             [FromServices] LfgProjectStore projects, [FromServices] MemberActivityStore activity) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
@@ -137,7 +137,7 @@ public static partial class PanelApi
         });
 
         // ----- Неактивные: кто N дней не писал и не заходил в войс -----
-        lfg.MapGet("/inactive", (ulong guildId, int? days, string? roleId, DiscordSocketClient client,
+        guildTools.MapGet("/inactive", (ulong guildId, int? days, string? roleId, DiscordSocketClient client,
             [FromServices] MemberActivityStore activity, [FromServices] CharacterStore characters) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();

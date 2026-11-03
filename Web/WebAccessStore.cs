@@ -9,6 +9,8 @@ public static class PanelPermissions
     public const string Lfg = "lfg";
     public const string Tickets = "tickets";
     public const string Voice = "voice";
+    /// <summary>Гильдия: календарь, посещаемость, ростер, неактивные.</summary>
+    public const string Guild = "guild";
     /// <summary>Приветствие новичков и автороль.</summary>
     public const string Welcome = "welcome";
     /// <summary>Панели самовыдачи ролей.</summary>
@@ -26,7 +28,7 @@ public static class PanelPermissions
     public const string Access = "access";
 
     /// <summary>Права, которые владелец может выдавать.</summary>
-    public static readonly string[] Grantable = [Lfg, Tickets, Voice, Welcome, Roles, Texts, Posts, Announce, Log, Settings];
+    public static readonly string[] Grantable = [Lfg, Guild, Tickets, Voice, Welcome, Roles, Texts, Posts, Announce, Log, Settings];
 }
 
 public sealed class WebGrant
