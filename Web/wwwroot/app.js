@@ -5542,13 +5542,23 @@ function memberRoster(holder, guild) {
   const project = h("select", {}, h("option", { value: "" }, "All projects"), guild.projects.map(p => h("option", { value: p.key }, p.name)));
   project.value = store.get("gb.mRosterProject") || (guild.projects.find(p => p.isDefault) || {}).key || "";
   const role = h("select", {}, h("option", { value: "" }, "Any group role"), Object.entries(SLOT_ROLE_CHIP).map(([k, l]) => h("option", { value: k }, l)));
+  const cls = h("select", {}, h("option", { value: "" }, "Any class"));
   const minGs = h("input", { type: "number", min: "0", placeholder: "min GS", style: "width:110px" });
   const search = h("input", { type: "search", placeholder: "Search member or character…", style: "flex:1;min-width:180px" });
   const body = h("div", {});
+  // Classes of the chosen project (the ones characters have)
+  const fillClasses = () => {
+    const seen = new Map();
+    for (const c of list) if (c.classRole && (!project.value || c.project === project.value)) seen.set(c.classRole.id, c.classRole);
+    const keep = cls.value;
+    cls.replaceChildren(h("option", { value: "" }, "Any class"), ...[...seen.values()].sort((a, b) => a.name.localeCompare(b.name)).map(r => h("option", { value: r.id }, r.name)));
+    cls.value = seen.has(keep) ? keep : "";
+  };
   const draw = () => {
     store.set("gb.mRosterProject", project.value);
     const q = search.value.trim().toLowerCase();
     const rows = list.filter(c => (!project.value || c.project === project.value) && (!role.value || c.slotRoles.includes(role.value)) &&
+      (!cls.value || (c.classRole && c.classRole.id === cls.value)) &&
       (minGs.value === "" || (c.gs ?? -1) >= Number(minGs.value)) &&
       (!q || c.character.toLowerCase().includes(q) || c.member.name.toLowerCase().includes(q)));
     body.replaceChildren(h("p", { class: "muted small" }, `${rows.length} character(s). Find a tank or a healer for your group.`),
@@ -5560,10 +5570,12 @@ function memberRoster(holder, guild) {
         ["GS", r => r.gs, r => r.gs == null ? h("span", { class: "muted" }, "—") : String(r.gs)]
       ], 4) : emptyState("users", "Nobody matches", "Change the filters."));
   };
-  project.addEventListener("change", draw);
+  project.addEventListener("change", () => { fillClasses(); draw(); });
   role.addEventListener("change", draw);
+  cls.addEventListener("change", draw);
   for (const el of [minGs, search]) el.addEventListener("input", draw);
+  fillClasses();
   holder.replaceChildren(h("div", { class: "card" },
-    h("div", { class: "row", style: "margin-bottom:10px;flex-wrap:wrap" }, guild.projects.length > 1 ? project : null, role, minGs, search), body));
+    h("div", { class: "row", style: "margin-bottom:10px;flex-wrap:wrap" }, guild.projects.length > 1 ? project : null, role, cls, minGs, search), body));
   draw();
 }
