@@ -214,7 +214,9 @@ public static partial class PanelApi
                 {
                     role = Role(guild, kv.Key),
                     icon = kv.Value,
-                    roleIcon = RoleIcon(guild.GetRole(kv.Key))
+                    roleIcon = RoleIcon(guild.GetRole(kv.Key)),
+                    // Роли в группе, которыми играет класс (пусто — любыми)
+                    slots = projects.ClassSlotRoles(guildId, key).TryGetValue(kv.Key, out var sr) ? sr.Select(r => r.ToString()) : []
                 }),
                 roleIcons = guild.Roles.Where(r => RoleIcon(r) is not null).ToDictionary(r => r.Id.ToString(), r => RoleIcon(r)),
                 emojis
@@ -272,14 +274,18 @@ public static partial class PanelApi
             var key = string.IsNullOrWhiteSpace(project) ? null : project;
             if (key is not null && projects.Find(guildId, key) is null) return Error("Project not found.");
             var map = new Dictionary<ulong, string>();
+            var slotRoles = new Dictionary<ulong, List<SlotRole>>();
             foreach (var c in body.Classes ?? [])
             {
                 if (ParseId(c.RoleId) is not { } id || guild.GetRole(id) is null) continue;
                 var icon = (c.Icon ?? "").Trim();
                 if (icon.Length > 80) return Error("Icon is too long.");
                 map[id] = icon;
+                var roles = (c.Slots ?? []).Select(x => Enum.TryParse<SlotRole>(x, true, out var r) ? r : SlotRole.Any)
+                    .Where(r => r != SlotRole.Any).Distinct().ToList();
+                if (roles.Count > 0) slotRoles[id] = roles;
             }
-            projects.SetClassIcons(guildId, key, map);
+            projects.SetClassIcons(guildId, key, map, slotRoles);
             return Results.Ok();
         });
 
@@ -1031,7 +1037,7 @@ public sealed record RecurringBody(string? ChannelId, string? ActivityKey, strin
     List<string?>? SlotRequirements = null, string? Note = null);
 public sealed record LfgProjectBody(string? Name, List<string>? RoleIds, bool IsDefault = false);
 public sealed record LfgPanelProjectBody(string? ProjectKey);
-public sealed record ClassIconBody(string? RoleId, string? Icon);
+public sealed record ClassIconBody(string? RoleId, string? Icon, List<string>? Slots = null);
 public sealed record ClassIconsBody(List<ClassIconBody>? Classes);
 public sealed record ClassRoleIconsBody(List<string>? RoleIds);
 public sealed record EmojiDto(string Name, string Code, string Url, bool App);

@@ -27,6 +27,10 @@ public sealed class GuildLfgSetup
     public Dictionary<ulong, string> ClassIcons { get; set; } = new();
     /// <summary>Классы отдельного проекта. Если у проекта список пуст — действуют общие (ClassIcons).</summary>
     public Dictionary<string, Dictionary<ulong, string>> ProjectClassIcons { get; set; } = new();
+    /// <summary>Какими ролями в группе (DD / Tank / Sup) может играть класс. Нет записи — любыми.</summary>
+    public Dictionary<ulong, List<SlotRole>> ClassSlotRoles { get; set; } = new();
+    /// <summary>То же для классов отдельного проекта.</summary>
+    public Dictionary<string, Dictionary<ulong, List<SlotRole>>> ProjectClassSlotRoles { get; set; } = new();
     /// <summary>Категория для голосовых комнат сборов: "" — общая, иначе ключ проекта.</summary>
     public Dictionary<string, ulong> VoiceCategories { get; set; } = new();
     /// <summary>Куда автоматически дублировать посты сборов (текстовые и голосовые каналы): "" — общий список, иначе ключ проекта.</summary>
@@ -145,16 +149,57 @@ public sealed class LfgProjectStore
         return own is { Count: > 0 } ? own : ClassIcons(guildId);
     }
 
-    public void SetClassIcons(ulong guildId, string? projectKey, Dictionary<ulong, string> icons)
+    public void SetClassIcons(ulong guildId, string? projectKey, Dictionary<ulong, string> icons,
+        Dictionary<ulong, List<SlotRole>>? slotRoles = null)
     {
         lock (_lock)
         {
             var g = Guild(guildId);
-            if (projectKey is null) g.ClassIcons = icons;
-            else if (icons.Count == 0) g.ProjectClassIcons.Remove(projectKey);
-            else g.ProjectClassIcons[projectKey] = icons;
+            var roles = (slotRoles ?? new()).Where(kv => icons.ContainsKey(kv.Key) && kv.Value.Count > 0)
+                .ToDictionary(kv => kv.Key, kv => kv.Value.Distinct().ToList());
+            if (projectKey is null)
+            {
+                g.ClassIcons = icons;
+                g.ClassSlotRoles = roles;
+            }
+            else if (icons.Count == 0)
+            {
+                g.ProjectClassIcons.Remove(projectKey);
+                g.ProjectClassSlotRoles.Remove(projectKey);
+            }
+            else
+            {
+                g.ProjectClassIcons[projectKey] = icons;
+                if (roles.Count > 0) g.ProjectClassSlotRoles[projectKey] = roles;
+                else g.ProjectClassSlotRoles.Remove(projectKey);
+            }
             Write();
         }
+    }
+
+    /// <summary>Роли в группе классов как заданы: projectKey null — общие, иначе — только проекта.</summary>
+    public IReadOnlyDictionary<ulong, List<SlotRole>> ClassSlotRoles(ulong guildId, string? projectKey = null)
+    {
+        lock (_lock)
+        {
+            var g = Guild(guildId);
+            var map = projectKey is null ? g.ClassSlotRoles
+                : g.ProjectClassSlotRoles.TryGetValue(projectKey, out var own) ? own : new();
+            return map.ToDictionary(kv => kv.Key, kv => kv.Value.ToList());
+        }
+    }
+
+    /// <summary>
+    /// Может ли класс играть эту роль в группе. Да — если роль «All», класса нет или для класса роли не заданы.
+    /// Действуют те же классы, что и для иконок: свои у проекта, иначе общие.
+    /// </summary>
+    public bool ClassFits(ulong guildId, string? projectKey, ulong? classRoleId, SlotRole role)
+    {
+        if (role == SlotRole.Any || classRoleId is not { } id) return true;
+        var key = Effective(guildId, projectKey)?.Key;
+        var own = key is null ? null : ClassIcons(guildId, key);
+        var map = own is { Count: > 0 } ? ClassSlotRoles(guildId, key) : ClassSlotRoles(guildId);
+        return !map.TryGetValue(id, out var roles) || roles.Count == 0 || roles.Contains(role);
     }
 
     /// <summary>Категория голосовых комнат как задана: projectKey null — общая, иначе только проекта.</summary>

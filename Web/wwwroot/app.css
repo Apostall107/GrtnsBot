@@ -1459,3 +1459,7 @@ tr.unsaved > td:first-child { box-shadow: inset 3px 0 0 var(--warning); }
 .dc-row > .dc-dropdown { flex: 1 1 100%; }
 .screen-tabs { border: 0; overflow: visible; }
 .screen-tabs .seg-btn, .screen-tabs .seg-btn + .seg-btn { border: 1px solid var(--border); border-radius: 999px; }
+
+.class-slots { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.slot-chip { cursor: pointer; opacity: .55; border: 1px solid var(--border); background: transparent; }
+.slot-chip.on { opacity: 1; background: var(--primary-soft); border-color: rgba(123, 77, 255, .5); color: var(--text-primary); }

@@ -31,7 +31,8 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
     }
 
     /// <summary>Персонажи игрока для выбора при записи в этот сбор (проект сбора): имя, заметка, иконка класса.</summary>
-    public IReadOnlyList<(string Name, string? Note, string? Icon)> PickerList(LfgGroup group, ulong userId)
+    /// <param name="slotRole">Роль записи: показываются только персонажи, чей класс может её играть (LFG → Classes). null — все.</param>
+    public IReadOnlyList<(string Name, string? Note, string? Icon)> PickerList(LfgGroup group, ulong userId, SlotRole? slotRole = null)
     {
         var scope = signup.Scope(group);
         var guild = client.GetGuild(group.GuildId);
@@ -39,8 +40,10 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
         {
             var info = characters.GetInfo(group.GuildId, userId, name, scope);
             var role = info?.ClassRoleId is { } id ? guild?.GetRole(id) : null;
-            return (name, info?.Comment, projects.ClassIcon(group.GuildId, role, group.ProjectKey));
-        }).ToList();
+            return (Name: name, info?.Comment, Icon: projects.ClassIcon(group.GuildId, role, group.ProjectKey), ClassId: info?.ClassRoleId);
+        })
+        .Where(x => slotRole is not { } r || projects.ClassFits(group.GuildId, group.ProjectKey, x.ClassId, r))
+        .Select(x => (x.Name, x.Comment, x.Icon)).ToList();
     }
 
     /// <summary>Иконка класса для показа (заданная админом или эмодзи роли).</summary>
@@ -62,7 +65,11 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
         if (!needClass && !needGs) return null;
 
         var builder = new ComponentBuilder();
-        var roles = needClass ? ClassRoles(group.GuildId, userId, group.ProjectKey) : [];
+        // Только классы, которые могут играть роль, с которой человек записался
+        var taken = group.Slots.Find(s => s.UserId == userId) is { } seat ? seat.TakenAs ?? seat.Role : group.FindReserve(userId)?.Role ?? SlotRole.Any;
+        var roles = needClass
+            ? ClassRoles(group.GuildId, userId, group.ProjectKey).Where(r => projects.ClassFits(gid, group.ProjectKey, r.Id, taken)).ToList()
+            : [];
         if (roles.Count > 0)
         {
             var menu = new SelectMenuBuilder()
