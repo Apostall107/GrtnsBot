@@ -82,7 +82,7 @@ public static partial class PanelApi
             return Results.Ok();
         });
 
-        // Гильдия для участников: состав (если открыт) и топ активных за 30 дней (без no-show)
+        // Гильдия для участников: состав своих проектов (видят все) и топ активных за 30 дней (без no-show, если включён)
         g.MapGet("/guild", (ulong guildId, ClaimsPrincipal user, DiscordSocketClient client, [FromServices] GuildPrefsStore prefs,
             [FromServices] CharacterStore characters, [FromServices] LfgProjectStore projects, [FromServices] LfgHistoryStore history) =>
         {
@@ -94,8 +94,7 @@ public static partial class PanelApi
             var allowedKeys = allowedProjects.Select(x => x.Key).ToHashSet();
             bool Allowed(string? key) => key is null || allowedKeys.Contains(key) || allowedProjects.Count == 0 && projects.GetProjects(guildId).Count == 0;
 
-            var roster = p.MemberRoster
-                ? characters.All(guildId)
+            var roster = characters.All(guildId)
                     .Where(c => guild.GetUser(c.UserId) is not null && Allowed(c.Scope ?? def))
                     .Select(c =>
                     {
@@ -114,8 +113,7 @@ public static partial class PanelApi
                         };
                     })
                     .OrderBy(x => x.character, StringComparer.OrdinalIgnoreCase)
-                    .ToList<object>()
-                : null;
+                    .ToList<object>();
 
             var top = p.MemberTop
                 ? history.Get(guildId, DateTimeOffset.UtcNow.AddDays(-30))
