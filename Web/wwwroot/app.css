@@ -1407,8 +1407,6 @@ dialog.xwide { width: min(1240px, calc(100vw - 32px)); }
 .dc-field-name { font-weight: 700; color: #f2f3f5; }
 .dc-disabled { opacity: .5; }
 .dc-embed + .dc-embed { margin-top: 4px; }
-.bt-bubble { display: none; margin-top: 6px; padding: 8px 10px; }
-.bt-bubble.show { display: block; }
 .bt-preview { margin: 0; }
 
 /* ===== Unsaved changes: sticky bar (Save all / Discard) + highlighted editors ===== */
@@ -1437,3 +1435,18 @@ tr.unsaved > td:first-child { box-shadow: inset 3px 0 0 var(--warning); }
   .pending-text { flex-basis: 100%; }
   .pending-bar .btn { flex: 1; justify-content: center; }
 }
+
+/* Bot messages preview: windows, menus, focused piece */
+.dc-modal { background: #313338; border: 1px solid #1e1f22; border-radius: 8px; padding: 16px; max-width: 440px; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+.dc-modal-title { font-size: 18px; font-weight: 700; color: #f2f3f5; margin-bottom: 14px; }
+.dc-modal-label { font-size: 12px; font-weight: 700; text-transform: uppercase; color: #b5bac1; margin: 10px 0 6px; }
+.dc-req { color: #f23f43; }
+.dc-input { background: #1e1f22; border-radius: 4px; padding: 10px; color: #6d6f78; min-height: 38px; }
+.dc-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.dc-btn-link-plain { background: none; color: #f2f3f5; }
+.dc-dropdown { width: 100%; max-width: 400px; }
+.dc-options { background: #2b2d31; border: 1px solid #1e1f22; border-radius: 0 0 4px 4px; margin-top: 2px; }
+.dc-option { display: flex; flex-direction: column; padding: 8px 10px; color: #dbdee1; }
+.dc-option span { color: #949ba4; font-size: 13px; }
+.dc-option + .dc-option { border-top: 1px solid #1e1f22; }
+.dc-frame .tx-focus { outline: 2px solid rgba(245, 185, 66, .8); outline-offset: 2px; border-radius: 4px; }

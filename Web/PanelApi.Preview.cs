@@ -199,28 +199,12 @@ public static partial class PanelApi
             foreach (var f in e.Fields) { Collect(f.Name); Collect(f.Value); }
         }
 
-        var rows = comps?.Components.OfType<ActionRowComponent>().Select(row => row.Components.Select(c => (object)(c switch
+        var rows = comps?.Components.OfType<ActionRowComponent>().Select(row => row.Components.Select(c => c switch
         {
-            ButtonComponent b => new
-            {
-                type = "button",
-                label = b.Label,
-                emoji = b.Emote?.ToString(),
-                style = b.Style.ToString(),
-                url = b.Url,
-                disabled = b.IsDisabled
-            },
-            SelectMenuComponent s => new
-            {
-                type = "select",
-                label = s.Placeholder,
-                emoji = (string?)null,
-                style = s.Type.ToString(),
-                url = (string?)null,
-                disabled = s.IsDisabled
-            },
-            _ => new { type = "other", label = (string?)null, emoji = (string?)null, style = "", url = (string?)null, disabled = false }
-        })).ToList()).ToList() ?? [];
+            ButtonComponent b => new PreviewPart("button", b.Label, b.Emote?.ToString(), b.Style.ToString(), b.Url, b.IsDisabled),
+            SelectMenuComponent s => new PreviewPart("select", s.Placeholder, null, s.Type.ToString(), null, s.IsDisabled),
+            _ => new PreviewPart("other", null, null, null, null, false)
+        }).ToList()).ToList() ?? [];
 
         return new
         {
@@ -242,5 +226,8 @@ public static partial class PanelApi
         };
     }
 }
+
+/// <summary>A button or a menu of a previewed message.</summary>
+public sealed record PreviewPart(string Type, string? Label, string? Emoji, string? Style, string? Url, bool Disabled);
 
 public sealed record BotPreviewBody(string? Sample, Dictionary<string, string?>? Values);
