@@ -38,6 +38,9 @@ public sealed class GuildPrefs
 
     /// <summary>Участникам на сайте: топ активных игроков за 30 дней (без no-show).</summary>
     public bool MemberTop { get; set; } = true;
+
+    /// <summary>GS привязанных к официальной оружейной персонажей: itemLevel (по умолчанию), combatPower или none (вручную).</summary>
+    public string ArmoryGs { get; set; } = "itemLevel";
 }
 
 /// <summary>data/guild-prefs.json — настройки по серверам (ЛС, готовность, автозамена, напоминание о GS).</summary>

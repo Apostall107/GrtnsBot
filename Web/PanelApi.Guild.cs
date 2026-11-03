@@ -29,7 +29,8 @@ public static partial class PanelApi
                 gsReminderDays = p.GsReminderDays,
                 gsReminderLastRun = p.GsReminderLastRun?.ToUnixTimeMilliseconds(),
                 gsReminderDm = p.Dm.GsReminder,
-                memberTop = p.MemberTop
+                memberTop = p.MemberTop,
+                armoryGs = p.ArmoryGs
             });
         });
 
@@ -48,6 +49,7 @@ public static partial class PanelApi
                 p.GsReminderDays = body.GsReminderDays ?? p.GsReminderDays;
                 p.Dm.GsReminder = body.GsReminderDm;
                 p.MemberTop = body.MemberTop;
+                if (body.ArmoryGs is "itemLevel" or "combatPower" or "none") p.ArmoryGs = body.ArmoryGs;
             });
             return Results.Ok();
         });
@@ -121,6 +123,7 @@ public static partial class PanelApi
                         classIcon = classId is { } ci ? projects.ClassIcon(guildId, guild.GetRole(ci), projectKey) : null,
                         slotRoles,
                         gs = c.Info?.Gs,
+                        armory = ArmoryDto(c.Info?.Armory),
                         gsUpdated = c.Info?.GsUpdatedAt?.ToUnixTimeMilliseconds(),
                         joined = user?.JoinedAt?.ToUnixTimeMilliseconds(),
                         lastActive = act?.Last?.ToUnixTimeMilliseconds()
@@ -253,4 +256,4 @@ public static partial class PanelApi
 }
 
 public sealed record LfgPrefsBody(bool ReadyCheck, int? AutoPromoteMinutes, bool GsReminder, string? GsReminderChannelId, int? GsReminderDays,
-    bool GsReminderDm, bool MemberTop = true);
+    bool GsReminderDm, bool MemberTop = true, string? ArmoryGs = null);

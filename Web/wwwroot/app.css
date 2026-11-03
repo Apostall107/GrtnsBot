@@ -1502,3 +1502,11 @@ th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
 .wk-event { padding: 8px 10px; }
 .wk-event .wk-actions .btn { white-space: nowrap; }
 @media (max-width: 720px) { .wk-day { grid-template-columns: 1fr; } }
+.armory-box { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border: 1px dashed var(--border-strong); border-radius: var(--radius-control); padding: 8px 10px; margin: 0 0 10px; }
+.armory-box.linked { border-style: solid; border-color: var(--border); background: var(--background); }
+.armory-box.stale { border-color: var(--warning); }
+.armory-stats { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.armory-box .armory-stats .chip { font-size: 12px; width: auto; flex: 0 0 auto; }
+.armory-box .btn.sm { padding: 3px 8px; }
+.armory-cell { white-space: nowrap; text-decoration: none; }
+.armory-cell .small { white-space: normal; }

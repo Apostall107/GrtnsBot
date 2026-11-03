@@ -112,7 +112,8 @@ public static partial class PanelApi
                             classIcon = classId is { } ci ? projects.ClassIcon(guildId, guild.GetRole(ci), key) : null,
                             slotRoles = classId is { } sid && projects.EffectiveClassSlotRoles(guildId, key).TryGetValue(sid, out var sr)
                                 ? sr.Select(r => r.ToString()).ToList() : [],
-                            gs = c.Info?.Gs
+                            gs = c.Info?.Gs,
+                            armory = ArmoryDto(c.Info?.Armory)
                         };
                     })
                     .OrderBy(x => x.character, StringComparer.OrdinalIgnoreCase)

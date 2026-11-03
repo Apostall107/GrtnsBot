@@ -110,7 +110,11 @@ public sealed class CharacterModule(CharacterStore store, LfgProfileService prof
         if (await ScopeAsync(project) is not { } scope || await ExactAsync(name, scope.Value) is not { } exact) return;
 
         await DeferAsync(ephemeral: true);
-        store.SetGs(Context.Guild.Id, Context.User.Id, exact, gs, scope.Value);
+        if (!store.SetGs(Context.Guild.Id, Context.User.Id, exact, gs, scope.Value))
+        {
+            await FollowupAsync(T("char.gsArmory", ("name", Format.Sanitize(exact))), ephemeral: true);
+            return;
+        }
         var groups = await profiles.RefreshCharacterAsync(Context.Guild.Id, Context.User.Id, exact, scope.Value);
         audit.FromDiscord(Context.Guild.Id, Context.User, "lfg", "Set character GS", $"{exact}: {gs?.ToString() ?? "removed"}");
         await FollowupAsync((gs is null ? T("char.gsRemoved", ("name", Format.Sanitize(exact))) : T("char.gsSet", ("name", Format.Sanitize(exact)), ("gs", gs))) +

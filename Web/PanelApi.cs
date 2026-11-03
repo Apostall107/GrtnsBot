@@ -91,6 +91,7 @@ public static partial class PanelApi
         MapPreviews(textsGroup, ticketsGroup);
         MapMember(guild.MapGroup("/me").AddEndpointFilter(RequireMember));
         MapMemberGuild(guild.MapGroup("/me").AddEndpointFilter(RequireMember));
+        MapMemberArmory(guild.MapGroup("/me").AddEndpointFilter(RequireMember));
         MapMemberRoles(guild.MapGroup("/member-roles").AddEndpointFilter(Require(PanelPermissions.Settings)));
         MapLfgExtra(guild.MapGroup("/lfg").AddEndpointFilter(Require(PanelPermissions.Lfg)));
         MapGuildTools(guild.MapGroup("/lfg").AddEndpointFilter(Require(PanelPermissions.Lfg)),
