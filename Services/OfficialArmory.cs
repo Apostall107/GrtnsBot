@@ -9,8 +9,11 @@ namespace LfgBot.Services;
 /// <summary>Найденный в официальной оружейной персонаж.</summary>
 public sealed record ArmoryHit(string CharacterId, string Name, int ServerId, string ServerName, int Level, string? ClassName, string? Race);
 
-/// <summary>Игровой сервер: фракция (1 — Elyos, 2 — Asmodians), ID и название.</summary>
-public sealed record ArmoryServer(int Race, int Id, string Name);
+/// <summary>Игровой сервер: фракция (1 — Elyos, 2 — Asmodians), ID, название и сокращение (TRI, LUD…).</summary>
+public sealed record ArmoryServer(int Race, int Id, string Name, string? ShortName = null)
+{
+    public string Tag => string.IsNullOrWhiteSpace(ShortName) ? Name[..Math.Min(3, Name.Length)].ToUpperInvariant() : ShortName;
+}
 
 /// <summary>Данные персонажа из официальной оружейной.</summary>
 public sealed record ArmoryProfile(string Name, int Level, string? ClassName, int? CombatPower, int? ItemLevel, string? Legion, string? ServerName,
@@ -39,6 +42,11 @@ public sealed class OfficialArmory(IHttpClientFactory http, IConfiguration confi
 
     private IReadOnlyList<ArmoryServer>? _servers;
     private DateTimeOffset _serversAt;
+    private static volatile IReadOnlyList<ArmoryServer>? _known;
+
+    /// <summary>Сокращение сервера по ID (TRI для Triniel): из загруженного списка, иначе из встроенного. null — неизвестен.</summary>
+    public static string? Tag(int? serverId) =>
+        serverId is not { } id ? null : ((_known ?? FallbackServers).FirstOrDefault(x => x.Id == id) ?? FallbackServers.FirstOrDefault(x => x.Id == id))?.Tag;
 
     /// <summary>Серверы региона (кэш на сутки; сайт недоступен — встроенный список).</summary>
     public async Task<IReadOnlyList<ArmoryServer>> ServersAsync(CancellationToken ct = default)
@@ -51,13 +59,14 @@ public sealed class OfficialArmory(IHttpClientFactory http, IConfiguration confi
             if (doc?.RootElement.TryGetProperty("serverList", out var arr) == true && arr.ValueKind == JsonValueKind.Array)
                 foreach (var x in arr.EnumerateArray())
                     if (Int(x, "raceId") is { } race && Int(x, "serverId") is { } id && Str(x, "serverName") is { } name)
-                        list.Add(new ArmoryServer(race, id, name));
+                        list.Add(new ArmoryServer(race, id, name, Str(x, "serverShortName")));
         }
         catch (Exception e)
         {
             logger.LogDebug(e, "Armory server list failed");
         }
         _servers = list.Count > 0 ? list : FallbackServers;
+        if (list.Count > 0) _known = list;
         _serversAt = list.Count > 0 ? DateTimeOffset.UtcNow : DateTimeOffset.UtcNow.AddDays(-1).AddHours(1); // ошибка — повторить через час
         return _servers;
     }

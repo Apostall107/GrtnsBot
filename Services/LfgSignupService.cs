@@ -65,8 +65,15 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
         var role = info?.ClassRoleId is { } roleId ? client.GetGuild(group.GuildId)?.GetRole(roleId) : null;
 
         var icon = projects.ClassIcon(group.GuildId, role, group.ProjectKey);
+        // Сервер персонажа: из оружейной или указанный вручную; «свой» сервер сбора — по умолчанию для проекта
+        var server = OfficialArmory.Tag(info?.Armory?.ServerId ?? info?.ServerId);
+        var project = projects.Effective(group.GuildId, group.ProjectKey);
+        var armoryPrefs = prefs.ArmoryFor(group.GuildId, project?.Key, project?.Name);
+        group.HomeServer = armoryPrefs.Enabled ? OfficialArmory.Tag(armoryPrefs.ServerId) : null;
+        if (!armoryPrefs.Enabled) server = null;
         if (slot is not null)
         {
+            slot.Server = server;
             slot.ClassRoleId = role?.Id;
             slot.ClassIcon = icon;
             slot.Comment = info?.Comment;
@@ -74,6 +81,7 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
         }
         else if (entry is not null)
         {
+            entry.Server = server;
             entry.ClassRoleId = role?.Id;
             entry.ClassIcon = icon;
             entry.Comment = info?.Comment;
@@ -92,8 +100,8 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
             await group.Gate.WaitAsync();
             try
             {
-                string Snapshot() => string.Join("|", group.Slots.Select(x => $"{x.UserId}:{x.ClassRoleId}:{x.ClassIcon}:{x.Gs}")
-                    .Concat(group.Reserve.Select(x => $"{x.UserId}:{x.ClassRoleId}:{x.ClassIcon}:{x.Gs}")));
+                string Snapshot() => string.Join("|", group.Slots.Select(x => $"{x.UserId}:{x.ClassRoleId}:{x.ClassIcon}:{x.Gs}:{x.Server}")
+                    .Concat(group.Reserve.Select(x => $"{x.UserId}:{x.ClassRoleId}:{x.ClassIcon}:{x.Gs}:{x.Server}")));
                 var before = Snapshot();
                 var users = group.Slots.Where(x => x.UserId is not null).Select(x => x.UserId!.Value)
                     .Concat(group.Reserve.Select(x => x.UserId)).Distinct().ToList();

@@ -95,6 +95,25 @@ public static partial class PanelApi
                 : "The official armory isn't answering right now — try again later.");
         });
 
+        // Альты: список ников → найти на сервере привязанного персонажа (или выбранном) и создать с привязкой
+        g.MapPost("/characters/armory-alts", async (ulong guildId, string? project, ArmoryAltsBody body, ClaimsPrincipal user,
+            DiscordSocketClient client, [FromServices] CharacterStore characters, [FromServices] LfgProjectStore projects,
+            [FromServices] ArmorySyncService sync, CancellationToken ct) =>
+        {
+            if (CharacterScope(guildId, project, user, client, projects) is not { } scope) return Error("You don't have the role of this project.");
+            var me = user.UserId()!.Value;
+            var names = (body.Names ?? []).Select(n => n.Trim()).Where(n => n.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (names.Count == 0) return Error("Enter the names of your other characters.");
+            if (names.Count > 10) return Error("Up to 10 names at a time.");
+            if (body.ServerId is not (> 0 and < 100000)) return Error("Pick the server.");
+            var free = CharacterStore.MaxPerUser - characters.Get(guildId, me, scope.Value).Count;
+            if (free <= 0) return Error($"You already have {CharacterStore.MaxPerUser} characters.");
+            if (sync.Paused) return Error("The official armory isn't answering right now — try again later.");
+            if (!sync.TrySearchSlot(me)) return Error("Too fast — wait a few seconds.");
+            var r = await sync.AddAltsAsync(guildId, me, scope.Value, names.Take(free), body.ServerId, ct);
+            return Results.Ok(new { added = r.Added, notFound = r.NotFound, existing = r.Existing, unavailable = r.Unavailable });
+        });
+
         g.MapDelete("/characters/{name}/armory", (ulong guildId, string name, string? project, ClaimsPrincipal user, DiscordSocketClient client,
             [FromServices] CharacterStore characters, [FromServices] LfgProjectStore projects) =>
         {
@@ -128,4 +147,5 @@ public static partial class PanelApi
     }
 }
 
+public sealed record ArmoryAltsBody(List<string>? Names, int ServerId);
 public sealed record ArmoryLinkBody(string? CharacterId, int ServerId);

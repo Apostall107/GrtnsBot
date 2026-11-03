@@ -424,6 +424,7 @@ public static class LfgRenderer
         var sb = new StringBuilder();
         var count = 0;
         var withoutNick = 0;
+        var home = HomeServer(g, viewerId);
 
         foreach (var s in g.Slots)
         {
@@ -437,7 +438,11 @@ public static class LfgRenderer
             count++;
             var role = s.TakenAs is { } t && t != SlotRole.Any ? t : s.Role;
             sb.AppendLine($"{role.Emoji()} <@{userId}>");
-            sb.AppendLine(withCommand ? $"```\n/invite {name}\n```" : $"```\n{name}\n```");
+            // Игрок с другого сервера: Имя[LUD] (формат — текст lfg.invites.otherServer)
+            var target = ServerMark(s.Server, home).Length > 0
+                ? Tx.Get(gid, "lfg.invites.otherServer", ("name", name), ("server", s.Server!))
+                : name;
+            sb.AppendLine(withCommand ? $"```\n/invite {target}\n```" : $"```\n{target}\n```");
         }
 
         if (count == 0) sb.AppendText(Tx.Get(gid, "lfg.invites.nobody"));
@@ -487,12 +492,21 @@ public static class LfgRenderer
         var id => $" 🔒 <@&{id}>"
     };
 
+    /// <summary>«Свой» сервер сбора: сервер организатора, иначе сервер проекта по умолчанию.</summary>
+    public static string? HomeServer(LfgGroup g, ulong? viewerId = null) =>
+        (viewerId is { } v ? g.Slots.Find(x => x.UserId == v)?.Server : null) ?? g.Slots.Find(x => x.UserId == g.OwnerId)?.Server ?? g.HomeServer;
+
+    /// <summary>Сервер игрока, если он не «свой»: [LUD]. Свой или неизвестен — пусто.</summary>
+    private static string ServerMark(string? server, string? home) =>
+        server is { Length: > 0 } && home is { Length: > 0 } && !server.Equals(home, StringComparison.OrdinalIgnoreCase) ? $" `[{server}]`" : "";
+
     private static string Roster(LfgGroup g, bool withComments)
     {
         var sb = new StringBuilder();
+        var home = HomeServer(g);
         for (var i = 0; i < g.Slots.Count; i++)
         {
-            sb.AppendLine(SlotLine(g.GuildId, i, g.Slots[i]));
+            sb.AppendLine(SlotLine(g.GuildId, i, g.Slots[i], home));
             if (withComments && g.Slots[i].UserId is not null) AppendComment(sb, g.Slots[i].Comment);
         }
 
@@ -502,7 +516,7 @@ public static class LfgRenderer
             sb.AppendText(Tx.Get(g.GuildId, "lfg.post.reserve", ("count", g.Reserve.Count)));
             foreach (var r in g.Reserve)
             {
-                sb.AppendLine($"{r.Role.Emoji()} <@{r.UserId}>{ClassIcon(r.ClassIcon)} **{Format.Sanitize(r.CharacterName ?? "-")}**{GsText(r.Gs)}");
+                sb.AppendLine($"{r.Role.Emoji()} <@{r.UserId}>{ClassIcon(r.ClassIcon)} **{Format.Sanitize(r.CharacterName ?? "-")}**{ServerMark(r.Server, home)}{GsText(r.Gs)}");
                 if (withComments) AppendComment(sb, r.Comment);
             }
         }
@@ -518,14 +532,14 @@ public static class LfgRenderer
         sb.AppendLine($"-# 💬 {Format.Sanitize(comment.Replace("\n", " "))}");
     }
 
-    private static string SlotLine(ulong gid, int i, Slot s)
+    private static string SlotLine(ulong gid, int i, Slot s, string? home)
     {
         if (s.UserId is not { } userId) return $"{SlotHead(i, s)} — {Tx.Get(gid, "lfg.post.open")}";
 
         var takenAs = s.Role == SlotRole.Any && s.TakenAs is { } t && t != SlotRole.Any
             ? $" ({t.Emoji()} {t.Label()})"
             : "";
-        var character = s.CharacterName is { } name ? $" **{Format.Sanitize(name)}**{GsText(s.Gs)}" : "";
+        var character = s.CharacterName is { } name ? $" **{Format.Sanitize(name)}**{ServerMark(s.Server, home)}{GsText(s.Gs)}" : "";
         // Явка (после старта) важнее отметки готовности (🟢 — нажал «Готов» в напоминании)
         var attended = s.Attended switch { true => " ✅", false => " ❌", _ => s.Ready ? " 🟢" : "" };
         return $"{SlotHead(i, s)} — <@{userId}>{ClassIcon(s.ClassIcon)}{character}{takenAs}{attended}";
