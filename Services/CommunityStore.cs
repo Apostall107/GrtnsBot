@@ -91,6 +91,17 @@ public sealed class CommunityStore
         }
     }
 
+    public bool SetSticky(string panelId, bool sticky)
+    {
+        lock (_lock)
+        {
+            if (_data.RolePanels.Find(p => p.Id == panelId) is not { } p) return false;
+            p.Sticky = sticky;
+            Save();
+            return true;
+        }
+    }
+
     public bool RemovePanel(string id)
     {
         lock (_lock)

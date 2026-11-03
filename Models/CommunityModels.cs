@@ -189,6 +189,8 @@ public sealed class RolePanel
     /// <summary>Где опубликована (одно сообщение на панель).</summary>
     public ulong? ChannelId { get; set; }
     public ulong? MessageId { get; set; }
+    /// <summary>Держать внизу канала: после новых сообщений бот публикует панель заново.</summary>
+    public bool Sticky { get; set; }
 
     // ---- Старый формат: Style + Options (одна роль на пункт) ----
     [JsonPropertyName("Style"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

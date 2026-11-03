@@ -3601,6 +3601,13 @@ function rolePanelCard(p, emojis) {
       h("span", { class: "chip" }, (TRIGGERS.find(t => t[0] === b.trigger) || TRIGGERS[0])[1]), emojiEl(b.emoji),
       h("b", {}, b.shownLabel), icon("arrow-right", 13), b.roles.map(r => roleChip(r))))),
     problems.length ? h("p", { class: "error-text small" }, `The bot can't give: ${[...new Set(problems.map(r => "@" + r.name))].join(", ")}`) : null,
+    p.jumpUrl ? (() => {
+      const sticky = h("input", { type: "checkbox", class: "switch", checked: !!p.sticky, "aria-label": "Keep at the bottom" });
+      sticky.addEventListener("change", () => act(null, () => gApi("PUT", `/roles/panels/${p.id}/sticky`, { sticky: sticky.checked }),
+        sticky.checked ? "📌 Sticky: the panel stays at the bottom of the channel." : "Sticky off."));
+      return h("label", { class: "row", style: "gap:6px;margin-top:8px", title: "After new messages in the channel the bot posts the panel again at the bottom (15 s of silence, at most a minute)" },
+        sticky, "📌 Keep at the bottom of the channel");
+    })() : null,
     h("div", { class: "row", style: "margin-top:10px" }, post, postBtn, h("span", { class: "spacer" }),
       h("button", { class: "btn secondary", onclick: () => rolePanelEditor(p, emojis) }, icon("pencil", 15), "Edit"), copy, del));
 }
@@ -4213,7 +4220,7 @@ async function pagePosts(main) {
   const panelsBody = h("div", {}, h("div", { class: "muted" }, "Loading…"));
   main.append(h("div", { class: "card" },
     h("div", { class: "card-head" }, h("h2", {}, "Panels"), discover),
-    h("p", { class: "muted small" }, "Panel messages the bot knows about. Deleting removes the message in Discord."),
+    h("p", { class: "muted small" }, "Panel messages the bot knows about. Deleting removes the message in Discord. 📌 Keep at the bottom — the panel is posted again under new messages, so it never scrolls away."),
     panelsBody));
 
   // --- Bot messages: only channels where the bot has posted; All or a chosen channel
@@ -4242,9 +4249,15 @@ function panelGroup(p) {
           if (await act(del, () => gApi("POST", `/posts/channels/${m.channelId}/delete`, { messageIds: [m.messageId] }),
             r => r.deleted ? "Panel deleted." : "The message was already gone.") !== undefined) refresh();
         });
+        // Sticky: the bot reposts the panel at the bottom after new messages in the channel
+        const sticky = h("input", { type: "checkbox", class: "switch", checked: !!m.sticky, "aria-label": "Keep at the bottom" });
+        sticky.addEventListener("change", () => act(null, () => gApi("PUT", `/posts/panels/${p.key}/${m.messageId}/sticky`, { sticky: sticky.checked }),
+          sticky.checked ? "📌 Sticky: the panel stays at the bottom of the channel." : "Sticky off."));
         return h("tr", {},
           h("td", {}, m.channel ? `#${m.channel}` : h("span", { class: "chip warn" }, "deleted channel")),
           h("td", { class: "muted small" }, fmtDate(m.createdAt)),
+          h("td", {}, h("label", { class: "row", style: "gap:6px;white-space:nowrap", title: "After new messages in the channel the bot posts the panel again at the bottom (the old one is deleted). Waits for 15 s of silence, at most a minute." },
+            sticky, "📌 Keep at the bottom")),
           h("td", { class: "actions" }, h("a", { class: "btn ghost", href: m.jumpUrl, target: "_blank", rel: "noopener" }, "Open"), " ", del));
       })))) : h("div", { class: "empty small" }, "None known. Post it from the module tab or use “Find posted panels”."));
 }
