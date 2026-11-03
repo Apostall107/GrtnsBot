@@ -368,7 +368,7 @@ function realmPicker(servers, race, serverId, disabled = false) {
 }
 
 /** Find the character in the official AION 2 armory (EU): faction + server + name → pick one. Resolves to the hit or null. */
-function armoryPickDialog(name, servers, race, serverId) {
+function armoryPickDialog(name, servers, race, serverId, initialHits = null) {
   return new Promise(resolve => {
     const d = dialog();
     const list = h("div", { class: "pick-list" });
@@ -381,7 +381,8 @@ function armoryPickDialog(name, servers, race, serverId) {
       const r = realm.value();
       list.replaceChildren(skeletonLines(2));
       try {
-        let hits = await gApi("GET", `/me/armory/search?name=${encodeURIComponent(q)}${r.serverId ? `&server=${r.serverId}` : ""}`);
+        let hits = initialHits || await gApi("GET", `/me/armory/search?name=${encodeURIComponent(q)}${r.serverId ? `&server=${r.serverId}` : ""}`);
+        initialHits = null;
         hits = hits.filter(x => !x.serverId || Math.floor(x.serverId / 1000) === r.race);
         const exact = x => x.name.toLowerCase() === q.toLowerCase();
         hits.sort((a, b) => exact(b) - exact(a) || b.level - a.level);
@@ -4786,11 +4787,28 @@ function playCard(g) {
 /** My characters: the official armory profile (linked — data and buttons; not linked — the Link button). */
 function armoryBox(c, pq, gsSource, servers, realm) {
   const path = `/me/characters/${encodeURIComponent(c.name)}/armory`;
+  const linked = res => res.gs != null ? `Linked to the official profile. GS ${res.gs.toLocaleString()} taken from the game.` : "Linked to the official profile.";
   const link = async e => {
+    const btn = e.currentTarget;
     const r = realm.value();
-    const hit = await armoryPickDialog(c.armory && c.armory.name || c.name, servers, r.race, r.serverId);
+    const name = c.armory && c.armory.name || c.name;
+    let hitsForDialog = null;
+    // Exactly one character with this exact name on the chosen faction/server — link it right away, no list
+    if (name.length >= 2) {
+      btn.disabled = true;
+      let hits = null;
+      try { hits = await gApi("GET", `/me/armory/search?name=${encodeURIComponent(name)}${r.serverId ? `&server=${r.serverId}` : ""}`); } catch { /* fall back to the dialog */ }
+      btn.disabled = false;
+      hitsForDialog = hits;
+      const exact = (hits || []).filter(x => x.name.toLowerCase() === name.toLowerCase() && Math.floor(x.serverId / 1000) === r.race);
+      if (exact.length === 1) {
+        if (await act(btn, () => gApi("POST", `${path}${pq}`, { characterId: exact[0].characterId, serverId: exact[0].serverId }), linked) !== undefined) refresh();
+        return;
+      }
+    }
+    const hit = await armoryPickDialog(name, servers, r.race, r.serverId, hitsForDialog);
     if (!hit) return;
-    if (await act(e.currentTarget, () => gApi("POST", `${path}${pq}`, { characterId: hit.characterId, serverId: hit.serverId }), "Linked to the official profile.") !== undefined) refresh();
+    if (await act(btn, () => gApi("POST", `${path}${pq}`, { characterId: hit.characterId, serverId: hit.serverId }), linked) !== undefined) refresh();
   };
   const a = c.armory;
   if (!a) return h("div", { class: "armory-box" },
