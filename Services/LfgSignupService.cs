@@ -292,13 +292,59 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
         role?.Emoji is { } e && !string.IsNullOrWhiteSpace(e.Name) ? e.Name : null;
 
     /// <summary>Перерисовать пост сбора (и права голоса в комнате сбора). Вызывать под group.Gate.</summary>
+    // Объединение правок поста: первая уходит сразу, следующие в течение PostEditGap — одной итоговой правкой
+    private static readonly TimeSpan PostEditGap = TimeSpan.FromMilliseconds(1200);
+    private sealed class PostSync
+    {
+        public readonly object Lock = new();
+        public Screen? Latest;
+        public bool Busy;
+    }
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, PostSync> _postSync = new();
+
+    /// <summary>Перерисовать пост сбора (и его копии). Вызывать под group.Gate: снимок берётся сразу, отправка — с объединением.</summary>
     public async Task RefreshPostAsync(LfgGroup group)
     {
         await SyncVoiceAsync(group);
+        var screen = LfgRenderer.Group(group);
+        var sync = _postSync.GetOrAdd(group.Id, _ => new PostSync());
+        lock (sync.Lock)
+        {
+            sync.Latest = screen;
+            if (sync.Busy) return; // уйдёт следующей правкой
+            sync.Busy = true;
+            sync.Latest = null;
+        }
+
+        await SendPostAsync(group, screen);
+        _ = Task.Run(async () =>
+        {
+            while (true)
+            {
+                await Task.Delay(PostEditGap);
+                Screen? next;
+                lock (sync.Lock)
+                {
+                    next = sync.Latest;
+                    sync.Latest = null;
+                    if (next is null)
+                    {
+                        sync.Busy = false;
+                        _postSync.TryRemove(group.Id, out _);
+                        return;
+                    }
+                }
+                if (group.IsClosed || !store.Groups.ContainsKey(group.Id)) continue; // пост уже удалён
+                await SendPostAsync(group, next);
+            }
+        });
+    }
+
+    private async Task SendPostAsync(LfgGroup group, Screen s)
+    {
         if (await GetChannelAsync(group.ChannelId) is not { } channel) return;
         try
         {
-            var s = LfgRenderer.Group(group);
             await channel.ModifyMessageAsync(group.MessageId, m =>
             {
                 m.Embeds = new[] { s.Embed! };

@@ -173,19 +173,51 @@ public static class WebPanel
         PanelApi.Map(app);
     }
 
+    /// <summary>
+    /// Файл сайта: сжатые версии (brotli, gzip) готовятся один раз при старте; ETag — браузер получает 304,
+    /// если файл не менялся (после обновления бота хеш другой — скачает новый).
+    /// </summary>
     private static void MapStatic(WebApplication app, string route, string file, string contentType, string cache = "no-cache")
     {
         var bytes = ReadResource(file);
+        var etag = "\"" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))[..16] + "\"";
+        var compressible = !contentType.StartsWith("font/", StringComparison.Ordinal);
+        var br = compressible ? Compress(bytes, s => new System.IO.Compression.BrotliStream(s, System.IO.Compression.CompressionLevel.SmallestSize)) : null;
+        var gz = compressible ? Compress(bytes, s => new System.IO.Compression.GZipStream(s, System.IO.Compression.CompressionLevel.SmallestSize)) : null;
         app.MapGet(route, (HttpContext ctx) =>
         {
-            ctx.Response.Headers.CacheControl = cache;
-            ctx.Response.Headers["X-Content-Type-Options"] = "nosniff";
-            ctx.Response.Headers["X-Frame-Options"] = "DENY";
-            ctx.Response.Headers["Referrer-Policy"] = "same-origin";
-            ctx.Response.Headers.ContentSecurityPolicy =
+            var headers = ctx.Response.Headers;
+            headers.CacheControl = cache;
+            headers["X-Content-Type-Options"] = "nosniff";
+            headers["X-Frame-Options"] = "DENY";
+            headers["Referrer-Policy"] = "same-origin";
+            headers.ContentSecurityPolicy =
                 "default-src 'self'; img-src 'self' https://cdn.discordapp.com data:; style-src 'self'; script-src 'self'; frame-ancestors 'none'";
+            headers.ETag = etag;
+            if (compressible) headers.Vary = "Accept-Encoding";
+            if (ctx.Request.Headers.IfNoneMatch.ToString().Contains(etag, StringComparison.Ordinal))
+                return Results.StatusCode(StatusCodes.Status304NotModified);
+
+            var accept = ctx.Request.Headers.AcceptEncoding.ToString();
+            if (br is not null && accept.Contains("br", StringComparison.OrdinalIgnoreCase))
+            {
+                headers.ContentEncoding = "br";
+                return Results.Bytes(br, contentType);
+            }
+            if (gz is not null && accept.Contains("gzip", StringComparison.OrdinalIgnoreCase))
+            {
+                headers.ContentEncoding = "gzip";
+                return Results.Bytes(gz, contentType);
+            }
             return Results.Bytes(bytes, contentType);
         });
+    }
+
+    private static byte[] Compress(byte[] data, Func<Stream, Stream> wrap)
+    {
+        using var ms = new MemoryStream();
+        using (var z = wrap(ms)) z.Write(data);
+        return ms.ToArray();
     }
 
     private static byte[] ReadResource(string file)

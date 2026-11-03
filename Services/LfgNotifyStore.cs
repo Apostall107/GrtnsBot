@@ -34,7 +34,7 @@ public sealed class LfgNotifyStore
 
             var dir = Path.GetDirectoryName(Path.GetFullPath(_path));
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-            File.WriteAllText(_path, JsonSerializer.Serialize(_optedOut));
+            DataFiles.Save(_path, JsonSerializer.Serialize(_optedOut));
         }
     }
 }

@@ -79,7 +79,7 @@ public sealed class GuildPrefsStore
             change(p);
             var dir = Path.GetDirectoryName(Path.GetFullPath(_path));
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-            File.WriteAllText(_path, JsonSerializer.Serialize(_data, JsonOptions));
+            DataFiles.Save(_path, JsonSerializer.Serialize(_data, JsonOptions));
         }
     }
 
@@ -126,7 +126,7 @@ public sealed class UserDmStore
             if (set.Count == 0) _off.Remove(k);
             var dir = Path.GetDirectoryName(Path.GetFullPath(_path));
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-            File.WriteAllText(_path, JsonSerializer.Serialize(_off, JsonOptions));
+            DataFiles.Save(_path, JsonSerializer.Serialize(_off, JsonOptions));
         }
     }
 

@@ -22,6 +22,7 @@ public static partial class PanelApi
     {
         g.MapGet("/", (IConfiguration config) =>
         {
+            DataFiles.FlushAll(); // в архив — самые свежие данные
             var bytes = ZipData(DataDir(config));
             return Results.File(bytes, "application/zip", $"greatness-bot-data-{DateTime.UtcNow:yyyyMMdd-HHmm}.zip");
         });
@@ -68,10 +69,13 @@ public static partial class PanelApi
             if (files.Count == 0) return Error("The backup has no data files.");
 
             // Страховка: текущие данные — в data/backups/pre-restore-*.zip
+            // Несохранённые изменения не должны перезаписать восстановленные файлы
+            DataFiles.FlushAll();
             var backups = Path.Combine(dataDir, "backups");
             Directory.CreateDirectory(backups);
             await File.WriteAllBytesAsync(Path.Combine(backups, $"pre-restore-{DateTime.UtcNow:yyyyMMdd-HHmmss}.zip"), ZipData(dataDir));
 
+            DataFiles.Freeze();
             foreach (var (path, content) in files)
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);

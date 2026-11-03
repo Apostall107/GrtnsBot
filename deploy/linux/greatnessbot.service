@@ -15,6 +15,9 @@ Environment=DOTNET_ENVIRONMENT=Production
 Environment=DOTNET_BUNDLE_EXTRACT_BASE_DIR=/opt/greatnessbot/.bundle
 Restart=always
 RestartSec=10
+# Memory guard: if the bot ever leaks memory, systemd restarts it instead of letting it slow down the whole server
+MemoryHigh=700M
+MemoryMax=1G
 
 # Basic hardening: the bot can write only into its own folder
 NoNewPrivileges=true

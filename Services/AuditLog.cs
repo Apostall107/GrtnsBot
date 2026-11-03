@@ -120,11 +120,7 @@ public sealed class AuditLog : IDisposable
 
         try
         {
-            var dir = Path.GetDirectoryName(Path.GetFullPath(_path));
-            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-            var temp = _path + ".tmp";
-            File.WriteAllText(temp, json);
-            File.Move(temp, _path, overwrite: true);
+            DataFiles.Save(_path, json);
         }
         catch (Exception ex)
         {

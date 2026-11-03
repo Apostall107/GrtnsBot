@@ -1,3 +1,4 @@
+using LfgBot.Services;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 
@@ -129,6 +130,6 @@ public sealed class WebAccessStore
     {
         var dir = Path.GetDirectoryName(Path.GetFullPath(_path));
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-        File.WriteAllText(_path, JsonSerializer.Serialize(_data, JsonOptions));
+        DataFiles.Save(_path, JsonSerializer.Serialize(_data, JsonOptions));
     }
 }

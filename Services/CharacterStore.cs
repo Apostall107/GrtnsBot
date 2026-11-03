@@ -202,13 +202,13 @@ public sealed class CharacterStore
     {
         var dir = Path.GetDirectoryName(Path.GetFullPath(_infoPath));
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-        File.WriteAllText(_infoPath, JsonSerializer.Serialize(_info, JsonOptions));
+        DataFiles.Save(_infoPath, JsonSerializer.Serialize(_info, JsonOptions));
     }
 
     private void Save()
     {
         var dir = Path.GetDirectoryName(Path.GetFullPath(_path));
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-        File.WriteAllText(_path, JsonSerializer.Serialize(_data, JsonOptions));
+        DataFiles.Save(_path, JsonSerializer.Serialize(_data, JsonOptions));
     }
 }

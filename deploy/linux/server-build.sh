@@ -25,9 +25,11 @@ git pull --ff-only
 
 echo "=== Build for $RID ==="
 rm -rf "$OUT"
+# No compression inside the single file: it was unpacked into memory on every start (slower start, more RAM).
+# ReadyToRun: code is precompiled — the bot is fast right after a restart (first build downloads the crossgen package once).
 dotnet publish -c Release -r "$RID" --self-contained true \
     -p:PublishSingleFile=true \
-    -p:EnableCompressionInSingleFile=true \
+    -p:PublishReadyToRun=true \
     -p:DebugType=None \
     -o "$OUT/app"
 
