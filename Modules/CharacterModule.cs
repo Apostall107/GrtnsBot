@@ -73,6 +73,12 @@ public sealed class CharacterModule(CharacterStore store, LfgProfileService prof
             return;
         }
 
+        if (CharacterStore.IsLinked(store.GetInfo(Context.Guild.Id, Context.User.Id, exact, scope.Value)))
+        {
+            await RespondAsync(T("char.classArmory", ("name", Format.Sanitize(exact))), ephemeral: true);
+            return;
+        }
+
         await DeferAsync(ephemeral: true);
         store.SetInfo(Context.Guild.Id, Context.User.Id, exact, true, role?.Id, false, null, scope.Value);
         var groups = await profiles.RefreshCharacterAsync(Context.Guild.Id, Context.User.Id, exact, scope.Value);

@@ -99,8 +99,9 @@ public sealed class CharacterStore
     }
 
     /// <summary>Меняет класс и/или заметку. setClass/setComment = false — поле не трогать.</summary>
+    /// <param name="fromArmory">Класс из официальной оружейной. Иначе класс привязанного персонажа не меняется.</param>
     public void SetInfo(ulong guildId, ulong userId, string name, bool setClass, ulong? classRoleId, bool setComment, string? comment,
-        string? scope = null)
+        string? scope = null, bool fromArmory = false)
     {
         if (string.IsNullOrWhiteSpace(name)) return;
         comment = string.IsNullOrWhiteSpace(comment) ? null : comment.Trim();
@@ -110,7 +111,7 @@ public sealed class CharacterStore
         {
             var key = InfoKey(guildId, userId, name, scope);
             if (!_info.TryGetValue(key, out var info)) info = new CharacterInfo();
-            if (setClass) info.ClassRoleId = classRoleId;
+            if (setClass && (fromArmory || !IsLinked(info))) info.ClassRoleId = classRoleId;
             if (setComment) info.Comment = comment;
 
             if (info.IsEmpty) _info.Remove(key);
@@ -140,6 +141,9 @@ public sealed class CharacterStore
         }
         return true;
     }
+
+    /// <summary>Персонаж привязан к официальной оружейной: класс и GS берутся оттуда и вручную не меняются.</summary>
+    public static bool IsLinked(CharacterInfo? info) => info?.Armory is { Error: null };
 
     /// <summary>GS персонажа приходит из официальной оружейной (привязан, данные найдены, на сервере GS берётся оттуда).</summary>
     public bool GsFromArmory(ulong guildId, CharacterInfo? info) => info?.Armory is { Error: null } && _prefs.Get(guildId).ArmoryGs != "none";

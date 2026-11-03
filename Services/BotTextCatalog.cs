@@ -364,6 +364,7 @@ public static class BotTextCatalog
         T("char.gsSet", "GS set", "**{name}** — GS {gs}.", "{name}, {gs}", 500);
         T("char.gsRemoved", "GS removed", "GS removed from **{name}**.", "{name}", 500);
         T("char.badGs", "Wrong GS", "GS must be 0–99999.", null, 500);
+        T("char.classArmory", "Class comes from the official armory", "**{name}** is linked to the official armory — its class and GS come from there (unlink it on the site to change them by hand).", "{name}", 500);
         T("char.gsArmory", "GS comes from the official armory", "GS of **{name}** comes from the official armory — press Update in My characters on the site to refresh it (or unlink it to enter the GS by hand).", "{name}", 500);
         T("char.updatedGroups", "Active groups updated", " Updated {count} active group(s).", "{count}", 200, optional: true);
         T("char.notFound", "Character not found", "Character not found.", null, 500);
