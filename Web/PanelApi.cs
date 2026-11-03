@@ -109,11 +109,12 @@ public static partial class PanelApi
     private static IEnumerable<RouteHandlerBuilder> MapCommonEndpoints(RouteGroupBuilder g)
     {
         yield return g.MapGet("/overview", (ulong guildId, DiscordSocketClient client, ActivityStore activities, LfgStore lfg,
-            TicketStore tickets, TempVoiceStore voice) =>
+            TicketStore tickets, TempVoiceStore voice, GuildStatsStore stats, [Microsoft.AspNetCore.Mvc.FromServices] TimeService time) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             return Results.Ok(new
             {
+                trends = GuildStatsService.Trends(stats, time, guildId, guild.MemberCount, tickets.GetTickets(guildId).Count),
                 guild = new { id = guild.Id.ToString(), name = guild.Name, iconUrl = guild.IconUrl, members = guild.MemberCount },
                 lfg = new { activities = activities.Get(guildId).Count, groups = ActiveGroups(lfg, guildId).Count },
                 tickets = new { projects = tickets.GetProjects(guildId).Count, open = tickets.GetTickets(guildId).Count },

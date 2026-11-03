@@ -64,6 +64,8 @@ builder.Services.AddSingleton<BotTextStore>();
 builder.Services.AddSingleton<PanelService>();
 builder.Services.AddSingleton<LfgPublisher>();
 builder.Services.AddSingleton<CommunityStore>();
+builder.Services.AddSingleton<GuildStatsStore>();
+builder.Services.AddHostedService<GuildStatsService>();
 builder.Services.AddSingleton<CommunityService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<CommunityService>());
 builder.Services.AddSingleton<RecurringLfgStore>();

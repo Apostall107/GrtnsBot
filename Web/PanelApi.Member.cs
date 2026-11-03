@@ -272,12 +272,14 @@ public static partial class PanelApi
         });
 
         // Сводка сервера для главной участника (только числа, без подробностей)
-        g.MapGet("/summary", (ulong guildId, DiscordSocketClient client, LfgStore lfg, TicketStore tickets, TempVoiceStore voice) =>
+        g.MapGet("/summary", (ulong guildId, DiscordSocketClient client, LfgStore lfg, TicketStore tickets, TempVoiceStore voice,
+            GuildStatsStore stats, [Microsoft.AspNetCore.Mvc.FromServices] TimeService time) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var groups = ActiveGroups(lfg, guildId);
             return Results.Ok(new
             {
+                trends = GuildStatsService.Trends(stats, time, guildId, guild.MemberCount, tickets.GetTickets(guildId).Count),
                 server = new { id = guild.Id.ToString(), name = guild.Name, iconUrl = guild.IconUrl, members = guild.MemberCount },
                 activeGroups = groups.Count,
                 recruiting = groups.Count(x => !x.IsFull),

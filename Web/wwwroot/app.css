@@ -1324,3 +1324,11 @@ dialog[open]:has(.check-list, .pick-list, .guide-body) { overflow: clip; }
 }
 .bt-head > .muted { white-space: nowrap; }
 @media (max-width: 720px) { .bt-tools .row > svg { display: none; } }
+
+/* Daily trends on stat cards: ▲ ▼ vs yesterday / 7 days ago + sparkline */
+.trend-row { display: flex; align-items: center; gap: 6px; margin-top: 8px; min-width: 0; }
+.trend { font-size: var(--fs-small); font-weight: 600; padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
+.trend.up { color: var(--success); background: var(--success-soft); }
+.trend.down { color: var(--danger); background: var(--danger-soft); }
+.trend.flat { color: var(--text-secondary); background: var(--surface-elevated); }
+.sparkline { color: var(--tone, var(--primary)); margin-left: auto; opacity: .85; flex: none; }
