@@ -195,6 +195,17 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } }
 };
 
+// Links from Discord (title of a group post): ?tab=play&guild=…&group=… → open Groups on that server with the group in focus.
+// Saved before login, so it still works after the Discord login redirect.
+(() => {
+  const q = new URLSearchParams(location.search);
+  if (!q.has("tab") && !q.has("group")) return;
+  if (/^\d+$/.test(q.get("guild") || "")) store.set("gb.guild", q.get("guild"));
+  if (/^[a-z]+$/.test(q.get("tab") || "")) store.set("gb.tab", q.get("tab"));
+  if (/^[a-z0-9]+$/i.test(q.get("group") || "")) { store.set("gb.focusGroup", q.get("group")); store.set("gb.playProject", "all"); }
+  history.replaceState(null, "", location.pathname);
+})();
+
 function fmtDate(ms) {
   if (!ms) return "no time";
   return new Date(ms).toLocaleString(undefined, { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });

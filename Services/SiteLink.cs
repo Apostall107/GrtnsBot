@@ -35,14 +35,18 @@ public static class SiteLink
         "-# Log in with your Discord account — no password needed.";
 
     /// <summary>Заголовок embed — ссылка на сайт с припиской « | Bot Website» (не редактируется).</summary>
-    public static EmbedBuilder WithSiteTitle(this EmbedBuilder embed, string? title)
+    public static EmbedBuilder WithSiteTitle(this EmbedBuilder embed, string? title, string? link = null)
     {
         if (Url is null) return embed.WithTitle(title);
         const string suffix = " | Bot Website";
         var text = (title ?? "").Trim();
         if (text.Length + suffix.Length > EmbedBuilder.MaxTitleLength) text = text[..(EmbedBuilder.MaxTitleLength - suffix.Length)];
-        return embed.WithTitle(text + suffix).WithUrl(Url);
+        return embed.WithTitle(text + suffix).WithUrl(link ?? Url);
     }
+
+    /// <summary>Ссылка на сбор на сайте: вкладка Groups этого сервера, карточка сбора подсвечена.</summary>
+    public static string? GroupUrl(ulong guildId, string groupId) =>
+        Url is null ? null : $"{Url}/?tab=play&guild={guildId}&group={Uri.EscapeDataString(groupId)}";
 
     /// <summary>Добавляет блок о сайте в конец описания панели.</summary>
     public static EmbedBuilder WithSiteField(this EmbedBuilder embed)
