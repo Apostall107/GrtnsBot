@@ -28,8 +28,22 @@ public static partial class PanelApi
         url = $"https://aion2.plaync.com/en-us/characters/{a.ServerId}/{Uri.EscapeDataString(a.CharacterId)}?region=eu"
     };
 
+    private static object? BulkDto(ArmoryBulkStatus? s) => s is null ? null : new
+    {
+        running = s.Running, total = s.Total, done = s.Done, linked = s.Linked, updated = s.Updated, notFound = s.NotFound,
+        ambiguous = s.Ambiguous, failed = s.Failed, started = s.Started.ToUnixTimeMilliseconds(), finished = s.Finished?.ToUnixTimeMilliseconds(),
+        error = s.Error
+    };
+
+    /// <summary>Серверы EU по фракциям — для выбора на сайте.</summary>
+    private static async Task<object> ArmoryServersDto(OfficialArmory armory, CancellationToken ct) =>
+        (await armory.ServersAsync(ct)).Select(x => new { race = x.Race, id = x.Id, name = x.Name });
+
     private static void MapMemberArmory(RouteGroupBuilder g)
     {
+        g.MapGet("/armory/servers", async ([FromServices] OfficialArmory armory, CancellationToken ct) =>
+            Results.Ok(await ArmoryServersDto(armory, ct)));
+
         // Поиск персонажа по имени (сервер делает запрос сам — браузеру официальный API недоступен)
         g.MapGet("/armory/search", async (ulong guildId, string? name, int? server, ClaimsPrincipal user,
             [FromServices] OfficialArmory armory, [FromServices] ArmorySyncService sync, CancellationToken ct) =>
@@ -70,11 +84,8 @@ public static partial class PanelApi
             var id = (body.CharacterId ?? "").Trim();
             if (id.Length is 0 or > 200 || body.ServerId is not (> 0 and < 100000)) return Error("Pick a character from the search.");
 
-            var old = characters.GetInfo(guildId, me, exact, scope.Value)?.Armory;
-            characters.SetArmory(guildId, me, exact, new ArmoryLink { CharacterId = id, ServerId = body.ServerId }, scope.Value);
-            var result = await sync.SyncAsync(guildId, me, exact, scope.Value, ct);
+            var result = await sync.LinkAsync(guildId, me, exact, scope.Value, id, body.ServerId, ct);
             if (result == ArmorySyncResult.Updated) return Results.Ok();
-            characters.SetArmory(guildId, me, exact, old, scope.Value); // не вышло — как было
             return Error(result == ArmorySyncResult.NotFound
                 ? "This character wasn't found in the official armory."
                 : "The official armory isn't answering right now — try again later.");

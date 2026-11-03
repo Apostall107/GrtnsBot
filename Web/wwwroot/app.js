@@ -344,28 +344,59 @@ function promptDialog(title, initial) {
   });
 }
 
-/** Find the character in the official AION 2 armory: search by name → pick one. Resolves to the hit or null. */
-function armoryPickDialog(name) {
+const RACES = [[2, "Asmodians"], [1, "Elyos"]];
+let armoryServersCache = null;
+/** EU servers of AION 2 (faction → servers), loaded once. */
+async function armoryServers(path = "/me/armory/servers") {
+  if (!armoryServersCache) armoryServersCache = await gApi("GET", path);
+  return armoryServersCache;
+}
+
+/** Faction + server selects: the server list follows the faction. Returns { race, server, el, value() }. */
+function realmPicker(servers, race, serverId, disabled = false) {
+  const raceSel = h("select", { "aria-label": "Faction", disabled }, RACES.map(([v, l]) => h("option", { value: String(v) }, l)));
+  const serverSel = h("select", { "aria-label": "Server", disabled });
+  raceSel.value = String(race || 2);
+  const fill = keep => {
+    const list = servers.filter(x => String(x.race) === raceSel.value);
+    serverSel.replaceChildren(h("option", { value: "" }, "Any server"), ...list.map(x => h("option", { value: String(x.id) }, x.name)));
+    serverSel.value = list.some(x => String(x.id) === String(keep)) ? String(keep) : "";
+  };
+  fill(serverId);
+  raceSel.addEventListener("change", () => fill(serverSel.value));
+  return { race: raceSel, server: serverSel, value: () => ({ race: Number(raceSel.value), serverId: serverSel.value ? Number(serverSel.value) : null }) };
+}
+
+/** Find the character in the official AION 2 armory (EU): faction + server + name → pick one. Resolves to the hit or null. */
+function armoryPickDialog(name, servers, race, serverId) {
   return new Promise(resolve => {
     const d = dialog();
     const list = h("div", { class: "pick-list" });
-    const input = h("input", { value: name, maxlength: "32", placeholder: "Character name", style: "flex:1" });
+    const input = h("input", { value: name, maxlength: "32", placeholder: "Character name", style: "flex:1;min-width:140px" });
+    const realm = realmPicker(servers, race, serverId);
     const go = h("button", { class: "btn" }, icon("search", 15), "Search");
     const search = async () => {
       const q = input.value.trim();
       if (q.length < 2) return toast("Enter at least 2 characters.", "warn");
+      const r = realm.value();
       list.replaceChildren(skeletonLines(2));
       try {
-        const hits = await gApi("GET", `/me/armory/search?name=${encodeURIComponent(q)}`);
-        list.replaceChildren(...(hits.length ? hits.map(x => h("button", { onclick: () => { d.close(); resolve(x); } },
-          h("b", {}, x.name), h("span", { class: "muted small" }, [x.server, x.className, x.level ? `Lv ${x.level}` : null, x.race].filter(Boolean).join(" · "))))
-          : [empty("Nobody with this name in the official armory.")]));
+        let hits = await gApi("GET", `/me/armory/search?name=${encodeURIComponent(q)}${r.serverId ? `&server=${r.serverId}` : ""}`);
+        hits = hits.filter(x => !x.serverId || Math.floor(x.serverId / 1000) === r.race);
+        const exact = x => x.name.toLowerCase() === q.toLowerCase();
+        hits.sort((a, b) => exact(b) - exact(a) || b.level - a.level);
+        list.replaceChildren(...(hits.length ? hits.map(x => h("button", { class: exact(x) ? "exact" : "", onclick: () => { d.close(); resolve(x); } },
+          h("b", {}, x.name), h("span", { class: "muted small" }, [x.server, x.className, x.level ? `Lv ${x.level}` : null].filter(Boolean).join(" · ")),
+          exact(x) ? h("span", { class: "chip" }, "exact name") : null))
+          : [empty("Nobody with this name — check the faction and server.")]));
       } catch (e) { list.replaceChildren(empty(e.message)); }
     };
     go.addEventListener("click", search);
     input.addEventListener("keydown", e => { if (e.key === "Enter") search(); });
+    realm.server.addEventListener("change", search);
     d.replaceChildren(h("h2", {}, "Link the official profile"),
-      h("p", { class: "muted small" }, "Find your character on aion2.plaync.com. Combat power, item level and legion then update by themselves every day."),
+      h("p", { class: "muted small" }, "Find your character on aion2.plaync.com (EU). After linking, combat power, item level and legion come from there — press Update when they change."),
+      h("div", { class: "row", style: "flex-wrap:wrap;margin-bottom:8px" }, realm.race, realm.server),
       h("div", { class: "row", style: "flex-wrap:nowrap" }, input, go), list,
       h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => { d.close(); resolve(null); } }, "Cancel")));
     d.onclose = () => resolve(null);
@@ -1779,8 +1810,9 @@ async function pageLfg(main) {
 
   if (mode === "shared") {
     // ⚙️ General: projects, settings, channel, shared activities / templates, common classes
-    const projCard = card(), lfgSettingsCard = card(), lfgPrefsCard = card();
-    main.append(projCard, h("div", { class: "grid-main" }, actCard, h("div", {}, channelCard(), voiceCard(), mirrorCard())), lfgSettingsCard, lfgPrefsCard, classCard, tplCard);
+    const projCard = card(), lfgSettingsCard = card(), lfgPrefsCard = card(), armoryCard = card();
+    main.append(projCard, h("div", { class: "grid-main" }, actCard, h("div", {}, channelCard(), voiceCard(), mirrorCard())), lfgSettingsCard, lfgPrefsCard, armoryCard, classCard, tplCard);
+    renderArmoryPrefs(armoryCard);
     renderProjects(projCard, lfgProjects);
     renderLfgSettings(lfgSettingsCard);
     renderLfgPrefs(lfgPrefsCard);
@@ -2183,6 +2215,59 @@ async function renderLfgSettings(card) {
 }
 
 /** Ready check, auto-replace from the reserve, GS reminder. */
+/** LFG → Official armory (AION 2): projects with the armory, default faction and server; bulk link/update. */
+async function renderArmoryPrefs(card) {
+  const title = "🔗 Official armory (AION 2)";
+  card.replaceChildren(h("h2", {}, title), skeletonLines(3));
+  let d;
+  try { d = await gApi("GET", "/lfg/armory"); } catch (e) { card.replaceChildren(h("h2", {}, title), empty(e.message)); return; }
+  if (!d.projects.length) { card.replaceChildren(h("h2", {}, title), empty("Create a project first (LFG → Projects).")); return; }
+  const rows = d.projects.map(p => {
+    const on = h("input", { type: "checkbox", class: "switch", checked: p.enabled, "aria-label": `Armory for ${p.name}` });
+    const realm = realmPicker(d.servers, p.race, p.serverId);
+    const sync = () => { realm.race.disabled = realm.server.disabled = !on.checked; };
+    on.addEventListener("change", sync); sync();
+    return { p, on, realm, el: h("div", { class: "pref-row armory-proj" },
+      h("div", { class: "grow" }, h("b", {}, p.name), h("div", { class: "muted small" }, `${p.linked} of ${p.characters} character(s) linked`)),
+      realm.race, realm.server, on) };
+  });
+  const save = h("button", { class: "btn" }, "💾 Save");
+  const body = () => ({ projects: rows.map(r => ({ key: r.p.key, enabled: r.on.checked, ...r.realm.value() })) });
+  const tracker = track("Official armory", () => JSON.stringify(body()), async () => await act(save, () => gApi("PUT", "/lfg/armory", body()), "Armory settings saved.") !== undefined);
+  save.addEventListener("click", tracker.save);
+
+  const status = h("div", { class: "muted small", style: "margin-top:8px" });
+  let timer = 0;
+  const showStatus = b => {
+    clearTimeout(timer);
+    if (!b) { status.replaceChildren(); return; }
+    const parts = [`${b.done}/${b.total} checked`, `linked ${b.linked}`, `updated ${b.updated}`];
+    if (b.notFound) parts.push(`not found ${b.notFound}`);
+    if (b.ambiguous) parts.push(`several with this name ${b.ambiguous}`);
+    if (b.failed) parts.push(`failed ${b.failed}`);
+    status.replaceChildren(...[b.running ? h("span", { class: "pulse" }) : null, b.running ? " Running: " : `Last run ${fmtRelative(b.finished || b.started)}: `,
+      parts.join(" · "), b.error ? h("div", { class: "warn-text" }, b.error) : null].filter(Boolean));
+    if (b.running) timer = setTimeout(async () => { try { showStatus(await gApi("GET", "/lfg/armory/bulk")); } catch { /* next time */ } }, 2500);
+  };
+  const run = linkNew => async e => {
+    if (tracker.dirty) return toast("Save the settings first.", "warn");
+    if (!await confirmDialog(linkNew ? "Link and update all characters?" : "Update all linked characters?",
+      linkNew ? "Linked characters are updated. Others are searched by their exact name on their server (or the project's default) and linked when exactly one is found. About 3 seconds per character."
+        : "Every linked character is refreshed from the official armory. About 3 seconds per character.", "Start", false)) return;
+    const r = await act(e.currentTarget, () => gApi("POST", "/lfg/armory/bulk", { linkNew }));
+    if (r) showStatus(r);
+  };
+  card.replaceChildren(h("h2", {}, title),
+    h("p", { class: "muted small" }, "Members link their characters themselves in My characters (search on aion2.plaync.com, EU) and press Update when their gear changes — nothing updates automatically. Faction and server below are the defaults for new characters and for the search."),
+    ...rows.map(r => r.el),
+    h("div", { class: "row", style: "margin-top:10px;flex-wrap:wrap" }, save,
+      h("button", { class: "btn secondary", onclick: run(true) }, icon("link", 15), "Link & update all"),
+      h("button", { class: "btn secondary", onclick: run(false) }, icon("refresh-cw", 15), "Update linked")),
+    status);
+  tracker.attach(card);
+  showStatus(d.bulk);
+}
+
 async function renderLfgPrefs(card) {
   card.replaceChildren(h("h2", {}, "🧩 Group options"), skeletonLines(3));
   let p;
@@ -2224,7 +2309,7 @@ async function renderLfgPrefs(card) {
       h("span", { class: "muted small" }, "When a slot frees up then, the first player from the reserve who fits (role, class, GS) moves in; the bot replies under the post. Earlier the organizer decides.")),
     gsOn.el, gsBox,
     h("div", { class: "field", style: "margin-top:10px" }, h("label", {}, "🔗 GS of characters linked to the official armory"), armoryGs,
-      h("span", { class: "muted small" }, "Members link their characters in My characters (aion2.plaync.com). The chosen value becomes the GS and updates every day; the GS field is then read-only.")),
+      h("span", { class: "muted small" }, "Members link their characters in My characters (aion2.plaync.com). The chosen value becomes the GS when they link or press Update; the GS field is then read-only.")),
     h("label", { class: "field-label", style: "margin-top:10px" }, "For members on the site"), mTop.el,
     h("p", { class: "muted small" }, "Members always see the guild roster of their own projects (Member → Calendar → Guild roster: character, class, roles, GS)."),
     h("div", { class: "row", style: "margin-top:8px" }, save, runNow));
@@ -4699,18 +4784,19 @@ function playCard(g) {
 // ================= Member: characters =================
 
 /** My characters: the official armory profile (linked — data and buttons; not linked — the Link button). */
-function armoryBox(c, pq, gsSource) {
+function armoryBox(c, pq, gsSource, servers, realm) {
   const path = `/me/characters/${encodeURIComponent(c.name)}/armory`;
   const link = async e => {
-    const hit = await armoryPickDialog(c.armory && c.armory.name || c.name);
+    const r = realm.value();
+    const hit = await armoryPickDialog(c.armory && c.armory.name || c.name, servers, r.race, r.serverId);
     if (!hit) return;
     if (await act(e.currentTarget, () => gApi("POST", `${path}${pq}`, { characterId: hit.characterId, serverId: hit.serverId }), "Linked to the official profile.") !== undefined) refresh();
   };
   const a = c.armory;
   if (!a) return h("div", { class: "armory-box" },
     h("span", { class: "muted small grow" }, icon("link", 13), gsSource === "none"
-      ? " Link the official profile — combat power, item level and legion update by themselves."
-      : ` Link the official profile — GS (${gsSource === "combatPower" ? "combat power" : "item level"}) then updates by itself every day.`),
+      ? " Link the official profile — combat power, item level and legion come from there."
+      : ` Link the official profile — GS (${gsSource === "combatPower" ? "combat power" : "item level"}) then comes from there.`),
     h("button", { class: "btn secondary sm", onclick: link }, icon("link", 14), "Link profile"));
   const stat = (label, v) => v == null || v === "" ? null : h("span", { class: "chip" }, h("span", { class: "muted" }, label + " "), typeof v === "number" ? v.toLocaleString() : v);
   return h("div", { class: `armory-box linked${a.error ? " stale" : ""}` },
@@ -4719,7 +4805,7 @@ function armoryBox(c, pq, gsSource) {
         stat("CP", a.combatPower), stat("Item lvl", a.itemLevel), stat("Legion", a.legion)),
       h("div", { class: "muted small", style: "margin-top:4px" }, a.error
         ? "⚠️ Not found in the official armory anymore (renamed or deleted?) — link it again."
-        : `Official profile · updated ${a.synced ? fmtRelative(a.synced) : "—"} · updates by itself every day`)),
+        : `Official profile · updated ${a.synced ? fmtRelative(a.synced) : "—"} · press Update after you level up or change gear`)),
     h("div", { class: "row", style: "gap:4px" },
       a.error ? h("button", { class: "btn secondary sm", onclick: link }, icon("link", 14), "Link again")
         : h("button", { class: "btn ghost sm", title: "Update now (once per 15 minutes)", onclick: async e => {
@@ -4788,7 +4874,11 @@ async function pageChars(main) {
   }).catch(e => prefs.replaceChildren(cardHead("bell", "My notifications"), empty(e.message)));
 
   const isCustom = ic => /^<a?:[^:]+:\d+>$/.test(ic || "");
+  const ap = data.armoryProject && data.armoryProject.enabled ? data.armoryProject : null;
+  let servers = [];
+  if (ap) try { servers = await armoryServers(); } catch { /* the selects stay empty */ }
   const cards = data.characters.map(c => {
+    const realm = realmPicker(servers, c.race || ap?.race, c.race || c.serverId ? c.serverId : ap?.serverId, !!c.armory);
     // <option> can't show images: unicode icons go in the text, server/bot emojis are shown in the card header
     const cls = h("select", { "aria-label": "Class" }, h("option", { value: "" }, "No class"),
       data.classRoles.map(r => h("option", { value: r.id, "data-icon": r.icon || null }, r.name)));
@@ -4804,11 +4894,12 @@ async function pageChars(main) {
     syncIcon();
     const note = h("input", { maxlength: String(data.maxComment), placeholder: "e.g. can lead, healer alt", value: c.comment || "" });
     const gs = h("input", { type: "number", min: "0", max: "99999", placeholder: "—", value: c.gs ?? "", disabled: c.gsLocked,
-      title: c.gsLocked ? "Comes from the official armory — updates by itself" : "" });
+      title: c.gsLocked ? "Comes from the official armory — press Update to refresh" : "" });
     const save = h("button", { class: "btn" }, icon("save", 15), "Save");
-    const tracker = track(c.name, () => [cls.value, note.value, gs.value], async () => {
+    const tracker = track(c.name, () => [cls.value, note.value, gs.value, realm.race.value, realm.server.value], async () => {
       if (gs.value !== "" && (Number(gs.value) < 0 || Number(gs.value) > 99999)) { toast("GS: 0–99999.", "warn"); return false; }
-      return await act(save, () => gApi("PUT", `/me/characters/${encodeURIComponent(c.name)}${pq}`, { classRoleId: cls.value || null, comment: note.value, gs: gs.value === "" ? null : Number(gs.value) }),
+      return await act(save, () => gApi("PUT", `/me/characters/${encodeURIComponent(c.name)}${pq}`, { classRoleId: cls.value || null, comment: note.value, gs: gs.value === "" ? null : Number(gs.value),
+        ...(ap ? realm.value() : { race: c.race ?? null, serverId: c.serverId ?? null }) }),
         r => r.groupsUpdated ? `Saved. Updated ${r.groupsUpdated} active group(s).` : "Saved.") !== undefined;
     });
     save.addEventListener("click", tracker.save);
@@ -4830,10 +4921,13 @@ async function pageChars(main) {
         h("div", { class: "grow" }, h("div", { class: "row", style: "gap:4px;flex-wrap:nowrap" }, h("b", { class: "char-name" }, c.name), rename), clsName),
         c.gs ? h("span", { class: "gs big" }, `GS ${c.gs}`) : null),
       c.gsLocked ? null : gsAge(c, data.gsStaleDays, pq),
-      armoryBox(c, pq, data.armoryGs),
+      ap ? armoryBox(c, pq, data.armoryGs, servers, realm) : null,
       h("div", { class: "char-fields" },
         h("div", { class: "field" }, h("label", {}, "Class"), cls),
         h("div", { class: "field gs-field" }, h("label", {}, c.gsLocked ? "GS · auto" : "GS"), gs)),
+      ap ? h("div", { class: "char-fields" },
+        h("div", { class: "field" }, h("label", {}, "Faction"), realm.race),
+        h("div", { class: "field" }, h("label", {}, "Server"), realm.server)) : null,
       h("div", { class: "field" }, h("label", {}, "Personal note — only you see it"), note),
       h("div", { class: "char-actions" }, save, h("span", { class: "spacer" }), rm)));
   });

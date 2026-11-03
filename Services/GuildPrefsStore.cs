@@ -41,6 +41,17 @@ public sealed class GuildPrefs
 
     /// <summary>GS привязанных к официальной оружейной персонажей: itemLevel (по умолчанию), combatPower или none (вручную).</summary>
     public string ArmoryGs { get; set; } = "itemLevel";
+
+    /// <summary>Официальная оружейная AION 2 по проектам (ключ проекта): включена, фракция и сервер по умолчанию.</summary>
+    public Dictionary<string, ArmoryProjectPrefs>? Armory { get; set; }
+}
+
+/// <summary>Проект на официальной оружейной: включён ли, фракция (1 — Elyos, 2 — Asmodians) и сервер по умолчанию.</summary>
+public sealed class ArmoryProjectPrefs
+{
+    public bool Enabled { get; set; }
+    public int Race { get; set; } = 2;
+    public int? ServerId { get; set; }
 }
 
 /// <summary>data/guild-prefs.json — настройки по серверам (ЛС, готовность, автозамена, напоминание о GS).</summary>
@@ -87,6 +98,18 @@ public sealed class GuildPrefsStore
     }
 
     public DmPrefs Dm(ulong guildId) => Get(guildId).Dm;
+
+    /// <summary>
+    /// Настройки оружейной для проекта. Пока админ ничего не задал — включена для проектов со словом «Aion» в названии
+    /// (Asmodians, Triniel).
+    /// </summary>
+    public ArmoryProjectPrefs ArmoryFor(ulong guildId, string? projectKey, string? projectName)
+    {
+        var all = Get(guildId).Armory;
+        if (all is not null) return projectKey is not null && all.TryGetValue(projectKey, out var p) ? p : new ArmoryProjectPrefs();
+        var aion = projectName?.Contains("aion", StringComparison.OrdinalIgnoreCase) == true || projectKey is null;
+        return new ArmoryProjectPrefs { Enabled = aion, Race = 2, ServerId = 2303 };
+    }
 }
 
 /// <summary>

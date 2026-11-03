@@ -14,10 +14,15 @@ public sealed class CharacterInfo
     public DateTimeOffset? GsUpdatedAt { get; set; }
     /// <summary>Привязка к официальной оружейной (aion2.plaync.com) и последние данные оттуда.</summary>
     public ArmoryLink? Armory { get; set; }
+    /// <summary>Фракция персонажа (1 — Elyos, 2 — Asmodians) и сервер (ID с официального сайта).</summary>
+    public int? Race { get; set; }
+    public int? ServerId { get; set; }
+
+    public bool IsEmpty => ClassRoleId is null && Comment is null && Gs is null && Armory is null && Race is null && ServerId is null;
 
     public CharacterInfo Copy() => new()
     {
-        ClassRoleId = ClassRoleId, Comment = Comment, Gs = Gs, GsUpdatedAt = GsUpdatedAt,
+        ClassRoleId = ClassRoleId, Comment = Comment, Gs = Gs, GsUpdatedAt = GsUpdatedAt, Race = Race, ServerId = ServerId,
         Armory = Armory is null ? null : Armory with { }
     };
 }
@@ -108,7 +113,7 @@ public sealed class CharacterStore
             if (setClass) info.ClassRoleId = classRoleId;
             if (setComment) info.Comment = comment;
 
-            if (info.ClassRoleId is null && info.Comment is null && info.Gs is null && info.Armory is null) _info.Remove(key);
+            if (info.IsEmpty) _info.Remove(key);
             else _info[key] = info;
             SaveInfo();
         }
@@ -129,7 +134,7 @@ public sealed class CharacterStore
             var value = gs is { } v ? Math.Clamp(v, 0, 99999) : (int?)null;
             if (confirm || value != info.Gs || info.GsUpdatedAt is null) info.GsUpdatedAt = DateTimeOffset.UtcNow;
             info.Gs = value;
-            if (info.ClassRoleId is null && info.Comment is null && info.Gs is null && info.Armory is null) _info.Remove(key);
+            if (info.IsEmpty) _info.Remove(key);
             else _info[key] = info;
             SaveInfo();
         }
@@ -138,6 +143,22 @@ public sealed class CharacterStore
 
     /// <summary>GS персонажа приходит из официальной оружейной (привязан, данные найдены, на сервере GS берётся оттуда).</summary>
     public bool GsFromArmory(ulong guildId, CharacterInfo? info) => info?.Armory is { Error: null } && _prefs.Get(guildId).ArmoryGs != "none";
+
+    /// <summary>Фракция и сервер персонажа (null — не указано).</summary>
+    public void SetRealm(ulong guildId, ulong userId, string name, int? race, int? serverId, string? scope = null)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return;
+        lock (_lock)
+        {
+            var key = InfoKey(guildId, userId, name, scope);
+            if (!_info.TryGetValue(key, out var info)) info = new CharacterInfo();
+            info.Race = race;
+            info.ServerId = serverId;
+            if (info.IsEmpty) _info.Remove(key);
+            else _info[key] = info;
+            SaveInfo();
+        }
+    }
 
     /// <summary>Привязка к официальной оружейной (null — отвязать).</summary>
     public void SetArmory(ulong guildId, ulong userId, string name, ArmoryLink? link, string? scope = null)
@@ -148,7 +169,7 @@ public sealed class CharacterStore
             var key = InfoKey(guildId, userId, name, scope);
             if (!_info.TryGetValue(key, out var info)) info = new CharacterInfo();
             info.Armory = link;
-            if (info.ClassRoleId is null && info.Comment is null && info.Gs is null && info.Armory is null) _info.Remove(key);
+            if (info.IsEmpty) _info.Remove(key);
             else _info[key] = info;
             SaveInfo();
         }

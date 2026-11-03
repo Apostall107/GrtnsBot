@@ -9,6 +9,9 @@ namespace LfgBot.Services;
 /// <summary>Найденный в официальной оружейной персонаж.</summary>
 public sealed record ArmoryHit(string CharacterId, string Name, int ServerId, string ServerName, int Level, string? ClassName, string? Race);
 
+/// <summary>Игровой сервер: фракция (1 — Elyos, 2 — Asmodians), ID и название.</summary>
+public sealed record ArmoryServer(int Race, int Id, string Name);
+
 /// <summary>Данные персонажа из официальной оружейной.</summary>
 public sealed record ArmoryProfile(string Name, int Level, string? ClassName, int? CombatPower, int? ItemLevel, string? Legion, string? ServerName,
     string? Race);
@@ -21,6 +24,43 @@ public sealed class OfficialArmory(IHttpClientFactory http, IConfiguration confi
 {
     private static readonly Regex Tags = new("<[^>]+>", RegexOptions.Compiled);
     private string Region => config["Armory:Region"] ?? "eu";
+
+    // Серверы EU на случай, если сайт не ответил (aion2.plaync.com/en-us/api/gameinfo/servers)
+    private static readonly ArmoryServer[] FallbackServers = Parse(
+        "1:1301:Siel,1:1302:Nezekan,1:1303:Vaizel,1:1304:Kaisinel,1:1305:Yustiel,1:1306:Ariel,1:1307:Fregion,1:1308:Meslamtaeda," +
+        "1:1309:Hithanya,1:1310:Nania,1:1311:Tahavatha,1:1312:Luteros,1:1313:Phernos,1:1314:Daminu,1:1315:Kasaka,1:1316:Bakarma," +
+        "1:1317:Tsenka,1:1318:Kochi,1:1319:Ishtar,1:1320:Tiamat,1:1321:Gauss,1:1322:Lamuatan,1:1323:Nathara," +
+        "2:2301:Israphel,2:2302:Zikel,2:2303:Triniel,2:2304:Lumiel,2:2305:Marchutan,2:2306:Azphel,2:2307:Ereshkigal,2:2308:Beritra," +
+        "2:2309:Nemon,2:2310:Hadala,2:2311:Ludra,2:2312:Ulgorn,2:2313:Munin,2:2314:Odar,2:2315:Zemurru,2:2316:Kromede,2:2317:Quai," +
+        "2:2318:Baba,2:2319:Fafnir,2:2320:Indnath,2:2321:Agnita,2:2322:Atiel,2:2323:Tassin");
+
+    private static ArmoryServer[] Parse(string list) => list.Split(',').Select(x => x.Split(':'))
+        .Select(x => new ArmoryServer(int.Parse(x[0]), int.Parse(x[1]), x[2])).ToArray();
+
+    private IReadOnlyList<ArmoryServer>? _servers;
+    private DateTimeOffset _serversAt;
+
+    /// <summary>Серверы региона (кэш на сутки; сайт недоступен — встроенный список).</summary>
+    public async Task<IReadOnlyList<ArmoryServer>> ServersAsync(CancellationToken ct = default)
+    {
+        if (_servers is { } cached && DateTimeOffset.UtcNow - _serversAt < TimeSpan.FromDays(1)) return cached;
+        var list = new List<ArmoryServer>();
+        try
+        {
+            using var doc = await GetJsonAsync($"https://aion2.plaync.com/en-us/api/gameinfo/servers?lang=en-US&region={Region}", ct);
+            if (doc?.RootElement.TryGetProperty("serverList", out var arr) == true && arr.ValueKind == JsonValueKind.Array)
+                foreach (var x in arr.EnumerateArray())
+                    if (Int(x, "raceId") is { } race && Int(x, "serverId") is { } id && Str(x, "serverName") is { } name)
+                        list.Add(new ArmoryServer(race, id, name));
+        }
+        catch (Exception e)
+        {
+            logger.LogDebug(e, "Armory server list failed");
+        }
+        _servers = list.Count > 0 ? list : FallbackServers;
+        _serversAt = list.Count > 0 ? DateTimeOffset.UtcNow : DateTimeOffset.UtcNow.AddDays(-1).AddHours(1); // ошибка — повторить через час
+        return _servers;
+    }
 
     private Dictionary<int, string>? _pcClasses;
     private DateTimeOffset _pcClassesAt;
