@@ -114,7 +114,9 @@ public static partial class PanelApi
                                 ? sr.Select(r => r.ToString()).ToList() : [],
                             gs = c.Info?.Gs,
                             armory = ArmoryDto(c.Info?.Armory),
-                            server = c.Info?.Armory?.ServerName ?? OfficialArmory.ServerName(c.Info?.ServerId)
+                            server = c.Info?.Armory?.ServerName ?? OfficialArmory.ServerName(c.Info?.ServerId),
+                            // Фракция по серверу: 1xxx — Elyos, 2xxx — Asmodians
+                            race = ArmorySyncService.RaceOfServer(c.Info?.Armory?.ServerId ?? c.Info?.ServerId ?? 0)
                         };
                     })
                     .OrderBy(x => x.character, StringComparer.OrdinalIgnoreCase)

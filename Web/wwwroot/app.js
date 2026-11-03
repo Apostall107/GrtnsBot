@@ -418,6 +418,12 @@ function armoryPickDialog(name, servers, race, serverId, initialHits = null) {
   });
 }
 
+/** Server chip colored by faction: Elyos — light blue, Asmodians — purple (race 1 / 2; by server ID 1xxx / 2xxx). */
+function serverChip(name, race) {
+  const cls = race === 1 ? " elyos" : race === 2 ? " asmo" : "";
+  return h("span", { class: `chip server${cls}`, title: race === 1 ? "Elyos" : race === 2 ? "Asmodians" : "" }, name);
+}
+
 /** Visible link to the official AION 2 profile (aion2.plaync.com); null — not linked. */
 function armoryLink(a, label = "Armory") {
   if (!a || !a.url) return null;
@@ -4915,7 +4921,7 @@ function armoryBox(c, pq, gsSource, servers, realm) {
   const stat = (label, v) => v == null || v === "" ? null : h("span", { class: "chip" }, h("span", { class: "muted" }, label + " "), typeof v === "number" ? v.toLocaleString() : v);
   return h("div", { class: `armory-box linked${a.error ? " stale" : ""}` },
     h("div", { class: "grow" },
-      h("div", { class: "armory-stats" }, stat("Lv", a.level || null), stat("Class", a.className), stat("Server", a.server),
+      h("div", { class: "armory-stats" }, stat("Lv", a.level || null), stat("Class", a.className), a.server ? serverChip(a.server, Math.floor(a.serverId / 1000)) : null,
         stat("CP", a.combatPower), stat("Item lvl", a.itemLevel), stat("Legion", a.legion)),
       h("div", { class: "muted small", style: "margin-top:4px" }, a.error
         ? "⚠️ Not found in the official armory anymore (renamed or deleted?) — link it again."
@@ -5816,7 +5822,7 @@ async function guildRoster(holder) {
         ["Member", r => r.member.name, r => member(r.member)],
         ["Character", r => r.character, r => h("span", { class: "row", style: "gap:6px;flex-wrap:nowrap" }, h("b", {}, r.character), armoryLink(r.armory))],
         ["Class", r => r.classRole ? r.classRole.name : "", r => r.classRole ? h("span", { class: "row", style: "gap:4px" }, classMark(r) || null, r.classRole.name) : h("span", { class: "muted" }, "—")],
-        ["Server", r => r.server || "", r => r.server ? h("span", { class: "chip" }, r.server) : h("span", { class: "muted" }, "—")],
+        ["Server", r => r.server || "", r => r.server ? serverChip(r.server, r.race) : h("span", { class: "muted" }, "—")],
         ["Legion", r => (r.armory && r.armory.legion) || "", r => r.armory && r.armory.legion ? h("span", { class: "chip legion" }, icon("shield", 12), r.armory.legion) : h("span", { class: "muted" }, "—")],
         ["GS", r => r.gs, r => r.gs == null ? h("span", { class: "muted" }, "—") :
           h("span", { title: r.gsUpdated ? `Updated ${new Date(r.gsUpdated).toLocaleDateString()}` : "Update date unknown" }, String(r.gs), stale(r.gsUpdated) ? " ⏳" : "")],
@@ -5974,7 +5980,7 @@ function memberRoster(holder, guild) {
         ["Member", r => r.member.name, r => member(r.member)],
         ["Character", r => r.character, r => h("span", { class: "row", style: "gap:6px;flex-wrap:nowrap" }, h("b", {}, r.character), armoryLink(r.armory))],
         ["Class", r => r.classRole ? r.classRole.name : "", r => r.classRole ? h("span", { class: "row", style: "gap:4px" }, classMark(r) || null, r.classRole.name) : h("span", { class: "muted" }, "—")],
-        ["Server", r => r.server || "", r => r.server ? h("span", { class: "chip" }, r.server) : h("span", { class: "muted" }, "—")],
+        ["Server", r => r.server || "", r => r.server ? serverChip(r.server, r.race) : h("span", { class: "muted" }, "—")],
         ["Legion", r => (r.armory && r.armory.legion) || "", r => r.armory && r.armory.legion ? h("span", { class: "chip legion" }, icon("shield", 12), r.armory.legion) : h("span", { class: "muted" }, "—")],
         ["GS", r => r.gs, r => r.gs == null ? h("span", { class: "muted" }, "—") : String(r.gs)],
         ["Combat power", r => r.armory ? r.armory.combatPower ?? 0 : -1, armoryCell]
