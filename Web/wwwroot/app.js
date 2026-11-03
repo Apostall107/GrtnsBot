@@ -1619,15 +1619,18 @@ async function pageAnnounce(main) {
   sentCard.replaceChildren(h("h2", {}, "🗂️ Sent"), data.sent.length ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
     h("thead", {}, h("tr", {}, h("th", {}, "Sent"), h("th", {}, "Channel"), h("th", {}, "Text"), h("th", {}, "Status"), h("th", {}))),
     h("tbody", {}, data.sent.map(p => {
-      const again = h("button", { class: "btn secondary", title: "Copy into the form", onclick: () => loadIntoForm(p, false) }, "↩️ Reuse");
-      const editSent = p.status === "sent" && p.messages
-        ? h("button", { class: "btn secondary", title: "Change the text of the messages in Discord", onclick: () => loadIntoForm(p, "sent") }, "✏️ Edit") : null;
-      const delMsgs = h("button", { class: "btn danger" }, "Delete messages");
+      // Compact icon buttons (names in tooltips)
+      const ib = (ic, title, extra = "") => h("button", { class: `btn ghost icon-only sm${extra}`, title, "aria-label": title }, icon(ic, 16));
+      const again = ib("undo-2", "Reuse — copy into the form");
+      again.addEventListener("click", () => loadIntoForm(p, false));
+      const editSent = p.status === "sent" && p.messages ? ib("pencil", "Edit — change the messages in Discord") : null;
+      if (editSent) editSent.addEventListener("click", () => loadIntoForm(p, "sent"));
+      const delMsgs = ib("trash-2", "Delete the messages in Discord", " danger-text");
       delMsgs.addEventListener("click", async () => {
         if (!await confirmDialog("Delete this post in Discord?", `${p.messages} message(s) in ${where(p)} will be deleted.`, "Delete")) return;
         if (await act(delMsgs, () => gApi("POST", `/announce/${p.id}/delete-messages`), r => `Deleted ${r.deleted} message(s).`) !== undefined) refresh();
       });
-      const forget = h("button", { class: "btn ghost" }, "Remove");
+      const forget = ib("x", "Remove from this list (the messages in Discord stay)");
       forget.addEventListener("click", async () => {
         if (!await confirmDialog("Remove from the list?", "Only the record here is removed — the messages in Discord stay.", "Remove")) return;
         if (await act(forget, () => gApi("DELETE", `/announce/${p.id}`), "Removed.") !== undefined) refresh();
@@ -1638,8 +1641,9 @@ async function pageAnnounce(main) {
         h("td", { class: "small" }, short(p.content), h("div", { class: "muted small" }, "by ", member(p.createdBy))),
         h("td", {}, p.status === "sent" ? h("span", { class: "badge ok" }, `${p.messages} msg`) : h("span", { class: "badge lock", title: p.error || "" }, "failed"),
           p.error ? h("div", { class: "error-text small" }, p.error) : null),
-        h("td", { class: "actions" }, p.jumpUrl ? h("a", { class: "btn ghost", href: p.jumpUrl, target: "_blank", rel: "noopener" }, "Open") : null,
-          " ", editSent, " ", again, " ", p.messages ? delMsgs : null, " ", forget));
+        h("td", { class: "actions icon-actions" },
+          p.jumpUrl ? h("a", { class: "btn ghost icon-only sm", href: p.jumpUrl, target: "_blank", rel: "noopener", title: "Open in Discord", "aria-label": "Open in Discord" }, icon("external-link", 16)) : null,
+          editSent, again, p.messages ? delMsgs : null, forget));
     })))) : empty("Nothing sent yet."));
 }
 
