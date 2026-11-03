@@ -247,9 +247,46 @@ public sealed class CommunityService(
                 RoleButtonColor.Red => ButtonStyle.Danger,
                 _ => ButtonStyle.Secondary
             }, LfgProjectStore.ToEmote(b.Emoji), row: row + i / 5);
+        // «Мои роли»: личный вид — что у меня уже есть (кнопки в канале у всех одинаковые)
+        var shown = p.Buttons.Take((5 - row) * 5).Count();
+        var myRow = row + shown / 5;
+        if (shown + options.Count > 0 && myRow < 5)
+            builder.WithButton(Cut(Tx.Get(gid, "roles.myButton"), 80), $"rp:my:{p.Id}", ButtonStyle.Secondary, new Emoji("👤"), row: myRow);
 
         var comps = builder.Build();
         return (embed.Build(), comps.Components.Count > 0 ? comps : null);
+    }
+
+    /// <summary>
+    /// Личный вид панели (эфемерно, видит только нажавший): какие роли панели у него есть (✅ / ➖)
+    /// и кнопки-переключатели — зелёная, если роль уже взята. Кнопки в канале у всех одинаковые, поэтому состояние — здесь.
+    /// </summary>
+    public async Task<(string Text, MessageComponent Components)> PersonalViewAsync(RolePanel panel, ulong userId, string? result)
+    {
+        var gid = panel.GuildId;
+        // Свежие роли (кэш после выдачи/снятия обновляется не сразу)
+        IReadOnlyCollection<ulong> mine;
+        try
+        {
+            mine = (await client.Rest.GetGuildUserAsync(gid, userId))?.RoleIds ?? [];
+        }
+        catch (Discord.Net.HttpException)
+        {
+            mine = client.GetGuild(gid)?.GetUser(userId)?.Roles.Select(r => r.Id).ToList() ?? [];
+        }
+        bool Has(RoleBinding b) => b.RoleIds.Count > 0 && b.RoleIds.All(mine.Contains);
+
+        var sb = new System.Text.StringBuilder();
+        if (!string.IsNullOrWhiteSpace(result)) sb.AppendLine(result).AppendLine();
+        sb.AppendLine(Tx.Get(gid, "roles.yourRoles"));
+        foreach (var b in panel.Bindings.Take(25))
+            sb.AppendLine($"{(Has(b) ? "✅" : "➖")} {string.Join(" ", b.RoleIds.Select(id => $"<@&{id}>"))}");
+
+        var builder = new ComponentBuilder();
+        foreach (var (b, i) in panel.Bindings.Take(25).Select((b, i) => (b, i)))
+            builder.WithButton(Cut((Has(b) ? "✓ " : "") + BindingLabel(panel, b), 80), $"rp:mb:{panel.Id}:{b.Id}",
+                Has(b) ? ButtonStyle.Success : ButtonStyle.Secondary, LfgProjectStore.ToEmote(b.Emoji), row: i / 5);
+        return (Cut(sb.ToString().TrimEnd(), 2000), builder.Build());
     }
 
     /// <summary>Публикует панель в канал (старое сообщение панели удаляется).</summary>

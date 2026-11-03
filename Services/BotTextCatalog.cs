@@ -408,6 +408,8 @@ public static class BotTextCatalog
         // ================= Welcome & role panels =================
         Group("Welcome & role panels");
         T("welcome.applyButton", "Welcome: “Apply” link button", "Apply", null, Button);
+        T("roles.myButton", "Role panel: My roles button", "My roles", null, Button);
+        T("roles.yourRoles", "Role panel: your roles (personal view)", "**Your roles on this panel** — ✅ you have it · ➖ you don't. The buttons below switch them:", null, 500);
         T("roles.placeholder", "Role panel: dropdown placeholder", "Choose your roles", null, Placeholder);
         T("roles.hintNormal", "Role panel hint: normal (- = hide)", "Click a role to get it, click again to remove it.", null, 500, optional: true);
         T("roles.hintUnique", "Role panel hint: one role only (- = hide)", "You can have only one of these roles — picking another one replaces it.", null, 500, optional: true);
