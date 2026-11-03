@@ -57,7 +57,7 @@ public static partial class PanelApi
             Results.Ok(new { members = await reminder.RunAsync(guildId) }));
 
         // ----- Посещаемость: по людям за период (из истории закрытых сборов) -----
-        lfg.MapGet("/attendance", (ulong guildId, string? project, int? days, DiscordSocketClient client,
+        lfg.MapGet("/attendance", async (ulong guildId, string? project, int? days, DiscordSocketClient client,
             [FromServices] LfgHistoryStore history, [FromServices] LfgProjectStore projects) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
@@ -66,6 +66,7 @@ public static partial class PanelApi
             var entries = history.Get(guildId, since)
                 .Where(e => string.IsNullOrEmpty(project) || (e.ProjectKey ?? def) == project)
                 .ToList();
+            await WarmMembersAsync(client, guild, entries.SelectMany(e => e.Members.Select(m => m.UserId)));
             var rows = entries
                 .SelectMany(e => e.Members.Select(m => (e, m)))
                 .GroupBy(x => x.m.UserId)
@@ -86,17 +87,20 @@ public static partial class PanelApi
         });
 
         // ----- Календарь: сборы и регулярные сборы на 7 дней вперёд -----
-        lfg.MapGet("/calendar", (ulong guildId, DiscordSocketClient client, [FromServices] LfgStore store,
+        lfg.MapGet("/calendar", async (ulong guildId, DiscordSocketClient client, [FromServices] LfgStore store,
             [FromServices] RecurringLfgStore recurring, [FromServices] TimeService time, [FromServices] LfgProjectStore projects) =>
-            client.GetGuild(guildId) is { } guild
-                ? Results.Ok(new { zone = time.ZoneName, events = CalendarEvents(guild, store, recurring, time, projects, _ => true, null) })
-                : GuildNotFound());
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            await WarmMembersAsync(client, guild, CalendarOwners(guildId, store, recurring));
+            return Results.Ok(new { zone = time.ZoneName, events = CalendarEvents(guild, store, recurring, time, projects, _ => true, null) });
+        });
 
         // ----- Ростер гильдии: персонажи, классы, роли в группе, GS, на сервере с, последняя активность -----
-        lfg.MapGet("/roster", (ulong guildId, DiscordSocketClient client, [FromServices] CharacterStore characters,
+        lfg.MapGet("/roster", async (ulong guildId, DiscordSocketClient client, [FromServices] CharacterStore characters,
             [FromServices] LfgProjectStore projects, [FromServices] MemberActivityStore activity) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            await WarmMembersAsync(client, guild, characters.All(guildId).Select(c => c.UserId));
             var def = projects.DefaultKey(guildId);
             var list = characters.All(guildId)
                 .Select(c =>
@@ -110,7 +114,7 @@ public static partial class PanelApi
                     return new
                     {
                         member = Member(guild, c.UserId),
-                        onServer = user is not null,
+                        onServer = OnServer(guild, c.UserId),
                         character = c.Name,
                         project = projectKey,
                         classRole = classId is { } cid ? Role(guild, cid) : null,
@@ -176,6 +180,11 @@ public static partial class PanelApi
     /// Сборы со временем и повторяющиеся сборы на 7 дней вперёд. <paramref name="allowed"/> — фильтр по ключу проекта;
     /// <paramref name="me"/> — участник (его статус в сборе: group / reserve).
     /// </summary>
+    /// <summary>Организаторы сборов календаря (для подгрузки имён).</summary>
+    private static IEnumerable<ulong> CalendarOwners(ulong guildId, LfgStore store, RecurringLfgStore recurring) =>
+        store.Groups.Values.Where(g => g.GuildId == guildId && !g.IsClosed).Select(g => g.OwnerId)
+            .Concat(recurring.Get(guildId).Select(r => r.OwnerId));
+
     internal static List<object> CalendarEvents(SocketGuild guild, LfgStore store, RecurringLfgStore recurring, TimeService time,
         LfgProjectStore projects, Func<string?, bool> allowed, ulong? me)
     {

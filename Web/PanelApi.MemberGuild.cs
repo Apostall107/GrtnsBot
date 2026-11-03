@@ -15,10 +15,11 @@ public static partial class PanelApi
     private static void MapMemberGuild(RouteGroupBuilder g)
     {
         // Календарь: только сборы проектов, к которым у человека есть доступ
-        g.MapGet("/calendar", (ulong guildId, ClaimsPrincipal user, DiscordSocketClient client, [FromServices] LfgStore store,
+        g.MapGet("/calendar", async (ulong guildId, ClaimsPrincipal user, DiscordSocketClient client, [FromServices] LfgStore store,
             [FromServices] RecurringLfgStore recurring, [FromServices] TimeService time, [FromServices] LfgProjectStore projects) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            await WarmMembersAsync(client, guild, CalendarOwners(guildId, store, recurring));
             var me = user.UserId()!.Value;
             var member = guild.GetUser(me);
             bool Allowed(string? key) => key is null || LfgProjectStore.CanUse(member, projects.Find(guildId, key));
@@ -83,10 +84,12 @@ public static partial class PanelApi
         });
 
         // Гильдия для участников: состав своих проектов (видят все) и топ активных за 30 дней (без no-show, если включён)
-        g.MapGet("/guild", (ulong guildId, ClaimsPrincipal user, DiscordSocketClient client, [FromServices] GuildPrefsStore prefs,
+        g.MapGet("/guild", async (ulong guildId, ClaimsPrincipal user, DiscordSocketClient client, [FromServices] GuildPrefsStore prefs,
             [FromServices] CharacterStore characters, [FromServices] LfgProjectStore projects, [FromServices] LfgHistoryStore history) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            await WarmMembersAsync(client, guild, characters.All(guildId).Select(c => c.UserId)
+                .Concat(history.Get(guildId, DateTimeOffset.UtcNow.AddDays(-30)).SelectMany(e => e.Members.Select(m => m.UserId))));
             var p = prefs.Get(guildId);
             var member = guild.GetUser(user.UserId()!.Value);
             var def = projects.DefaultKey(guildId);
@@ -95,7 +98,7 @@ public static partial class PanelApi
             bool Allowed(string? key) => key is null || allowedKeys.Contains(key) || allowedProjects.Count == 0 && projects.GetProjects(guildId).Count == 0;
 
             var roster = characters.All(guildId)
-                    .Where(c => guild.GetUser(c.UserId) is not null && Allowed(c.Scope ?? def))
+                    .Where(c => OnServer(guild, c.UserId) && Allowed(c.Scope ?? def))
                     .Select(c =>
                     {
                         var key = c.Scope ?? def;
@@ -120,7 +123,7 @@ public static partial class PanelApi
                     .Where(e => Allowed(e.ProjectKey ?? def))
                     .SelectMany(e => e.Members.Where(m => m.Attended != false))
                     .GroupBy(m => m.UserId)
-                    .Where(x => guild.GetUser(x.Key) is not null)
+                    .Where(x => OnServer(guild, x.Key))
                     .Select(x => new
                     {
                         member = Member(guild, x.Key),
