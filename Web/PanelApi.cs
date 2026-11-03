@@ -941,10 +941,16 @@ public static partial class PanelApi
                     messageId = p.MessageId.ToString(),
                     channel = guild.GetTextChannel(p.ChannelId)?.Name,
                     createdAt = SnowflakeUtils.FromSnowflake(p.MessageId).ToUnixTimeMilliseconds(),
-                    jumpUrl = $"https://discord.com/channels/{guildId}/{p.ChannelId}/{p.MessageId}"
+                    jumpUrl = $"https://discord.com/channels/{guildId}/{p.ChannelId}/{p.MessageId}",
+                    sticky = p.Sticky
                 })
             }));
         });
+
+        // Sticky: держать панель внизу канала (бот публикует её заново после новых сообщений)
+        g.MapPut("/panels/{key}/{messageId}/sticky", (ulong guildId, string key, ulong messageId, StickyBody body, PanelTextStore texts) =>
+            PanelDefs.Find(key) is null ? Error("Unknown panel.")
+            : texts.SetSticky(guildId, key, messageId, body.Sticky) ? Results.Ok() : Error("Panel not found — refresh the page."));
 
         // Перерисовать все панели типа текущим текстом
         g.MapPost("/panels/{key}/refresh", async (ulong guildId, string key, PanelService panels) =>
@@ -1311,6 +1317,7 @@ public static partial class PanelApi
     }
 }
 
+public sealed record StickyBody(bool Sticky);
 public sealed record ActivityBody(string? Name, string? RoleId, string? ProjectKey = null, int? MinGs = null);
 public sealed record ProjectBody(string? Name, string? MemberRoleId);
 public sealed record ProjectUpdateBody(List<string>? StaffRoleIds, List<string>? MemberRoleIds, string? CategoryId, string? CustomText,

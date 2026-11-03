@@ -162,6 +162,9 @@ public static partial class PanelApi
             });
         });
 
+        g.MapPut("/panels/{id}/sticky", (ulong guildId, string id, StickyBody body, CommunityStore store) =>
+            store.FindPanel(id) is { } p && p.GuildId == guildId && store.SetSticky(id, body.Sticky) ? Results.Ok() : Error("Panel not found."));
+
         g.MapPost("/panels", async (ulong guildId, RolePanelBody body, DiscordSocketClient client, CommunityStore store, CommunityService community) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
@@ -354,7 +357,8 @@ public static partial class PanelApi
         }),
         channel = p.ChannelId is { } c ? guild.GetTextChannel(c)?.Name : null,
         channelId = p.ChannelId?.ToString(),
-        jumpUrl = p.ChannelId is { } ch && p.MessageId is { } m ? $"https://discord.com/channels/{guild.Id}/{ch}/{m}" : null
+        jumpUrl = p.ChannelId is { } ch && p.MessageId is { } m ? $"https://discord.com/channels/{guild.Id}/{ch}/{m}" : null,
+        sticky = p.Sticky
     };
 
     private static string? Blank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();

@@ -85,6 +85,7 @@ builder.Services.AddSingleton<GsReminderService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<GsReminderService>());
 builder.Services.AddSingleton<OfficialArmory>();
 builder.Services.AddSingleton<ArmorySyncService>();
+builder.Services.AddHostedService<StickyPanelService>();
 builder.Services.AddHostedService<RecurringLfgService>();
 builder.Services.AddHostedService<TicketAutoCloseService>();
 builder.Services.AddHostedService<TempVoiceService>();

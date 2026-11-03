@@ -21,6 +21,8 @@ public sealed class PostedPanel
     public ulong MessageId { get; set; }
     /// <summary>LFG-панель: проект (игра), под который идут сборы с этой панели. null — проект по умолчанию.</summary>
     public string? ProjectKey { get; set; }
+    /// <summary>Держать внизу канала: после новых сообщений бот публикует панель заново (старую удаляет).</summary>
+    public bool Sticky { get; set; }
 }
 
 public sealed class GuildPanels
@@ -223,7 +225,7 @@ public sealed class PanelTextStore
     {
         lock (_lock)
             return _data.TryGetValue(guildId, out var g) && g.Posted.TryGetValue(key, out var list)
-                ? list.Select(p => new PostedPanel { ChannelId = p.ChannelId, MessageId = p.MessageId, ProjectKey = p.ProjectKey }).ToList()
+                ? list.Select(p => new PostedPanel { ChannelId = p.ChannelId, MessageId = p.MessageId, ProjectKey = p.ProjectKey, Sticky = p.Sticky }).ToList()
                 : [];
     }
 
@@ -247,8 +249,42 @@ public sealed class PanelTextStore
         lock (_lock)
             return _data.TryGetValue(guildId, out var g) && g.Posted.TryGetValue(key, out var list) &&
                    list.Find(p => p.MessageId == messageId) is { } found
-                ? new PostedPanel { ChannelId = found.ChannelId, MessageId = found.MessageId, ProjectKey = found.ProjectKey }
+                ? new PostedPanel { ChannelId = found.ChannelId, MessageId = found.MessageId, ProjectKey = found.ProjectKey, Sticky = found.Sticky }
                 : null;
+    }
+
+    /// <summary>Держать панель внизу канала (sticky).</summary>
+    public bool SetSticky(ulong guildId, string key, ulong messageId, bool sticky)
+    {
+        lock (_lock)
+        {
+            if (!_data.TryGetValue(guildId, out var g) || !g.Posted.TryGetValue(key, out var list) ||
+                list.Find(p => p.MessageId == messageId) is not { } found) return false;
+            found.Sticky = sticky;
+            Save();
+            return true;
+        }
+    }
+
+    /// <summary>Панель опубликована заново (sticky): новое сообщение вместо старого, проект и настройки сохраняются.</summary>
+    public void ReplaceMessage(ulong guildId, string key, ulong oldMessageId, ulong newMessageId)
+    {
+        lock (_lock)
+        {
+            if (!_data.TryGetValue(guildId, out var g) || !g.Posted.TryGetValue(key, out var list) ||
+                list.Find(p => p.MessageId == oldMessageId) is not { } found) return;
+            found.MessageId = newMessageId;
+            Save();
+        }
+    }
+
+    /// <summary>Все sticky-панели сервера в канале: (тип панели, сообщение).</summary>
+    public IReadOnlyList<(string Key, ulong MessageId)> StickyIn(ulong guildId, ulong channelId)
+    {
+        lock (_lock)
+            return _data.TryGetValue(guildId, out var g)
+                ? g.Posted.SelectMany(kv => kv.Value.Where(p => p.Sticky && p.ChannelId == channelId).Select(p => (kv.Key, p.MessageId))).ToList()
+                : [];
     }
 
     /// <summary>Привязать LFG-панель к проекту.</summary>
