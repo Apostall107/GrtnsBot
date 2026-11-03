@@ -85,7 +85,11 @@ public static partial class PanelApi
             if (id.Length is 0 or > 200 || body.ServerId is not (> 0 and < 100000)) return Error("Pick a character from the search.");
 
             var result = await sync.LinkAsync(guildId, me, exact, scope.Value, id, body.ServerId, ct);
-            if (result == ArmorySyncResult.Updated) return Results.Ok();
+            if (result == ArmorySyncResult.Updated)
+            {
+                var info = characters.GetInfo(guildId, me, exact, scope.Value);
+                return Results.Ok(new { gs = info?.Gs, combatPower = info?.Armory?.CombatPower, itemLevel = info?.Armory?.ItemLevel });
+            }
             return Error(result == ArmorySyncResult.NotFound
                 ? "This character wasn't found in the official armory."
                 : "The official armory isn't answering right now — try again later.");
