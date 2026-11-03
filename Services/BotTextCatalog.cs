@@ -51,6 +51,10 @@ public static class BotTextCatalog
         T("lfg.wiz.step1Templates", "Step 1 text (with templates)", "**Step 1/4** — pick a template (activity, slots and requirements in one go) or choose the group size.", null, 2000);
         T("lfg.wiz.sizePlaceholder", "Size menu placeholder", "How many players?", null, Placeholder);
         T("lfg.wiz.sizeOption", "Size option", "{n} players", "{n}", Option);
+        T("lfg.wiz.otherSize", "Button: other group size", "Other size…", null, 80);
+        T("lfg.wiz.ownerChar", "Step: organizer's character", "**Which character are you going with?** Its GS decides which activities you can create (activities with a higher min GS are hidden). You take slot 1 with it.", null, 2000);
+        T("lfg.wiz.ownerCharPlaceholder", "Organizer's character menu placeholder", "Your character…", null, Placeholder);
+        T("lfg.wiz.noActivityForGs", "No activity fits the character's GS (- = hide)", "-# Activities with a higher min GS than **{name}** ({gs}) are hidden.", "{name}, {gs}", 300, optional: true);
         T("lfg.wiz.tplPlaceholder", "Template menu placeholder", "📋 Use a template", null, Placeholder);
         T("lfg.wiz.tplOption", "Template option description", "{count} slots: {roles}", "{count}, {roles}", Option);
         T("lfg.wiz.step2", "Step 2 text", "**Step 2/4** — group of {size}. Choose the activity.", "{size}", 1900);

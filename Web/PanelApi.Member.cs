@@ -406,7 +406,8 @@ public static partial class PanelApi
 
         // Для создания сбора: активности и канал, куда уйдёт пост (выбирает админ в LFG → Channel for groups)
         g.MapGet("/create-options", (ulong guildId, ClaimsPrincipal user, DiscordSocketClient client, ActivityStore activities,
-            BotSettingsStore settings, PanelTextStore panels, LfgTemplateStore templates, LfgProjectStore projects, PanelAccess access) =>
+            BotSettingsStore settings, PanelTextStore panels, LfgTemplateStore templates, LfgProjectStore projects, PanelAccess access,
+            [FromServices] LfgProfileService profiles) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var me = user.UserId()!.Value;
@@ -429,8 +430,11 @@ public static partial class PanelApi
                         .OrderBy(c => c is SocketVoiceChannel).ThenBy(c => c.Position)
                         .Select(c => new { id = c.Id.ToString(), name = c is SocketVoiceChannel ? $"🔊 {c.Name}" : c.Name })
                     : null,
-                activities = activities.Get(guildId).Select(a => new { key = a.Key, name = a.Name, role = Role(guild, a.RoleId), projectKey = a.ProjectKey }),
+                activities = activities.Get(guildId).Select(a => new { key = a.Key, name = a.Name, role = Role(guild, a.RoleId), projectKey = a.ProjectKey, minGs = a.MinGs }),
                 templates = TemplatesDto(guild, templates),
+                // Мои персонажи по проектам: организатор выбирает, с кем идёт; от GS зависят доступные активности
+                characters = projects.GetProjects(guildId).Where(p => LfgProjectStore.CanUse(member, p)).ToDictionary(p => p.Key,
+                    p => profiles.PickerFor(guildId, me, p.Key).Select(c => new { name = c.Name, gs = c.Gs, cp = c.Cp })),
                 // Роли, связанные с каждым проектом — их показывают первыми при выборе требуемых ролей
                 relatedRoles = RelatedRoles(guild, activities, projects),
                 // Роли для требований сбора (организатор выбирает, какие нужны)
@@ -443,7 +447,8 @@ public static partial class PanelApi
         // Создать сбор (как /lfg): организатор — я
         g.MapPost("/create", async (ulong guildId, LfgCreateBody body, ClaimsPrincipal user, DiscordSocketClient client,
             ActivityStore activities, LfgPublisher publisher, BotSettingsStore settings, PanelTextStore panels,
-            LfgProjectStore projects, PanelAccess access, [Microsoft.AspNetCore.Mvc.FromServices] TimeService time) =>
+            LfgProjectStore projects, PanelAccess access, [Microsoft.AspNetCore.Mvc.FromServices] TimeService time,
+            [FromServices] CharacterStore characters) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var me = user.UserId()!.Value;
@@ -454,6 +459,20 @@ public static partial class PanelApi
                 return Error("The channel for groups is not set yet. Ask an admin (LFG → Channel for groups).");
             var (err, channelId, name, pingRole, slots) = ResolveLfgInput(guild, activities, lfgChannel.Id.ToString(), body.ActivityKey, body.CustomName, body.Slots);
             if (err is not null) return Error(err);
+
+            // Персонаж организатора: от его GS зависит, какие активности ему доступны
+            string? ownerCharacter = null;
+            var activity = string.IsNullOrWhiteSpace(body.ActivityKey) ? null : activities.Find(guildId, body.ActivityKey);
+            if (!string.IsNullOrWhiteSpace(body.OwnerCharacter))
+            {
+                var scope = projects.Scope(guildId, project?.Key);
+                ownerCharacter = characters.Get(guildId, me, scope).FirstOrDefault(n => n.Equals(body.OwnerCharacter, StringComparison.OrdinalIgnoreCase));
+                if (ownerCharacter is null) return Error("Character not found.");
+                var ownerGs = characters.GetInfo(guildId, me, ownerCharacter, scope)?.Gs;
+                if (activity is not null && !ActivityStore.GsFits(activity, ownerGs))
+                    return Error($"{activity.Name} needs GS {activity.MinGs}+ — {ownerCharacter} has {ownerGs?.ToString() ?? "no GS"}.");
+            }
+            var minGs = body.MinGs is > 0 and <= 99999 ? body.MinGs : activity?.MinGs;
 
             DateTimeOffset? startsAt = null;
             if (!string.IsNullOrWhiteSpace(body.Date) || !string.IsNullOrWhiteSpace(body.Time))
@@ -473,13 +492,13 @@ public static partial class PanelApi
                 var slotReq = SlotRequirement.Parse(body.SlotRequirements, slots!.Count, GuildRoleIds(guild));
                 var (group, jumpUrl, dms) = await publisher.PublishAsync(new LfgPublishRequest(
                     guildId, channelId, me, name!, pingRole, slots!, startsAt, body.NotifyByDm, true,
-                    required, body.MinGs is > 0 and <= 99999 ? body.MinGs : null,
+                    required, minGs,
                     project?.Key,
                     // Дублировать пост в другие каналы может только админ
                     access.IsAdmin(me) ? ParseIds(body.MirrorChannelIds).Where(id => guild.GetTextChannel(id) is not null).Take(LfgPublisher.MaxMirrors).ToList() : null,
                     body.CreateVoice,
                     slotReq.Codes,
-                    LfgNote.Clean(body.Note), slotReq.Classes));
+                    LfgNote.Clean(body.Note), slotReq.Classes, ownerCharacter));
                 return Results.Ok(new { id = group.Id, jumpUrl, dmsStarted = dms });
             }
             catch (Exception ex) when (ex is InvalidOperationException or Discord.Net.HttpException)

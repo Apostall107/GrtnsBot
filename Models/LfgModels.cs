@@ -181,6 +181,8 @@ public sealed class Activity
     public ulong RoleId { get; set; }
     /// <summary>Проект (игра). null — активность доступна во всех проектах.</summary>
     public string? ProjectKey { get; set; }
+    /// <summary>Минимальный GS: персонаж с меньшим GS не видит активность при создании сбора; у сбора это требование GS.</summary>
+    public int? MinGs { get; set; }
 }
 
 /// <summary>Черновик сбора, пока организатор проходит шаги в эфемерном сообщении.</summary>
@@ -205,6 +207,11 @@ public sealed class LfgDraft(ulong guildId, ulong channelId, ulong ownerId)
     /// <summary>Требования (из шаблона): нужна одна из ролей; минимальный GS персонажа.</summary>
     public List<ulong> RequiredRoleIds { get; set; } = [];
     public int? MinGs { get; set; }
+    /// <summary>Персонаж, с которым идёт организатор (выбирается первым шагом), и его GS.</summary>
+    public string? OwnerCharacter { get; set; }
+    public int? OwnerGs { get; set; }
+    /// <summary>Показать полный выбор размера (2–25), а не только избранные 5 / 10 / 20.</summary>
+    public bool AllSizes { get; set; }
     /// <summary>Заметка организатора к сбору (необязательная), показывается в посте.</summary>
     public string? Note { get; set; }
 
@@ -262,6 +269,11 @@ public sealed class LfgGroup
     public List<ulong> RequiredRoleIds { get; set; } = [];
     /// <summary>Минимальный GS персонажа (из /character gs или сайта). Не указан или меньше — резерв.</summary>
     public int? MinGs { get; set; }
+    /// <summary>Персонаж, с которым идёт организатор (выбирается первым шагом), и его GS.</summary>
+    public string? OwnerCharacter { get; set; }
+    public int? OwnerGs { get; set; }
+    /// <summary>Показать полный выбор размера (2–25), а не только избранные 5 / 10 / 20.</summary>
+    public bool AllSizes { get; set; }
     /// <summary>Заметка организатора к сбору (необязательная), показывается в посте.</summary>
     public string? Note { get; set; }
     [JsonIgnore] public bool HasRequirements => RequiredRoleIds.Count > 0 || MinGs is not null;

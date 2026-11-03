@@ -38,6 +38,31 @@ public static class LfgRenderer
         return new Screen(null, embed, comps);
     }
 
+    /// <summary>Избранные размеры групп — кнопками; остальные — по «Other size».</summary>
+    public static readonly int[] FavoriteSizes = [5, 10, 20];
+
+    // ---------- Шаг 0: персонаж организатора ----------
+    /// <summary>С каким персонажем идёт организатор: от его GS зависят активности, которые он увидит.</summary>
+    public static Screen OwnerCharacterStep(LfgDraft d, IReadOnlyList<PickerCharacter> characters)
+    {
+        var gid = d.GuildId;
+        var menu = new SelectMenuBuilder()
+            .WithCustomId($"lfg:ochar:{d.Id}")
+            .WithPlaceholder(Tx.Get(gid, "lfg.wiz.ownerCharPlaceholder"));
+        foreach (var c in characters.Take(CharacterStore.MaxPerUser))
+        {
+            var option = new SelectMenuOptionBuilder().WithLabel(Trim(c.Name + GsText(c.Gs, c.Cp))).WithValue(c.Name);
+            if (!string.IsNullOrWhiteSpace(c.Note)) option.WithDescription(Trim("💬 " + c.Note));
+            if (LfgProjectStore.ToEmote(c.Icon) is { } emote) option.WithEmote(emote);
+            menu.AddOption(option);
+        }
+        var comps = new ComponentBuilder()
+            .WithSelectMenu(menu, row: 0)
+            .WithButton(Tx.Get(gid, "lfg.wiz.cancel"), $"lfg:cancel:{d.Id}", ButtonStyle.Secondary, row: 1)
+            .Build();
+        return new Screen(Tx.Get(gid, "lfg.wiz.ownerChar"), null, comps);
+    }
+
     // ---------- Шаг 1: размер ----------
     public static Screen SizeStep(LfgDraft d, IReadOnlyList<LfgTemplate>? templates = null)
     {
@@ -65,15 +90,25 @@ public static class LfgRenderer
             builder.WithSelectMenu(tpl, row: row++);
         }
 
-        builder.WithSelectMenu(menu, row: row++)
-            .WithButton(Tx.Get(gid, "lfg.wiz.cancel"), $"lfg:cancel:{d.Id}", ButtonStyle.Secondary, row: row);
+        if (d.AllSizes)
+            builder.WithSelectMenu(menu, row: row++)
+                .WithButton(Tx.Get(gid, "lfg.wiz.cancel"), $"lfg:cancel:{d.Id}", ButtonStyle.Secondary, row: row);
+        else
+        {
+            // Избранные размеры — кнопками, полный выбор — «Other size…»
+            foreach (var n in FavoriteSizes)
+                builder.WithButton(Tx.Get(gid, "lfg.wiz.sizeOption", ("n", n)), $"lfg:sizeb:{d.Id}:{n}", ButtonStyle.Primary, new Emoji("👥"), row: row);
+            builder.WithButton(Tx.Get(gid, "lfg.wiz.otherSize"), $"lfg:sizemore:{d.Id}", ButtonStyle.Secondary, row: row)
+                .WithButton(Tx.Get(gid, "lfg.wiz.cancel"), $"lfg:cancel:{d.Id}", ButtonStyle.Secondary, row: row);
+        }
 
         var text = templates is { Count: > 0 } ? Tx.Get(gid, "lfg.wiz.step1Templates") : Tx.Get(gid, "lfg.wiz.step1");
         return new Screen(text, null, builder.Build());
     }
 
     // ---------- Шаг 2: активность ----------
-    public static Screen ActivityStep(LfgDraft d, IReadOnlyList<Activity> activities)
+    /// <param name="hidden">Сколько активностей скрыто: персонаж организатора не проходит по GS.</param>
+    public static Screen ActivityStep(LfgDraft d, IReadOnlyList<Activity> activities, int hidden = 0)
     {
         var gid = d.GuildId;
         var menu = new SelectMenuBuilder()
@@ -82,7 +117,7 @@ public static class LfgRenderer
 
         var actDesc = Tx.Get(gid, "lfg.wiz.actOption");
         foreach (var a in activities.Take(ActivityStore.MaxInMenu))
-            menu.AddOption(a.Name, a.Key, actDesc.Length == 0 ? null : actDesc);
+            menu.AddOption(a.MinGs is { } min ? Trim($"{a.Name} · GS {min}+") : a.Name, a.Key, actDesc.Length == 0 ? null : actDesc);
 
         menu.AddOption(Tx.Get(gid, "lfg.wiz.custom"), CustomActivityValue, Tx.Get(gid, "lfg.wiz.customOption"), new Emoji("✏️"));
 
@@ -91,7 +126,10 @@ public static class LfgRenderer
             .WithButton(Tx.Get(gid, "lfg.wiz.cancel"), $"lfg:cancel:{d.Id}", ButtonStyle.Secondary, row: 1)
             .Build();
 
-        var hint = activities.Count == 0 ? Tx.Line(gid, "lfg.wiz.noActivities") : "";
+        var hint = activities.Count == 0 && hidden == 0 ? Tx.Line(gid, "lfg.wiz.noActivities") : "";
+        if (hidden > 0 && d.OwnerCharacter is { } owner)
+            hint += Tx.Line(gid, "lfg.wiz.noActivityForGs", ("name", Format.Sanitize(owner)), ("gs", d.OwnerGs?.ToString() ?? "—"));
+
         return new Screen(Tx.Get(gid, "lfg.wiz.step2", ("size", d.Slots.Count)) + hint, null, comps);
     }
 

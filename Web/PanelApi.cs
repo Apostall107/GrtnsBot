@@ -200,7 +200,8 @@ public static partial class PanelApi
                 key = a.Key,
                 name = a.Name,
                 role = Role(guild, a.RoleId),
-                projectKey = a.ProjectKey
+                projectKey = a.ProjectKey,
+                minGs = a.MinGs
             }));
         });
 
@@ -213,7 +214,8 @@ public static partial class PanelApi
             var projectKey = string.IsNullOrWhiteSpace(body.ProjectKey) ? null : body.ProjectKey;
             if (projectKey is not null && projects.Find(guildId, projectKey) is null) return Error("Project not found.");
 
-            var error = activities.Add(guildId, name, roleId, projectKey);
+            if (body.MinGs is < 0 or > 99999) return Error("Min GS: 0–99999.");
+            var error = activities.Add(guildId, name, roleId, projectKey, body.MinGs is > 0 ? body.MinGs : null);
             return error is null ? Results.Ok() : Error(error);
         });
 
@@ -224,7 +226,8 @@ public static partial class PanelApi
             var name = (body.Name ?? "").Trim();
             if (name.Length is 0 or > MaxNameLength) return Error($"The name must be 1–{MaxNameLength} characters.");
             if (ParseId(body.RoleId) is not { } roleId || guild.GetRole(roleId) is null) return Error("Pick a role to ping.");
-            var error = activities.Update(guildId, key, name, roleId);
+            if (body.MinGs is < 0 or > 99999) return Error("Min GS: 0–99999.");
+            var error = activities.Update(guildId, key, name, roleId, body.MinGs is > 0 ? body.MinGs : null);
             return error is null ? Results.Ok() : Error(error);
         });
 
@@ -1308,7 +1311,7 @@ public static partial class PanelApi
     }
 }
 
-public sealed record ActivityBody(string? Name, string? RoleId, string? ProjectKey = null);
+public sealed record ActivityBody(string? Name, string? RoleId, string? ProjectKey = null, int? MinGs = null);
 public sealed record ProjectBody(string? Name, string? MemberRoleId);
 public sealed record ProjectUpdateBody(List<string>? StaffRoleIds, List<string>? MemberRoleIds, string? CategoryId, string? CustomText,
     bool? FormEnabled = null, List<QuestionBody>? Questions = null, int? AutoCloseDays = null, string? Name = null);

@@ -73,10 +73,54 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         var draft = new LfgDraft(Context.Guild.Id, ChannelId, Context.User.Id) { ProjectKey = project?.Key };
         store.Drafts[draft.Id] = draft;
 
-        // Шаблоны этого проекта + общие (без проекта)
-        var s = LfgRenderer.SizeStep(draft, templates.Get(Context.Guild.Id)
-            .Where(t => t.ProjectKey is null || project is null || t.ProjectKey == project.Key).ToList());
+        // Сначала персонаж организатора (если они есть): от его GS зависят доступные активности
+        var mine = profile.PickerFor(Context.Guild.Id, Context.User.Id, draft.ProjectKey);
+        var s = mine.Count > 0 ? LfgRenderer.OwnerCharacterStep(draft, mine) : SizeScreen(draft);
         await RespondAsync(s.Content, embed: s.Embed, components: s.Components, ephemeral: true);
+    }
+
+    /// <summary>Шаг размера: шаблоны проекта (+ общие), которые проходят по GS персонажа организатора.</summary>
+    private Screen SizeScreen(LfgDraft d) => LfgRenderer.SizeStep(d, templates.Get(d.GuildId)
+        .Where(t => t.ProjectKey is null || d.ProjectKey is null || t.ProjectKey == d.ProjectKey)
+        .Where(t => d.OwnerCharacter is null ||
+                    (t.ActivityKey is not { } k || activities.Find(d.GuildId, k) is not { } a || ActivityStore.GsFits(a, d.OwnerGs)) &&
+                    (t.MinGs is not { } min || d.OwnerGs >= min))
+        .ToList());
+
+    /// <summary>Активности проекта; если выбран персонаж — только те, на которые он проходит по GS.</summary>
+    private Screen ActivityScreen(LfgDraft d)
+    {
+        var all = activities.ForProject(d.GuildId, d.ProjectKey);
+        var fit = d.OwnerCharacter is null ? all : all.Where(a => ActivityStore.GsFits(a, d.OwnerGs)).ToList();
+        return LfgRenderer.ActivityStep(d, fit, all.Count - fit.Count);
+    }
+
+    [ComponentInteraction("lfg:ochar:*")]
+    public async Task OnOwnerCharacter(string draftId, string[] values)
+    {
+        if (await GetDraftAsync(draftId) is not { } d) return;
+        var pick = profile.PickerFor(d.GuildId, d.OwnerId, d.ProjectKey).FirstOrDefault(c => c.Name == values[0]);
+        d.OwnerCharacter = pick?.Name;
+        d.OwnerGs = pick?.Gs;
+        await ShowAsync(SizeScreen(d));
+    }
+
+    [ComponentInteraction("lfg:sizeb:*:*")]
+    public async Task OnSizeButton(string draftId, string size)
+    {
+        if (await GetDraftAsync(draftId) is not { } d) return;
+        if (!int.TryParse(size, out var n) || n is < LfgRenderer.MinSize or > LfgRenderer.MaxSize) return;
+        d.Slots = Enumerable.Range(0, n).Select(_ => new Slot()).ToList();
+        d.Selected.Clear();
+        await ShowAsync(ActivityScreen(d));
+    }
+
+    [ComponentInteraction("lfg:sizemore:*")]
+    public async Task OnSizeMore(string draftId)
+    {
+        if (await GetDraftAsync(draftId) is not { } d) return;
+        d.AllSizes = true;
+        await ShowAsync(SizeScreen(d));
     }
 
     // ================= Шаги черновика =================
@@ -90,7 +134,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         d.Slots = Enumerable.Range(0, size).Select(_ => new Slot()).ToList();
         d.Selected.Clear();
 
-        await ShowAsync(LfgRenderer.ActivityStep(d, activities.ForProject(d.GuildId, d.ProjectKey)));
+        await ShowAsync(ActivityScreen(d));
     }
 
     [ComponentInteraction("lfg:tpl:*")]
@@ -110,7 +154,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         d.Selected.Clear();
         d.RequiredRoleIds = t.RequiredRoleIds.ToList();
         SlotRequirement.Apply(d.Slots, t.SlotRequirements, t.SlotClasses);
-        d.MinGs = t.MinGs;
+        d.MinGs = t.MinGs ?? activity?.MinGs;
         await ShowAsync(TimeScreen(d));
     }
 
@@ -134,6 +178,8 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
 
         d.ActivityName = activity.Name;
         d.PingRoleId = activity.RoleId;
+        // Мин. GS активности — требование сбора (меньший GS — в резерв)
+        d.MinGs = activity.MinGs;
         await ShowAsync(LfgRenderer.SlotStep(d));
     }
 
@@ -332,7 +378,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         var (group, jumpUrl, dmsStarted) = await publisher.PublishAsync(new LfgPublishRequest(
             d.GuildId, d.ChannelId, d.OwnerId, d.ActivityName ?? "Activity", d.PingRoleId,
             d.Slots.Select(x => x.Role).ToList(), startsAt, d.NotifyByDm, true, d.RequiredRoleIds, d.MinGs,
-            d.ProjectKey, null, d.CreateVoice, SlotRequirement.Of(d.Slots), d.Note, SlotRequirement.ClassesOf(d.Slots)));
+            d.ProjectKey, null, d.CreateVoice, SlotRequirement.Of(d.Slots), d.Note, SlotRequirement.ClassesOf(d.Slots), d.OwnerCharacter));
         audit.FromDiscord(d.GuildId, Context.User, "lfg", "Created LFG group",
             $"{group.ActivityName} · {group.Slots.Count} slots · {(startsAt is { } at ? at.ToString("u") : "no time")}");
 

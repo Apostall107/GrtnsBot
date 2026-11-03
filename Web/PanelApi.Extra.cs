@@ -1043,7 +1043,7 @@ public static partial class PanelApi
 public sealed record LfgCreateBody(string? ChannelId, string? ActivityKey, string? CustomName, List<string>? Slots,
     string? Date, string? Time, bool NotifyByDm = true, bool SeatOwner = true, List<string>? RequiredRoleIds = null, int? MinGs = null,
     string? ProjectKey = null, List<string>? MirrorChannelIds = null, bool CreateVoice = false, List<string?>? SlotRequirements = null,
-    string? Note = null);
+    string? Note = null, string? OwnerCharacter = null);
 public sealed record RosterBody(string? Action, string? UserId, string? Character);
 public sealed record RecurringBody(string? ChannelId, string? ActivityKey, string? CustomName, List<string>? Slots,
     List<int>? Days, string? Time, int PostHoursBefore = 24, bool NotifyByDm = true, bool SeatOwner = true, bool Enabled = true,

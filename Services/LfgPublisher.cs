@@ -22,7 +22,8 @@ public sealed record LfgPublishRequest(
     bool CreateVoice = false,
     IReadOnlyList<ulong>? SlotRequirements = null,
     string? Note = null,
-    IReadOnlyList<List<ulong>>? SlotClasses = null);
+    IReadOnlyList<List<ulong>>? SlotClasses = null,
+    string? OwnerCharacter = null);
 
 /// <summary>Публикация сбора: пост с пингом роли, сохранение, ЛС участникам с ролью активности.</summary>
 public sealed class LfgPublisher(
@@ -62,7 +63,8 @@ public sealed class LfgPublisher(
         // Организатор участвует сам: слот 1 + последний использованный персонаж
         if (r.SeatOwner)
         {
-            group.SeatOwner(characters.Get(r.GuildId, r.OwnerId, projects.Scope(r.GuildId, r.ProjectKey)).FirstOrDefault());
+            var mine = characters.Get(r.GuildId, r.OwnerId, projects.Scope(r.GuildId, r.ProjectKey));
+            group.SeatOwner(mine.FirstOrDefault(n => n.Equals(r.OwnerCharacter, StringComparison.OrdinalIgnoreCase)) ?? mine.FirstOrDefault());
             signup.ApplyProfile(group, r.OwnerId); // класс и заметка персонажа организатора
         }
 

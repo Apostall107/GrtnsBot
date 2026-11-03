@@ -35,13 +35,16 @@ public sealed class ActivityStore
     public IReadOnlyList<Activity> ForProject(ulong guildId, string? projectKey) =>
         Get(guildId).Where(a => projectKey is null || a.ProjectKey is null || a.ProjectKey == projectKey).ToList();
 
+    /// <summary>Персонаж с этим GS проходит на активность (нет минимума — проходит любой; GS не задан — только без минимума).</summary>
+    public static bool GsFits(Activity a, int? gs) => a.MinGs is not { } min || gs is { } v && v >= min;
+
     public Activity? Find(ulong guildId, string key)
     {
         lock (_lock)
             return _data.TryGetValue(guildId, out var list) ? list.Find(a => a.Key == key) : null;
     }
 
-    public string? Add(ulong guildId, string name, ulong roleId, string? projectKey = null)
+    public string? Add(ulong guildId, string name, ulong roleId, string? projectKey = null, int? minGs = null)
     {
         lock (_lock)
         {
@@ -52,14 +55,14 @@ public sealed class ActivityStore
             if (list.Any(a => a.Name.Equals(name, StringComparison.OrdinalIgnoreCase) && a.ProjectKey == projectKey))
                 return $"Activity \"{name}\" already exists.";
 
-            list.Add(new Activity { Name = name, RoleId = roleId, ProjectKey = projectKey });
+            list.Add(new Activity { Name = name, RoleId = roleId, ProjectKey = projectKey, MinGs = minGs });
             Save();
             return null;
         }
     }
 
     /// <summary>Переименовать активность и/или сменить роль для пинга.</summary>
-    public string? Update(ulong guildId, string key, string name, ulong roleId)
+    public string? Update(ulong guildId, string key, string name, ulong roleId, int? minGs = null)
     {
         lock (_lock)
         {
@@ -68,6 +71,7 @@ public sealed class ActivityStore
                 return $"Activity \"{name}\" already exists.";
             activity.Name = name;
             activity.RoleId = roleId;
+            activity.MinGs = minGs;
             Save();
             return null;
         }
