@@ -34,6 +34,16 @@ public static class SiteLink
         "🧙 your characters with GS, CP and the official AION 2 profile · 👥 guild roster\n" +
         "-# Log in with your Discord account — no password needed.";
 
+    /// <summary>Заголовок embed — ссылка на сайт с припиской « | Bot Website» (не редактируется).</summary>
+    public static EmbedBuilder WithSiteTitle(this EmbedBuilder embed, string? title)
+    {
+        if (Url is null) return embed.WithTitle(title);
+        const string suffix = " | Bot Website";
+        var text = (title ?? "").Trim();
+        if (text.Length + suffix.Length > EmbedBuilder.MaxTitleLength) text = text[..(EmbedBuilder.MaxTitleLength - suffix.Length)];
+        return embed.WithTitle(text + suffix).WithUrl(Url);
+    }
+
     /// <summary>Добавляет блок о сайте в конец описания панели.</summary>
     public static EmbedBuilder WithSiteField(this EmbedBuilder embed)
     {
