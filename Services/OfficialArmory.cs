@@ -44,6 +44,10 @@ public sealed class OfficialArmory(IHttpClientFactory http, IConfiguration confi
     private DateTimeOffset _serversAt;
     private static volatile IReadOnlyList<ArmoryServer>? _known;
 
+    /// <summary>Название сервера по ID (Triniel). null — неизвестен.</summary>
+    public static string? ServerName(int? serverId) =>
+        serverId is not { } id ? null : ((_known ?? FallbackServers).FirstOrDefault(x => x.Id == id) ?? FallbackServers.FirstOrDefault(x => x.Id == id))?.Name;
+
     /// <summary>Сокращение сервера по ID (TRI для Triniel): из загруженного списка, иначе из встроенного. null — неизвестен.</summary>
     public static string? Tag(int? serverId) =>
         serverId is not { } id ? null : ((_known ?? FallbackServers).FirstOrDefault(x => x.Id == id) ?? FallbackServers.FirstOrDefault(x => x.Id == id))?.Tag;

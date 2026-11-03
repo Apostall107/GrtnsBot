@@ -25,6 +25,7 @@ public static class LfgRenderer
             .WithDescription(def.Description(text)
                 .Replace("{hours}", autoDeleteHours.ToString())
                 .Replace("{reminder}", reminderMinutes.ToString()))
+            .WithSiteField()
             .Build();
 
         var comps = new ComponentBuilder()
@@ -275,7 +276,7 @@ public static class LfgRenderer
     // ---------- Выбор персонажа при записи ----------
     /// <param name="prefix">"lfg" — запись на сервере, "lfgdm" — запись из ЛС.</param>
     /// <param name="characters">Имя, заметка (видна только владельцу — здесь, при выборе) и иконка класса.</param>
-    public static Screen CharacterPicker(LfgGroup g, SlotRole role, IReadOnlyList<(string Name, string? Note, string? Icon)> characters,
+    public static Screen CharacterPicker(LfgGroup g, SlotRole role, IReadOnlyList<PickerCharacter> characters,
         string prefix = "lfg")
     {
         var gid = g.GuildId;
@@ -285,8 +286,9 @@ public static class LfgRenderer
 
         foreach (var c in characters.Take(CharacterStore.MaxPerUser))
         {
-            var option = new SelectMenuOptionBuilder().WithLabel(Trim(c.Name)).WithValue(c.Name);
-            if (!string.IsNullOrWhiteSpace(c.Note)) option.WithDescription(Trim(c.Note));
+            // Ник · GS · CP в строке, заметка — строкой ниже
+            var option = new SelectMenuOptionBuilder().WithLabel(Trim(c.Name + GsText(c.Gs, c.Cp))).WithValue(c.Name);
+            if (!string.IsNullOrWhiteSpace(c.Note)) option.WithDescription(Trim("💬 " + c.Note));
             if (LfgProjectStore.ToEmote(c.Icon) is { } emote) option.WithEmote(emote);
             menu.AddOption(option);
         }

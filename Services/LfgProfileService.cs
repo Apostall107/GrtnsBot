@@ -8,6 +8,9 @@ namespace LfgBot.Services;
 /// Профиль персонажа в сборе: класс (одна из ролей сервера, которые есть у игрока) и заметка.
 /// Меню показывается под ответом после записи; то же самое — командами /character class и /character note.
 /// </summary>
+/// <summary>Персонаж в меню выбора при записи: ник, заметка, иконка класса, GS и боевая мощь (CP).</summary>
+public sealed record PickerCharacter(string Name, string? Note, string? Icon, int? Gs = null, int? Cp = null);
+
 public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store, CharacterStore characters, LfgSignupService signup,
     LfgProjectStore projects)
 {
@@ -32,7 +35,7 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
 
     /// <summary>Персонажи игрока для выбора при записи в этот сбор (проект сбора): имя, заметка, иконка класса.</summary>
     /// <param name="slotRole">Роль записи: показываются только персонажи, чей класс может её играть (LFG → Classes). null — все.</param>
-    public IReadOnlyList<(string Name, string? Note, string? Icon)> PickerList(LfgGroup group, ulong userId, SlotRole? slotRole = null)
+    public IReadOnlyList<PickerCharacter> PickerList(LfgGroup group, ulong userId, SlotRole? slotRole = null)
     {
         var scope = signup.Scope(group);
         var guild = client.GetGuild(group.GuildId);
@@ -40,10 +43,11 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
         {
             var info = characters.GetInfo(group.GuildId, userId, name, scope);
             var role = info?.ClassRoleId is { } id ? guild?.GetRole(id) : null;
-            return (Name: name, info?.Comment, Icon: projects.ClassIcon(group.GuildId, role, group.ProjectKey), ClassId: info?.ClassRoleId);
+            return (Character: new PickerCharacter(name, info?.Comment, projects.ClassIcon(group.GuildId, role, group.ProjectKey), info?.Gs,
+                info?.Armory is { Error: null } a ? a.CombatPower : null), ClassId: info?.ClassRoleId);
         })
         .Where(x => slotRole is not { } r || projects.ClassFits(group.GuildId, group.ProjectKey, x.ClassId, r))
-        .Select(x => (x.Name, x.Comment, x.Icon)).ToList();
+        .Select(x => x.Character).ToList();
     }
 
     /// <summary>Иконка класса для показа (заданная админом или эмодзи роли).</summary>

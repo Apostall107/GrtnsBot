@@ -183,6 +183,7 @@ public sealed class TempRoomManager(TempVoiceStore store, DiscordSocketClient cl
             .WithTitle(def.Title(text))
             .WithColor(def.Color(text))
             .WithDescription(def.Description(text))
+            .WithSiteField()
             .Build();
 
         var permit = new SelectMenuBuilder()

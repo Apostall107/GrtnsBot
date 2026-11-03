@@ -167,6 +167,7 @@ public static partial class PanelApi
                         slotRoles,
                         gs = c.Info?.Gs,
                         armory = ArmoryDto(c.Info?.Armory),
+                        server = c.Info?.Armory?.ServerName ?? OfficialArmory.ServerName(c.Info?.ServerId),
                         gsUpdated = c.Info?.GsUpdatedAt?.ToUnixTimeMilliseconds(),
                         joined = user?.JoinedAt?.ToUnixTimeMilliseconds(),
                         lastActive = act?.Last?.ToUnixTimeMilliseconds()

@@ -122,7 +122,7 @@ public static partial class PanelApi
                     break;
                 case "LFG — signing up":
                     Add("Character picker", () => Msg(LfgRenderer.CharacterPicker(g, SlotRole.Dps,
-                        [("Kayleth", "main", null), ("Apostall", null, null)])));
+                        [new PickerCharacter("Kayleth", "main", null, 2903, 149159), new PickerCharacter("Apostall", null, null)])));
                     Add("Character window", () => ModalPreview(LfgRenderer.CharacterModal(guildId, "x")));
                     break;
                 case "LFG — class, note & GS":
