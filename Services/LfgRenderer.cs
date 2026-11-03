@@ -10,7 +10,10 @@ public sealed record Screen(string? Content, Embed? Embed, MessageComponent Comp
 public static class LfgRenderer
 {
     public const int MinSize = 2;
-    public const int MaxSize = 25; // лимит опций в select menu
+    /// <summary>Максимум участников сбора (больше 25 — компактный пост, выбор слотов страницами).</summary>
+    public const int MaxSize = 100;
+    /// <summary>Сколько пунктов в выпадающем списке Discord (лимит API).</summary>
+    public const int MenuMax = 25;
     public const string CustomActivityValue = "__custom";
     public const string NewCharacterValue = "__new";
     /// <summary>Версия вида поста сбора: увеличить при изменении поста/кнопок — активные посты перерисуются при старте бота.</summary>
@@ -72,7 +75,7 @@ public static class LfgRenderer
         var menu = new SelectMenuBuilder()
             .WithCustomId($"lfg:size:{d.Id}")
             .WithPlaceholder(Tx.Get(gid, "lfg.wiz.sizePlaceholder"));
-        for (var i = MinSize; i <= MaxSize; i++)
+        for (var i = MinSize; i <= MenuMax; i++)
             menu.AddOption(Tx.Get(gid, "lfg.wiz.sizeOption", ("n", i)), i.ToString());
 
         var builder = new ComponentBuilder();
@@ -94,6 +97,7 @@ public static class LfgRenderer
 
         if (d.AllSizes)
             builder.WithSelectMenu(menu, row: row++)
+                .WithButton(Tx.Get(gid, "lfg.wiz.enterSize"), $"lfg:sizenum:{d.Id}", ButtonStyle.Primary, new Emoji("✏️"), row: row)
                 .WithButton(Tx.Get(gid, "lfg.wiz.cancel"), $"lfg:cancel:{d.Id}", ButtonStyle.Secondary, row: row);
         else
         {
@@ -139,10 +143,19 @@ public static class LfgRenderer
     public static Screen SlotStep(LfgDraft d)
     {
         var gid = d.GuildId;
+        var pages = (d.Slots.Count + MenuMax - 1) / MenuMax;
+        d.SlotPage = Math.Clamp(d.SlotPage, 0, Math.Max(0, pages - 1));
+        var from = d.SlotPage * MenuMax;
+        var to = Math.Min(d.Slots.Count, from + MenuMax);
+
         var sb = new StringBuilder();
         sb.AppendText(d.PingRoleId is { } roleId ? Tx.Get(gid, "lfg.wiz.ping", ("role", $"<@&{roleId}>")) : Tx.Get(gid, "lfg.wiz.noPing"));
         sb.AppendLine();
-        for (var i = 0; i < d.Slots.Count; i++)
+        // Большой сбор: итог по ролям + слоты текущей страницы
+        if (pages > 1)
+            sb.AppendLine("**" + string.Join(" · ", d.Slots.GroupBy(x => x.Role).Select(g => $"{g.Key.Emoji()} {g.Key.Label()} ×{g.Count()}")) + "**")
+              .AppendLine($"-# {from + 1}–{to} / {d.Slots.Count}");
+        for (var i = from; i < to; i++)
         {
             var marker = d.Selected.Contains(i) ? "▸ " : "";
             var you = i == 0 ? $" — <@{d.OwnerId}> {Tx.Get(gid, "lfg.wiz.you")}" : "";
@@ -159,8 +172,8 @@ public static class LfgRenderer
             .WithCustomId($"lfg:slots:{d.Id}")
             .WithPlaceholder(Tx.Get(gid, "lfg.wiz.slotsPlaceholder"))
             .WithMinValues(1)
-            .WithMaxValues(d.Slots.Count);
-        for (var i = 0; i < d.Slots.Count; i++)
+            .WithMaxValues(to - from);
+        for (var i = from; i < to; i++)
         {
             var s = d.Slots[i];
             menu.AddOption(Tx.Get(gid, "lfg.wiz.slotOption", ("n", i + 1), ("role", s.Role.Label())), i.ToString(),
@@ -173,6 +186,9 @@ public static class LfgRenderer
             builder.WithButton(role.Label(), $"lfg:setrole:{d.Id}:{role}", ButtonStyle.Secondary,
                 new Emoji(role.Emoji()), disabled: noSelection, row: 1);
 
+        if (pages > 1)
+            builder.WithButton("◀", $"lfg:spage:{d.Id}:{d.SlotPage - 1}", ButtonStyle.Secondary, disabled: d.SlotPage == 0, row: 2)
+                .WithButton("▶", $"lfg:spage:{d.Id}:{d.SlotPage + 1}", ButtonStyle.Secondary, disabled: d.SlotPage >= pages - 1, row: 2);
         builder
             .WithButton(Tx.Get(gid, "lfg.wiz.next"), $"lfg:next:{d.Id}", ButtonStyle.Success, new Emoji("➡️"), row: 2)
             .WithButton(Tx.Get(gid, "lfg.wiz.cancel"), $"lfg:cancel:{d.Id}", ButtonStyle.Danger, row: 2);
@@ -271,10 +287,11 @@ public static class LfgRenderer
         if (g.VoiceChannelId is { } voice) sb.AppendText(Tx.Get(gid, "lfg.post.voice", ("channel", $"<#{voice}>")));
         if (!string.IsNullOrWhiteSpace(g.Note)) sb.AppendText(Tx.Get(gid, "lfg.post.note", ("note", Format.Sanitize(g.Note))));
         sb.AppendLine();
-        // Заметки к персонажам в посте не показываются — их видит владелец при выборе персонажа
-        sb.Append(Roster(g, withComments: false));
-
         var expires = Tx.Get(gid, "lfg.post.expires", ("time", $"<t:{g.ExpiresAt.ToUnixTimeSeconds()}:R>"));
+        // Заметки к персонажам в посте не показываются — их видит владелец при выборе персонажа.
+        // Большой сбор: состав сжимается, чтобы уложиться в лимит Discord (4096 символов текста)
+        sb.Append(Roster(g, withComments: false, budget: 3900 - sb.Length - expires.Length));
+
         if (expires.Length > 0)
         {
             sb.AppendLine();
@@ -355,7 +372,8 @@ public static class LfgRenderer
         if (g.ReminderMessageId is not null)
         {
             var notReady = g.Slots.Where(s => s.UserId is not null && !s.Ready).Select(s => $"<@{s.UserId}>").ToList();
-            if (notReady.Count > 0 && Tx.Get(gid, "lfg.manage.notReady", ("list", string.Join(" ", notReady))) is { Length: > 0 } nr)
+            var list = string.Join(" ", notReady.Take(40)) + (notReady.Count > 40 ? $" +{notReady.Count - 40}" : "");
+            if (notReady.Count > 0 && Tx.Get(gid, "lfg.manage.notReady", ("list", list)) is { Length: > 0 } nr)
                 sb.AppendLine(nr);
         }
 
@@ -365,6 +383,7 @@ public static class LfgRenderer
         var members = g.Slots
             .Select((slot, index) => (slot, index))
             .Where(x => x.slot.UserId is { } id && id != g.OwnerId)
+            .Take(MenuMax)
             .ToList();
         if (members.Count > 0)
         {
@@ -389,7 +408,7 @@ public static class LfgRenderer
                 .WithCustomId($"lfg:mremove:{g.Id}")
                 .WithPlaceholder(Tx.Get(gid, "lfg.manage.remove"));
 
-            foreach (var (entry, index) in g.Reserve.Select((e, i) => (e, i)))
+            foreach (var (entry, index) in g.Reserve.Select((e, i) => (e, i)).Take(MenuMax))
             {
                 var label = Trim($"#{index + 1} {entry.CharacterName ?? noName}");
                 var description = Trim(Tx.Get(gid, "lfg.manage.wants", ("role", entry.Role.Label())));
@@ -402,7 +421,7 @@ public static class LfgRenderer
         }
 
         // Явка: после старта (или в сборе без времени) — кто пришёл; остальные отмечаются как не пришедшие
-        var seated = g.Slots.Where(s => s.UserId is not null).ToList();
+        var seated = g.Slots.Where(s => s.UserId is not null).Take(MenuMax).ToList();
         if (seated.Count > 0 && (g.StartsAt is null || g.StartsAt <= DateTimeOffset.UtcNow))
         {
             var attend = new SelectMenuBuilder()
@@ -468,6 +487,7 @@ public static class LfgRenderer
         var withoutNick = 0;
         var home = HomeServer(g, viewerId);
 
+        var lines = new List<(string Who, string Target)>();
         foreach (var s in g.Slots)
         {
             if (s.UserId is not { } userId || userId == viewerId) continue;
@@ -477,14 +497,27 @@ public static class LfgRenderer
                 continue;
             }
 
-            count++;
             var role = s.TakenAs is { } t && t != SlotRole.Any ? t : s.Role;
-            sb.AppendLine($"{role.Emoji()} <@{userId}>");
             // Игрок с другого сервера: Имя[LUD] (формат — текст lfg.invites.otherServer)
             var target = ServerMark(s.Server, home).Length > 0
                 ? Tx.Get(gid, "lfg.invites.otherServer", ("name", name), ("server", s.Server!))
                 : name;
-            sb.AppendLine(withCommand ? $"```\n/invite {target}\n```" : $"```\n{target}\n```");
+            lines.Add(($"{role.Emoji()} <@{userId}>", withCommand ? $"/invite {target}" : target));
+        }
+        count = lines.Count;
+        if (count <= 12)
+            foreach (var (who, target) in lines)
+                sb.AppendLine(who).AppendLine($"```\n{target}\n```");
+        else
+        {
+            // Большой сбор: все команды одним блоком (копировать построчно), лимит текста Discord — 4096
+            var block = new StringBuilder();
+            foreach (var (_, target) in lines)
+            {
+                if (block.Length + target.Length > 3800) break;
+                block.AppendLine(target);
+            }
+            sb.AppendLine($"```\n{block}```");
         }
 
         if (count == 0) sb.AppendText(Tx.Get(gid, "lfg.invites.nobody"));
@@ -542,7 +575,46 @@ public static class LfgRenderer
     private static string ServerMark(string? server, string? home) =>
         server is { Length: > 0 } && home is { Length: > 0 } && !server.Equals(home, StringComparison.OrdinalIgnoreCase) ? $" `[{server}]`" : "";
 
-    private static string Roster(LfgGroup g, bool withComments)
+    private static string Roster(LfgGroup g, bool withComments, int budget = int.MaxValue)
+    {
+        var full = FullRoster(g, withComments);
+        if (full.Length <= budget) return full;
+        var compact = CompactRoster(g, mentionsOnly: false);
+        if (compact.Length <= budget) return compact;
+        var tiny = CompactRoster(g, mentionsOnly: true);
+        if (tiny.Length <= budget) return tiny;
+        var more = $"\n… {Tx.Get(g.GuildId, "lfg.post.moreOnSite")}";
+        var cut = Math.Clamp(budget - more.Length, 0, tiny.Length);
+        var line = cut > 0 ? tiny.LastIndexOf('\n', cut - 1) : -1;
+        return tiny[..(line > 0 ? line : cut)] + more;
+    }
+
+    /// <summary>
+    /// Сжатый состав большого сбора: занятые слоты по ролям одной строкой (ник или только упоминание),
+    /// свободные — числом по ролям, резерв — списком.
+    /// </summary>
+    private static string CompactRoster(LfgGroup g, bool mentionsOnly)
+    {
+        var sb = new StringBuilder();
+        string Who(ulong id, string? name, string? icon) =>
+            mentionsOnly || name is null ? $"<@{id}>" : $"<@{id}>{ClassIcon(icon)} **{Format.Sanitize(name)}**";
+        foreach (var role in g.Slots.Where(x => x.UserId is not null).GroupBy(x => x.TakenAs is { } t && t != SlotRole.Any ? t : x.Role))
+            sb.AppendLine($"{role.Key.Emoji()} **{role.Key.Label()}** ({role.Count()}): " +
+                          string.Join(mentionsOnly ? " " : " · ", role.Select(x => Who(x.UserId!.Value, x.CharacterName, x.ClassIcon) +
+                              (x.Attended switch { true => " ✅", false => " ❌", _ => x.Ready ? " 🟢" : "" }))));
+        var open = g.Slots.Where(x => x.UserId is null).GroupBy(x => x.Role).ToList();
+        if (open.Count > 0)
+            sb.AppendLine($"{Tx.Get(g.GuildId, "lfg.post.open")}: " + string.Join(" · ", open.Select(o => $"{o.Key.Emoji()} {o.Key.Label()} ×{o.Count()}")));
+        if (g.Reserve.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendText(Tx.Get(g.GuildId, "lfg.post.reserve", ("count", g.Reserve.Count)));
+            sb.AppendLine(string.Join(mentionsOnly ? " " : " · ", g.Reserve.Select(r => $"{r.Role.Emoji()} " + Who(r.UserId, r.CharacterName, r.ClassIcon))));
+        }
+        return sb.ToString();
+    }
+
+    private static string FullRoster(LfgGroup g, bool withComments)
     {
         var sb = new StringBuilder();
         var home = HomeServer(g);

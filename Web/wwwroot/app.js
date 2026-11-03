@@ -2022,7 +2022,8 @@ function lfgForm(acts, opts) {
   // Slots: role (DD/Tank/Sup/All) and the classes a slot accepts: as the group / any class / its own classes (several)
   let slots = v.slots ? v.slots.slice() : ["Any", "Any", "Any", "Any", "Any"]; // 5 — the usual AION 2 group
   let slotReqs = (v.slotRequirements || []).slice();
-  const size = h("select", {}, Array.from({ length: 24 }, (_, i) => i + 2).map(n => h("option", { value: n }, `${n} slots`)));
+  // Any size 2–100 (more than 100 becomes 100)
+  const size = h("input", { type: "number", min: "2", max: "100", style: "width:110px", title: "Players, 2–100", "aria-label": "Players" });
   // Favorite sizes as buttons; «Other…» shows the full choice (2–25)
   const FAV_SIZES = [5, 10, 20];
   let allSizes = false;
@@ -2030,7 +2031,7 @@ function lfgForm(acts, opts) {
     allSizes = false; size.value = String(n); size.dispatchEvent(new Event("change"));
   } }, `👥 ${n}`));
   const otherBtn = h("button", { type: "button", class: "seg-btn", onclick: () => { allSizes = true; syncSizeUi(); } }, "Other…");
-  const sizeWrap = h("span", {}, size);
+  const sizeWrap = h("span", { class: "row", style: "gap:6px" }, size, h("span", { class: "muted small" }, "players (2–100)"));
   const syncSizeUi = () => {
     const n = Number(size.value);
     const fav = FAV_SIZES.includes(n);
@@ -2100,7 +2101,8 @@ function lfgForm(acts, opts) {
     }));
   };
   size.addEventListener("change", () => {
-    const n = Number(size.value);
+    const n = Math.min(100, Math.max(2, Math.round(Number(size.value)) || 5));
+    size.value = String(n);
     slots = slots.slice(0, n);
     while (slots.length < n) slots.push("Any");
     drawSlots();
