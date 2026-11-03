@@ -285,6 +285,26 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         return LfgRenderer.TimeStep(d, time.Today, startsAt, time.ZoneName, warning);
     }
 
+    [ComponentInteraction("lfg:dnote:*")]
+    public async Task OnDraftNote(string draftId)
+    {
+        if (await GetDraftAsync(draftId) is not { } d) return;
+        await RespondWithModalAsync(LfgRenderer.NoteModal(d.GuildId, $"lfg:dnoteset:{d.Id}", d.Note));
+    }
+
+    [ModalInteraction("lfg:dnoteset:*")]
+    public async Task OnDraftNoteEntered(string draftId, LfgGroupNoteModal modal)
+    {
+        if (await GetDraftAsync(draftId) is not { } d) return;
+        d.Note = LfgNote.Clean(NoteFromModal());
+        var s = TimeScreen(d);
+        await RespondAsync(s.Content, embed: s.Embed, components: s.Components, ephemeral: true);
+    }
+
+    /// <summary>Поле note окна заметки (необязательное — читается из ответа напрямую).</summary>
+    private string? NoteFromModal() =>
+        ((SocketModal)Context.Interaction).Data.Components.FirstOrDefault(c => c.CustomId == "note")?.Value;
+
     [ComponentInteraction("lfg:publish:*")]
     public async Task OnPublish(string draftId)
     {
@@ -312,7 +332,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         var (group, jumpUrl, dmsStarted) = await publisher.PublishAsync(new LfgPublishRequest(
             d.GuildId, d.ChannelId, d.OwnerId, d.ActivityName ?? "Activity", d.PingRoleId,
             d.Slots.Select(x => x.Role).ToList(), startsAt, d.NotifyByDm, true, d.RequiredRoleIds, d.MinGs,
-            d.ProjectKey, null, d.CreateVoice, SlotRequirement.Of(d.Slots)));
+            d.ProjectKey, null, d.CreateVoice, SlotRequirement.Of(d.Slots), d.Note));
         audit.FromDiscord(d.GuildId, Context.User, "lfg", "Created LFG group",
             $"{group.ActivityName} · {group.Slots.Count} slots · {(startsAt is { } at ? at.ToString("u") : "no time")}");
 
@@ -646,6 +666,31 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
             ephemeral: true);
     }
 
+    [ComponentInteraction("lfg:mnote:*")]
+    public async Task OnManageNote(string groupId)
+    {
+        if (await GetOwnedGroupAsync(groupId) is not { } group) return;
+        await RespondWithModalAsync(LfgRenderer.NoteModal(group.GuildId, $"lfg:mnoteset:{group.Id}", group.Note));
+    }
+
+    [ModalInteraction("lfg:mnoteset:*")]
+    public async Task OnManageNoteSubmitted(string groupId, LfgGroupNoteModal modal)
+    {
+        if (!store.Groups.TryGetValue(groupId, out var group) || !IsOrganizer(group))
+        {
+            await RespondAsync(T("lfg.gone"), ephemeral: true);
+            return;
+        }
+
+        var note = LfgNote.Clean(NoteFromModal());
+        await DeferAsync(ephemeral: true);
+        var error = await signup.SetNoteAsync(group, note);
+        if (error is null)
+            audit.FromDiscord(group.GuildId, Context.User, "lfg", note is null ? "Removed LFG note" : "Changed LFG note",
+                $"{group.ActivityName}{(note is null ? "" : $" → {note}")}");
+        await FollowupAsync(error ?? T(note is null ? "lfg.manage.noteRemoved" : "lfg.manage.noteSaved"), ephemeral: true);
+    }
+
     [ComponentInteraction("lfg:leave:*")]
     public Task OnLeave(string groupId) =>
         WithGroupAsync(groupId, g => g.Leave(Context.User.Id));
@@ -827,6 +872,15 @@ public sealed class CharacterModal : IModal
     [InputLabel("Character name")]
     [ModalTextInput("name", TextInputStyle.Short, placeholder: "In-game name", maxLength: CharacterStore.MaxNameLength)]
     public string Name { get; set; } = "";
+}
+
+/// <summary>Окно заметки к сбору (строится вручную, поле note читается из ответа). Нужен для регистрации обработчика.</summary>
+public sealed class LfgGroupNoteModal : IModal
+{
+    public string Title => "Group note";
+
+    [ModalTextInput("note")]
+    public string? Note { get; set; }
 }
 
 /// <summary>Окно «Change time» (строится вручную, поле when читается из ответа). Нужен для регистрации обработчика.</summary>

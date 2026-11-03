@@ -86,6 +86,7 @@ public static partial class PanelApi
                 voiceUrl = x.VoiceChannelId is { } vc ? $"https://discord.com/channels/{x.GuildId}/{vc}" : null,
                         closed = x.IsClosed,
                         isOrganizer = x.OwnerId == me,
+                        note = x.Note,
                         requirements = x.HasRequirements ? new
                         {
                             roles = x.RequiredRoleIds.Select(id => Role(guild, id)),
@@ -436,7 +437,8 @@ public static partial class PanelApi
                     // Дублировать пост в другие каналы может только админ
                     access.IsAdmin(me) ? ParseIds(body.MirrorChannelIds).Where(id => guild.GetTextChannel(id) is not null).Take(LfgPublisher.MaxMirrors).ToList() : null,
                     body.CreateVoice,
-                    SlotRequirement.Parse(body.SlotRequirements, slots!.Count, required ?? [])));
+                    SlotRequirement.Parse(body.SlotRequirements, slots!.Count, required ?? []),
+                    LfgNote.Clean(body.Note)));
                 return Results.Ok(new { id = group.Id, jumpUrl, dmsStarted = dms });
             }
             catch (Exception ex) when (ex is InvalidOperationException or Discord.Net.HttpException)
@@ -458,6 +460,9 @@ public static partial class PanelApi
         g.MapPost("/groups/{groupId}/time", (ulong guildId, string groupId, TimeBody body, ClaimsPrincipal user, DiscordSocketClient client,
             LfgStore lfg, LfgSignupService signup, [Microsoft.AspNetCore.Mvc.FromServices] TimeService time) =>
             RescheduleEndpointAsync(guildId, groupId, body, user, client, lfg, signup, time, organizerOnly: true));
+
+        g.MapPost("/groups/{groupId}/note", (ulong guildId, string groupId, NoteBody body, ClaimsPrincipal user, LfgStore lfg,
+            LfgSignupService signup) => NoteEndpointAsync(guildId, groupId, body, user, lfg, signup, organizerOnly: true));
 
         g.MapPost("/groups/{groupId}/attendance", (ulong guildId, string groupId, AttendanceBody body, ClaimsPrincipal user,
             LfgStore lfg, LfgSignupService signup) =>

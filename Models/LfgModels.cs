@@ -165,6 +165,8 @@ public sealed class LfgDraft(ulong guildId, ulong channelId, ulong ownerId)
     /// <summary>Требования (из шаблона): нужна одна из ролей; минимальный GS персонажа.</summary>
     public List<ulong> RequiredRoleIds { get; set; } = [];
     public int? MinGs { get; set; }
+    /// <summary>Заметка организатора к сбору (необязательная), показывается в посте.</summary>
+    public string? Note { get; set; }
 
     // Время начала в часовом поясе сервера (Lfg:TimeZone)
     public DateOnly? EventDate { get; set; }
@@ -198,6 +200,7 @@ public sealed class LfgGroup
         RequiredRoleIds = draft.RequiredRoleIds.ToList();
         MinGs = draft.MinGs;
         ProjectKey = draft.ProjectKey;
+        Note = LfgNote.Clean(draft.Note);
     }
 
     // Сеттеры нужны для сохранения сборов в файл (data/lfg-groups.json)
@@ -219,6 +222,8 @@ public sealed class LfgGroup
     public List<ulong> RequiredRoleIds { get; set; } = [];
     /// <summary>Минимальный GS персонажа (из /character gs или сайта). Не указан или меньше — резерв.</summary>
     public int? MinGs { get; set; }
+    /// <summary>Заметка организатора к сбору (необязательная), показывается в посте.</summary>
+    public string? Note { get; set; }
     [JsonIgnore] public bool HasRequirements => RequiredRoleIds.Count > 0 || MinGs is not null;
 
     /// <summary>Какие роли нужны для слота (любая из; пусто — без требования роли).</summary>
@@ -445,5 +450,18 @@ public sealed class LfgGroup
         slot.Comment = entry.Comment;
         slot.Gs = entry.Gs;
         return null;
+    }
+}
+
+/// <summary>Заметка организатора к сбору: обрезка, пустая — null.</summary>
+public static class LfgNote
+{
+    public const int MaxLength = 300;
+
+    public static string? Clean(string? text)
+    {
+        var t = text?.Trim();
+        if (string.IsNullOrEmpty(t)) return null;
+        return t.Length <= MaxLength ? t : t[..MaxLength];
     }
 }

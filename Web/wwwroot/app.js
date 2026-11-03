@@ -1805,6 +1805,9 @@ function lfgForm(acts, opts) {
     });
   }
 
+  // Organizer's note shown in the post (optional)
+  const noteIn = h("textarea", { rows: "2", maxlength: "300", placeholder: "e.g. bring buff food, voice chat required", value: v.note || "" });
+  if (!tplMode) fields.push(h("div", { class: "field" }, h("label", {}, "📝 Note (optional, shown in the post)"), noteIn));
   if (!tplMode) fields.push(h("div", { class: "row", style: "margin-bottom:12px" },
     h("label", { class: "row" }, dm, "DM members with the activity role"),
     opts.mode === "once" ? h("label", { class: "row" }, voice, "🔊 Create a voice room (everyone listens, the group speaks)") : null,
@@ -1820,7 +1823,7 @@ function lfgForm(acts, opts) {
       requiredRoleIds: req.value(), slotRequirements: req.value().length ? slotReqs.slice() : [],
       minGs: minGs.value === "" ? null : Number(minGs.value),
       projectKey: currentProject(), createVoice: voice.checked,
-      mirrorChannelIds: mirrorIds.slice(), ...extra()
+      mirrorChannelIds: mirrorIds.slice(), note: tplMode ? undefined : (noteIn.value.trim() || null), ...extra()
     })
   };
 }
@@ -2157,6 +2160,27 @@ function rescheduleDialog(g, url) {
   d.showModal();
 }
 
+/** Organizer's note of a group (shown in the post); empty = remove. */
+function groupNoteDialog(g, url) {
+  const d = dialog();
+  const text = h("textarea", { rows: "3", maxlength: "300", placeholder: "e.g. bring buff food, voice chat required", value: g.note || "" });
+  const save = h("button", { class: "btn" }, "📝 Save note");
+  save.addEventListener("click", async () => {
+    const value = text.value.trim();
+    if (await act(save, () => gApi("POST", url, { note: value || null }), value ? "Note saved." : "Note removed.") !== undefined) { d.close(); refresh(); }
+  });
+  d.replaceChildren(h("h2", {}, `Note: ${g.activity}`),
+    h("p", { class: "muted small" }, "Shown in the group post. Leave empty to remove it."),
+    text,
+    h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), save));
+  d.showModal();
+}
+
+/** The group's note under the meta line (if any). */
+function groupNoteLine(g) {
+  return g.note ? h("div", { class: "muted small group-note", style: "white-space:pre-wrap" }, icon("file-pen-line", 14), g.note) : null;
+}
+
 /** Attendance toggle for a seated member: not marked → came → no-show → not marked. */
 function attendanceButton(s, url) {
   const next = s.attended === null || s.attended === undefined ? true : s.attended ? false : null;
@@ -2222,6 +2246,7 @@ function groupCard(g) {
       h("div", { class: "meta-item" }, icon("trash-2", 14), `auto-delete ${fmtRelative(g.expiresAt)}`),
       g.requirements ? h("div", { class: "meta-item" }, icon("shield", 14), g.requirements.roles.map(r => roleChip(r)),
         g.requirements.minGs ? h("span", { class: "chip" }, `GS ${g.requirements.minGs}+`) : null) : null),
+    groupNoteLine(g),
     h("div", { class: "roster" }, g.slots.map((s, i) => s.member
       ? h("div", { class: "slot taken" },
           h("span", { class: "slot-num" }, i + 1), rolePill(s.role || s.slotRole),
@@ -2248,6 +2273,7 @@ function groupCard(g) {
       h("a", { class: "btn secondary", href: g.jumpUrl, target: "_blank", rel: "noopener" }, icon("external-link", 15), "Open in Discord"),
       g.voiceUrl ? h("a", { class: "btn secondary voice-btn", href: g.voiceUrl, target: "_blank", rel: "noopener", title: "Open the group's voice room in Discord" }, icon("volume-2", 15), "Voice room") : null,
       h("button", { class: "btn secondary", onclick: () => rescheduleDialog(g, `/lfg/groups/${gid}/time`) }, icon("clock", 15), "Time"),
+      h("button", { class: "btn secondary", onclick: () => groupNoteDialog(g, `/lfg/groups/${gid}/note`) }, icon("file-pen-line", 15), "Note"),
       h("span", { class: "spacer" }), close));
 }
 
@@ -3501,6 +3527,7 @@ function playCard(g) {
       h("div", { class: "meta-item" }, icon("calendar-clock", 14), g.startsAt ? fmtDate(g.startsAt) : "No time set"),
       g.channel ? h("div", { class: "meta-item" }, icon("hash", 14), g.channel) : null,
       mine, req),
+    groupNoteLine(g),
     roster, reserve,
     g.closed ? h("div", { class: "muted small group-note" }, icon("lock", 14), "Signups are closed.") :
       g.blocked && !g.me ? h("div", { class: "muted small group-note" }, icon("lock", 14), g.blocked) :
@@ -3509,6 +3536,7 @@ function playCard(g) {
       h("a", { class: "btn secondary", href: g.jumpUrl, target: "_blank", rel: "noopener" }, icon("external-link", 15), "Open in Discord"),
       g.voiceUrl ? h("a", { class: "btn secondary tone-teal voice-btn", href: g.voiceUrl, target: "_blank", rel: "noopener", title: "Open the group's voice room in Discord" }, icon("volume-2", 15), "Voice room") : null,
       org ? h("button", { class: "btn secondary", onclick: () => rescheduleDialog(g, `/me/groups/${gid}/time`) }, icon("clock", 15), "Time") : null,
+      org ? h("button", { class: "btn secondary", onclick: () => groupNoteDialog(g, `/me/groups/${gid}/note`) }, icon("file-pen-line", 15), "Note") : null,
       closeBtn ? h("span", { class: "spacer" }) : null, closeBtn));
 }
 
@@ -3755,8 +3783,8 @@ const HELP = {
         "Already in? **Switch** changes role/character, **Leave** takes you out."
       ]],
       ["Create and organize", [
-        "**➕ Create a group** — project, activity, slots, date/time, 🔊 voice room → **Publish**. It is posted in the project's LFG channel; you are the organizer and take slot 1.",
-        "In your own groups: ⬇️ move a member to the reserve, ⬆️ move someone from the reserve into the group (they get a DM), ✖️ remove from the reserve, **Close group**."
+        "**➕ Create a group** — project, activity, slots, date/time, 🔊 voice room, 📝 note (optional) → **Publish**. It is posted in the project's LFG channel; you are the organizer and take slot 1.",
+        "In your own groups: ⬇️ move a member to the reserve, ⬆️ move someone from the reserve into the group (they get a DM), ✖️ remove from the reserve, 🕒 **Time**, 📝 **Note**, **Close group**."
       ]]
     ]
   },
@@ -3815,6 +3843,7 @@ const HELP = {
         "**Requirements**: a required role and/or minimum character **GS** — others go to the reserve.",
         "🔊 **Voice room** for a group — only if turned on when creating; created in the category set by the admin. Everyone can join and listen, only group members can speak; the link is in the post; deleted with the group.",
         "**Change time** of a posted group — everyone signed up gets a DM.",
+        "📝 **Note** (optional) — the organizer's text shown in the group post, e.g. what to bring; set it when creating or later.",
         "**Attendance** after the start → **statistics** and player reliability.",
         "Admin tab **LFG**: a tab per project + ⚙️ General — activities, panel, voice room category, duplicate posts, classes, templates, **recurring groups**, any group's roster, force-close, statistics.",
         "Member tab **Groups**: everyone with the member role signs up, creates groups and manages their own groups."
@@ -3824,7 +3853,7 @@ const HELP = {
       ["Create a group", [
         "Click **Create LFG** on the LFG panel (or use `/lfg`). A menu only you can see opens.",
         "Choose the size → the activity (or «Custom activity», no ping) → select slots and set their roles → **Next**.",
-        "Pick the date and time (or «No time»), turn 🔊 **Voice room** on if needed → **Publish**. You take slot 1 with your last used character.",
+        "Pick the date and time (or «No time»), turn 🔊 **Voice room** on if needed, add a 📝 **Note** if you want → **Publish**. You take slot 1 with your last used character.",
         "The post is duplicated automatically to the channels set in the admin panel (📢 Duplicate posts). Admins can add more after publishing in «📢 Also post this group in…» (text or voice channels)."
       ]],
       ["Sign up", [
@@ -3836,7 +3865,7 @@ const HELP = {
         "Grey role button = no free slot → you go to the **reserve**."
       ]],
       ["Organizer", [
-        "⚙️ **Manage** — move members between the group and the reserve (moved-in members get a DM), mark **attendance** after the start, 🕒 **Change time**.",
+        "⚙️ **Manage** — move members between the group and the reserve (moved-in members get a DM), mark **attendance** after the start, 🕒 **Change time**, 📝 **Note**.",
         "📋 **Invite to group** — `/invite` commands, 🏰 **Invite to dungeon** — plain names (anyone in the group can use both).",
         "**Close** — shows the group invites, then deletes the post."
       ]],

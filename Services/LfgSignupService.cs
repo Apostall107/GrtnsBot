@@ -121,6 +121,24 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
     }
 
     /// <summary>Перенос времени сбора: новое время, автоудаление, напоминание, пост и ЛС всем записавшимся.</summary>
+    /// <summary>Заметка организатора к сбору (null — убрать). Пост обновляется сразу.</summary>
+    public async Task<string?> SetNoteAsync(LfgGroup group, string? note)
+    {
+        await group.Gate.WaitAsync();
+        try
+        {
+            if (group.IsClosed) return Tx.Get(group.GuildId, "lfg.err.groupClosed");
+            group.Note = LfgNote.Clean(note);
+            store.SaveGroups();
+            await RefreshPostAsync(group);
+            return null;
+        }
+        finally
+        {
+            group.Gate.Release();
+        }
+    }
+
     public async Task<string?> RescheduleAsync(LfgGroup group, DateTimeOffset? startsAt, TimeService time, IUser by)
     {
         List<ulong> members;

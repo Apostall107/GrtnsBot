@@ -247,6 +247,7 @@ public static partial class PanelApi
                 voiceUrl = x.VoiceChannelId is { } vc ? $"https://discord.com/channels/{x.GuildId}/{vc}" : null,
                 started = x.StartsAt is null || x.StartsAt <= DateTimeOffset.UtcNow,
                 requirements = x.HasRequirements ? new { roles = x.RequiredRoleIds.Select(id => Role(guild, id)), minGs = x.MinGs } : null,
+                note = x.Note,
                 slots = x.Slots.Select(s => new
                 {
                     role = (s.TakenAs ?? s.Role).Label(),

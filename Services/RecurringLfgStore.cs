@@ -32,6 +32,8 @@ public sealed class RecurringLfg
     public int? MinGs { get; set; }
     /// <summary>Проект (игра) сборов.</summary>
     public string? ProjectKey { get; set; }
+    /// <summary>Заметка организатора к сбору (необязательная).</summary>
+    public string? Note { get; set; }
 
     /// <summary>Начало последнего опубликованного повторения — чтобы не публиковать дважды.</summary>
     public DateTimeOffset? LastStart { get; set; }
@@ -179,7 +181,7 @@ public sealed class RecurringLfgService(
             var (group, _, _) = await publisher.PublishAsync(new LfgPublishRequest(
                 item.GuildId, item.ChannelId, item.OwnerId, item.ActivityName, item.PingRoleId,
                 item.Slots, start, item.NotifyByDm, item.SeatOwner, item.RequiredRoleIds, item.MinGs, item.ProjectKey,
-                SlotRequirements: item.SlotRequirements));
+                SlotRequirements: item.SlotRequirements, Note: item.Note));
             store.Update(item.Id, r =>
             {
                 r.LastStart = start;

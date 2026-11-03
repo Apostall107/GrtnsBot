@@ -46,7 +46,8 @@ public static partial class PanelApi
                 var (group, jumpUrl, dms) = await publisher.PublishAsync(new LfgPublishRequest(
                     guildId, channelId, ownerId, name!, pingRole, slots!, startsAt, body.NotifyByDm, body.SeatOwner,
                     required, body.MinGs is > 0 ? body.MinGs : null,
-                    SlotRequirements: SlotRequirement.Parse(body.SlotRequirements, slots!.Count, required ?? [])));
+                    SlotRequirements: SlotRequirement.Parse(body.SlotRequirements, slots!.Count, required ?? []),
+                    Note: LfgNote.Clean(body.Note)));
                 return Results.Ok(new { id = group.Id, jumpUrl, dmsStarted = dms });
             }
             catch (Exception ex) when (ex is InvalidOperationException or Discord.Net.HttpException)
@@ -335,6 +336,9 @@ public static partial class PanelApi
             LfgStore lfg, LfgSignupService signup, [FromServices] TimeService time) =>
             RescheduleEndpointAsync(guildId, groupId, body, user, client, lfg, signup, time, organizerOnly: false));
 
+        g.MapPost("/groups/{groupId}/note", (ulong guildId, string groupId, NoteBody body, ClaimsPrincipal user, LfgStore lfg,
+            LfgSignupService signup) => NoteEndpointAsync(guildId, groupId, body, user, lfg, signup, organizerOnly: false));
+
         g.MapPost("/groups/{groupId}/attendance", (ulong guildId, string groupId, AttendanceBody body, LfgStore lfg, LfgSignupService signup) =>
             AttendanceAsync(guildId, groupId, body, lfg, signup, null));
 
@@ -418,6 +422,7 @@ public static partial class PanelApi
                     requiredRoles = r.RequiredRoleIds.Select(id => Role(guild, id)),
                     slotRequirements = SlotRequirement.ToDto(r.SlotRequirements, r.Slots.Count),
                     minGs = r.MinGs,
+                    note = r.Note,
                     enabled = r.Enabled,
                     nextStart = next?.ToUnixTimeMilliseconds(),
                     nextPost = next?.AddHours(-r.PostHoursBefore).ToUnixTimeMilliseconds(),
@@ -467,6 +472,7 @@ public static partial class PanelApi
                 r.RequiredRoleIds = draft.RequiredRoleIds;
                 r.SlotRequirements = draft.SlotRequirements;
                 r.MinGs = draft.MinGs;
+                r.Note = draft.Note;
                 r.Enabled = draft.Enabled;
                 if (timeChanged && r.LastStart > DateTimeOffset.UtcNow) r.LastStart = null;
                 r.LastError = null;
@@ -639,6 +645,17 @@ public static partial class PanelApi
     };
 
     /// <summary>Перенос времени сбора (админ — любой, организатор — свой). Всем записавшимся уходит ЛС.</summary>
+    /// <summary>Заметка к сбору с сайта: организатор (или админ). Пустая — убрать.</summary>
+    private static async Task<IResult> NoteEndpointAsync(ulong guildId, string groupId, NoteBody body, ClaimsPrincipal user,
+        LfgStore lfg, LfgSignupService signup, bool organizerOnly)
+    {
+        if (!lfg.Groups.TryGetValue(groupId, out var group) || group.GuildId != guildId) return Error("This group is no longer active.");
+        if (organizerOnly && group.OwnerId != user.UserId()) return Error("Only the organizer can change the note.");
+        var note = LfgNote.Clean(body.Note);
+        var error = await signup.SetNoteAsync(group, note);
+        return error is null ? Results.Ok(new { note }) : Error(error);
+    }
+
     private static async Task<IResult> RescheduleEndpointAsync(ulong guildId, string groupId, TimeBody body, ClaimsPrincipal user,
         DiscordSocketClient client, LfgStore lfg, LfgSignupService signup, TimeService time, bool organizerOnly)
     {
@@ -747,6 +764,7 @@ public static partial class PanelApi
         item.SlotRequirements = SlotRequirement.Parse(body.SlotRequirements, item.Slots.Count, item.RequiredRoleIds);
         if (body.MinGs is < 0 or > 99999) return "Minimum GS: 0–99999.";
         item.MinGs = body.MinGs is > 0 ? body.MinGs : null;
+        item.Note = LfgNote.Clean(body.Note);
         item.Enabled = body.Enabled;
         item.OwnerId = ownerId;
         return null;
@@ -994,12 +1012,13 @@ public static partial class PanelApi
 
 public sealed record LfgCreateBody(string? ChannelId, string? ActivityKey, string? CustomName, List<string>? Slots,
     string? Date, string? Time, bool NotifyByDm = true, bool SeatOwner = true, List<string>? RequiredRoleIds = null, int? MinGs = null,
-    string? ProjectKey = null, List<string>? MirrorChannelIds = null, bool CreateVoice = false, List<string?>? SlotRequirements = null);
+    string? ProjectKey = null, List<string>? MirrorChannelIds = null, bool CreateVoice = false, List<string?>? SlotRequirements = null,
+    string? Note = null);
 public sealed record RosterBody(string? Action, string? UserId, string? Character);
 public sealed record RecurringBody(string? ChannelId, string? ActivityKey, string? CustomName, List<string>? Slots,
     List<int>? Days, string? Time, int PostHoursBefore = 24, bool NotifyByDm = true, bool SeatOwner = true, bool Enabled = true,
     string? OwnerId = null, List<string>? RequiredRoleIds = null, int? MinGs = null, string? ProjectKey = null,
-    List<string?>? SlotRequirements = null);
+    List<string?>? SlotRequirements = null, string? Note = null);
 public sealed record LfgProjectBody(string? Name, List<string>? RoleIds, bool IsDefault = false);
 public sealed record LfgPanelProjectBody(string? ProjectKey);
 public sealed record ClassIconBody(string? RoleId, string? Icon);
@@ -1009,6 +1028,7 @@ public sealed record EmojiDto(string Name, string Code, string Url, bool App);
 public sealed record TemplateBody(string? Name, string? ActivityKey, string? CustomActivity, List<string>? Slots,
     List<string>? RequiredRoleIds, int? MinGs, string? ProjectKey = null, List<string?>? SlotRequirements = null);
 public sealed record TimeBody(string? Date, string? Time);
+public sealed record NoteBody(string? Note);
 public sealed record AttendanceBody(string? UserId, bool? Attended);
 public sealed record SettingsBody(string? TimeZone, int? AutoDeleteHours, int? ReminderMinutes);
 
