@@ -97,3 +97,5 @@ app.Services.GetRequiredService<BotTextStore>();
 app.UseWebPanel();
 
 await app.RunAsync();
+// Всё, что ещё не записано на диск (хранилища пишут в фоне), — записать перед выходом
+DataFiles.FlushAll();

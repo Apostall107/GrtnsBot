@@ -77,7 +77,7 @@ public sealed class LfgHistoryStore
             if (_data.Count > MaxEntries) _data.RemoveRange(0, _data.Count - MaxEntries);
             var dir = Path.GetDirectoryName(Path.GetFullPath(_path));
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-            File.WriteAllText(_path, JsonSerializer.Serialize(_data, JsonOptions));
+            DataFiles.Save(_path, JsonSerializer.Serialize(_data, JsonOptions));
         }
     }
 

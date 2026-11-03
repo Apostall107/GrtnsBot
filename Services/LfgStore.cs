@@ -51,13 +51,8 @@ public sealed class LfgStore
                 var snapshot = Groups.Values.Where(g => !g.IsClosed).ToList();
                 var json = JsonSerializer.Serialize(snapshot, JsonOptions);
 
-                var dir = Path.GetDirectoryName(Path.GetFullPath(_path));
-                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-
-                // Сначала во временный файл, потом замена — файл не побьётся при сбое посреди записи
-                var temp = _path + ".tmp";
-                File.WriteAllText(temp, json);
-                File.Move(temp, _path, overwrite: true);
+                // На диск — в фоне, атомарно (временный файл → замена)
+                DataFiles.Save(_path, json);
             }
             catch (Exception ex)
             {

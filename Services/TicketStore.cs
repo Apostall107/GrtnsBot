@@ -132,6 +132,6 @@ public sealed class TicketStore
     {
         var dir = Path.GetDirectoryName(Path.GetFullPath(_path));
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-        File.WriteAllText(_path, JsonSerializer.Serialize(_data, JsonOptions));
+        DataFiles.Save(_path, JsonSerializer.Serialize(_data, JsonOptions));
     }
 }

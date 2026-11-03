@@ -6,6 +6,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>lfgbot-discord</UserSecretsId>
+    <!-- Небольшой VPS: обычный (workstation) сборщик мусора без фонового потока — меньше памяти, паузы незаметны для бота -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
   </PropertyGroup>
 
   <ItemGroup>

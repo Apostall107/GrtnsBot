@@ -66,7 +66,7 @@ public sealed class MemberActivityStore
             _dirty = false;
             var dir = Path.GetDirectoryName(Path.GetFullPath(_path));
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-            File.WriteAllText(_path, JsonSerializer.Serialize(new ActivityFile { Since = TrackingSince, Members = _data.ToDictionary(x => x.Key, x => x.Value) }, JsonOptions));
+            DataFiles.Save(_path, JsonSerializer.Serialize(new ActivityFile { Since = TrackingSince, Members = _data.ToDictionary(x => x.Key, x => x.Value) }, JsonOptions));
         }
     }
 
