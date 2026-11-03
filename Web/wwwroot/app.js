@@ -5333,7 +5333,15 @@ async function guildCalendar(holder, path = "/lfg/calendar", forMember = false) 
   const data = await gApi("GET", path);
   const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + i); return d; });
   const sameDay = (ms, d) => { const x = new Date(ms); return x.getFullYear() === d.getFullYear() && x.getMonth() === d.getMonth() && x.getDate() === d.getDate(); };
-  const events = data.events.slice().sort((a, b) => a.start - b.start);
+  // Projects: tabs when the events belong to more than one project
+  const projects = [...new Map(data.events.filter(e => e.projectKey).map(e => [e.projectKey, e.project || e.projectKey])).entries()];
+  const storeKey = forMember ? "gb.calProjectM" : "gb.calProject";
+  let pick = store.get(storeKey) || "";
+  if (pick && !projects.some(([k]) => k === pick)) pick = "";
+  const events = data.events.filter(e => !pick || e.projectKey === pick).sort((a, b) => a.start - b.start);
+  const projTabs = projects.length > 1 ? h("div", { class: "seg screen-tabs", style: "margin-bottom:10px" },
+    [["", "🌐 All projects"], ...projects.map(([k, n]) => [k, `🎮 ${n}`])].map(([k, label]) =>
+      h("button", { type: "button", class: `seg-btn${pick === k ? " active" : ""}`, onclick: () => { store.set(storeKey, k); guildCalendar(holder, path, forMember); } }, label))) : null;
   const eventCard = ev => h("div", { class: `wk-event${ev.recurring ? " planned" : ""}` },
     h("div", { class: "wk-time" }, new Date(ev.start).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }),
       ev.recurring ? h("span", { class: "chip", title: "A recurring group — the post appears automatically before the start" }, "🔁 planned") : null),
@@ -5349,7 +5357,7 @@ async function guildCalendar(holder, path = "/lfg/calendar", forMember = false) 
       ev.jumpUrl ? h("a", { class: "btn ghost sm", href: ev.jumpUrl, target: "_blank", rel: "noopener" }, icon("external-link", 14), "Discord") : null,
       h("a", { class: "btn ghost sm", href: googleCalendarUrl(ev), target: "_blank", rel: "noopener", title: "Add this group to your Google Calendar" },
         icon("calendar-plus", 14), "Google Calendar")));
-  holder.replaceChildren(h("div", { class: "card" },
+  holder.replaceChildren(h("div", { class: "card" }, projTabs,
     h("p", { class: "muted small" }, `Groups with a start time and recurring groups for the next 7 days, in your local time (the server's time zone: ${data.zone}). `,
       "Google Calendar adds one event (2 hours) to your own calendar."),
     events.length ? h("div", { class: "wk-grid" }, days.map(d => {
