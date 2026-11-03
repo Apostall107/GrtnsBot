@@ -64,8 +64,9 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
 
         var gid = group.GuildId;
         var info = characters.GetInfo(gid, userId, current.Value.Name, signup.Scope(group));
-        var needClass = info?.ClassRoleId is null;
-        var needGs = info?.Gs is null;
+        // Привязанный к оружейной: класс и GS приходят оттуда — вручную не спрашиваем
+        var needClass = info?.ClassRoleId is null && !CharacterStore.IsLinked(info);
+        var needGs = info?.Gs is null && !characters.GsFromArmory(gid, info);
         if (!needClass && !needGs) return null;
 
         var builder = new ComponentBuilder();
@@ -126,6 +127,9 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
                 return Task.FromResult(Tx.Get(group.GuildId, "lfg.profile.classUnavailable"));
             roleId = id;
         }
+        if (CurrentEntry(group, userId) is { } entry &&
+            CharacterStore.IsLinked(characters.GetInfo(group.GuildId, userId, entry.Name, signup.Scope(group))))
+            return Task.FromResult(Tx.Get(group.GuildId, "char.classArmory", ("name", Format.Sanitize(entry.Name ?? ""))));
 
         return UpdateAsync(group, userId, info => (true, roleId, false, null),
             roleId is { } r ? Tx.Get(group.GuildId, "lfg.profile.classSet", ("role", $"<@&{r}>")) : Tx.Get(group.GuildId, "lfg.profile.classRemoved"));
@@ -141,6 +145,10 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
             if (!int.TryParse(gsText.Trim(), out var v) || v is < 0 or > 99999) return Task.FromResult(Tx.Get(group.GuildId, "lfg.profile.badGs"));
             gs = v;
         }
+        // GS привязанного персонажа — из оружейной: введённое значение не применяется, в ответе — текущий GS
+        if (CurrentEntry(group, userId) is { } entry &&
+            characters.GetInfo(group.GuildId, userId, entry.Name, signup.Scope(group)) is { } current && characters.GsFromArmory(group.GuildId, current))
+            gs = current.Gs;
         return UpdateAsync(group, userId, info => (false, null, true, text),
             Tx.Get(group.GuildId, "lfg.profile.saved",
                 ("note", Tx.Get(group.GuildId, text is null ? "lfg.profile.removed" : "lfg.profile.set")),

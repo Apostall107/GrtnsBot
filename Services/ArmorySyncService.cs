@@ -285,7 +285,7 @@ public sealed class ArmorySyncService(OfficialArmory armory, CharacterStore char
             var match = profiles.ClassRoles(guildId, userId, projectKey).FirstOrDefault(r => SameClass(r.Name, className));
             if (match is not null && info?.ClassRoleId != match.Id)
             {
-                characters.SetInfo(guildId, userId, name, true, match.Id, false, null, scope);
+                characters.SetInfo(guildId, userId, name, true, match.Id, false, null, scope, fromArmory: true);
                 changed = true;
             }
         }

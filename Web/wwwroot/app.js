@@ -4906,7 +4906,8 @@ async function pageChars(main) {
   const cards = data.characters.map(c => {
     const realm = realmPicker(servers, c.race || ap?.race, c.race || c.serverId ? c.serverId : ap?.serverId, !!c.armory);
     // <option> can't show images: unicode icons go in the text, server/bot emojis are shown in the card header
-    const cls = h("select", { "aria-label": "Class" }, h("option", { value: "" }, "No class"),
+    const linkedOk = !!(c.armory && !c.armory.error);
+    const cls = h("select", { "aria-label": "Class", disabled: linkedOk, title: linkedOk ? "Comes from the official armory — press Update to refresh" : "" }, h("option", { value: "" }, "No class"),
       data.classRoles.map(r => h("option", { value: r.id, "data-icon": r.icon || null }, r.name)));
     if (c.classRole) cls.value = c.classRole.id;
     const badge = h("span", { class: "char-icon big" });
@@ -4951,7 +4952,7 @@ async function pageChars(main) {
       c.gsLocked ? null : gsAge(c, data.gsStaleDays, pq),
       ap ? armoryBox(c, pq, data.armoryGs, servers, realm) : null,
       h("div", { class: "char-fields" },
-        h("div", { class: "field" }, h("label", {}, "Class"), cls),
+        h("div", { class: "field" }, h("label", {}, linkedOk ? "Class · auto" : "Class"), cls),
         h("div", { class: "field gs-field" }, h("label", {}, c.gsLocked ? "GS · auto" : "GS"), gs)),
       ap ? h("div", { class: "char-fields" },
         h("div", { class: "field" }, h("label", {}, "Faction"), realm.race),
