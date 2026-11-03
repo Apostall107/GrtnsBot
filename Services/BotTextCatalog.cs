@@ -208,6 +208,7 @@ public static class BotTextCatalog
         T("lfg.invites.dungeonFooter", "Dungeon invites: footer", "Copy a name into the dungeon invite field", null, Footer);
         T("lfg.invites.nobody", "Nobody to invite (- = hide)", "Nobody to invite yet.", null, 300, optional: true);
         T("lfg.invites.noName", "Without a character name (- = hide)", "-# Without a character name: {count}", "{count}", 300, optional: true);
+        T("lfg.invites.otherServer", "Player from another server: name in the invite", "{name}[{server}]", "{name}, {server}", 60);
         C("color.lfg.invites", "Stripe color: invites", 0xF1C40F);
         T("lfg.voice.created", "Group voice room created", "🔊 Voice room created: {channel} — everyone can join and listen, only the group can speak.", "{channel}", 500);
         T("lfg.voice.exists", "Group voice room exists", "The voice room already exists: {channel}", "{channel}", 500);

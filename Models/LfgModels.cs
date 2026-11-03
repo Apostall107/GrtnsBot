@@ -121,6 +121,8 @@ public sealed class Slot
     public string? Comment { get; set; }
     /// <summary>GS персонажа (снимок на момент записи).</summary>
     public int? Gs { get; set; }
+    /// <summary>Сокращение игрового сервера персонажа (TRI, LUD…) — для /invite Имя[LUD] игрокам с других серверов.</summary>
+    public string? Server { get; set; }
     /// <summary>Явка (отмечает организатор после старта): true — пришёл, false — не пришёл, null — не отмечено.</summary>
     public bool? Attended { get; set; }
     /// <summary>
@@ -143,6 +145,7 @@ public sealed class Slot
         ClassIcon = null;
         Comment = null;
         Gs = null;
+        Server = null;
         Attended = null;
         Ready = false;
     }
@@ -163,6 +166,7 @@ public sealed class ReserveEntry
     public string? ClassIcon { get; set; }
     public string? Comment { get; set; }
     public int? Gs { get; set; }
+    public string? Server { get; set; }
     public DateTimeOffset JoinedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
@@ -273,6 +277,8 @@ public sealed class LfgGroup
     public bool Reminded { get; set; }
     /// <summary>Проект (игра) сбора: персонажи берутся из него, записаться можно только с ролью проекта.</summary>
     public string? ProjectKey { get; set; }
+    /// <summary>Сервер проекта по умолчанию (сокращение) — «свой» сервер, если у организатора сервер не указан.</summary>
+    public string? HomeServer { get; set; }
     /// <summary>Копии поста в других каналах (обновляются и удаляются вместе с основным).</summary>
     public List<LfgMirror> Mirrors { get; set; } = [];
     /// <summary>Голосовая комната сбора (кнопка 🔊 в посте): все видят и могут зайти, говорить — только участники группы.</summary>
@@ -328,10 +334,10 @@ public sealed class LfgGroup
 
         if (current.TakenAs == wanted) return null; // смена персонажа на той же роли
 
-        var snapshot = (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment, current.Gs);
+        var snapshot = (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment, current.Gs, current.Server);
         current.Clear();
         var fits = FindFreeSlot(wanted) >= 0;
-        (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment, current.Gs) = snapshot;
+        (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment, current.Gs, current.Server) = snapshot;
 
         return fits ? null : Tx.Get(GuildId, "lfg.err.noSlots", ("role", $"{wanted.Emoji()} {wanted.Label()}"));
     }
@@ -372,7 +378,7 @@ public sealed class LfgGroup
             return null;
         }
 
-        var snapshot = current is null ? default : (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment, current.Gs);
+        var snapshot = current is null ? default : (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment, current.Gs, current.Server);
         current?.Clear();
 
         var index = FindFreeSlot(wanted, fits);
@@ -388,7 +394,7 @@ public sealed class LfgGroup
         if (current is not null)
         {
             // Уже в группе: не выкидываем в резерв из-за смены роли
-            (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment, current.Gs) = snapshot;
+            (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment, current.Gs, current.Server) = snapshot;
             return Tx.Get(GuildId, "lfg.err.noSlots", ("role", $"{wanted.Emoji()} {wanted.Label()}"));
         }
 
@@ -473,6 +479,7 @@ public sealed class LfgGroup
         slot.ClassIcon = entry.ClassIcon;
         slot.Comment = entry.Comment;
         slot.Gs = entry.Gs;
+        slot.Server = entry.Server;
         return slot;
     }
 

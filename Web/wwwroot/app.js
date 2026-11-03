@@ -4959,9 +4959,43 @@ async function pageChars(main) {
   };
   add.addEventListener("click", doAdd);
   nameIn.addEventListener("keydown", e => { if (e.key === "Enter") doAdd(); });
+  // Other characters from the official armory: names → found on the server → created and linked
+  const linkedOne = data.characters.find(c => c.armory && !c.armory.error);
+  const altsBtn = ap ? h("button", { class: "btn secondary", title: "Enter the names of your other characters — they are found on the official site and added with GS, class and server" },
+    icon("users", 15), "Add other characters…") : null;
+  if (altsBtn) altsBtn.addEventListener("click", () => {
+    const d = dialog();
+    const names = h("textarea", { rows: "4", placeholder: "One name per line (or separated by commas)", style: "width:100%" });
+    const realm = realmPicker(servers, linkedOne ? Math.floor(linkedOne.armory.serverId / 1000) : ap.race,
+      linkedOne ? linkedOne.armory.serverId : ap.serverId);
+    const go = h("button", { class: "btn" }, icon("search", 15), "Find & add");
+    const result = h("div", { class: "muted small" });
+    go.addEventListener("click", async () => {
+      const list = names.value.split(/[\n,;]+/).map(x => x.trim()).filter(Boolean);
+      const r0 = realm.value();
+      if (!list.length) return toast("Enter at least one name.", "warn");
+      if (!r0.serverId) return toast("Pick the server.", "warn");
+      result.replaceChildren(skeletonLines(1));
+      const r = await act(go, () => gApi("POST", `/me/characters/armory-alts${pq}`, { names: list, serverId: r0.serverId }));
+      if (!r) { result.replaceChildren(); return; }
+      result.replaceChildren(...[
+        r.added.length ? h("div", {}, `✅ Added and linked: ${r.added.join(", ")}`) : null,
+        r.existing.length ? h("div", {}, `Already in your list: ${r.existing.join(", ")}`) : null,
+        r.notFound.length ? h("div", { class: "warn-text" }, `Not found on this server: ${r.notFound.join(", ")} — check the spelling or the server`) : null,
+        r.unavailable ? h("div", { class: "warn-text" }, "The official armory stopped answering — try the rest later.") : null].filter(Boolean));
+      if (r.added.length) d.addEventListener("close", () => refresh(), { once: true });
+    });
+    d.replaceChildren(h("h2", {}, "Add other characters"),
+      h("p", { class: "muted small" }, "Exact names from the game. Each one is found on the chosen server of the official site and added already linked — GS, class and server come from there."),
+      h("div", { class: "row", style: "flex-wrap:wrap;margin-bottom:8px" }, realm.race, realm.server), names, result,
+      h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Close"), go));
+    d.showModal();
+    names.focus();
+  });
   const addCard = h("div", { class: "card char-add" }, h("span", { class: "es-icon tone-cyan" }, icon("user-plus", 20)),
     h("div", { class: "grow" }, h("b", {}, "New character"), h("div", { class: "muted small" }, project ? `In ${project.name}` : "Saved for sign-ups")),
-    h("div", { class: "row" }, h("div", { class: "grow" }, nameIn), add));
+    h("div", { class: "row" }, h("div", { class: "grow" }, nameIn), add),
+    altsBtn ? h("div", { class: "row", style: "margin-top:8px" }, altsBtn) : null);
 
   holder.replaceChildren(prefs, projTabs,
     h("p", { class: "muted small", style: "margin:-6px 0 14px" }, "Each game has its own characters. Class — any class of the project (its icon is shown after your name in group posts). GS is checked by group requirements."),

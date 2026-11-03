@@ -140,6 +140,57 @@ public sealed class ArmorySyncService(OfficialArmory armory, CharacterStore char
         return await LinkAsync(guildId, userId, name, scope, exact[0].CharacterId, exact[0].ServerId);
     }
 
+    /// <summary>
+    /// Альты: каждый ник ищется на сервере (точное совпадение); найденный — создаётся персонаж и сразу привязывается
+    /// (GS, класс, сервер из оружейной). Возвращает добавленных, ненайденных и уже существующих.
+    /// </summary>
+    public async Task<(List<string> Added, List<string> NotFound, List<string> Existing, bool Unavailable)> AddAltsAsync(
+        ulong guildId, ulong userId, string? scope, IEnumerable<string> names, int serverId, CancellationToken ct = default)
+    {
+        var added = new List<string>();
+        var notFound = new List<string>();
+        var existing = new List<string>();
+        var mine = characters.Get(guildId, userId, scope);
+        foreach (var raw in names)
+        {
+            var name = raw.Replace("`", "").Trim();
+            if (name.Length is < 2 or > CharacterStore.MaxNameLength) continue;
+            if (mine.Any(n => n.Equals(name, StringComparison.OrdinalIgnoreCase)) || added.Contains(name, StringComparer.OrdinalIgnoreCase))
+            {
+                existing.Add(name);
+                continue;
+            }
+            if (Paused) return (added, notFound, existing, true);
+            IReadOnlyList<ArmoryHit> hits;
+            try
+            {
+                hits = await armory.SearchAsync(name, serverId, ct);
+            }
+            catch (ArmoryUnavailableException)
+            {
+                MarkUnavailable();
+                return (added, notFound, existing, true);
+            }
+            catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+            {
+                return (added, notFound, existing, true);
+            }
+            var hit = hits.Where(h => h.ServerId == serverId && h.Name.Equals(name, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (hit.Count != 1)
+            {
+                notFound.Add(name);
+                continue;
+            }
+            // Ник — как в игре (регистр)
+            characters.Add(guildId, userId, hit[0].Name, scope);
+            var result = await LinkAsync(guildId, userId, hit[0].Name, scope, hit[0].CharacterId, hit[0].ServerId, ct);
+            if (result == ArmorySyncResult.Unavailable) return (added, notFound, existing, true);
+            added.Add(hit[0].Name);
+            await Task.Delay(TimeSpan.FromSeconds(1), ct);
+        }
+        return (added, notFound, existing, false);
+    }
+
     /// <summary>Привязать к найденному персонажу и сразу взять данные. Не вышло — привязка остаётся прежней.</summary>
     public async Task<ArmorySyncResult> LinkAsync(ulong guildId, ulong userId, string name, string? scope, string characterId, int serverId,
         CancellationToken ct = default)
