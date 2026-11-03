@@ -128,6 +128,12 @@ public sealed class BotService(
             LogSeverity.Verbose => LogLevel.Debug,
             _ => LogLevel.Trace
         };
+        // Normal on stop/reconnect: Discord.Net cancels its connection task — not a problem, keep it out of the warnings
+        if (message.Exception is TaskCanceledException or OperationCanceledException)
+        {
+            logger.LogDebug("[{Source}] Connection task canceled (stop or reconnect)", message.Source);
+            return Task.CompletedTask;
+        }
         logger.Log(level, message.Exception, "[{Source}] {Message}", message.Source, message.Message);
         return Task.CompletedTask;
     }

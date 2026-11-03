@@ -3582,6 +3582,11 @@ async function pageBotTexts(main) {
     const sample = (g.items.find(i => i.refresh === "lfgpost" || i.refresh === "ticketmsg") || {}).refresh;
     const preview = sample ? livePreview(() => gApi("POST", "/texts/bot/preview", { sample, values: Object.fromEntries(dirty) }),
       sample === "lfgpost" ? "Preview — group post" : "Preview — ticket message") : null;
+    // Other groups: the text you are editing, drawn as Discord shows it (button, menu, window, card or message)
+    const local = sample ? null : botTextPreview(g.items, it => {
+      const v = dirty.has(it.key) ? dirty.get(it.key) : it.value || "";
+      return v || it.default;
+    });
     let previewLoaded = false;
     const groupRows = g.items.map(it => {
       const row = botTextRow(it, v => {
@@ -3590,14 +3595,21 @@ async function pageBotTexts(main) {
         row.el.classList.toggle("changed", dirty.has(it.key));
         updateBar();
         if (preview) preview.refresh();
+        if (local) local.show(it);
       });
+      if (local) {
+        row.el.addEventListener("focusin", () => local.show(it));
+      }
       rows.push({ it, row, card });
       return row;
     });
     if (preview) {
       preview.el.classList.add("bt-preview");
       body.append(h("div", { class: "editor-layout" }, h("div", {}, ...groupRows.map(r => r.el)), h("div", { class: "editor-preview" }, preview.el)));
-    } else body.append(...groupRows.map(r => r.el));
+    } else {
+      local.show(g.items[0]);
+      body.append(h("div", { class: "editor-layout" }, h("div", {}, ...groupRows.map(r => r.el)), h("div", { class: "editor-preview" }, local.el)));
+    }
     const countCustom = () => {
       const n = g.items.filter(x => x.value).length;
       badge.textContent = `${n} changed`;
@@ -3644,6 +3656,131 @@ async function pageBotTexts(main) {
   if (cards[0]) cards[0].card.classList.add("open");
 }
 
+/** Sample values for {placeholders} in previews of bot texts. */
+function txSamples() {
+  const t = Math.floor(Date.now() / 1000 / 60) * 60 + 7200;
+  const guild = (state.guilds.find(x => x.id === state.guildId) || {}).name || "Greatness";
+  return {
+    user: "<@1>", applicant: "<@1>", organizer: "<@1>", member: "<@1>", owner: "<@1>", mention: "<@1>", by: "<@1>", who: "<@1>",
+    role: "<@&2>", roles: "Tank, DPS, Healer", channel: "<#3>", voice: "<#3>", category: "Tickets",
+    activity: "Ludra Hard", dungeon: "Ludra Hard", time: `<t:${t}:F> (<t:${t}:R>)`, when: ` — <t:${t}:F>`, date: `<t:${t}:D>`, until: `<t:${t}:R>`,
+    filled: "4", total: "6", count: "2", n: "6", size: "6", slots: "2", left: "2", free: "2", minutes: "15", hours: "5", days: "7", seconds: "15", number: "1",
+    list: "<@&2> · GS 3000+", note: "Bring buff food", comment: "Bring buff food", id: "a1b2c3", status: "📝 Recruiting", server: guild,
+    project: "Aion 2", name: "Apostall", character: "Apostall", characters: "Apostall, Lemoshka", gs: "3100", min: "3000",
+    class: "Templar", reason: "Not enough GS", link: "https://discord.com", url: "https://discord.com", text: "Hello!", limit: "5",
+    old: "Ludra Hard", new: "Ludra Hell", answer: "Answer…", question: "Character name", tickets: "#tickets", members: "531"
+  };
+}
+
+/** What a bot text is in Discord, by its name and length limit (see BotTextCatalog). */
+function txKind(it) {
+  const n = it.name.toLowerCase();
+  if (it.color) return "color";
+  if (n.includes("window:")) return "modal";
+  if (n.includes("button") || it.max === 80) return "button";
+  if (n.includes("placeholder") || it.max === 150) return "select";
+  if (n.includes("option") || n.includes("description")) return "option";
+  if (/:\s*title\b/.test(n) || it.max === 256) return "title";
+  if (n.includes("footer") || it.max === 2048) return "footer";
+  return "text";
+}
+
+/** "New group DM: title (- = hide)" → "new group dm" (texts of one message share it). */
+const txPrefix = it => {
+  const n = it.name.replace(/\s*\([^)]*\)/g, "").trim();
+  const i = n.indexOf(":");
+  return i > 0 ? n.slice(0, i).trim().toLowerCase() : null;
+};
+
+/** Preview box for one group of bot texts: shows the text being edited in its Discord form. */
+function botTextPreview(items, valueOf) {
+  const frame = h("div", { class: "dc-frame" });
+  const note = h("p", { class: "muted small" });
+  let current = items[0];
+  const S = txSamples();
+  const mentions = { "<@1>": `@${state.me?.name || "member"}`, "<@&2>": "@Aion 2", "<#3>": "#lfg" };
+  const fill = v => String(v ?? "").replace(/\{(\w+)\}/g, (m, k) => k in S ? S[k] : m);
+  const val = it => { const v = valueOf(it); return v.trim() === "-" ? "" : fill(v); };
+  const mark = (it, el) => { if (it === current) el.classList.add("tx-focus"); return el; };
+
+  const draw = () => {
+    const it = current;
+    const kind = txKind(it);
+    const prefix = txPrefix(it);
+    const siblings = prefix && prefix !== "stripe color" ? items.filter(x => txPrefix(x) === prefix) : [it];
+    let out;
+    if (kind === "modal") {
+      // Discord window: title, then fields (label + input with placeholder)
+      const parts = siblings.filter(x => txKind(x) === "modal");
+      const box = h("div", { class: "dc-modal" });
+      let lastInput = null;
+      for (const x of parts) {
+        const n = x.name.toLowerCase();
+        if (n.includes("title")) box.prepend(mark(x, h("div", { class: "dc-modal-title" }, val(x) || "Window")));
+        else if (n.includes("placeholder") || n.includes("hint")) {
+          if (!lastInput) box.append(lastInput = h("div", { class: "dc-input" }));
+          lastInput.replaceChildren(val(x));
+          mark(x, lastInput);
+          lastInput = null;
+        } else {
+          box.append(mark(x, h("div", { class: "dc-modal-label" }, val(x), h("span", { class: "dc-req" }, " *"))), lastInput = h("div", { class: "dc-input" }));
+        }
+      }
+      box.append(h("div", { class: "dc-modal-actions" }, h("span", { class: "dc-btn dc-btn-link-plain" }, "Cancel"), h("span", { class: "dc-btn dc-btn-blurple" }, "Submit")));
+      out = box;
+    } else if (kind === "button") {
+      const btns = items.filter(x => txKind(x) === "button").slice(0, 10);
+      const row = [];
+      for (let i = 0; i < btns.length; i += 5) row.push(btns.slice(i, i + 5).map(x => mark(x, dcButton(val(x), null, x === it ? "Blurple" : "Grey"))));
+      out = dcMessage({ content: "-# Buttons of this group (the edited one is blue)", rows: row, mentions });
+    } else if (kind === "select" || kind === "option") {
+      const ph = kind === "select" ? it : items.find(x => txKind(x) === "select");
+      const opts = items.filter(x => txKind(x) === "option").slice(0, 6);
+      out = dcMessage({ mentions, rows: [h("div", { class: "dc-dropdown" },
+        mark(ph || it, h("span", { class: "dc-select" }, h("span", {}, ph ? val(ph) || "Make a selection" : "Make a selection"), icon("chevron-down", 14))),
+        opts.length ? h("div", { class: "dc-options" }, (() => {
+          // A "… description" goes under the option before it
+          const els = [];
+          for (const x of opts) {
+            const desc = /description/i.test(x.name);
+            if (desc && els.length) { els[els.length - 1].append(mark(x, h("span", {}, val(x)))); continue; }
+            els.push(mark(x, h("div", { class: "dc-option" }, desc ? h("b", {}, "Option") : h("b", {}, val(x)), desc ? h("span", {}, val(x)) : null)));
+          }
+          return els;
+        })()) : null)] });
+    } else {
+      // A card (title / lines / footer / stripe) or a plain message
+      const colorName = x => x.name.toLowerCase().replace(/^stripe color:\s*/, "");
+      const own = kind === "color" ? items.filter(x => !x.color && txPrefix(x) === colorName(it)) : siblings;
+      const parts = own.filter(x => ["title", "text", "footer"].includes(txKind(x)));
+      const colorIt = kind === "color" ? it : items.find(x => x.color && colorName(x) === prefix);
+      const asCard = kind === "color" || kind === "footer" || parts.some(x => txKind(x) === "title" || txKind(x) === "footer") || !!colorIt;
+      if (!asCard) out = dcMessage({ content: val(it) || "(hidden)", mentions });
+      else {
+        const title = parts.find(x => txKind(x) === "title");
+        const footer = parts.find(x => txKind(x) === "footer");
+        const lines = parts.filter(x => txKind(x) === "text" && val(x));
+        const desc = h("div", {}, lines.map(x => mark(x, mdPreview(val(x), mentions))));
+        const card = dcEmbed({ title: title ? val(title) : kind === "color" ? "Sample card" : null, footer: footer ? val(footer) : null,
+          color: colorIt ? valueOf(colorIt) : "#5865f2", description: lines.length ? null : "Text of the message…" }, mentions);
+        const main = card.querySelector(".dc-embed-main");
+        if (lines.length) main.insertBefore(desc, main.querySelector(".dc-embed-footer"));
+        if (title && main.firstElementChild) mark(title, main.firstElementChild);
+        if (footer) { const f = main.querySelector(".dc-embed-footer"); if (f) mark(footer, f); }
+        if (kind === "color") mark(it, card);
+        out = dcMessage({ embeds: [], mentions });
+        out.querySelector(".dc-body").append(card);
+      }
+    }
+    frame.replaceChildren(out);
+    note.textContent = `${it.name} · {placeholders} filled with sample values`;
+  };
+  return {
+    el: h("div", { class: "card preview-card" }, h("h3", {}, "Preview"), frame, note),
+    show(it) { current = it; draw(); }
+  };
+}
+
 /** One editable bot text (textarea) or color (swatch). onChange(value) — "" = default. */
 function botTextRow(it, onChange) {
   const custom = h("span", { class: "badge wait" }, "custom");
@@ -3662,16 +3799,9 @@ function botTextRow(it, onChange) {
     requestAnimationFrame(fit); upd();
     const reset = h("button", { type: "button", class: "btn ghost icon-only sm", title: "Back to default",
       onclick: () => { area.value = it.default; fit(); upd(); onChange(""); } }, icon("undo-2", 15));
-    // Messages (not buttons/titles): a small preview of the text as Discord shows it, while editing
-    const bubble = it.max >= 500 && !it.refresh ? h("div", { class: "dc-frame bt-bubble" }) : null;
-    if (bubble) {
-      const draw = () => bubble.replaceChildren(mdPreview(area.value.trim() === "-" ? "(hidden)" : area.value));
-      area.addEventListener("focus", () => { draw(); bubble.classList.add("show"); });
-      area.addEventListener("input", draw);
-    }
     control = h("div", { class: "bt-control" }, area, h("div", { class: "bt-meta" },
       it.placeholders ? h("span", { class: "bt-ph" }, ...it.placeholders.split(/,\s*/).map(p => h("code", {}, p))) : null,
-      it.optional ? h("span", { class: "muted small" }, "- = hide") : null, h("span", { style: "flex:1" }), counter, reset), bubble);
+      it.optional ? h("span", { class: "muted small" }, "- = hide") : null, h("span", { style: "flex:1" }), counter, reset));
   }
   const el = h("div", { class: "bt-row" }, h("div", { class: "bt-name" }, h("span", {}, it.name), custom), control);
   return { el };
