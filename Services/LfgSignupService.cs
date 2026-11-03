@@ -52,7 +52,7 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
 
     /// <summary>
     /// Подставляет в слот/резерв класс-роль и заметку выбранного персонажа (из /character или меню после записи).
-    /// Роль показывается, только если она всё ещё есть у игрока. Вызывать под group.Gate.
+    /// Вызывать под group.Gate.
     /// </summary>
     public void ApplyProfile(LfgGroup group, ulong userId)
     {
@@ -61,11 +61,8 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
         var name = slot?.CharacterName ?? entry?.CharacterName;
         var info = characters.GetInfo(group.GuildId, userId, name, Scope(group));
 
-        var guild = client.GetGuild(group.GuildId);
-        var role = info?.ClassRoleId is { } roleId ? guild?.GetRole(roleId) : null;
-        // Класс из списка классов проекта роли не требует (так он и выбирается); роль игрока — только пока она у него есть
-        if (role is not null && !projects.EffectiveClassIcons(group.GuildId, group.ProjectKey).ContainsKey(role.Id)
-            && guild?.GetUser(userId) is { } member && member.Roles.All(r => r.Id != role.Id)) role = null;
+        // Класс — просто метка персонажа: роль на сервере у игрока иметь не нужно
+        var role = info?.ClassRoleId is { } roleId ? client.GetGuild(group.GuildId)?.GetRole(roleId) : null;
 
         var icon = projects.ClassIcon(group.GuildId, role, group.ProjectKey);
         if (slot is not null)
