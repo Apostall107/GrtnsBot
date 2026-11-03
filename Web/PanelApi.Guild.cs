@@ -28,7 +28,9 @@ public static partial class PanelApi
                 gsReminderChannelId = p.GsReminderChannelId?.ToString(),
                 gsReminderDays = p.GsReminderDays,
                 gsReminderLastRun = p.GsReminderLastRun?.ToUnixTimeMilliseconds(),
-                gsReminderDm = p.Dm.GsReminder
+                gsReminderDm = p.Dm.GsReminder,
+                memberRoster = p.MemberRoster,
+                memberTop = p.MemberTop
             });
         });
 
@@ -46,6 +48,8 @@ public static partial class PanelApi
                 p.GsReminderChannelId = channel;
                 p.GsReminderDays = body.GsReminderDays ?? p.GsReminderDays;
                 p.Dm.GsReminder = body.GsReminderDm;
+                p.MemberRoster = body.MemberRoster;
+                p.MemberTop = body.MemberTop;
             });
             return Results.Ok();
         });
@@ -86,59 +90,9 @@ public static partial class PanelApi
         // ----- Календарь: сборы и регулярные сборы на 7 дней вперёд -----
         lfg.MapGet("/calendar", (ulong guildId, DiscordSocketClient client, [FromServices] LfgStore store,
             [FromServices] RecurringLfgStore recurring, [FromServices] TimeService time, [FromServices] LfgProjectStore projects) =>
-        {
-            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
-            var names = projects.GetProjects(guildId).ToDictionary(p => p.Key, p => p.Name);
-            string? ProjectName(string? key) => key is not null && names.TryGetValue(key, out var n) ? n : null;
-            var now = DateTimeOffset.UtcNow;
-            var until = now.AddDays(8);
-
-            var groups = store.Groups.Values.Where(g => g.GuildId == guildId && !g.IsClosed && g.StartsAt is { } s && s >= now.AddHours(-6) && s <= until)
-                .Select(g => new
-                {
-                    id = g.Id,
-                    title = g.ActivityName,
-                    start = g.StartsAt!.Value.ToUnixTimeMilliseconds(),
-                    project = ProjectName(g.ProjectKey),
-                    channel = guild.GetChannel(g.ChannelId)?.Name,
-                    filled = g.FilledCount,
-                    total = g.Slots.Count,
-                    reserve = g.Reserve.Count,
-                    organizer = Member(guild, g.OwnerId),
-                    note = g.Note,
-                    jumpUrl = LfgSignupService.JumpUrl(g),
-                    recurring = false
-                }).ToList<object>();
-
-            var posted = store.Groups.Values.Where(g => g.GuildId == guildId && g.StartsAt is not null)
-                .Select(g => (g.ActivityName, g.StartsAt!.Value)).ToHashSet();
-            foreach (var r in recurring.Get(guildId).Where(r => r.Enabled))
-            {
-                for (var i = 0; i < 8; i++)
-                {
-                    var date = time.Today.AddDays(i);
-                    if (!r.Days.Contains(date.DayOfWeek)) continue;
-                    var start = time.ToUtc(date, r.Hour, r.Minute);
-                    if (start < now || start > until || posted.Contains((r.ActivityName, start)) || r.LastStart == start) continue;
-                    groups.Add(new
-                    {
-                        id = $"{r.Id}:{start.ToUnixTimeSeconds()}",
-                        title = r.ActivityName,
-                        start = start.ToUnixTimeMilliseconds(),
-                        project = ProjectName(r.ProjectKey),
-                        channel = guild.GetChannel(r.ChannelId)?.Name,
-                        filled = 0,
-                        total = r.Slots.Count,
-                        reserve = 0,
-                        organizer = Member(guild, r.OwnerId),
-                        note = r.Note,
-                        jumpUrl = (string?)null,
-                        recurring = true
-                    });
-                }
-            }
-            return Results.Ok(new { zone = time.ZoneName, events = groups });
-        });
+            client.GetGuild(guildId) is { } guild
+                ? Results.Ok(new { zone = time.ZoneName, events = CalendarEvents(guild, store, recurring, time, projects, _ => true, null) })
+                : GuildNotFound());
 
         // ----- Ростер гильдии: персонажи, классы, роли в группе, GS, на сервере с, последняя активность -----
         lfg.MapGet("/roster", (ulong guildId, DiscordSocketClient client, [FromServices] CharacterStore characters,
@@ -219,7 +173,71 @@ public static partial class PanelApi
             return Results.Ok();
         });
     }
+
+    /// <summary>
+    /// Сборы со временем и повторяющиеся сборы на 7 дней вперёд. <paramref name="allowed"/> — фильтр по ключу проекта;
+    /// <paramref name="me"/> — участник (его статус в сборе: group / reserve).
+    /// </summary>
+    internal static List<object> CalendarEvents(SocketGuild guild, LfgStore store, RecurringLfgStore recurring, TimeService time,
+        LfgProjectStore projects, Func<string?, bool> allowed, ulong? me)
+    {
+        var guildId = guild.Id;
+        var names = projects.GetProjects(guildId).ToDictionary(p => p.Key, p => p.Name);
+        string? ProjectName(string? key) => projects.Effective(guildId, key)?.Key is { } k && names.TryGetValue(k, out var n) ? n : null;
+        var now = DateTimeOffset.UtcNow;
+        var until = now.AddDays(8);
+
+        var events = store.Groups.Values
+            .Where(g => g.GuildId == guildId && !g.IsClosed && g.StartsAt is { } s && s >= now.AddHours(-6) && s <= until)
+            .Where(g => allowed(projects.Effective(guildId, g.ProjectKey)?.Key))
+            .Select(g => new
+            {
+                id = g.Id,
+                title = g.ActivityName,
+                start = g.StartsAt!.Value.ToUnixTimeMilliseconds(),
+                project = ProjectName(g.ProjectKey),
+                channel = guild.GetChannel(g.ChannelId)?.Name,
+                filled = g.FilledCount,
+                total = g.Slots.Count,
+                reserve = g.Reserve.Count,
+                organizer = Member(guild, g.OwnerId),
+                note = g.Note,
+                jumpUrl = LfgSignupService.JumpUrl(g),
+                recurring = false,
+                mine = me is { } m ? g.Slots.Any(s => s.UserId == m) ? "group" : g.FindReserve(m) is not null ? "reserve" : null : null
+            }).ToList<object>();
+
+        var posted = store.Groups.Values.Where(g => g.GuildId == guildId && g.StartsAt is not null)
+            .Select(g => (g.ActivityName, g.StartsAt!.Value)).ToHashSet();
+        foreach (var r in recurring.Get(guildId).Where(r => r.Enabled && allowed(projects.Effective(guildId, r.ProjectKey)?.Key)))
+        {
+            for (var i = 0; i < 8; i++)
+            {
+                var date = time.Today.AddDays(i);
+                if (!r.Days.Contains(date.DayOfWeek)) continue;
+                var start = time.ToUtc(date, r.Hour, r.Minute);
+                if (start < now || start > until || posted.Contains((r.ActivityName, start)) || r.LastStart == start) continue;
+                events.Add(new
+                {
+                    id = $"{r.Id}:{start.ToUnixTimeSeconds()}",
+                    title = r.ActivityName,
+                    start = start.ToUnixTimeMilliseconds(),
+                    project = ProjectName(r.ProjectKey),
+                    channel = guild.GetChannel(r.ChannelId)?.Name,
+                    filled = 0,
+                    total = r.Slots.Count,
+                    reserve = 0,
+                    organizer = Member(guild, r.OwnerId),
+                    note = r.Note,
+                    jumpUrl = (string?)null,
+                    recurring = true,
+                    mine = (string?)null
+                });
+            }
+        }
+        return events;
+    }
 }
 
 public sealed record LfgPrefsBody(bool ReadyCheck, int? AutoPromoteMinutes, bool GsReminder, string? GsReminderChannelId, int? GsReminderDays,
-    bool GsReminderDm);
+    bool GsReminderDm, bool MemberRoster = false, bool MemberTop = true);

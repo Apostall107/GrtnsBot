@@ -1037,6 +1037,7 @@ const allTabs = [
   ["home", "house", "Home", "member", "Member"],
   ["play", "users-round", "Groups", "member", "Member"],
   ["chars", "user-round", "My characters", "member", "Member"],
+  ["schedule", "calendar-clock", "Calendar", "member", "Member"],
   ["lfg", "swords", "LFG", "lfg", "Community modules"],
   ["guild", "calendar", "Guild", "lfg", "Community modules"],
   ["tickets", "ticket", "Tickets", "tickets", "Community modules"],
@@ -1146,7 +1147,7 @@ function renderShell() {
   // ----- Sidebar: sections, Lucide icons, active route; collapses to icons on desktop, drawer on mobile
   const layout = h("div", { class: `layout${collapsed ? " collapsed" : ""}` });
   const closeDrawer = () => layout.classList.remove("drawer-open");
-  const NAV_TONES = { home: "violet", play: "violet", chars: "cyan", lfg: "violet", guild: "teal", tickets: "amber", voice: "teal", welcome: "pink", roles: "green", content: "blue",
+  const NAV_TONES = { home: "violet", play: "violet", chars: "cyan", schedule: "teal", lfg: "violet", guild: "teal", tickets: "amber", voice: "teal", welcome: "pink", roles: "green", content: "blue",
     announce: "pink", overview: "green", log: "blue", settings: "cyan", access: "amber" };
   const navButton = ([key, ic, label]) => h("button", {
     // Tooltip only when the menu is collapsed to icons (labels are visible otherwise)
@@ -1206,7 +1207,7 @@ function renderShell() {
 
   if (!state.guildId) { main.append(empty("No servers available for your account.")); return; }
   if (!visibleTabs().length) { main.append(empty("You have no sections on this server. Ask an admin for the member role.")); return; }
-  const page = { home: pageHome, content: pageContent, play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, guild: pageGuild, tickets: pageTickets, voice: pageVoice, welcome: pageWelcome, roles: pageRoles, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess }[state.tab];
+  const page = { home: pageHome, content: pageContent, play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, guild: pageGuild, schedule: pageSchedule, tickets: pageTickets, voice: pageVoice, welcome: pageWelcome, roles: pageRoles, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess }[state.tab];
   page(main);
   addGuideButton(main, state.tab);
   decorateHeading(main);
@@ -2152,6 +2153,8 @@ async function renderLfgPrefs(card) {
   const gsChannel = channelSelect("text", "No channel — DMs only");
   gsChannel.value = p.gsReminderChannelId || "";
   const gsDm = toggle(p.gsReminderDm, "Also by DM (each member gets a DM with their characters)");
+  const mRoster = toggle(p.memberRoster, "👥 Members see the guild roster (Member → Calendar → Roster: character, class, roles, GS)");
+  const mTop = toggle(p.memberTop, "🏆 Members see the top active players of the last 30 days (no-shows not counted)");
   const gsBox = h("div", { class: "subcard" },
     h("div", { class: "row", style: "margin-bottom:8px" }, h("span", { class: "muted" }, "GS is outdated after"), gsDays, h("span", { class: "muted" }, "days (or not set)")),
     h("div", { class: "field" }, h("label", {}, "Post the reminder in (mentions those members)"), gsChannel), gsDm.el,
@@ -2161,7 +2164,8 @@ async function renderLfgPrefs(card) {
   gsOn.cb.addEventListener("change", syncGs); syncGs();
   const save = h("button", { class: "btn" }, "💾 Save");
   const body = () => ({ readyCheck: ready.cb.checked, autoPromoteMinutes: Number(auto.value || 0), gsReminder: gsOn.cb.checked,
-    gsReminderChannelId: gsChannel.value || null, gsReminderDays: Number(gsDays.value || 7), gsReminderDm: gsDm.cb.checked });
+    gsReminderChannelId: gsChannel.value || null, gsReminderDays: Number(gsDays.value || 7), gsReminderDm: gsDm.cb.checked,
+    memberRoster: mRoster.cb.checked, memberTop: mTop.cb.checked });
   const tracker = track("Group options", body, async () => await act(save, () => gApi("PUT", "/lfg/prefs", body()), "Group options saved.") !== undefined);
   save.addEventListener("click", tracker.save);
   const runNow = h("button", { class: "btn secondary", title: "Send the GS reminder now (with the saved settings)" }, "📈 Send the GS reminder now");
@@ -2176,6 +2180,7 @@ async function renderLfgPrefs(card) {
       h("div", { class: "row" }, h("span", { class: "muted" }, "In the last"), auto, h("span", { class: "muted" }, "minutes before the start (0 = off)")),
       h("span", { class: "muted small" }, "When a slot frees up then, the first player from the reserve who fits (role, class, GS) moves in; the bot replies under the post. Earlier the organizer decides.")),
     gsOn.el, gsBox,
+    h("label", { class: "field-label", style: "margin-top:10px" }, "For members on the site"), mRoster.el, mTop.el,
     h("div", { class: "row", style: "margin-top:8px" }, save, runNow));
   tracker.attach(card);
 }
@@ -4360,6 +4365,10 @@ async function pageHome(main) {
         statCard("users-round", "Groups", st.groups, "played"),
         statCard("crown", "Organized", st.organized, "as organizer"),
         statCard("circle-check", "Reliability", st.reliability === null ? "—" : `${st.reliability}%`, `came ${st.attended} · no-show ${st.noShows}`)),
+      st.last30 ? h("div", { class: "stats compact", style: "margin-top:8px" },
+        statCard("calendar-clock", "Last 30 days", st.last30.groups, "groups"),
+        statCard("circle-check", "Came", st.last30.came, `no-show ${st.last30.noShow}`),
+        statCard("swords", "Favorite role", st.last30.role || "—", "most played")) : null,
       st.recent.length ? h("div", { class: "list" }, st.recent.slice(0, 5).map(r => h("div", { class: "list-row" },
         h("div", { class: "grow" }, h("b", {}, r.activity), h("div", { class: "muted small" }, fmtDate(r.at))),
         r.organizer ? h("span", { class: "badge" }, icon("crown", 12), "Organizer")
@@ -4505,8 +4514,14 @@ async function pagePlay(main) {
   let data;
   try { data = await gApi("GET", "/me/groups"); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
   if (tab !== "all") data.groups = data.groups.filter(g => g.projectKey === tab);
+  const focus = store.get("gb.focusGroup");
+  if (focus) store.set("gb.focusGroup", "");
   holder.replaceChildren(sectionLabel(`Active groups · ${data.groups.length}`), data.groups.length
-    ? h("div", { class: "grid2" }, data.groups.map(g => playCard(g)))
+    ? h("div", { class: "grid2" }, data.groups.map(g => {
+      const card = playCard(g);
+      if (g.id === focus) requestAnimationFrame(() => { card.classList.add("focus-flash"); card.scrollIntoView({ behavior: "smooth", block: "center" }); });
+      return card;
+    }))
     : h("div", { class: "card" }, emptyState("users-round", "No active groups right now", "Be the first — create a group and others will join.",
       h("button", { class: "btn", onclick: () => { if (createBody.style.display === "none") toggle.click(); window.scrollTo({ top: 0, behavior: "smooth" }); } }, icon("plus", 15), "Create a group"))));
 }
@@ -4533,7 +4548,8 @@ function playCard(g) {
   const roster = h("div", { class: "roster" }, g.slots.map((s, i) => s.member
     ? h("div", { class: `slot taken${s.member.id === meId ? " me" : ""}` },
         h("span", { class: "slot-num" }, i + 1), rolePill(s.role || s.slotRole),
-        h("span", { class: "slot-who" }, member(s.member), classMark(s)),
+        h("span", { class: "slot-who" }, member(s.member), classMark(s),
+          s.ready && s.attended == null ? h("span", { title: "Ready" }, " 🟢") : null),
         h("span", { class: "slot-char" }, s.character || "", s.gs ? h("span", { class: "gs" }, `GS ${s.gs}`) : null),
         org && g.started ? attendanceButton(s, `/me/groups/${gid}/attendance`) : null,
         org && s.member.id !== g.owner.id ? tool("arrow-right", "Move to reserve", () => roster$("toReserve", s.member, "Moved to the reserve.")) : null)
@@ -4559,15 +4575,25 @@ function playCard(g) {
   // Sign-up form: role + character (saved or new)
   const free = v => g.canJoin[v] || (g.me && g.me.status === "group" && g.me.role === v);
   const role = h("select", { "aria-label": "Role", "data-render": "role" }, ROLE_CHOICES.map(([v, l]) => h("option", { value: v }, free(v) ? l : `${l} (reserve)`)));
-  const charSel = h("select", { "aria-label": "Character" }, characters.map(c => h("option", { value: c }, c)), h("option", { value: "" }, "+ New character…"));
+  // Characters whose class plays the chosen role (LFG → Classes), like in Discord; "All" — any
+  const charRoles = g.characterRoles || {};
+  const fits = (c, r) => r === "Any" || !charRoles[c] || charRoles[c].includes(r);
+  const charSel = h("select", { "aria-label": "Character" });
   const newChar = h("input", { placeholder: "Character name", maxlength: "32", style: "width:160px", "aria-label": "New character name" });
   const sync = () => { newChar.style.display = charSel.value ? "none" : ""; };
+  const fillChars = () => {
+    const keep = charSel.value;
+    const ok = characters.filter(c => fits(c, role.value));
+    charSel.replaceChildren(...ok.map(c => h("option", { value: c }, c)), h("option", { value: "" }, "+ New character…"));
+    charSel.title = ok.length < characters.length ? `${characters.length - ok.length} character(s) hidden — their class doesn't play this role` : "";
+    if (ok.includes(keep)) charSel.value = keep;
+    sync();
+  };
   charSel.addEventListener("change", sync);
-  if (g.me) {
-    role.value = g.me.role;
-    if (g.me.character && characters.includes(g.me.character)) charSel.value = g.me.character;
-  }
-  sync();
+  role.addEventListener("change", fillChars);
+  if (g.me) role.value = g.me.role;
+  fillChars();
+  if (g.me && g.me.character && fits(g.me.character, role.value) && characters.includes(g.me.character)) { charSel.value = g.me.character; sync(); }
 
   const join = h("button", { class: "btn" }, icon(g.me ? "repeat" : "check", 15), g.me ? "Switch" : "Sign up");
   join.addEventListener("click", async () => {
@@ -4607,6 +4633,12 @@ function playCard(g) {
       mine, req),
     groupNoteLine(g),
     roster, reserve,
+    g.readyCheck && g.me && g.me.status === "group" ? h("div", { class: "group-note ready-line" },
+      g.myReady ? h("span", { class: "badge ok" }, "🟢 You're marked as ready")
+        : h("button", { class: "btn sm", onclick: async e => {
+          if (await act(e.currentTarget, () => gApi("POST", `/me/groups/${gid}/ready`), "Marked as ready.") !== undefined) refresh();
+        } }, "✅ I'm ready"),
+      h("span", { class: "muted small" }, `${g.slots.filter(s => s.ready).length}/${g.slots.filter(s => s.member).length} ready`)) : null,
     g.closed ? h("div", { class: "muted small group-note" }, icon("lock", 14), "Signups are closed.") :
       g.blocked && !g.me ? h("div", { class: "muted small group-note" }, icon("lock", 14), g.blocked) :
       h("div", { class: "group-join" }, role, charSel, newChar, join, g.me && !org ? leave : null),
@@ -4619,6 +4651,21 @@ function playCard(g) {
 }
 
 // ================= Member: characters =================
+
+/** "GS updated 20 days ago" — highlighted when older than the server's limit (or not set). */
+function gsAge(c, staleDays = 7, pq = "") {
+  if (c.gs == null) return h("div", { class: "gs-age stale" }, icon("triangle-alert", 13), "GS not set — groups with a GS requirement put you in the reserve");
+  if (!c.gsUpdated) return h("div", { class: "gs-age stale" }, icon("clock", 13), "GS update date unknown",
+    h("button", { class: "btn ghost sm", onclick: async e => { if (await act(e.currentTarget, () => gApi("POST", `/me/characters/${encodeURIComponent(c.name)}/gs-confirm${pq}`), "GS confirmed.") !== undefined) refresh(); } },
+      icon("check", 13), "Still current"));
+  const days = Math.floor((Date.now() - c.gsUpdated) / 86400000);
+  const stale = days >= staleDays;
+  const confirm = stale ? h("button", { class: "btn ghost sm", title: "The GS hasn't changed — mark it as current",
+    onclick: async e => { if (await act(e.currentTarget, () => gApi("POST", `/me/characters/${encodeURIComponent(c.name)}/gs-confirm${pq}`), "GS confirmed.") !== undefined) refresh(); } },
+    icon("check", 13), "Still current") : null;
+  return h("div", { class: `gs-age${stale ? " stale" : ""}`, title: new Date(c.gsUpdated).toLocaleString() },
+    icon(stale ? "triangle-alert" : "clock", 13), days === 0 ? "GS updated today" : `GS updated ${days} day${days === 1 ? "" : "s"} ago`, stale ? " — time to update" : "", confirm);
+}
 
 async function pageChars(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "My characters"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
@@ -4639,14 +4686,26 @@ async function pageChars(main) {
       onclick: () => { store.set("gb.charProject", p.key); refresh(); }
     }, icon(p.allowed ? "gamepad-2" : "lock", 15), p.name))) : null;
 
-  // Notifications
-  const dm = h("input", { type: "checkbox", class: "switch", checked: data.dmEnabled, "aria-label": "Group DMs" });
-  dm.addEventListener("change", () => act(null, () => gApi("PUT", "/me/dm", { enabled: dm.checked }),
-    dm.checked ? "Group DMs turned on." : "Group DMs turned off."));
-  const prefs = h("div", { class: "card pref-row" }, toneChip("bell", 16),
-    h("div", { class: "grow" }, h("b", {}, "Group DMs"),
-      h("div", { class: "muted small" }, "Get a DM when a group is posted for an activity whose role you have. Same as 🔔 / 🔕 under the LFG panel or /lfg-dm.")),
-    dm);
+  // My notifications: only the DMs an admin turned on for this server
+  const NOTIFY_LABELS = {
+    lfgNewGroup: ["📣 New groups", "A group is posted for an activity whose role you have. Same as 🔔 / 🔕 under the LFG panel or /lfg-dm."],
+    lfgPromoted: ["⬆️ Moved into the group", "You were moved from the reserve into the group."],
+    lfgTimeChanged: ["🕒 Start time changed", "The organizer changed the time of a group you're in."],
+    ticketResult: ["🎫 Ticket result", "Your application was approved or denied."],
+    gsReminder: ["📈 GS reminder", "Weekly: time to update the GS of your characters."]
+  };
+  const prefs = h("div", { class: "card" }, cardHead("bell", "My notifications"), skeletonLines(2));
+  gApi("GET", "/me/notify").then(list => {
+    prefs.replaceChildren(cardHead("bell", "My notifications"), list.length
+      ? h("div", {}, list.map(n => {
+        const [title, hint] = NOTIFY_LABELS[n.key] || [n.key, ""];
+        const sw = h("input", { type: "checkbox", class: "switch", checked: n.enabled, "aria-label": title });
+        sw.addEventListener("change", () => act(null, () => gApi("PUT", "/me/notify", { key: n.key, enabled: sw.checked }),
+          `${title.replace(/^\S+\s/, "")}: ${sw.checked ? "on" : "off"}.`));
+        return h("div", { class: "pref-row" }, h("div", { class: "grow" }, h("b", {}, title), h("div", { class: "muted small" }, hint)), sw);
+      }))
+      : h("p", { class: "muted small" }, "The bot sends no DMs on this server right now — admins turn them on in Settings."));
+  }).catch(e => prefs.replaceChildren(cardHead("bell", "My notifications"), empty(e.message)));
 
   const isCustom = ic => /^<a?:[^:]+:\d+>$/.test(ic || "");
   const cards = data.characters.map(c => {
@@ -4689,6 +4748,7 @@ async function pageChars(main) {
       h("div", { class: "char-edit-head" }, badge,
         h("div", { class: "grow" }, h("div", { class: "row", style: "gap:4px;flex-wrap:nowrap" }, h("b", { class: "char-name" }, c.name), rename), clsName),
         c.gs ? h("span", { class: "gs big" }, `GS ${c.gs}`) : null),
+      gsAge(c, data.gsStaleDays, pq),
       h("div", { class: "char-fields" },
         h("div", { class: "field" }, h("label", {}, "Class"), cls),
         h("div", { class: "field gs-field" }, h("label", {}, "GS"), gs)),
@@ -5269,8 +5329,8 @@ function googleCalendarUrl(ev) {
   return `https://calendar.google.com/calendar/render?${q}`;
 }
 
-async function guildCalendar(holder) {
-  const data = await gApi("GET", "/lfg/calendar");
+async function guildCalendar(holder, path = "/lfg/calendar", forMember = false) {
+  const data = await gApi("GET", path);
   const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + i); return d; });
   const sameDay = (ms, d) => { const x = new Date(ms); return x.getFullYear() === d.getFullYear() && x.getMonth() === d.getMonth() && x.getDate() === d.getDate(); };
   const events = data.events.slice().sort((a, b) => a.start - b.start);
@@ -5281,7 +5341,11 @@ async function guildCalendar(holder) {
     h("div", { class: "muted small" }, [ev.project, ev.channel ? `#${ev.channel}` : null].filter(Boolean).join(" · ")),
     h("div", { class: "small" }, ev.recurring ? `${ev.total} slots` : `👥 ${ev.filled}/${ev.total}${ev.reserve ? ` · reserve ${ev.reserve}` : ""}`),
     ev.organizer ? h("div", { class: "small" }, member(ev.organizer)) : null,
+    ev.mine ? h("span", { class: `badge ${ev.mine === "group" ? "ok" : "wait"}` }, ev.mine === "group" ? "You're in" : "Reserve") : null,
     h("div", { class: "row wk-actions" },
+      forMember && !ev.recurring ? h("button", { class: "btn sm", title: "Open this group in Groups to sign up",
+        onclick: () => { store.set("gb.focusGroup", ev.id); store.set("gb.playProject", "all"); state.tab = "play"; store.set("gb.tab", "play"); renderShell(); } },
+        icon(ev.mine ? "users-round" : "user-plus", 14), ev.mine ? "Open" : "Sign up") : null,
       ev.jumpUrl ? h("a", { class: "btn ghost sm", href: ev.jumpUrl, target: "_blank", rel: "noopener" }, icon("external-link", 14), "Discord") : null,
       h("a", { class: "btn ghost sm", href: googleCalendarUrl(ev), target: "_blank", rel: "noopener", title: "Add this group to your Google Calendar" },
         icon("calendar-plus", 14), "Google Calendar")));
@@ -5430,4 +5494,68 @@ async function guildInactive(holder) {
     h("div", { class: "row", style: "margin-bottom:10px" }, h("span", { class: "muted" }, "No activity for"), days, h("span", { class: "muted" }, "days"), role),
     body));
   await load();
+}
+
+// ================= Member: calendar, top players, guild roster =================
+
+async function pageSchedule(main) {
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "Calendar"),
+    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
+  const holder = h("div", {}, h("div", { class: "card" }, skeletonLines(4)));
+  let guild = { roster: null, top: null, projects: [] };
+  try { guild = await gApi("GET", "/me/guild"); } catch { /* calendar still works */ }
+  const tabs = [["calendar", "📅 Calendar"]];
+  if (guild.top) tabs.push(["top", "🏆 Top players"]);
+  if (guild.roster) tabs.push(["roster", "👥 Guild roster"]);
+  let tab = store.get("gb.scheduleTab") || "calendar";
+  if (!tabs.some(([k]) => k === tab)) tab = "calendar";
+  if (tabs.length > 1) main.append(tabsRow(tabs, tab, "gb.scheduleTab"));
+  main.append(holder);
+  try {
+    if (tab === "calendar") await guildCalendar(holder, "/me/calendar", true);
+    else if (tab === "top") memberTop(holder, guild.top);
+    else memberRoster(holder, guild);
+  } catch (e) { holder.replaceChildren(empty(e.message)); }
+}
+
+function memberTop(holder, top) {
+  const medal = i => ["🥇", "🥈", "🥉"][i] || `${i + 1}.`;
+  holder.replaceChildren(h("div", { class: "card" },
+    h("p", { class: "muted small" }, "Most groups played in the last 30 days (no-shows are not counted)."),
+    top.length ? h("div", { class: "list" }, top.map((t, i) => h("div", { class: `list-row${t.member.id === (state.me && state.me.id) ? " me" : ""}` },
+      h("span", { class: "top-place" }, medal(i)), h("div", { class: "grow" }, member(t.member)),
+      t.role ? h("span", { class: "chip" }, t.role) : null,
+      h("b", {}, `${t.groups} group${t.groups === 1 ? "" : "s"}`))))
+      : emptyState("trophy", "No groups yet", "Finished groups of the last 30 days appear here.")));
+}
+
+function memberRoster(holder, guild) {
+  const list = guild.roster;
+  const project = h("select", {}, h("option", { value: "" }, "All projects"), guild.projects.map(p => h("option", { value: p.key }, p.name)));
+  project.value = store.get("gb.mRosterProject") || (guild.projects.find(p => p.isDefault) || {}).key || "";
+  const role = h("select", {}, h("option", { value: "" }, "Any group role"), Object.entries(SLOT_ROLE_CHIP).map(([k, l]) => h("option", { value: k }, l)));
+  const minGs = h("input", { type: "number", min: "0", placeholder: "min GS", style: "width:110px" });
+  const search = h("input", { type: "search", placeholder: "Search member or character…", style: "flex:1;min-width:180px" });
+  const body = h("div", {});
+  const draw = () => {
+    store.set("gb.mRosterProject", project.value);
+    const q = search.value.trim().toLowerCase();
+    const rows = list.filter(c => (!project.value || c.project === project.value) && (!role.value || c.slotRoles.includes(role.value)) &&
+      (minGs.value === "" || (c.gs ?? -1) >= Number(minGs.value)) &&
+      (!q || c.character.toLowerCase().includes(q) || c.member.name.toLowerCase().includes(q)));
+    body.replaceChildren(h("p", { class: "muted small" }, `${rows.length} character(s). Find a tank or a healer for your group.`),
+      rows.length ? sortTable(rows, [
+        ["Member", r => r.member.name, r => member(r.member)],
+        ["Character", r => r.character, r => h("b", {}, r.character)],
+        ["Class", r => r.classRole ? r.classRole.name : "", r => r.classRole ? h("span", { class: "row", style: "gap:4px" }, classMark(r) || null, r.classRole.name) : h("span", { class: "muted" }, "—")],
+        ["Roles", r => r.slotRoles.join(), r => r.slotRoles.length ? r.slotRoles.map(x => h("span", { class: "chip" }, SLOT_ROLE_CHIP[x] || x)) : h("span", { class: "muted small" }, "any")],
+        ["GS", r => r.gs, r => r.gs == null ? h("span", { class: "muted" }, "—") : String(r.gs)]
+      ], 4) : emptyState("users", "Nobody matches", "Change the filters."));
+  };
+  project.addEventListener("change", draw);
+  role.addEventListener("change", draw);
+  for (const el of [minGs, search]) el.addEventListener("input", draw);
+  holder.replaceChildren(h("div", { class: "card" },
+    h("div", { class: "row", style: "margin-bottom:10px;flex-wrap:wrap" }, guild.projects.length > 1 ? project : null, role, minGs, search), body));
+  draw();
 }

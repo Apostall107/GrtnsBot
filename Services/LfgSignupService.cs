@@ -10,7 +10,7 @@ namespace LfgBot.Services;
 /// в меню организатора и для напоминаний.
 /// </summary>
 public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store, CharacterStore characters, LfgProjectStore projects,
-    GuildPrefsStore prefs, ILogger<LfgSignupService> logger)
+    GuildPrefsStore prefs, UserDmStore userDm, ILogger<LfgSignupService> logger)
 {
     /// <summary>Запись в слот или в резерв + сохранение + обновление поста.</summary>
     public async Task<string> JoinAsync(LfgGroup group, ulong userId, SlotRole role, string characterName)
@@ -258,7 +258,7 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
         var buttons = new ComponentBuilder().WithButton(Tx.Get(gid, "lfg.dm.openGroup"), style: ButtonStyle.Link, url: JumpUrl(group)).Build();
         if (prefs.Dm(gid).LfgTimeChanged) _ = Task.Run(async () =>
         {
-            foreach (var id in members)
+            foreach (var id in members.Where(id => !userDm.IsOff(gid, id, "lfgTimeChanged")))
             {
                 try
                 {
@@ -331,7 +331,7 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
     /// <summary>ЛС человеку, которого организатор перевёл из резерва в группу.</summary>
     public async Task NotifyPromotedAsync(LfgGroup group, ulong userId, Slot slot)
     {
-        if (!prefs.Dm(group.GuildId).LfgPromoted) return;
+        if (!userDm.Allowed(group.GuildId, userId, "lfgPromoted")) return;
         try
         {
             var user = client.GetUser(userId) as IUser ?? await client.Rest.GetUserAsync(userId);

@@ -928,7 +928,10 @@ public static partial class PanelApi
         ("PUT", "/me/room-prefs", "voice", "Saved room defaults (site)"),
         ("PUT", "/lfg/prefs", "lfg", "Changed LFG options (ready check, auto-replace, GS reminder)"),
         ("POST", "/lfg/gs-reminder/run", "lfg", "Sent the GS reminder"),
-        ("PUT", "/dm-prefs", "settings", "Changed bot DM settings")
+        ("PUT", "/dm-prefs", "settings", "Changed bot DM settings"),
+        ("POST", "/me/groups/{groupId}/ready", "lfg", "Marked ready (site)"),
+        ("PUT", "/me/notify", "lfg", "Changed own DM notifications (site)"),
+        ("POST", "/me/characters/{name}/gs-confirm", "lfg", "Confirmed GS is current (site)")
     ];
 
     private static readonly JsonSerializerOptions AuditJson = new(JsonSerializerDefaults.Web);

@@ -10,7 +10,7 @@ namespace LfgBot.Services;
 /// сообщение в выбранном канале с упоминаниями и/или ЛС (если ЛС «GS reminder» включены). Кнопка открывает окно ввода GS.
 /// </summary>
 public sealed class GsReminderService(DiscordSocketClient client, GuildPrefsStore prefs, CharacterStore characters,
-    LfgProjectStore projects, ILogger<GsReminderService> logger) : BackgroundService
+    LfgProjectStore projects, UserDmStore userDm, ILogger<GsReminderService> logger) : BackgroundService
 {
     public static readonly TimeSpan Every = TimeSpan.FromDays(7);
 
@@ -81,7 +81,7 @@ public sealed class GsReminderService(DiscordSocketClient client, GuildPrefsStor
 
         if (p.Dm.GsReminder)
         {
-            foreach (var (userId, list) in stale)
+            foreach (var (userId, list) in stale.Where(x => !userDm.IsOff(guildId, x.Key, "gsReminder")))
             {
                 try
                 {

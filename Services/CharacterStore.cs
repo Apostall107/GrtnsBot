@@ -87,7 +87,8 @@ public sealed class CharacterStore
     }
 
     /// <summary>GS персонажа: null — убрать.</summary>
-    public void SetGs(ulong guildId, ulong userId, string name, int? gs, string? scope = null)
+    /// <param name="confirm">Обновить дату, даже если GS не изменился («GS актуален»).</param>
+    public void SetGs(ulong guildId, ulong userId, string name, int? gs, string? scope = null, bool confirm = false)
     {
         if (string.IsNullOrWhiteSpace(name)) return;
         lock (_lock)
@@ -95,7 +96,7 @@ public sealed class CharacterStore
             var key = InfoKey(guildId, userId, name, scope);
             if (!_info.TryGetValue(key, out var info)) info = new CharacterInfo();
             var value = gs is { } v ? Math.Clamp(v, 0, 99999) : (int?)null;
-            if (value != info.Gs || info.GsUpdatedAt is null) info.GsUpdatedAt = DateTimeOffset.UtcNow;
+            if (confirm || value != info.Gs || info.GsUpdatedAt is null) info.GsUpdatedAt = DateTimeOffset.UtcNow;
             info.Gs = value;
             if (info.ClassRoleId is null && info.Comment is null && info.Gs is null) _info.Remove(key);
             else _info[key] = info;

@@ -4,6 +4,7 @@ using LfgBot.Models;
 using LfgBot.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -57,10 +58,11 @@ public static partial class PanelApi
     {
         // Активные сборы + моё место в каждом + мои персонажи для записи
         g.MapGet("/groups", (ulong guildId, ClaimsPrincipal user, DiscordSocketClient client, LfgStore lfg, CharacterStore characters,
-            LfgSignupService signup, LfgProjectStore projects) =>
+            LfgSignupService signup, LfgProjectStore projects, [FromServices] GuildPrefsStore prefs) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var me = user.UserId()!.Value;
+            var readyCheck = prefs.Get(guildId).ReadyCheck;
             return Results.Ok(new
             {
                 groups = ActiveGroups(lfg, guildId).Select(x =>
@@ -77,6 +79,14 @@ public static partial class PanelApi
                         blocked = signup.ProjectBlock(x, me) is { } b ? StripMarkdown(System.Text.RegularExpressions.Regex.Replace(b, "<@&(\\d+)>",
                             m => "@" + (guild.GetRole(ulong.Parse(m.Groups[1].Value))?.Name ?? "role"))) : null,
                         characters = characters.Get(guildId, me, signup.Scope(x)),
+                        // Какими ролями может играть каждый персонаж (по его классу; null — любыми)
+                        characterRoles = characters.Get(guildId, me, signup.Scope(x)).ToDictionary(n => n, n =>
+                            characters.GetInfo(guildId, me, n, signup.Scope(x))?.ClassRoleId is { } cid &&
+                            projects.EffectiveClassSlotRoles(guildId, x.ProjectKey).TryGetValue(cid, out var sr) && sr.Count > 0
+                                ? sr.Select(r => r.ToString()).ToList() : null),
+                        // Напоминание уже было: можно нажать «Готов»
+                        readyCheck = readyCheck && x.ReminderMessageId is not null,
+                        myReady = mySlot?.Ready ?? false,
                         owner = Member(guild, x.OwnerId),
                         channel = guild.GetTextChannel(x.ChannelId)?.Name,
                         startsAt = x.StartsAt?.ToUnixTimeMilliseconds(),
@@ -110,6 +120,7 @@ public static partial class PanelApi
                             classIcon = s.ClassIcon,
                             gs = s.Gs,
                             attended = s.Attended,
+                            ready = s.Ready,
                             requiredRole = SlotRequiredRole(guild, s),
                             requiredClasses = SlotClasses(guild, s),
                             noRequirement = x.RequiredRoleIds.Count > 0 && s.Requirement == SlotRequirement.Open
@@ -131,7 +142,7 @@ public static partial class PanelApi
 
         // Записаться: роль + персонаж (новый персонаж сохраняется, как в Discord)
         g.MapPost("/groups/{groupId}/join", async (ulong guildId, string groupId, JoinBody body, ClaimsPrincipal user,
-            LfgStore lfg, CharacterStore characters, LfgSignupService signup) =>
+            LfgStore lfg, CharacterStore characters, LfgSignupService signup, [FromServices] LfgProjectStore projects) =>
         {
             if (!lfg.Groups.TryGetValue(groupId, out var group) || group.GuildId != guildId) return Error("This group is no longer active.");
             if (signup.ProjectBlock(group, user.UserId()!.Value) is not null) return Error("You don't have the role of this group's project.");
@@ -140,6 +151,10 @@ public static partial class PanelApi
             if (name.Length is 0 or > CharacterStore.MaxNameLength) return Error($"Character name: 1–{CharacterStore.MaxNameLength} characters.");
 
             var me = user.UserId()!.Value;
+            // Класс персонажа должен играть эту роль (LFG → Classes), как в Discord
+            var classId = characters.GetInfo(guildId, me, name, signup.Scope(group))?.ClassRoleId;
+            if (!projects.ClassFits(guildId, group.ProjectKey, classId, role))
+                return Error($"{name}'s class doesn't play {role.Label()} — pick another character or role.");
             await group.Gate.WaitAsync();
             string? error;
             try { error = group.CheckJoin(me, role); }
@@ -180,7 +195,7 @@ public static partial class PanelApi
         // Мои персонажи: класс-роль и заметка
         // Мои персонажи выбранного проекта (?project=key, пусто — по умолчанию): класс, GS, заметка
         g.MapGet("/characters", (ulong guildId, string? project, ClaimsPrincipal user, DiscordSocketClient client, CharacterStore characters,
-            LfgProfileService profiles, LfgNotifyStore notify, LfgProjectStore projects) =>
+            LfgProfileService profiles, LfgNotifyStore notify, LfgProjectStore projects, [FromServices] GuildPrefsStore prefs) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var me = user.UserId()!.Value;
@@ -214,9 +229,12 @@ public static partial class PanelApi
                         name,
                         classRole = info?.ClassRoleId is { } id ? Role(guild, id) : null,
                         comment = info?.Comment,
-                        gs = info?.Gs
+                        gs = info?.Gs,
+                        gsUpdated = info?.GsUpdatedAt?.ToUnixTimeMilliseconds()
                     };
                 }),
+                // Через сколько дней GS считается устаревшим (как в напоминании о GS)
+                gsStaleDays = Math.Clamp(prefs.Get(guildId).GsReminderDays, 1, 365),
                 maxCharacters = CharacterStore.MaxPerUser,
                 maxComment = CharacterStore.MaxCommentLength
             });
@@ -486,6 +504,8 @@ public static partial class PanelApi
                 attended = mine?.Attended ?? 0,
                 noShows = mine?.NoShows ?? 0,
                 reliability = mine?.Reliability,
+                // За последние 30 дней: сборы, пришёл / не пришёл, любимая роль
+                last30 = Last30(list, me),
                 recent = list.Where(e => e.OwnerId == me || e.Members.Any(m => m.UserId == me))
                     .OrderByDescending(e => e.ClosedAt).Take(10)
                     .Select(e => new
@@ -556,6 +576,20 @@ public static partial class PanelApi
             notify.SetEnabled(guildId, user.UserId()!.Value, body.Enabled);
             return Results.Ok();
         });
+    }
+
+    private static object Last30(IReadOnlyList<LfgHistoryEntry> list, ulong me)
+    {
+        var since = DateTimeOffset.UtcNow.AddDays(-30);
+        var mine = list.Where(e => (e.StartsAt ?? e.ClosedAt) >= since)
+            .SelectMany(e => e.Members.Where(m => m.UserId == me)).ToList();
+        return new
+        {
+            groups = mine.Count,
+            came = mine.Count(m => m.Attended == true),
+            noShow = mine.Count(m => m.Attended == false),
+            role = mine.GroupBy(m => m.Role).OrderByDescending(x => x.Count()).Select(x => x.Key).FirstOrDefault()
+        };
     }
 
     /// <summary>Ключ хранения персонажей проекта; null — нет роли проекта (менять его персонажей нельзя).</summary>
