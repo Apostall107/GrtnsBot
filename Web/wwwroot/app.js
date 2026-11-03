@@ -271,10 +271,40 @@ function cardHead(ic, title, ...actions) {
 function sectionLabel(text) { return h("div", { class: "section-label" }, text); }
 
 /** Statistic card: icon, label, value, supporting text; clickable when onClick is given. */
-function statCard(ic, label, value, sub, onClick) {
+function statCard(ic, label, value, sub, onClick, trend) {
   return h(onClick ? "button" : "div", { class: `stat ${toneOf(ic)}${onClick ? " clickable" : ""}`, onclick: onClick || null },
     h("div", { class: "stat-top" }, h("span", { class: "label" }, label), h("span", { class: "stat-icon" }, icon(ic, 16))),
-    h("div", { class: "value" }, value), sub ? h("div", { class: "sub" }, sub) : null);
+    h("div", { class: "value" }, value), sub ? h("div", { class: "sub" }, sub) : null, trend ? trendRow(trend) : null);
+}
+
+/** Change vs yesterday / 7 days ago (▲ ▼) + a sparkline of the daily snapshots. */
+function trendRow(t) {
+  const chip = (delta, period, title) => {
+    if (delta === null || delta === undefined) return h("span", { class: "trend flat", title: `${title}: no snapshot yet` }, `— ${period}`);
+    const cls = delta > 0 ? "up" : delta < 0 ? "down" : "flat";
+    const arrow = delta > 0 ? "▲" : delta < 0 ? "▼" : "•";
+    return h("span", { class: `trend ${cls}`, title }, `${arrow} ${delta > 0 ? "+" : delta < 0 ? "−" : ""}${Math.abs(delta)} ${period}`);
+  };
+  return h("div", { class: "trend-row" },
+    chip(t.day, "24h", "Change since yesterday's daily snapshot"),
+    chip(t.week, "7d", "Change since the snapshot 7 days ago"),
+    sparkline(t.history || []));
+}
+
+function sparkline(points) {
+  if (points.length < 2) return null;
+  const w = 64, hgt = 22, vals = points.map(p => p.value);
+  const min = Math.min(...vals), max = Math.max(...vals), span = max - min || 1;
+  const xy = vals.map((v, i) => `${(i / (vals.length - 1) * w).toFixed(1)},${(hgt - 2 - (v - min) / span * (hgt - 4)).toFixed(1)}`).join(" ");
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", `0 0 ${w} ${hgt}`); svg.setAttribute("width", w); svg.setAttribute("height", hgt); svg.setAttribute("class", "sparkline");
+  const title = document.createElementNS(ns, "title");
+  title.textContent = points.map(p => `${p.date}: ${p.value}`).join("\n");
+  const line = document.createElementNS(ns, "polyline");
+  line.setAttribute("points", xy); line.setAttribute("fill", "none"); line.setAttribute("stroke", "currentColor"); line.setAttribute("stroke-width", "1.6");
+  svg.append(title, line);
+  return svg;
 }
 
 /** Empty state: what's missing and what to do next. */
@@ -1356,9 +1386,9 @@ async function pageOverview(main) {
     holder.replaceChildren(
       sectionLabel(o.guild.name),
       h("div", { class: "stats" },
-        statCard("users", "Members", o.guild.members, "on the server"),
+        statCard("users", "Members", o.guild.members, "on the server", null, o.trends.members),
         statCard("swords", "LFG groups", o.lfg.groups, `${o.lfg.activities} activities`, go("lfg")),
-        statCard("ticket", "Open tickets", o.tickets.open, `${o.tickets.projects} projects`, go("tickets")),
+        statCard("ticket", "Open tickets", o.tickets.open, `${o.tickets.projects} projects`, go("tickets"), o.trends.tickets),
         statCard("headphones", "Active rooms", o.voice.rooms, `${o.voice.creators} 'join to create' channels`, go("voice"))),
       sectionLabel("Bot"),
       h("div", { class: "card" }, cardHead("bot", "Bot status"),
@@ -3353,9 +3383,9 @@ async function pageHome(main) {
   main.append(server);
   gApi("GET", "/me/summary").then(sum => {
     server.replaceChildren(sectionLabel("Server"), h("div", { class: "stats" },
-      statCard("users", "Members", sum.server.members, sum.server.name),
+      statCard("users", "Members", sum.server.members, sum.server.name, null, sum.trends.members),
       statCard("swords", "Active groups", sum.activeGroups, sum.recruiting ? `${sum.recruiting} recruiting` : "none recruiting", go("play")),
-      statCard("ticket", "Open tickets", sum.openTickets, "applications in progress", can("tickets") ? go("tickets") : null),
+      statCard("ticket", "Open tickets", sum.openTickets, "applications in progress", can("tickets") ? go("tickets") : null, sum.trends.tickets),
       statCard("headphones", "Voice rooms", sum.voiceRooms, "temporary rooms now", can("voice") ? go("voice") : null)));
   }).catch(e => server.replaceChildren(sectionLabel("Server"), empty(e.message)));
 
@@ -3996,6 +4026,7 @@ const HELP = {
     panel: [["Using the panel", [
       "Tabs on the left show only the sections you have access to.",
       "The cards on this page show counters; click one to open its section.",
+      "**Members** and **Open tickets** show the change ▲▼ since yesterday (24h) and over 7 days, plus a 30-day mini chart. The bot saves a snapshot once a day (start of the day, server time zone); the numbers appear from the next day.",
       "❔ **Guide** (orange, top right) on every tab explains that module; 🔄 **Refresh** (green) reloads the data.",
       "Where a module works per project (LFG, Tickets, Groups, My characters) — tabs at the top switch the project.",
       "Every removal asks for confirmation first."
