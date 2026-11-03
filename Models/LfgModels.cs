@@ -29,9 +29,9 @@ public static class SlotRoleExtensions
 }
 
 /// <summary>
-/// Требование роли для отдельного слота. Хранится кодом: <see cref="Inherit"/> — любая из требуемых ролей сбора,
-/// <see cref="Open"/> — слот без требования роли, иначе — id конкретной роли (одной из требуемых ролей сбора).
-/// На сайте: "" — общее, "none" — без требования, "&lt;id&gt;" — роль.
+/// Требование слота. Код: <see cref="Inherit"/> — требование сбора (классы сбора), <see cref="Open"/> — без требования;
+/// свои классы слота хранятся отдельно (<see cref="Slot.Classes"/>, «Templar или Gladiator»). Старые коды-id роли читаются как один класс.
+/// На сайте одно значение на слот: "" — как у сбора, "none" — без требования, "id,id" — классы слота.
 /// </summary>
 public static class SlotRequirement
 {
@@ -39,37 +39,64 @@ public static class SlotRequirement
     public const ulong Open = 1;
     public const string OpenDto = "none";
 
-    /// <summary>Коды для <paramref name="count"/> слотов из значений сайта. Роль слота — только из требуемых ролей сбора.</summary>
-    public static List<ulong> Parse(IEnumerable<string?>? raw, int count, IReadOnlyCollection<ulong> groupRoles)
+    /// <summary>Требования слотов: коды и классы (по одному элементу на слот; пустые списки — у всех как у сбора).</summary>
+    public sealed record Set(List<ulong> Codes, List<List<ulong>> Classes)
     {
-        var list = (raw ?? []).Take(count).Select(v =>
+        public static readonly Set Empty = new([], []);
+    }
+
+    /// <summary>Значения сайта → требования для <paramref name="count"/> слотов. Классы — только из <paramref name="allowed"/>.</summary>
+    public static Set Parse(IEnumerable<string?>? raw, int count, IReadOnlyCollection<ulong> allowed)
+    {
+        var codes = new List<ulong>();
+        var classes = new List<List<ulong>>();
+        foreach (var v in (raw ?? []).Take(count))
         {
-            if (groupRoles.Count == 0 || string.IsNullOrWhiteSpace(v)) return Inherit;
-            if (v == OpenDto) return Open;
-            return ulong.TryParse(v, out var id) && groupRoles.Contains(id) ? id : Inherit;
-        }).ToList();
-        while (list.Count < count) list.Add(Inherit);
-        return list.All(x => x == Inherit) ? [] : list;
+            var t = (v ?? "").Trim();
+            if (t == OpenDto) { codes.Add(Open); classes.Add([]); continue; }
+            var ids = t.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(x => ulong.TryParse(x, out var id) ? id : 0).Where(id => id > Open && allowed.Contains(id)).Distinct().Take(10).ToList();
+            codes.Add(Inherit);
+            classes.Add(ids);
+        }
+        while (codes.Count < count) { codes.Add(Inherit); classes.Add([]); }
+        return new Set(codes.All(x => x == Inherit) ? [] : codes, classes.All(x => x.Count == 0) ? [] : classes);
     }
 
     /// <summary>Значения для сайта: по одному на слот.</summary>
-    public static IEnumerable<string> ToDto(IReadOnlyList<ulong>? codes, int count) =>
-        Enumerable.Range(0, count).Select(i => codes is not null && i < codes.Count ? ToDto(codes[i]) : "");
+    public static IEnumerable<string> ToDto(IReadOnlyList<ulong>? codes, IReadOnlyList<List<ulong>>? classes, int count) =>
+        Enumerable.Range(0, count).Select(i =>
+        {
+            if (classes is not null && i < classes.Count && classes[i].Count > 0) return string.Join(",", classes[i]);
+            var code = codes is not null && i < codes.Count ? codes[i] : Inherit;
+            return code switch { Inherit => "", Open => OpenDto, _ => code.ToString() };
+        });
 
-    public static string ToDto(ulong code) => code switch { Inherit => "", Open => OpenDto, _ => code.ToString() };
-
-    /// <summary>Проставить коды слотам (лишние/недостающие — общее требование).</summary>
-    public static void Apply(IReadOnlyList<Slot> slots, IReadOnlyList<ulong>? codes)
+    /// <summary>Проставить требования слотам (лишние/недостающие — как у сбора).</summary>
+    public static void Apply(IReadOnlyList<Slot> slots, IReadOnlyList<ulong>? codes, IReadOnlyList<List<ulong>>? classes = null)
     {
         for (var i = 0; i < slots.Count; i++)
-            slots[i].Requirement = codes is not null && i < codes.Count ? codes[i] : Inherit;
+        {
+            var code = codes is not null && i < codes.Count ? codes[i] : Inherit;
+            var own = classes is not null && i < classes.Count ? classes[i].ToList() : [];
+            if (code > Open) { own = own.Count > 0 ? own : [code]; code = Inherit; } // старый формат: id одной роли
+            slots[i].Requirement = code;
+            slots[i].Classes = own;
+        }
     }
 
-    /// <summary>Коды слотов (пусто — у всех общее требование).</summary>
+    /// <summary>Коды слотов (пусто — у всех как у сбора).</summary>
     public static List<ulong> Of(IEnumerable<Slot> slots)
     {
         var list = slots.Select(s => s.Requirement).ToList();
         return list.All(x => x == Inherit) ? [] : list;
+    }
+
+    /// <summary>Классы слотов (пусто — ни у одного слота своих нет).</summary>
+    public static List<List<ulong>> ClassesOf(IEnumerable<Slot> slots)
+    {
+        var list = slots.Select(s => s.Classes.ToList()).ToList();
+        return list.All(x => x.Count == 0) ? [] : list;
     }
 }
 
@@ -101,6 +128,10 @@ public sealed class Slot
     /// 0 — общие требуемые роли сбора, 1 — без требования роли, иначе id одной из требуемых ролей.
     /// </summary>
     public ulong Requirement { get; set; }
+    /// <summary>Свои классы слота (любой из); пусто — по <see cref="Requirement"/>.</summary>
+    public List<ulong> Classes { get; set; } = [];
+    /// <summary>Нажал «✅ Готов» в напоминании перед стартом.</summary>
+    public bool Ready { get; set; }
     [JsonIgnore] public bool IsFree => UserId is null;
 
     public void Clear()
@@ -113,6 +144,7 @@ public sealed class Slot
         Comment = null;
         Gs = null;
         Attended = null;
+        Ready = false;
     }
 }
 
@@ -196,7 +228,7 @@ public sealed class LfgGroup
         OwnerId = draft.OwnerId;
         ActivityName = draft.ActivityName ?? "Activity";
         PingRoleId = draft.PingRoleId;
-        Slots = draft.Slots.Select(s => new Slot { Role = s.Role, Requirement = s.Requirement }).ToList();
+        Slots = draft.Slots.Select(s => new Slot { Role = s.Role, Requirement = s.Requirement, Classes = s.Classes.ToList() }).ToList();
         RequiredRoleIds = draft.RequiredRoleIds.ToList();
         MinGs = draft.MinGs;
         ProjectKey = draft.ProjectKey;
@@ -226,13 +258,16 @@ public sealed class LfgGroup
     public string? Note { get; set; }
     [JsonIgnore] public bool HasRequirements => RequiredRoleIds.Count > 0 || MinGs is not null;
 
-    /// <summary>Какие роли нужны для слота (любая из; пусто — без требования роли).</summary>
-    public IReadOnlyList<ulong> RequiredFor(Slot s) => s.Requirement switch
+    /// <summary>Какие классы нужны для слота (любой из; пусто — без требования).</summary>
+    public IReadOnlyList<ulong> RequiredFor(Slot s) => s.Classes.Count > 0 ? s.Classes : s.Requirement switch
     {
         SlotRequirement.Inherit => RequiredRoleIds,
         SlotRequirement.Open => [],
         var id => [id]
     };
+
+    /// <summary>У сбора есть требования по классам (общие или у слотов).</summary>
+    [JsonIgnore] public bool HasClassRequirements => RequiredRoleIds.Count > 0 || Slots.Any(s => s.Classes.Count > 0 || s.Requirement > SlotRequirement.Open);
 
     /// <summary>Напоминание за 10 минут уже отправлено (или не нужно).</summary>
     public bool Reminded { get; set; }
@@ -425,6 +460,21 @@ public sealed class LfgGroup
     /// <summary>Организатор убирает человека из резерва.</summary>
     public string? RemoveFromReserve(ulong userId) =>
         Reserve.RemoveAll(r => r.UserId == userId) > 0 ? null : Tx.Get(GuildId, "lfg.err.reserveGone");
+
+    /// <summary>Перевести запись резерва в конкретный слот (автозамена).</summary>
+    public Slot PromoteInto(ReserveEntry entry, int index)
+    {
+        Reserve.Remove(entry);
+        var slot = Slots[index];
+        slot.UserId = entry.UserId;
+        slot.TakenAs = entry.Role;
+        slot.CharacterName = entry.CharacterName;
+        slot.ClassRoleId = entry.ClassRoleId;
+        slot.ClassIcon = entry.ClassIcon;
+        slot.Comment = entry.Comment;
+        slot.Gs = entry.Gs;
+        return slot;
+    }
 
     /// <summary>
     /// Организатор переводит человека из резерва в группу: сначала подходящий по роли слот,

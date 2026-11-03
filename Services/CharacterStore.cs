@@ -10,7 +10,12 @@ public sealed class CharacterInfo
     public string? Comment { get; set; }
     /// <summary>Gear score персонажа (для требований сборов).</summary>
     public int? Gs { get; set; }
+    /// <summary>Когда GS меняли последний раз (для напоминания обновить GS).</summary>
+    public DateTimeOffset? GsUpdatedAt { get; set; }
 }
+
+/// <summary>Персонаж сервера для ростера: владелец, проект (scope), имя и профиль.</summary>
+public sealed record RosterCharacter(ulong UserId, string? Scope, string Name, CharacterInfo? Info);
 
 /// <summary>
 /// Сохранённые ники персонажей пользователя на сервере (data/characters.json)
@@ -56,7 +61,7 @@ public sealed class CharacterStore
         if (string.IsNullOrWhiteSpace(name)) return null;
         lock (_lock)
             return _info.TryGetValue(InfoKey(guildId, userId, name, scope), out var i)
-                ? new CharacterInfo { ClassRoleId = i.ClassRoleId, Comment = i.Comment, Gs = i.Gs }
+                ? new CharacterInfo { ClassRoleId = i.ClassRoleId, Comment = i.Comment, Gs = i.Gs, GsUpdatedAt = i.GsUpdatedAt }
                 : null;
     }
 
@@ -89,10 +94,37 @@ public sealed class CharacterStore
         {
             var key = InfoKey(guildId, userId, name, scope);
             if (!_info.TryGetValue(key, out var info)) info = new CharacterInfo();
-            info.Gs = gs is { } v ? Math.Clamp(v, 0, 99999) : null;
+            var value = gs is { } v ? Math.Clamp(v, 0, 99999) : (int?)null;
+            if (value != info.Gs || info.GsUpdatedAt is null) info.GsUpdatedAt = DateTimeOffset.UtcNow;
+            info.Gs = value;
             if (info.ClassRoleId is null && info.Comment is null && info.Gs is null) _info.Remove(key);
             else _info[key] = info;
             SaveInfo();
+        }
+    }
+
+    /// <summary>Все персонажи сервера (все проекты): для ростера и напоминаний.</summary>
+    public IReadOnlyList<RosterCharacter> All(ulong guildId)
+    {
+        var prefix = $"{guildId}:";
+        lock (_lock)
+        {
+            var result = new List<RosterCharacter>();
+            foreach (var (key, names) in _data)
+            {
+                if (!key.StartsWith(prefix, StringComparison.Ordinal)) continue;
+                var rest = key[prefix.Length..];
+                var at = rest.IndexOf('@');
+                var scope = at < 0 ? null : rest[(at + 1)..];
+                if (!ulong.TryParse(at < 0 ? rest : rest[..at], out var userId)) continue;
+                foreach (var name in names)
+                {
+                    _info.TryGetValue(InfoKey(guildId, userId, name, scope), out var i);
+                    result.Add(new RosterCharacter(userId, scope, name, i is null ? null
+                        : new CharacterInfo { ClassRoleId = i.ClassRoleId, Comment = i.Comment, Gs = i.Gs, GsUpdatedAt = i.GsUpdatedAt }));
+                }
+            }
+            return result;
         }
     }
 

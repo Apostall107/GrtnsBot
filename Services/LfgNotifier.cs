@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 namespace LfgBot.Services;
 
 /// <summary>Рассылает ЛС участникам с ролью активности о новом сборе. Работает в фоне, с паузой между сообщениями.</summary>
-public sealed class LfgNotifier(DiscordSocketClient client, LfgNotifyStore prefs, ILogger<LfgNotifier> logger)
+public sealed class LfgNotifier(DiscordSocketClient client, LfgNotifyStore prefs, GuildPrefsStore guildPrefs, ILogger<LfgNotifier> logger)
 {
     // Пауза между ЛС, чтобы Discord не посчитал рассылку спамом
     private static readonly TimeSpan Delay = TimeSpan.FromSeconds(1);
@@ -19,7 +19,14 @@ public sealed class LfgNotifier(DiscordSocketClient client, LfgNotifyStore prefs
 
     private DateTimeOffset _pausedUntil = DateTimeOffset.MinValue;
 
-    public void Start(LfgGroup group, string jumpUrl) => _ = Task.Run(() => SendAsync(group, jumpUrl));
+    /// <summary>Рассылка включена на сервере (Settings → Direct messages). По умолчанию — нет.</summary>
+    public bool Enabled(ulong guildId) => guildPrefs.Dm(guildId).LfgNewGroup;
+
+    public void Start(LfgGroup group, string jumpUrl)
+    {
+        if (!Enabled(group.GuildId)) return;
+        _ = Task.Run(() => SendAsync(group, jumpUrl));
+    }
 
     private async Task SendAsync(LfgGroup group, string jumpUrl)
     {

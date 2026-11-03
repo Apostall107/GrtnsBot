@@ -92,6 +92,8 @@ public static partial class PanelApi
         MapMember(guild.MapGroup("/me").AddEndpointFilter(RequireMember));
         MapMemberRoles(guild.MapGroup("/member-roles").AddEndpointFilter(Require(PanelPermissions.Settings)));
         MapLfgExtra(guild.MapGroup("/lfg").AddEndpointFilter(Require(PanelPermissions.Lfg)));
+        MapGuildTools(guild.MapGroup("/lfg").AddEndpointFilter(Require(PanelPermissions.Lfg)),
+            guild.MapGroup("/dm-prefs").AddEndpointFilter(Require(PanelPermissions.Settings)));
         MapLog(guild.MapGroup("/log").AddEndpointFilter(Require(PanelPermissions.Log)));
         MapSettings(api.MapGroup("/settings").AddEndpointFilter(Require(PanelPermissions.Settings)));
         // Часовой пояс, автоудаление, напоминание — это настройки LFG: на сайте они во вкладке LFG (право LFG)
@@ -267,6 +269,8 @@ public static partial class PanelApi
                     gs = s.Gs,
                     attended = s.Attended,
                     requiredRole = SlotRequiredRole(guild, s),
+                    requiredClasses = SlotClasses(guild, s),
+                    ready = s.Ready,
                     noRequirement = x.RequiredRoleIds.Count > 0 && s.Requirement == SlotRequirement.Open
                 }),
                 reserve = x.Reserve.Select(r => new
@@ -1179,7 +1183,10 @@ public static partial class PanelApi
 
     /// <summary>Своя требуемая роль слота (null — общее требование сбора или без требования).</summary>
     private static object? SlotRequiredRole(SocketGuild guild, Slot s) =>
-        s.Requirement > SlotRequirement.Open ? Role(guild, s.Requirement) : null;
+        s.Classes.Count == 0 && s.Requirement > SlotRequirement.Open ? Role(guild, s.Requirement) : null;
+
+    /// <summary>Свои классы слота (пусто — как у сбора).</summary>
+    private static IEnumerable<object> SlotClasses(SocketGuild guild, Slot s) => s.Classes.Select(id => Role(guild, id));
 
     private static object Role(SocketGuild guild, ulong id)
     {

@@ -196,10 +196,15 @@ public sealed class LfgProjectStore
     public bool ClassFits(ulong guildId, string? projectKey, ulong? classRoleId, SlotRole role)
     {
         if (role == SlotRole.Any || classRoleId is not { } id) return true;
+        return !EffectiveClassSlotRoles(guildId, projectKey).TryGetValue(id, out var roles) || roles.Count == 0 || roles.Contains(role);
+    }
+
+    /// <summary>Роли в группе классов, действующих в проекте (свои классы проекта, иначе общие).</summary>
+    public IReadOnlyDictionary<ulong, List<SlotRole>> EffectiveClassSlotRoles(ulong guildId, string? projectKey)
+    {
         var key = Effective(guildId, projectKey)?.Key;
         var own = key is null ? null : ClassIcons(guildId, key);
-        var map = own is { Count: > 0 } ? ClassSlotRoles(guildId, key) : ClassSlotRoles(guildId);
-        return !map.TryGetValue(id, out var roles) || roles.Count == 0 || roles.Contains(role);
+        return own is { Count: > 0 } ? ClassSlotRoles(guildId, key) : ClassSlotRoles(guildId);
     }
 
     /// <summary>Категория голосовых комнат как задана: projectKey null — общая, иначе только проекта.</summary>

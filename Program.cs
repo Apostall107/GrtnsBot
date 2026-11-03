@@ -24,7 +24,9 @@ builder.Services.AddSingleton(new DiscordSocketConfig
     // GuildVoiceStates — временные комнаты.
     // GuildMembers — ЛС-оповещения LFG (привилегированный: включить "Server Members Intent" в Developer Portal → Bot)
     // GuildMessageReactions — роли по реакциям (панели ролей)
-    GatewayIntents = GatewayIntents.Guilds | GatewayIntents.GuildVoiceStates | GatewayIntents.GuildMembers | GatewayIntents.GuildMessageReactions,
+    // GuildMessages — кто когда писал (список неактивных; текст сообщений боту не нужен)
+    GatewayIntents = GatewayIntents.Guilds | GatewayIntents.GuildVoiceStates | GatewayIntents.GuildMembers | GatewayIntents.GuildMessageReactions
+        | GatewayIntents.GuildMessages,
     AlwaysDownloadUsers = true,
     LogLevel = LogSeverity.Info
 });
@@ -34,6 +36,8 @@ builder.Services.AddSingleton(sp => new InteractionService(
     new InteractionServiceConfig { LogLevel = LogSeverity.Info, UseCompiledLambda = true, ExitOnMissingModalField = false }));
 
 builder.Services.AddSingleton<BotSettingsStore>();
+builder.Services.AddSingleton<GuildPrefsStore>();
+builder.Services.AddSingleton<MemberActivityStore>();
 builder.Services.AddSingleton<AuditLog>();
 builder.Services.AddSingleton<LfgHistoryStore>();
 builder.Services.AddSingleton<LfgStore>();
@@ -75,6 +79,9 @@ builder.Services.AddSingleton<AnnouncementService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<AnnouncementService>());
 builder.Services.AddHostedService<BotService>();
 builder.Services.AddHostedService<GroupCleanupService>();
+builder.Services.AddHostedService<MemberActivityTracker>();
+builder.Services.AddSingleton<GsReminderService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<GsReminderService>());
 builder.Services.AddHostedService<RecurringLfgService>();
 builder.Services.AddHostedService<TicketAutoCloseService>();
 builder.Services.AddHostedService<TempVoiceService>();

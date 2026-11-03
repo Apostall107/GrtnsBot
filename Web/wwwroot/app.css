@@ -1463,3 +1463,18 @@ tr.unsaved > td:first-child { box-shadow: inset 3px 0 0 var(--warning); }
 .class-slots { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .slot-chip { cursor: pointer; opacity: .55; border: 1px solid var(--border); background: transparent; }
 .slot-chip.on { opacity: 1; background: var(--primary-soft); border-color: rgba(123, 77, 255, .5); color: var(--text-primary); }
+
+/* ===== Guild: calendar, sortable tables ===== */
+.wk-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.wk-day { background: var(--surface-2, rgba(255,255,255,.03)); border: 1px solid var(--border); border-radius: 10px; padding: 8px; min-height: 120px; display: flex; flex-direction: column; gap: 6px; }
+.wk-day.empty { opacity: .6; }
+.wk-day-head { font-weight: 700; font-size: 13px; color: var(--text-secondary); text-transform: capitalize; }
+.wk-event { border-left: 3px solid var(--primary, #7b4dff); background: rgba(123, 77, 255, .08); border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
+.wk-event.planned { border-left-style: dashed; background: rgba(255, 255, 255, .03); }
+.wk-time { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; font-weight: 700; }
+.wk-actions { gap: 4px; flex-wrap: wrap; margin-top: 2px; }
+.wk-actions .btn { padding: 2px 6px; font-size: 12px; }
+@media (max-width: 1100px) { .wk-grid { grid-template-columns: 1fr; } .wk-day { min-height: 0; } }
+th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+.warn-text { color: var(--warning); }
+.slot-req.set { color: var(--warning); }

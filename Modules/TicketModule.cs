@@ -8,7 +8,7 @@ using LfgBot.Services;
 namespace LfgBot.Modules;
 
 [RequireContext(ContextType.Guild)]
-public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelService panels, AuditLog audit, TicketService tickets) : InteractionModuleBase<SocketInteractionContext>
+public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelService panels, AuditLog audit, TicketService tickets, GuildPrefsStore prefs) : InteractionModuleBase<SocketInteractionContext>
 {
     private string NoAccessText => T("lfg.noAccess");
 
@@ -204,6 +204,7 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
     /// <summary>ЛС заявителю: каналы тикета сейчас исчезнут, а итог должен остаться у него.</summary>
     private async Task NotifyApprovedAsync(IUser applicant, TicketProject project, IEnumerable<ulong> roleIds)
     {
+        if (!prefs.Dm(Context.Guild.Id).TicketResult) return;
         var roles = string.Join(", ", roleIds.Select(id => Context.Guild.GetRole(id)?.Name ?? "role").Select(Format.Sanitize));
         try
         {
