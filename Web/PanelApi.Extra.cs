@@ -931,7 +931,10 @@ public static partial class PanelApi
         ("PUT", "/dm-prefs", "settings", "Changed bot DM settings"),
         ("POST", "/me/groups/{groupId}/ready", "lfg", "Marked ready (site)"),
         ("PUT", "/me/notify", "lfg", "Changed own DM notifications (site)"),
-        ("POST", "/me/characters/{name}/gs-confirm", "lfg", "Confirmed GS is current (site)")
+        ("POST", "/me/characters/{name}/gs-confirm", "lfg", "Confirmed GS is current (site)"),
+        ("POST", "/me/characters/{name}/armory", "lfg", "Linked character to the official armory (site)"),
+        ("DELETE", "/me/characters/{name}/armory", "lfg", "Unlinked character from the official armory (site)"),
+        ("POST", "/me/characters/{name}/armory/refresh", "lfg", "Refreshed character from the official armory (site)")
     ];
 
     private static readonly JsonSerializerOptions AuditJson = new(JsonSerializerDefaults.Web);

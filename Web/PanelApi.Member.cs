@@ -196,7 +196,8 @@ public static partial class PanelApi
         // Мои персонажи: класс-роль и заметка
         // Мои персонажи выбранного проекта (?project=key, пусто — по умолчанию): класс, GS, заметка
         g.MapGet("/characters", (ulong guildId, string? project, ClaimsPrincipal user, DiscordSocketClient client, CharacterStore characters,
-            LfgProfileService profiles, LfgNotifyStore notify, LfgProjectStore projects, [FromServices] GuildPrefsStore prefs) =>
+            LfgProfileService profiles, LfgNotifyStore notify, LfgProjectStore projects, [FromServices] GuildPrefsStore prefs,
+            [FromServices] ArmorySyncService armory) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var me = user.UserId()!.Value;
@@ -231,11 +232,14 @@ public static partial class PanelApi
                         classRole = info?.ClassRoleId is { } id ? Role(guild, id) : null,
                         comment = info?.Comment,
                         gs = info?.Gs,
-                        gsUpdated = info?.GsUpdatedAt?.ToUnixTimeMilliseconds()
+                        gsUpdated = info?.GsUpdatedAt?.ToUnixTimeMilliseconds(),
+                        armory = ArmoryDto(info?.Armory),
+                        gsLocked = armory.GsLocked(guildId, info)
                     };
                 }),
                 // Через сколько дней GS считается устаревшим (как в напоминании о GS)
                 gsStaleDays = Math.Clamp(prefs.Get(guildId).GsReminderDays, 1, 365),
+                armoryGs = prefs.Get(guildId).ArmoryGs,
                 maxCharacters = CharacterStore.MaxPerUser,
                 maxComment = CharacterStore.MaxCommentLength
             });
@@ -252,7 +256,8 @@ public static partial class PanelApi
         });
 
         g.MapPut("/characters/{name}", async (ulong guildId, string name, string? project, CharacterProfileBody body, ClaimsPrincipal user,
-            DiscordSocketClient client, CharacterStore characters, LfgProfileService profiles, LfgProjectStore projects) =>
+            DiscordSocketClient client, CharacterStore characters, LfgProfileService profiles, LfgProjectStore projects,
+            [FromServices] ArmorySyncService armory) =>
         {
             if (CharacterScope(guildId, project, user, client, projects) is not { } scope) return Error("You don't have the role of this project.");
             var me = user.UserId()!.Value;
@@ -266,6 +271,7 @@ public static partial class PanelApi
             if (body.Gs is < 0 or > 99999) return Error("GS: 0–99999.");
 
             characters.SetInfo(guildId, me, exact, true, roleId, true, body.Comment, scope.Value);
+            // GS привязанного к оружейной персонажа приходит оттуда — с сайта не меняется
             characters.SetGs(guildId, me, exact, body.Gs is > 0 ? body.Gs : null, scope.Value);
             var groups = await profiles.RefreshCharacterAsync(guildId, me, exact, scope.Value);
             return Results.Ok(new { groupsUpdated = groups });

@@ -344,6 +344,47 @@ function promptDialog(title, initial) {
   });
 }
 
+/** Find the character in the official AION 2 armory: search by name → pick one. Resolves to the hit or null. */
+function armoryPickDialog(name) {
+  return new Promise(resolve => {
+    const d = dialog();
+    const list = h("div", { class: "pick-list" });
+    const input = h("input", { value: name, maxlength: "32", placeholder: "Character name", style: "flex:1" });
+    const go = h("button", { class: "btn" }, icon("search", 15), "Search");
+    const search = async () => {
+      const q = input.value.trim();
+      if (q.length < 2) return toast("Enter at least 2 characters.", "warn");
+      list.replaceChildren(skeletonLines(2));
+      try {
+        const hits = await gApi("GET", `/me/armory/search?name=${encodeURIComponent(q)}`);
+        list.replaceChildren(...(hits.length ? hits.map(x => h("button", { onclick: () => { d.close(); resolve(x); } },
+          h("b", {}, x.name), h("span", { class: "muted small" }, [x.server, x.className, x.level ? `Lv ${x.level}` : null, x.race].filter(Boolean).join(" · "))))
+          : [empty("Nobody with this name in the official armory.")]));
+      } catch (e) { list.replaceChildren(empty(e.message)); }
+    };
+    go.addEventListener("click", search);
+    input.addEventListener("keydown", e => { if (e.key === "Enter") search(); });
+    d.replaceChildren(h("h2", {}, "Link the official profile"),
+      h("p", { class: "muted small" }, "Find your character on aion2.plaync.com. Combat power, item level and legion then update by themselves every day."),
+      h("div", { class: "row", style: "flex-wrap:nowrap" }, input, go), list,
+      h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => { d.close(); resolve(null); } }, "Cancel")));
+    d.onclose = () => resolve(null);
+    d.showModal();
+    input.focus();
+    if (name) search();
+  });
+}
+
+/** Roster cell: combat power from the official armory (link to the profile) and the legion. */
+function armoryCell(r) {
+  const a = r.armory;
+  if (!a) return h("span", { class: "muted" }, "—");
+  return h("a", { href: a.url, target: "_blank", rel: "noopener", class: "armory-cell",
+    title: `Official profile${a.server ? ` · ${a.server}` : ""}${a.synced ? ` · updated ${fmtRelative(a.synced)}` : ""}${a.error ? " · not found" : ""}` },
+    a.combatPower != null ? a.combatPower.toLocaleString() : "profile", a.error ? " ⚠️" : "",
+    a.legion ? h("div", { class: "muted small" }, a.legion) : null);
+}
+
 /** Member picker with search (for room ownership transfer). */
 function pickMemberDialog(title) {
   return new Promise(resolve => {
@@ -2153,6 +2194,9 @@ async function renderLfgPrefs(card) {
   const gsChannel = channelSelect("text", "No channel — DMs only");
   gsChannel.value = p.gsReminderChannelId || "";
   const gsDm = toggle(p.gsReminderDm, "Also by DM (each member gets a DM with their characters)");
+  const armoryGs = h("select", { "aria-label": "GS of linked characters" },
+    h("option", { value: "itemLevel" }, "Item level"), h("option", { value: "combatPower" }, "Combat power"), h("option", { value: "none" }, "Nothing — GS is entered by hand"));
+  armoryGs.value = p.armoryGs || "itemLevel";
   const mTop = toggle(p.memberTop, "🏆 Members see the top active players of the last 30 days (no-shows not counted)");
   const gsBox = h("div", { class: "subcard" },
     h("div", { class: "row", style: "margin-bottom:8px" }, h("span", { class: "muted" }, "GS is outdated after"), gsDays, h("span", { class: "muted" }, "days (or not set)")),
@@ -2164,7 +2208,7 @@ async function renderLfgPrefs(card) {
   const save = h("button", { class: "btn" }, "💾 Save");
   const body = () => ({ readyCheck: ready.cb.checked, autoPromoteMinutes: Number(auto.value || 0), gsReminder: gsOn.cb.checked,
     gsReminderChannelId: gsChannel.value || null, gsReminderDays: Number(gsDays.value || 7), gsReminderDm: gsDm.cb.checked,
-    memberTop: mTop.cb.checked });
+    memberTop: mTop.cb.checked, armoryGs: armoryGs.value });
   const tracker = track("Group options", body, async () => await act(save, () => gApi("PUT", "/lfg/prefs", body()), "Group options saved.") !== undefined);
   save.addEventListener("click", tracker.save);
   const runNow = h("button", { class: "btn secondary", title: "Send the GS reminder now (with the saved settings)" }, "📈 Send the GS reminder now");
@@ -2179,6 +2223,8 @@ async function renderLfgPrefs(card) {
       h("div", { class: "row" }, h("span", { class: "muted" }, "In the last"), auto, h("span", { class: "muted" }, "minutes before the start (0 = off)")),
       h("span", { class: "muted small" }, "When a slot frees up then, the first player from the reserve who fits (role, class, GS) moves in; the bot replies under the post. Earlier the organizer decides.")),
     gsOn.el, gsBox,
+    h("div", { class: "field", style: "margin-top:10px" }, h("label", {}, "🔗 GS of characters linked to the official armory"), armoryGs,
+      h("span", { class: "muted small" }, "Members link their characters in My characters (aion2.plaync.com). The chosen value becomes the GS and updates every day; the GS field is then read-only.")),
     h("label", { class: "field-label", style: "margin-top:10px" }, "For members on the site"), mTop.el,
     h("p", { class: "muted small" }, "Members always see the guild roster of their own projects (Member → Calendar → Guild roster: character, class, roles, GS)."),
     h("div", { class: "row", style: "margin-top:8px" }, save, runNow));
@@ -4652,6 +4698,40 @@ function playCard(g) {
 
 // ================= Member: characters =================
 
+/** My characters: the official armory profile (linked — data and buttons; not linked — the Link button). */
+function armoryBox(c, pq, gsSource) {
+  const path = `/me/characters/${encodeURIComponent(c.name)}/armory`;
+  const link = async e => {
+    const hit = await armoryPickDialog(c.armory && c.armory.name || c.name);
+    if (!hit) return;
+    if (await act(e.currentTarget, () => gApi("POST", `${path}${pq}`, { characterId: hit.characterId, serverId: hit.serverId }), "Linked to the official profile.") !== undefined) refresh();
+  };
+  const a = c.armory;
+  if (!a) return h("div", { class: "armory-box" },
+    h("span", { class: "muted small grow" }, icon("link", 13), gsSource === "none"
+      ? " Link the official profile — combat power, item level and legion update by themselves."
+      : ` Link the official profile — GS (${gsSource === "combatPower" ? "combat power" : "item level"}) then updates by itself every day.`),
+    h("button", { class: "btn secondary sm", onclick: link }, icon("link", 14), "Link profile"));
+  const stat = (label, v) => v == null || v === "" ? null : h("span", { class: "chip" }, h("span", { class: "muted" }, label + " "), typeof v === "number" ? v.toLocaleString() : v);
+  return h("div", { class: `armory-box linked${a.error ? " stale" : ""}` },
+    h("div", { class: "grow" },
+      h("div", { class: "armory-stats" }, stat("Lv", a.level || null), stat("Class", a.className), stat("Server", a.server),
+        stat("CP", a.combatPower), stat("Item lvl", a.itemLevel), stat("Legion", a.legion)),
+      h("div", { class: "muted small", style: "margin-top:4px" }, a.error
+        ? "⚠️ Not found in the official armory anymore (renamed or deleted?) — link it again."
+        : `Official profile · updated ${a.synced ? fmtRelative(a.synced) : "—"} · updates by itself every day`)),
+    h("div", { class: "row", style: "gap:4px" },
+      a.error ? h("button", { class: "btn secondary sm", onclick: link }, icon("link", 14), "Link again")
+        : h("button", { class: "btn ghost sm", title: "Update now (once per 15 minutes)", onclick: async e => {
+          if (await act(e.currentTarget, () => gApi("POST", `${path}/refresh${pq}`), "Updated from the official profile.") !== undefined) refresh();
+        } }, icon("refresh-cw", 14), "Update"),
+      h("a", { class: "btn ghost sm", href: a.url, target: "_blank", rel: "noopener", title: "Open on aion2.plaync.com" }, icon("external-link", 14)),
+      h("button", { class: "btn ghost sm", title: "Unlink", "aria-label": "Unlink the official profile", onclick: async e => {
+        if (!await confirmDialog(`Unlink ${c.name}?`, "The official data is removed; GS can be entered by hand again.", "Unlink")) return;
+        if (await act(e.currentTarget, () => gApi("DELETE", `${path}${pq}`), "Unlinked.") !== undefined) refresh();
+      } }, icon("unlink", 14))));
+}
+
 /** "GS updated 20 days ago" — highlighted when older than the server's limit (or not set). */
 function gsAge(c, staleDays = 7, pq = "") {
   if (c.gs == null) return h("div", { class: "gs-age stale" }, icon("triangle-alert", 13), "GS not set — groups with a GS requirement put you in the reserve");
@@ -4723,7 +4803,8 @@ async function pageChars(main) {
     cls.addEventListener("change", syncIcon);
     syncIcon();
     const note = h("input", { maxlength: String(data.maxComment), placeholder: "e.g. can lead, healer alt", value: c.comment || "" });
-    const gs = h("input", { type: "number", min: "0", max: "99999", placeholder: "—", value: c.gs ?? "" });
+    const gs = h("input", { type: "number", min: "0", max: "99999", placeholder: "—", value: c.gs ?? "", disabled: c.gsLocked,
+      title: c.gsLocked ? "Comes from the official armory — updates by itself" : "" });
     const save = h("button", { class: "btn" }, icon("save", 15), "Save");
     const tracker = track(c.name, () => [cls.value, note.value, gs.value], async () => {
       if (gs.value !== "" && (Number(gs.value) < 0 || Number(gs.value) > 99999)) { toast("GS: 0–99999.", "warn"); return false; }
@@ -4748,10 +4829,11 @@ async function pageChars(main) {
       h("div", { class: "char-edit-head" }, badge,
         h("div", { class: "grow" }, h("div", { class: "row", style: "gap:4px;flex-wrap:nowrap" }, h("b", { class: "char-name" }, c.name), rename), clsName),
         c.gs ? h("span", { class: "gs big" }, `GS ${c.gs}`) : null),
-      gsAge(c, data.gsStaleDays, pq),
+      c.gsLocked ? null : gsAge(c, data.gsStaleDays, pq),
+      armoryBox(c, pq, data.armoryGs),
       h("div", { class: "char-fields" },
         h("div", { class: "field" }, h("label", {}, "Class"), cls),
-        h("div", { class: "field gs-field" }, h("label", {}, "GS"), gs)),
+        h("div", { class: "field gs-field" }, h("label", {}, c.gsLocked ? "GS · auto" : "GS"), gs)),
       h("div", { class: "field" }, h("label", {}, "Personal note — only you see it"), note),
       h("div", { class: "char-actions" }, save, h("span", { class: "spacer" }), rm)));
   });
@@ -5448,7 +5530,7 @@ async function guildRoster(holder) {
       (!cls.value || (c.classRole && c.classRole.id === cls.value)) &&
       (minGs.value === "" || (c.gs ?? -1) >= Number(minGs.value)) &&
       (!onlyHere.checked || c.onServer) &&
-      (!q || c.character.toLowerCase().includes(q) || c.member.name.toLowerCase().includes(q)));
+      (!q || c.character.toLowerCase().includes(q) || c.member.name.toLowerCase().includes(q) || (c.armory && (c.armory.legion || "").toLowerCase().includes(q))));
     const players = new Set(rows.map(r => r.member.id)).size;
     body.replaceChildren(h("p", { class: "muted small" }, `${rows.length} character(s) of ${players} member(s). `,
       "Group roles come from the class (LFG → Classes: DD / Tank / Sup). GS older than 14 days is marked ⏳."),
@@ -5459,6 +5541,7 @@ async function guildRoster(holder) {
         ["Roles", r => r.slotRoles.join(), r => r.slotRoles.length ? r.slotRoles.map(x => h("span", { class: "chip" }, SLOT_ROLE_CHIP[x] || x)) : h("span", { class: "muted small" }, "any")],
         ["GS", r => r.gs, r => r.gs == null ? h("span", { class: "muted" }, "—") :
           h("span", { title: r.gsUpdated ? `Updated ${new Date(r.gsUpdated).toLocaleDateString()}` : "Update date unknown" }, String(r.gs), stale(r.gsUpdated) ? " ⏳" : "")],
+        ["Combat power", r => r.armory ? r.armory.combatPower ?? 0 : -1, armoryCell],
         ["On server since", r => r.joined, r => r.joined ? new Date(r.joined).toLocaleDateString() : "—"],
         ["Last active", r => r.lastActive, r => r.lastActive ? fmtRelative(r.lastActive) : h("span", { class: "muted small", title: `Activity is tracked since ${new Date(d.trackingSince).toLocaleDateString()}` }, "no data")]
       ], 4) : emptyState("users", "Nobody matches", "Change the filters."));
@@ -5590,7 +5673,8 @@ function memberRoster(holder, guild) {
         ["Character", r => r.character, r => h("b", {}, r.character)],
         ["Class", r => r.classRole ? r.classRole.name : "", r => r.classRole ? h("span", { class: "row", style: "gap:4px" }, classMark(r) || null, r.classRole.name) : h("span", { class: "muted" }, "—")],
         ["Roles", r => r.slotRoles.join(), r => r.slotRoles.length ? r.slotRoles.map(x => h("span", { class: "chip" }, SLOT_ROLE_CHIP[x] || x)) : h("span", { class: "muted small" }, "any")],
-        ["GS", r => r.gs, r => r.gs == null ? h("span", { class: "muted" }, "—") : String(r.gs)]
+        ["GS", r => r.gs, r => r.gs == null ? h("span", { class: "muted" }, "—") : String(r.gs)],
+        ["Combat power", r => r.armory ? r.armory.combatPower ?? 0 : -1, armoryCell]
       ], 4) : emptyState("users", "Nobody matches", "Change the filters."));
   };
   project.addEventListener("change", () => { fillClasses(); draw(); });

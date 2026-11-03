@@ -12,6 +12,31 @@ public sealed class CharacterInfo
     public int? Gs { get; set; }
     /// <summary>Когда GS меняли последний раз (для напоминания обновить GS).</summary>
     public DateTimeOffset? GsUpdatedAt { get; set; }
+    /// <summary>Привязка к официальной оружейной (aion2.plaync.com) и последние данные оттуда.</summary>
+    public ArmoryLink? Armory { get; set; }
+
+    public CharacterInfo Copy() => new()
+    {
+        ClassRoleId = ClassRoleId, Comment = Comment, Gs = Gs, GsUpdatedAt = GsUpdatedAt,
+        Armory = Armory is null ? null : Armory with { }
+    };
+}
+
+/// <summary>Персонаж в официальной оружейной: ID, сервер и данные последней синхронизации.</summary>
+public sealed record ArmoryLink
+{
+    public string CharacterId { get; init; } = "";
+    public int ServerId { get; init; }
+    public string? ServerName { get; init; }
+    public string? Name { get; init; }
+    public string? ClassName { get; init; }
+    public int Level { get; init; }
+    public int? CombatPower { get; init; }
+    public int? ItemLevel { get; init; }
+    public string? Legion { get; init; }
+    public DateTimeOffset? SyncedAt { get; init; }
+    /// <summary>Последняя ошибка синхронизации (например, персонаж не найден).</summary>
+    public string? Error { get; init; }
 }
 
 /// <summary>Персонаж сервера для ростера: владелец, проект (scope), имя и профиль.</summary>
@@ -36,8 +61,11 @@ public sealed class CharacterStore
     private readonly string _infoPath;
     private readonly Dictionary<string, CharacterInfo> _info;
 
-    public CharacterStore(IConfiguration config)
+    private readonly GuildPrefsStore _prefs;
+
+    public CharacterStore(IConfiguration config, GuildPrefsStore prefs)
     {
+        _prefs = prefs;
         _path = config["Storage:CharactersPath"] ?? "data/characters.json";
         _data = File.Exists(_path)
             ? JsonSerializer.Deserialize<Dictionary<string, List<string>>>(File.ReadAllText(_path)) ?? new()
@@ -61,7 +89,7 @@ public sealed class CharacterStore
         if (string.IsNullOrWhiteSpace(name)) return null;
         lock (_lock)
             return _info.TryGetValue(InfoKey(guildId, userId, name, scope), out var i)
-                ? new CharacterInfo { ClassRoleId = i.ClassRoleId, Comment = i.Comment, Gs = i.Gs, GsUpdatedAt = i.GsUpdatedAt }
+                ? i.Copy()
                 : null;
     }
 
@@ -80,7 +108,7 @@ public sealed class CharacterStore
             if (setClass) info.ClassRoleId = classRoleId;
             if (setComment) info.Comment = comment;
 
-            if (info.ClassRoleId is null && info.Comment is null && info.Gs is null) _info.Remove(key);
+            if (info.ClassRoleId is null && info.Comment is null && info.Gs is null && info.Armory is null) _info.Remove(key);
             else _info[key] = info;
             SaveInfo();
         }
@@ -88,17 +116,39 @@ public sealed class CharacterStore
 
     /// <summary>GS персонажа: null — убрать.</summary>
     /// <param name="confirm">Обновить дату, даже если GS не изменился («GS актуален»).</param>
-    public void SetGs(ulong guildId, ulong userId, string name, int? gs, string? scope = null, bool confirm = false)
+    /// <param name="fromArmory">Значение из официальной оружейной. Иначе GS привязанного персонажа не меняется.</param>
+    /// <returns>false — GS этого персонажа берётся из оружейной, вручную не меняется.</returns>
+    public bool SetGs(ulong guildId, ulong userId, string name, int? gs, string? scope = null, bool confirm = false, bool fromArmory = false)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return false;
+        lock (_lock)
+        {
+            var key = InfoKey(guildId, userId, name, scope);
+            if (!_info.TryGetValue(key, out var info)) info = new CharacterInfo();
+            if (!fromArmory && GsFromArmory(guildId, info)) return false;
+            var value = gs is { } v ? Math.Clamp(v, 0, 99999) : (int?)null;
+            if (confirm || value != info.Gs || info.GsUpdatedAt is null) info.GsUpdatedAt = DateTimeOffset.UtcNow;
+            info.Gs = value;
+            if (info.ClassRoleId is null && info.Comment is null && info.Gs is null && info.Armory is null) _info.Remove(key);
+            else _info[key] = info;
+            SaveInfo();
+        }
+        return true;
+    }
+
+    /// <summary>GS персонажа приходит из официальной оружейной (привязан, данные найдены, на сервере GS берётся оттуда).</summary>
+    public bool GsFromArmory(ulong guildId, CharacterInfo? info) => info?.Armory is { Error: null } && _prefs.Get(guildId).ArmoryGs != "none";
+
+    /// <summary>Привязка к официальной оружейной (null — отвязать).</summary>
+    public void SetArmory(ulong guildId, ulong userId, string name, ArmoryLink? link, string? scope = null)
     {
         if (string.IsNullOrWhiteSpace(name)) return;
         lock (_lock)
         {
             var key = InfoKey(guildId, userId, name, scope);
             if (!_info.TryGetValue(key, out var info)) info = new CharacterInfo();
-            var value = gs is { } v ? Math.Clamp(v, 0, 99999) : (int?)null;
-            if (confirm || value != info.Gs || info.GsUpdatedAt is null) info.GsUpdatedAt = DateTimeOffset.UtcNow;
-            info.Gs = value;
-            if (info.ClassRoleId is null && info.Comment is null && info.Gs is null) _info.Remove(key);
+            info.Armory = link;
+            if (info.ClassRoleId is null && info.Comment is null && info.Gs is null && info.Armory is null) _info.Remove(key);
             else _info[key] = info;
             SaveInfo();
         }
@@ -121,8 +171,7 @@ public sealed class CharacterStore
                 foreach (var name in names)
                 {
                     _info.TryGetValue(InfoKey(guildId, userId, name, scope), out var i);
-                    result.Add(new RosterCharacter(userId, scope, name, i is null ? null
-                        : new CharacterInfo { ClassRoleId = i.ClassRoleId, Comment = i.Comment, Gs = i.Gs, GsUpdatedAt = i.GsUpdatedAt }));
+                    result.Add(new RosterCharacter(userId, scope, name, i?.Copy()));
                 }
             }
             return result;
