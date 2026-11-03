@@ -5524,14 +5524,28 @@ async function pageSchedule(main) {
   main.append(holder);
   try {
     if (tab === "calendar") await guildCalendar(holder, "/me/calendar", true);
-    else if (tab === "top") memberTop(holder, guild.top);
+    else if (tab === "top") memberTop(holder, guild.top, guild);
     else memberRoster(holder, guild);
   } catch (e) { holder.replaceChildren(empty(e.message)); }
 }
 
-function memberTop(holder, top) {
+/** Project tabs for the member pages: all of the member's projects (even one — so it's clear what is shown). */
+function memberProjectTabs(projects, current, onPick, withAll = true) {
+  if (!projects.length) return null;
+  const items = [...(withAll && projects.length > 1 ? [["", "🌐 All projects"]] : []), ...projects.map(p => [p.key, `🎮 ${p.name}`])];
+  return h("div", { class: "seg screen-tabs", style: "margin-bottom:10px" }, items.map(([k, label]) =>
+    h("button", { type: "button", class: `seg-btn${current === k ? " active" : ""}`, onclick: () => onPick(k) }, label)));
+}
+
+function memberTop(holder, top, guild = null) {
+  const projects = guild ? guild.projects : [];
+  let pick = store.get("gb.mTopProject") || "";
+  if (pick && !projects.some(p => p.key === pick)) pick = "";
+  if (projects.length === 1) pick = projects[0].key;
+  if (pick && guild && guild.topByProject && guild.topByProject[pick]) top = guild.topByProject[pick];
+  const tabs = memberProjectTabs(projects, pick, k => { store.set("gb.mTopProject", k); memberTop(holder, guild.top, guild); });
   const medal = i => ["🥇", "🥈", "🥉"][i] || `${i + 1}.`;
-  holder.replaceChildren(h("div", { class: "card" },
+  holder.replaceChildren(h("div", { class: "card" }, tabs,
     h("p", { class: "muted small" }, "Most groups played in the last 30 days (no-shows are not counted)."),
     top.length ? h("div", { class: "list" }, top.map((t, i) => h("div", { class: `list-row${t.member.id === (state.me && state.me.id) ? " me" : ""}` },
       h("span", { class: "top-place" }, medal(i)), h("div", { class: "grow" }, member(t.member)),
@@ -5542,8 +5556,14 @@ function memberTop(holder, top) {
 
 function memberRoster(holder, guild) {
   const list = guild.roster;
-  const project = h("select", {}, h("option", { value: "" }, "All projects"), guild.projects.map(p => h("option", { value: p.key }, p.name)));
-  project.value = store.get("gb.mRosterProject") || (guild.projects.find(p => p.isDefault) || {}).key || "";
+  // Project = tabs (like the calendar); a hidden select keeps the filter code simple
+  const project = h("select", { style: "display:none" }, h("option", { value: "" }, "All projects"), guild.projects.map(p => h("option", { value: p.key }, p.name)));
+  project.value = store.get("gb.mRosterProject") ?? (guild.projects.find(p => p.isDefault) || {}).key ?? "";
+  if (guild.projects.length === 1) project.value = guild.projects[0].key;
+  const tabsBox = h("div", {});
+  const drawTabs = () => tabsBox.replaceChildren(memberProjectTabs(guild.projects, project.value, k => {
+    project.value = k; drawTabs(); fillClasses(); draw();
+  }) || "");
   const role = h("select", {}, h("option", { value: "" }, "Any group role"), Object.entries(SLOT_ROLE_CHIP).map(([k, l]) => h("option", { value: k }, l)));
   const cls = h("select", {}, h("option", { value: "" }, "Any class"));
   const minGs = h("input", { type: "number", min: "0", placeholder: "min GS", style: "width:110px" });
@@ -5578,7 +5598,9 @@ function memberRoster(holder, guild) {
   cls.addEventListener("change", draw);
   for (const el of [minGs, search]) el.addEventListener("input", draw);
   fillClasses();
-  holder.replaceChildren(h("div", { class: "card" },
-    h("div", { class: "row", style: "margin-bottom:10px;flex-wrap:wrap" }, guild.projects.length > 1 ? project : null, role, cls, minGs, search), body));
+  drawTabs();
+  holder.replaceChildren(h("div", { class: "card" }, tabsBox,
+    h("div", { class: "row", style: "margin-bottom:10px;flex-wrap:wrap" }, role, cls, minGs, search), body,
+    h("p", { class: "muted small", style: "margin-top:8px" }, "Only projects you have access to are shown.")));
   draw();
 }
