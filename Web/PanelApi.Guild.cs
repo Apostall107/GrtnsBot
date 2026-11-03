@@ -138,14 +138,17 @@ public static partial class PanelApi
 
         // ----- Неактивные: кто N дней не писал и не заходил в войс -----
         guildTools.MapGet("/inactive", (ulong guildId, int? days, string? roleId, DiscordSocketClient client,
-            [FromServices] MemberActivityStore activity, [FromServices] CharacterStore characters) =>
+            [FromServices] MemberActivityStore activity, [FromServices] CharacterStore characters, [FromServices] BotSettingsStore settings) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            // Только участники гильдии — у кого есть роль участника (Settings → Member roles), т.е. кто может пользоваться сайтом
+            var memberRoles = settings.GetMemberRoles(guildId).ToHashSet();
+            bool IsMember(SocketGuildUser u) => !u.IsBot && (memberRoles.Count == 0 || u.Roles.Any(r => memberRoles.Contains(r.Id)));
             var limit = Math.Clamp(days ?? 14, 1, 365);
             var cutoff = DateTimeOffset.UtcNow.AddDays(-limit);
             var role = ParseId(roleId);
             var charCount = characters.All(guildId).GroupBy(c => c.UserId).ToDictionary(g => g.Key, g => g.Count());
-            var rows = guild.Users.Where(u => !u.IsBot && (role is null || u.Roles.Any(r => r.Id == role)))
+            var rows = guild.Users.Where(u => IsMember(u) && (role is null || u.Roles.Any(r => r.Id == role)))
                 .Select(u => (u, a: activity.Get(guildId, u.Id)))
                 .Where(x => (x.a?.Last ?? DateTimeOffset.MinValue) < cutoff)
                 .OrderBy(x => x.a?.Last ?? DateTimeOffset.MinValue).ThenBy(x => x.u.JoinedAt)
@@ -162,7 +165,8 @@ public static partial class PanelApi
             return Results.Ok(new
             {
                 trackingSince = activity.TrackingSince.ToUnixTimeMilliseconds(),
-                members = guild.Users.Count(u => !u.IsBot),
+                members = guild.Users.Count(IsMember),
+                memberRoles = memberRoles.Select(id => Role(guild, id)),
                 rows
             });
         });

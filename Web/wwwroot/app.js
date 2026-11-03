@@ -5486,6 +5486,9 @@ async function guildInactive(holder) {
     body.replaceChildren(
       h("p", { class: "muted small" }, `${d.rows.length} of ${d.members} member(s) didn't write in any channel and didn't sit in voice for ${days.value}+ days. `,
         `Activity is tracked since ${since.toLocaleDateString()}.`),
+      d.memberRoles && d.memberRoles.length
+        ? h("p", { class: "muted small" }, "Only members with ", d.memberRoles.map(r => roleChip(r)), " (Settings → Member roles) are counted.")
+        : h("p", { class: "warn-text small" }, "⚠️ Member roles aren't set (Settings → Member roles) — everyone on the server is counted."),
       tooEarly ? h("p", { class: "warn-text small" }, "⚠️ Tracking started less than this many days ago — “no data” only means nothing was seen since then.") : null,
       d.rows.length ? sortTable(d.rows, [
         ["Member", r => r.member.name, r => member(r.member)],
