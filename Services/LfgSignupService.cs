@@ -434,7 +434,8 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
             if (members.Count > 0 && group.StartsAt is { } startsAt &&
                 await GetChannelAsync(group.ChannelId) is { } channel)
             {
-                var mentions = string.Join(" ", members.Select(id => $"<@{id}>"));
+                // Большой сбор: в первом сообщении до 60 упоминаний (лимит 2000 символов), остальные — следом
+                var mentions = string.Join(" ", members.Take(60).Select(id => $"<@{id}>"));
                 // Проверка готовности: кнопка «Готов», нажавшие отмечены 🟢 в посте
                 var ready = prefs.Get(group.GuildId).ReadyCheck;
                 var comps = ready
@@ -444,10 +445,14 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
                     Tx.Get(group.GuildId, "lfg.reminder", ("activity", Format.Sanitize(group.ActivityName)),
                         ("time", $"<t:{startsAt.ToUnixTimeSeconds()}:R>"), ("members", mentions))
                     + (ready ? Tx.Line(group.GuildId, "lfg.ready.hint") : ""),
-                    allowedMentions: new AllowedMentions { UserIds = members },
+                    allowedMentions: new AllowedMentions { UserIds = members.Take(60).ToList() },
                     components: comps,
                     messageReference: new MessageReference(group.MessageId, failIfNotExists: false));
                 group.ReminderMessageId = message.Id;
+                foreach (var chunk in members.Skip(60).Chunk(80))
+                    await channel.SendMessageAsync(string.Join(" ", chunk.Select(id => $"<@{id}>")),
+                        allowedMentions: new AllowedMentions { UserIds = chunk.ToList() },
+                        messageReference: new MessageReference(group.MessageId, failIfNotExists: false));
             }
 
             store.SaveGroups();

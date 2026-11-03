@@ -212,6 +212,8 @@ public sealed class LfgDraft(ulong guildId, ulong channelId, ulong ownerId)
     /// <summary>Персонаж, с которым идёт организатор (выбирается первым шагом), и его GS.</summary>
     public string? OwnerCharacter { get; set; }
     public int? OwnerGs { get; set; }
+    /// <summary>Страница слотов в шаге ролей (по 25 слотов — лимит меню Discord).</summary>
+    public int SlotPage { get; set; }
     /// <summary>Показать полный выбор размера (2–25), а не только избранные 5 / 10 / 20.</summary>
     public bool AllSizes { get; set; }
     /// <summary>Заметка организатора к сбору (необязательная), показывается в посте.</summary>
@@ -274,6 +276,8 @@ public sealed class LfgGroup
     /// <summary>Персонаж, с которым идёт организатор (выбирается первым шагом), и его GS.</summary>
     public string? OwnerCharacter { get; set; }
     public int? OwnerGs { get; set; }
+    /// <summary>Страница слотов в шаге ролей (по 25 слотов — лимит меню Discord).</summary>
+    public int SlotPage { get; set; }
     /// <summary>Показать полный выбор размера (2–25), а не только избранные 5 / 10 / 20.</summary>
     public bool AllSizes { get; set; }
     /// <summary>Заметка организатора к сбору (необязательная), показывается в посте.</summary>

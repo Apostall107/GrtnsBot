@@ -123,6 +123,40 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         await ShowAsync(ActivityScreen(d));
     }
 
+    [ComponentInteraction("lfg:sizenum:*")]
+    public async Task OnSizeNumber(string draftId)
+    {
+        if (await GetDraftAsync(draftId) is not { } d) return;
+        await RespondWithModalAsync(new ModalBuilder()
+            .WithTitle(T("lfg.wiz.enterSize"))
+            .WithCustomId($"lfg:sizenumset:{d.Id}")
+            .AddTextInput(T("lfg.wiz.sizeNumberLabel"), "size", TextInputStyle.Short, placeholder: "30", minLength: 1, maxLength: 3, required: true)
+            .Build());
+    }
+
+    [ModalInteraction("lfg:sizenumset:*")]
+    public async Task OnSizeNumberSet(string draftId, LfgSizeModal modal)
+    {
+        if (await GetDraftAsync(draftId) is not { } d) return;
+        // Больше 100 — 100, меньше 2 — 2
+        var n = int.TryParse((modal.Size ?? "").Trim(), out var v) ? Math.Clamp(v, LfgRenderer.MinSize, LfgRenderer.MaxSize) : 5;
+        d.Slots = Enumerable.Range(0, n).Select(_ => new Slot()).ToList();
+        OwnerSlot(d);
+        d.Selected.Clear();
+        d.SlotPage = 0;
+        var s = ActivityScreen(d);
+        await RespondAsync(s.Content, embed: s.Embed, components: s.Components, ephemeral: true);
+    }
+
+    [ComponentInteraction("lfg:spage:*:*")]
+    public async Task OnSlotPage(string draftId, string page)
+    {
+        if (await GetDraftAsync(draftId) is not { } d) return;
+        d.SlotPage = int.TryParse(page, out var p) ? p : 0;
+        d.Selected.Clear();
+        await ShowAsync(LfgRenderer.SlotStep(d));
+    }
+
     [ComponentInteraction("lfg:sizemore:*")]
     public async Task OnSizeMore(string draftId)
     {
@@ -944,6 +978,14 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         m.Embeds = s.Embed is null ? Array.Empty<Embed>() : new[] { s.Embed };
         m.Components = s.Components;
     });
+}
+
+public sealed class LfgSizeModal : IModal
+{
+    public string Title => "Group size";
+
+    [ModalTextInput("size")]
+    public string? Size { get; set; }
 }
 
 public sealed class CustomActivityModal : IModal
