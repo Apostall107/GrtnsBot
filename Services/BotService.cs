@@ -93,6 +93,22 @@ public sealed class BotService(
                 logger.LogWarning(ex, "Failed to refresh {Key} panels on {Guild}", def.Key, guild.Name);
             }
         }
+
+        // Панели ролей: новые кнопки (например, «My roles») появляются в уже опубликованных
+        var community = services.GetRequiredService<CommunityService>();
+        var store = services.GetRequiredService<CommunityStore>();
+        foreach (var guild in client.Guilds)
+        foreach (var panel in store.GetPanels(guild.Id).Where(p => p.MessageId is not null))
+        {
+            try
+            {
+                await community.RefreshAsync(panel);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to refresh role panel {Panel}", panel.Id);
+            }
+        }
     }
 
     private Task OnJoinedGuildAsync(SocketGuild guild) => RegisterToGuildAsync(guild);

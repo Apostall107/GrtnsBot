@@ -15,7 +15,34 @@ public sealed class RolePanelModule(CommunityStore store, CommunityService commu
         if (await ResolveAsync(panelId) is not { } x) return;
         await DeferAsync(ephemeral: true);
         var text = await community.PickAsync(x.Panel, x.Member, bindingId);
-        await FollowupAsync(text, ephemeral: true, allowedMentions: AllowedMentions.None);
+        var view = await community.PersonalViewAsync(x.Panel, x.Member.Id, text);
+        await FollowupAsync(view.Text, components: view.Components, ephemeral: true, allowedMentions: AllowedMentions.None);
+    }
+
+    /// <summary>«Мои роли»: показать личный вид без изменений.</summary>
+    [ComponentInteraction("rp:my:*")]
+    public async Task OnMyRoles(string panelId)
+    {
+        if (await ResolveAsync(panelId) is not { } x) return;
+        await DeferAsync(ephemeral: true);
+        var view = await community.PersonalViewAsync(x.Panel, x.Member.Id, null);
+        await FollowupAsync(view.Text, components: view.Components, ephemeral: true, allowedMentions: AllowedMentions.None);
+    }
+
+    /// <summary>Кнопки личного вида: переключают роль и обновляют это же (эфемерное) сообщение.</summary>
+    [ComponentInteraction("rp:mb:*:*")]
+    public async Task OnPersonalButton(string panelId, string bindingId)
+    {
+        if (await ResolveAsync(panelId) is not { } x) return;
+        await DeferAsync();
+        var text = await community.PickAsync(x.Panel, x.Member, bindingId);
+        var view = await community.PersonalViewAsync(x.Panel, x.Member.Id, text);
+        await ModifyOriginalResponseAsync(m =>
+        {
+            m.Content = view.Text;
+            m.Components = view.Components;
+            m.AllowedMentions = AllowedMentions.None;
+        });
     }
 
     [ComponentInteraction("rp:s:*")]
@@ -24,7 +51,8 @@ public sealed class RolePanelModule(CommunityStore store, CommunityService commu
         if (await ResolveAsync(panelId) is not { } x) return;
         await DeferAsync(ephemeral: true);
         var text = await community.SelectAsync(x.Panel, x.Member, values);
-        await FollowupAsync(text, ephemeral: true, allowedMentions: AllowedMentions.None);
+        var view = await community.PersonalViewAsync(x.Panel, x.Member.Id, text);
+        await FollowupAsync(view.Text, components: view.Components, ephemeral: true, allowedMentions: AllowedMentions.None);
     }
 
     private async Task<(Models.RolePanel Panel, SocketGuildUser Member)?> ResolveAsync(string panelId)
