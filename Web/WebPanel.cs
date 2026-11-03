@@ -222,8 +222,13 @@ public static class WebPanel
 
     private static byte[] ReadResource(string file)
     {
-        using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"wwwroot/{file}")
-                           ?? throw new InvalidOperationException($"Embedded web file wwwroot/{file} not found.");
+        // Собранный на Windows: %(RecursiveDir) даёт «fonts\», имя ресурса — «wwwroot/fonts\file». Ищем без учёта вида слеша.
+        var assembly = Assembly.GetExecutingAssembly();
+        var wanted = $"wwwroot/{file}";
+        var name = assembly.GetManifestResourceNames().FirstOrDefault(n => n.Replace('\\', '/') == wanted)
+                   ?? throw new InvalidOperationException($"Embedded web file {wanted} not found.");
+        using var stream = assembly.GetManifestResourceStream(name)
+                           ?? throw new InvalidOperationException($"Embedded web file {wanted} not found.");
         using var ms = new MemoryStream();
         stream.CopyTo(ms);
         return ms.ToArray();
