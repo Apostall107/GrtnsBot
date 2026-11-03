@@ -1117,6 +1117,7 @@ const allTabs = [
   ["play", "users-round", "Groups", "member", "Member"],
   ["chars", "user-round", "My characters", "member", "Member"],
   ["schedule", "calendar-clock", "Calendar", "member", "Member"],
+  ["roster", "users", "Guild roster", "member", "Member"],
   ["lfg", "swords", "LFG", "lfg", "Community modules"],
   ["guild", "calendar", "Guild", "guild", "Community modules"],
   ["tickets", "ticket", "Tickets", "tickets", "Community modules"],
@@ -1226,7 +1227,7 @@ function renderShell() {
   // ----- Sidebar: sections, Lucide icons, active route; collapses to icons on desktop, drawer on mobile
   const layout = h("div", { class: `layout${collapsed ? " collapsed" : ""}` });
   const closeDrawer = () => layout.classList.remove("drawer-open");
-  const NAV_TONES = { home: "violet", play: "violet", chars: "cyan", schedule: "teal", lfg: "violet", guild: "teal", tickets: "amber", voice: "teal", welcome: "pink", roles: "green", content: "blue",
+  const NAV_TONES = { home: "violet", play: "violet", chars: "cyan", schedule: "teal", roster: "green", lfg: "violet", guild: "teal", tickets: "amber", voice: "teal", welcome: "pink", roles: "green", content: "blue",
     announce: "pink", overview: "green", log: "blue", settings: "cyan", access: "amber" };
   const navButton = ([key, ic, label]) => h("button", {
     // Tooltip only when the menu is collapsed to icons (labels are visible otherwise)
@@ -1286,7 +1287,7 @@ function renderShell() {
 
   if (!state.guildId) { main.append(empty("No servers available for your account.")); return; }
   if (!visibleTabs().length) { main.append(empty("You have no sections on this server. Ask an admin for the member role.")); return; }
-  const page = { home: pageHome, content: pageContent, play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, guild: pageGuild, schedule: pageSchedule, tickets: pageTickets, voice: pageVoice, welcome: pageWelcome, roles: pageRoles, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess }[state.tab];
+  const page = { home: pageHome, content: pageContent, play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, guild: pageGuild, schedule: pageSchedule, roster: pageMemberRoster, tickets: pageTickets, voice: pageVoice, welcome: pageWelcome, roles: pageRoles, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess }[state.tab];
   page(main);
   addGuideButton(main, state.tab);
   decorateHeading(main);
@@ -2289,7 +2290,7 @@ async function renderLfgPrefs(card) {
   const armoryGs = h("select", { "aria-label": "GS of linked characters" },
     h("option", { value: "itemLevel" }, "Item level"), h("option", { value: "combatPower" }, "Combat power"), h("option", { value: "none" }, "Nothing — GS is entered by hand"));
   armoryGs.value = p.armoryGs || "itemLevel";
-  const mTop = toggle(p.memberTop, "🏆 Members see the top active players of the last 30 days (no-shows not counted)");
+  const mTop = toggle(p.memberTop, "🏆 Members see the top active players of the last 30 days (no-shows not counted) — Member → Guild roster");
   const gsBox = h("div", { class: "subcard" },
     h("div", { class: "row", style: "margin-bottom:8px" }, h("span", { class: "muted" }, "GS is outdated after"), gsDays, h("span", { class: "muted" }, "days (or not set)")),
     h("div", { class: "field" }, h("label", {}, "Post the reminder in (mentions those members)"), gsChannel), gsDm.el,
@@ -2318,7 +2319,7 @@ async function renderLfgPrefs(card) {
     h("div", { class: "field", style: "margin-top:10px" }, h("label", {}, "🔗 GS of characters linked to the official armory"), armoryGs,
       h("span", { class: "muted small" }, "Members link their characters in My characters (aion2.plaync.com). The chosen value becomes the GS when they link or press Update; the GS field is then read-only.")),
     h("label", { class: "field-label", style: "margin-top:10px" }, "For members on the site"), mTop.el,
-    h("p", { class: "muted small" }, "Members always see the guild roster of their own projects (Member → Calendar → Guild roster: character, class, roles, GS)."),
+    h("p", { class: "muted small" }, "Members always see the guild roster of their own projects (Member → Guild roster: character, class, server, roles, GS, CP)."),
     h("div", { class: "row", style: "margin-top:8px" }, save, runNow));
   tracker.attach(card);
 }
@@ -5763,18 +5764,25 @@ async function pageSchedule(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "Calendar"),
     h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
   const holder = h("div", {}, h("div", { class: "card" }, skeletonLines(4)));
-  let guild = { roster: null, top: null, projects: [] };
-  try { guild = await gApi("GET", "/me/guild"); } catch { /* calendar still works */ }
-  const tabs = [["calendar", "📅 Calendar"]];
+  main.append(holder);
+  try { await guildCalendar(holder, "/me/calendar", true); } catch (e) { holder.replaceChildren(empty(e.message)); }
+}
+
+/** Member: guild roster of the member's projects (+ top active players, if the admins turned it on). */
+async function pageMemberRoster(main) {
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "Guild roster"),
+    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
+  const holder = h("div", {}, h("div", { class: "card" }, skeletonLines(4)));
+  let guild;
+  try { guild = await gApi("GET", "/me/guild"); } catch (e) { main.append(empty(e.message)); return; }
+  const tabs = [["roster", "👥 Roster"]];
   if (guild.top) tabs.push(["top", "🏆 Top players"]);
-  if (guild.roster) tabs.push(["roster", "👥 Guild roster"]);
-  let tab = store.get("gb.scheduleTab") || "calendar";
-  if (!tabs.some(([k]) => k === tab)) tab = "calendar";
-  if (tabs.length > 1) main.append(tabsRow(tabs, tab, "gb.scheduleTab"));
+  let tab = store.get("gb.rosterTab") || "roster";
+  if (!tabs.some(([k]) => k === tab)) tab = "roster";
+  if (tabs.length > 1) main.append(tabsRow(tabs, tab, "gb.rosterTab"));
   main.append(holder);
   try {
-    if (tab === "calendar") await guildCalendar(holder, "/me/calendar", true);
-    else if (tab === "top") memberTop(holder, guild.top, guild);
+    if (tab === "top") memberTop(holder, guild.top, guild);
     else memberRoster(holder, guild);
   } catch (e) { holder.replaceChildren(empty(e.message)); }
 }
