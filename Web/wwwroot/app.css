@@ -1450,3 +1450,12 @@ tr.unsaved > td:first-child { box-shadow: inset 3px 0 0 var(--warning); }
 .dc-option span { color: #949ba4; font-size: 13px; }
 .dc-option + .dc-option { border-top: 1px solid #1e1f22; }
 .dc-frame .tx-focus { outline: 2px solid rgba(245, 185, 66, .8); outline-offset: 2px; border-radius: 4px; }
+.screen-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+.screen-tabs .seg-btn { font-size: 12.5px; padding: 4px 10px; }
+.dc-select { cursor: pointer; }
+.dc-select-value { color: #dbdee1; }
+.dc-option.picked { background: #35373c; }
+.dc-input.long { min-height: 80px; }
+.dc-row > .dc-dropdown { flex: 1 1 100%; }
+.screen-tabs { border: 0; overflow: visible; }
+.screen-tabs .seg-btn, .screen-tabs .seg-btn + .seg-btn { border: 1px solid var(--border); border-radius: 999px; }

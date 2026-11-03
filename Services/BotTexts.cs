@@ -35,7 +35,24 @@ public static class Tx
         public void Dispose() => undo();
     }
 
-    private static string? Custom(ulong guildId, string key) =>
+    /// <summary>Какие тексты брал рендер (предпросмотр на сайте: какой экран показать для редактируемого текста).</summary>
+    private static readonly AsyncLocal<HashSet<string>?> Used = new();
+
+    /// <summary>Записывать ключи текстов, которые использует рендер, в <paramref name="keys"/>.</summary>
+    public static IDisposable Record(HashSet<string> keys)
+    {
+        var previous = Used.Value;
+        Used.Value = keys;
+        return new Restore(() => Used.Value = previous);
+    }
+
+    private static string? Custom(ulong guildId, string key)
+    {
+        Used.Value?.Add(key);
+        return Lookup(guildId, key);
+    }
+
+    private static string? Lookup(ulong guildId, string key) =>
         Overrides.Value is { } o && o.TryGetValue(key, out var v) ? (string.IsNullOrEmpty(v) ? null : v)
         : guildId == 0 ? null : Store?.Get(guildId, key);
 

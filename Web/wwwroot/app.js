@@ -2974,10 +2974,22 @@ function dcMessage({ content, embed, embeds, rows = [], reactions = [], mentions
 }
 
 /** Message built by the bot (/preview endpoints) → mock. */
-function dcFromPreview(p) {
+function dcFromPreview(p, opts = {}) {
   const styleColor = { Primary: "Blurple", Secondary: "Grey", Success: "Green", Danger: "Red", Link: "Grey", Premium: "Blurple" };
-  const rows = (p.rows || []).map(row => row.map(c => c.type === "select"
-    ? h("span", { class: "dc-select" }, h("span", {}, c.label || "Make a selection"), icon("chevron-down", 14))
+  const select = c => {
+    const options = c.options || [];
+    const picked = options.filter(o => o.isDefault);
+    const box = h("span", { class: "dc-select", title: options.length ? "Click to see the options" : "" },
+      h("span", { class: picked.length ? "dc-select-value" : "" }, picked.length ? picked.map(o => o.label).join(", ") : c.label || "Make a selection"),
+      icon("chevron-down", 14));
+    const list = options.length ? h("div", { class: "dc-options", style: opts.expand ? "" : "display:none" }, options.slice(0, 8).map(o =>
+      h("div", { class: `dc-option${o.isDefault ? " picked" : ""}` }, h("b", {}, o.emoji ? emojiEl(o.emoji, 16) : null, o.emoji ? " " : "", o.label),
+        o.description ? h("span", {}, o.description) : null)),
+      options.length > 8 ? h("div", { class: "dc-option muted small" }, `+ ${options.length - 8} more`) : null) : null;
+    if (list) box.addEventListener("click", () => { list.style.display = list.style.display === "none" ? "" : "none"; });
+    return h("div", { class: "dc-dropdown" }, box, list);
+  };
+  const rows = (p.rows || []).map(row => row.map(c => c.type === "select" ? select(c)
     : h("span", { class: c.disabled ? "dc-disabled" : "" }, dcButton(c.label, c.emoji, styleColor[c.style] || "Grey", !!c.url))));
   return dcMessage({ content: p.content, embeds: p.embeds || [], rows, mentions: p.mentions || {} });
 }
@@ -3586,7 +3598,7 @@ async function pageBotTexts(main) {
     const local = sample ? null : botTextPreview(g.items, it => {
       const v = dirty.has(it.key) ? dirty.get(it.key) : it.value || "";
       return v || it.default;
-    });
+    }, () => gApi("POST", "/texts/bot/screens", { sample: g.name, values: Object.fromEntries(dirty) }));
     let previewLoaded = false;
     const groupRows = g.items.map(it => {
       const row = botTextRow(it, v => {
@@ -3595,7 +3607,7 @@ async function pageBotTexts(main) {
         row.el.classList.toggle("changed", dirty.has(it.key));
         updateBar();
         if (preview) preview.refresh();
-        if (local) local.show(it);
+        if (local) local.changed(it);
       });
       if (local) {
         row.el.addEventListener("focusin", () => local.show(it));
@@ -3618,7 +3630,11 @@ async function pageBotTexts(main) {
     countCustom();
     head.addEventListener("click", () => {
       card.classList.toggle("open");
-      if (preview && !previewLoaded && card.classList.contains("open")) { previewLoaded = true; preview.now(); }
+      if (!previewLoaded && card.classList.contains("open")) {
+        previewLoaded = true;
+        if (preview) preview.now();
+        if (local) local.load();
+      }
     });
     return { card, g, countCustom };
   });
@@ -3692,11 +3708,17 @@ const txPrefix = it => {
   return i > 0 ? n.slice(0, i).trim().toLowerCase() : null;
 };
 
-/** Preview box for one group of bot texts: shows the text being edited in its Discord form. */
-function botTextPreview(items, valueOf) {
+/**
+ * Preview box for one group of bot texts. loadScreens() → [{ title, keys, preview }]: real screens the bot builds
+ * (wizard steps, menus, windows) with the unsaved texts — shown as tabs; editing a text opens the screen that uses it.
+ * Texts in no screen (replies, errors) are drawn on their own, in their Discord form.
+ */
+function botTextPreview(items, valueOf, loadScreens) {
   const frame = h("div", { class: "dc-frame" });
   const note = h("p", { class: "muted small" });
+  const tabs = h("div", { class: "seg screen-tabs" });
   let current = items[0];
+  let screens = [], tab = -1, timer = 0, seq = 0;
   const S = txSamples();
   const mentions = { "<@1>": `@${state.me?.name || "member"}`, "<@&2>": "@Aion 2", "<#3>": "#lfg" };
   const fill = v => String(v ?? "").replace(/\{(\w+)\}/g, (m, k) => k in S ? S[k] : m);
@@ -3775,10 +3797,56 @@ function botTextPreview(items, valueOf) {
     frame.replaceChildren(out);
     note.textContent = `${it.name} · {placeholders} filled with sample values`;
   };
-  return {
-    el: h("div", { class: "card preview-card" }, h("h3", {}, "Preview"), frame, note),
-    show(it) { current = it; draw(); }
+
+  const drawTabs = () => {
+    tabs.style.display = screens.length ? "" : "none";
+    tabs.replaceChildren(...screens.map((sc, i) => h("button", { type: "button", class: `seg-btn${tab === i ? " active" : ""}`,
+      title: "How the bot shows this screen", onclick: () => { tab = i; render(); } }, sc.title)),
+      screens.length ? h("button", { type: "button", class: `seg-btn${tab === -1 ? " active" : ""}`, title: "Only the text you are editing",
+        onclick: () => { tab = -1; render(); } }, "This text") : null);
   };
+  const render = () => {
+    drawTabs();
+    const sc = screens[tab];
+    if (!sc) { draw(); return; }
+    const kind = txKind(current);
+    frame.replaceChildren(sc.preview.modal ? dcModal(sc.preview.modal) : dcFromPreview(sc.preview, { expand: kind === "option" || kind === "select" }));
+    note.textContent = sc.keys.includes(current.key)
+      ? `${sc.title} · uses “${current.name}” · built by the bot with your unsaved texts`
+      : `${sc.title} · built by the bot with your unsaved texts`;
+  };
+  const pick = it => {
+    const i = screens.findIndex(sc => sc.keys.includes(it.key));
+    tab = i;
+  };
+  const fetchScreens = async () => {
+    if (!loadScreens) return;
+    const my = ++seq;
+    try {
+      const res = await loadScreens();
+      if (my !== seq) return;
+      const keep = screens[tab]?.title;
+      screens = res.screens || [];
+      const again = screens.findIndex(sc => sc.title === keep);
+      tab = again >= 0 && screens[again].keys.includes(current.key) ? again : (pick(current), tab);
+      render();
+    } catch { /* keep the text preview */ }
+  };
+  return {
+    el: h("div", { class: "card preview-card" }, h("h3", {}, "Preview"), tabs, frame, note),
+    show(it) { current = it; pick(it); render(); },
+    changed(it) { current = it; render(); clearTimeout(timer); timer = setTimeout(fetchScreens, 350); },
+    load: fetchScreens
+  };
+}
+
+/** A Discord window (modal) mock: title, fields, Cancel / Submit. */
+function dcModal(m) {
+  return h("div", { class: "dc-modal" }, h("div", { class: "dc-modal-title" }, m.title || "Window"),
+    (m.fields || []).flatMap(f => [
+      h("div", { class: "dc-modal-label" }, f.label || "", f.required ? h("span", { class: "dc-req" }, " *") : null),
+      h("div", { class: `dc-input${f.long ? " long" : ""}` }, f.value ? h("span", { style: "color:#dbdee1" }, f.value) : f.placeholder || "")]),
+    h("div", { class: "dc-modal-actions" }, h("span", { class: "dc-btn dc-btn-link-plain" }, "Cancel"), h("span", { class: "dc-btn dc-btn-blurple" }, "Submit")));
 }
 
 /** One editable bot text (textarea) or color (swatch). onChange(value) — "" = default. */

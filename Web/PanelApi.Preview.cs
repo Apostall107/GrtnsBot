@@ -53,6 +53,106 @@ public static partial class PanelApi
             };
         });
 
+        // Bot messages: все экраны группы текстов (шаги мастера, меню, окна) — с черновыми текстами и списком ключей каждого экрана
+        texts.MapPost("/bot/screens", (ulong guildId, BotPreviewBody body, ClaimsPrincipal user, DiscordSocketClient client,
+            LfgStore lfg, ActivityStore activities, LfgTemplateStore templates, LfgProfileService profile, TicketStore ticketStore, TimeService time) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            var values = (body.Values ?? []).Where(kv => kv.Value is not null).ToDictionary(kv => kv.Key, kv => kv.Value!);
+            using var _ = Tx.Preview(values);
+            var screens = new List<object>();
+            void Add(string title, Func<object> render)
+            {
+                var keys = new HashSet<string>();
+                try
+                {
+                    object result;
+                    using (Tx.Record(keys)) result = render();
+                    screens.Add(new { title, keys, preview = result });
+                }
+                catch { /* this screen can't be drawn for the server's data — skip it */ }
+            }
+            object Msg(Screen sc) => MessagePreview(guild, sc.Content, sc.Embed is null ? [] : [sc.Embed], sc.Components);
+            object Embeds(MessageComponent? comps, params Embed[] embeds) => MessagePreview(guild, null, embeds, comps);
+
+            var me = user.UserId() ?? 0;
+            var g = SampleGroup(guild, user);
+            var acts = activities.ForProject(guildId, g.ProjectKey);
+            var role = acts.FirstOrDefault(a => guild.GetRole(a.RoleId) is not null) is { } act ? act.RoleId
+                : guild.Roles.Where(r => !r.IsEveryone && !r.IsManaged).OrderByDescending(r => r.Position).FirstOrDefault()?.Id;
+            LfgDraft Draft(bool full)
+            {
+                var d = new LfgDraft(guildId, 0, me)
+                {
+                    ActivityName = "Ludra Hard", PingRoleId = role,
+                    Slots = new[] { SlotRole.Tank, SlotRole.Dps, SlotRole.Dps, SlotRole.Healer, SlotRole.Dps, SlotRole.Any }.Select(r => new Slot { Role = r }).ToList()
+                };
+                if (!full) return d;
+                d.Selected = [1, 2];
+                d.EventDate = time.Today.AddDays(1);
+                d.EventHour = 20;
+                if (role is { } r) d.RequiredRoleIds = [r];
+                d.MinGs = 3000;
+                d.Note = "Bring buff food";
+                return d;
+            }
+            var sampleTemplates = templates.Get(guildId) is { Count: > 0 } real ? real
+                : [new LfgTemplate { Name = "Ludra Hard 6", Slots = [SlotRole.Tank, SlotRole.Dps, SlotRole.Dps, SlotRole.Healer, SlotRole.Dps, SlotRole.Any] }];
+
+            switch (body.Sample)
+            {
+                case "LFG — creating a group":
+                    Add("Step 1", () => Msg(LfgRenderer.SizeStep(Draft(false))));
+                    Add("Step 1 · templates", () => Msg(LfgRenderer.SizeStep(Draft(false), sampleTemplates)));
+                    Add("Step 2", () => Msg(LfgRenderer.ActivityStep(Draft(false), acts)));
+                    Add("Step 2 · no activities", () => Msg(LfgRenderer.ActivityStep(Draft(false), [])));
+                    Add("Step 3", () => Msg(LfgRenderer.SlotStep(Draft(true))));
+                    Add("Step 3 · no ping", () => { var d = Draft(true); d.PingRoleId = null; return Msg(LfgRenderer.SlotStep(d)); });
+                    Add("Step 4", () =>
+                    {
+                        var d = Draft(true);
+                        return Msg(LfgRenderer.TimeStep(d, time.Today, time.ToUtc(d.EventDate!.Value, d.EventHour!.Value, 0), time.ZoneName));
+                    });
+                    Add("Step 4 · no time", () => { var d = Draft(false); return Msg(LfgRenderer.TimeStep(d, time.Today, null, time.ZoneName)); });
+                    Add("Custom activity window", () => ModalPreview(LfgRenderer.CustomActivityModal(guildId, "x")));
+                    Add("Note window", () => ModalPreview(LfgRenderer.NoteModal(guildId, "x", null)));
+                    Add("Time window", () => ModalPreview(LfgRenderer.TimeModal(guildId, "x")));
+                    break;
+                case "LFG — signing up":
+                    Add("Character picker", () => Msg(LfgRenderer.CharacterPicker(g, SlotRole.Dps,
+                        [("Kayleth", "main", null), ("Apostall", null, null)])));
+                    Add("Character window", () => ModalPreview(LfgRenderer.CharacterModal(guildId, "x")));
+                    break;
+                case "LFG — class, note & GS":
+                    Add("After signing up", () => MessagePreview(guild,
+                        Tx.Get(guildId, "lfg.sign.joined", ("activity", g.ActivityName), ("role", "⚔️ **DD**"), ("name", "Organizer"))
+                        + Tx.Line(guildId, "lfg.sign.profileHint"), [], profile.Controls(g, me)));
+                    Add("Note & GS window", () => profile.NoteModal(g, me) is { } m ? ModalPreview(m) : throw new InvalidOperationException());
+                    break;
+                case "LFG — organizer":
+                    Add("Manage menu", () => Msg(LfgRenderer.Manage(g)));
+                    Add("Group invites", () => Embeds(null, LfgRenderer.Invites(g, 0)));
+                    Add("Dungeon invites", () => Embeds(null, LfgRenderer.Invites(g, 0, false)));
+                    break;
+                case "LFG — DMs & reminders":
+                    Add("New group DM", () => Embeds(new ComponentBuilder()
+                        .WithButton(Tx.Get(guildId, "lfg.dm.openGroup"), style: ButtonStyle.Link, url: "https://discord.com")
+                        .WithButton(Tx.Get(guildId, "lfg.dm.turnOff"), "x", ButtonStyle.Secondary).Build(),
+                        LfgRenderer.DmNotice(g, guild.Name)));
+                    break;
+                case "Tickets — creating":
+                    var projects = ticketStore.GetProjects(guildId);
+                    if (projects.Count > 0) Add("Project picker", () => MessagePreview(guild, null, [], TicketRenderer.ProjectPicker(guildId, projects)));
+                    if (projects.FirstOrDefault(p => p.FormEnabled && p.Questions.Count > 0) is { } withForm)
+                        Add($"Application form · {withForm.Name}", () => ModalPreview(TicketRenderer.FormModal(guildId, withForm)));
+                    break;
+                case "Tickets — approve, deny, close":
+                    Add("Deny window", () => ModalPreview(TicketRenderer.DenyModal(guildId, "x")));
+                    break;
+            }
+            return Results.Ok(new { screens });
+        });
+
         // Сообщение в тикете с черновым текстом проекта (Tickets → проект)
         tickets.MapPost("/projects/{key}/preview", (ulong guildId, string key, ProjectUpdateBody body, ClaimsPrincipal user,
             DiscordSocketClient client, TicketStore ticketStore) =>
@@ -169,6 +269,26 @@ public static partial class PanelApi
         return MessagePreview(guild, null, embeds, comps, $"Ticket · {project.Name}");
     }
 
+    /// <summary>Окно (modal) → заголовок и поля для рисования на сайте.</summary>
+    private static object ModalPreview(Modal modal)
+    {
+        var fields = new List<object>();
+        void Walk(IMessageComponent c, string? label)
+        {
+            switch (c)
+            {
+                case ActionRowComponent row: foreach (var x in row.Components) Walk(x, label); break;
+                case LabelComponent l: Walk(l.Component, l.Label); break;
+                case TextInputComponent t:
+                    fields.Add(new { label = t.Label ?? label, placeholder = t.Placeholder, value = t.Value, required = t.Required ?? true,
+                        @long = t.Style == TextInputStyle.Paragraph });
+                    break;
+            }
+        }
+        foreach (var c in modal.Component.Components) Walk(c, null);
+        return new { modal = new { title = modal.Title, fields } };
+    }
+
     /// <summary>Сообщение → данные для рисования на сайте; упоминания и каналы — уже с именами.</summary>
     private static object MessagePreview(SocketGuild guild, string? content, IEnumerable<Embed> embeds, MessageComponent? comps, string? note = null)
     {
@@ -202,7 +322,8 @@ public static partial class PanelApi
         var rows = comps?.Components.OfType<ActionRowComponent>().Select(row => row.Components.Select(c => c switch
         {
             ButtonComponent b => new PreviewPart("button", b.Label, b.Emote?.ToString(), b.Style.ToString(), b.Url, b.IsDisabled),
-            SelectMenuComponent s => new PreviewPart("select", s.Placeholder, null, s.Type.ToString(), null, s.IsDisabled),
+            SelectMenuComponent s => new PreviewPart("select", s.Placeholder, null, s.Type.ToString(), null, s.IsDisabled,
+                s.Options?.Take(25).Select(o => new PreviewOption(o.Label, o.Description, o.Emote?.ToString(), o.IsDefault ?? false)).ToList()),
             _ => new PreviewPart("other", null, null, null, null, false)
         }).ToList()).ToList() ?? [];
 
@@ -228,6 +349,9 @@ public static partial class PanelApi
 }
 
 /// <summary>A button or a menu of a previewed message.</summary>
-public sealed record PreviewPart(string Type, string? Label, string? Emoji, string? Style, string? Url, bool Disabled);
+public sealed record PreviewPart(string Type, string? Label, string? Emoji, string? Style, string? Url, bool Disabled,
+    List<PreviewOption>? Options = null);
+
+public sealed record PreviewOption(string Label, string? Description, string? Emoji, bool IsDefault);
 
 public sealed record BotPreviewBody(string? Sample, Dictionary<string, string?>? Values);
