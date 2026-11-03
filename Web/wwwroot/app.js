@@ -5435,7 +5435,7 @@ async function guildRoster(holder) {
     const seen = new Map();
     for (const c of d.characters) if (c.classRole && (!project.value || c.project === project.value)) seen.set(c.classRole.id, c.classRole);
     const keep = cls.value;
-    cls.replaceChildren(h("option", { value: "" }, "Any class"), [...seen.values()].sort((a, b) => a.name.localeCompare(b.name)).map(r => h("option", { value: r.id }, r.name)));
+    cls.replaceChildren(h("option", { value: "" }, "Any class"), ...[...seen.values()].sort((a, b) => a.name.localeCompare(b.name)).map(r => h("option", { value: r.id }, r.name)));
     cls.value = seen.has(keep) ? keep : "";
   };
   const stale = ms => !ms || Date.now() - ms > 14 * 86400000;
