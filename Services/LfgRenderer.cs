@@ -14,7 +14,7 @@ public static class LfgRenderer
     public const string CustomActivityValue = "__custom";
     public const string NewCharacterValue = "__new";
     /// <summary>Версия вида поста сбора: увеличить при изменении поста/кнопок — активные посты перерисуются при старте бота.</summary>
-    public const int PostVersion = 2;
+    public const int PostVersion = 3;
 
     // ---------- Панель в канале ----------
     /// <summary>Тексты по умолчанию — <see cref="PanelDefs.Lfg"/>, свои — из веб-админки (PanelTextStore).</summary>
@@ -22,7 +22,7 @@ public static class LfgRenderer
     {
         var def = PanelDefs.Lfg;
         var embed = new EmbedBuilder()
-            .WithTitle(def.Title(text))
+            .WithSiteTitle(def.Title(text))
             .WithColor(def.Color(text))
             .WithDescription(def.Description(text)
                 .Replace("{hours}", autoDeleteHours.ToString())
@@ -286,7 +286,7 @@ public static class LfgRenderer
             : (Tx.Get(gid, "lfg.post.recruiting"), Tx.Color(gid, "color.lfg.recruiting"));
 
         var embed = new EmbedBuilder()
-            .WithTitle(g.ActivityName)
+            .WithSiteTitle(g.ActivityName)
             .WithDescription(sb.ToString())
             .WithColor(color)
             .WithFooter(Tx.Get(gid, "lfg.post.footer", ("status", status), ("id", g.Id)))

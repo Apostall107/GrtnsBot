@@ -180,7 +180,7 @@ public sealed class TempRoomManager(TempVoiceStore store, DiscordSocketClient cl
     {
         var def = PanelDefs.Rooms;
         var embed = new EmbedBuilder()
-            .WithTitle(def.Title(text))
+            .WithSiteTitle(def.Title(text))
             .WithColor(def.Color(text))
             .WithDescription(def.Description(text))
             .WithSiteField()
