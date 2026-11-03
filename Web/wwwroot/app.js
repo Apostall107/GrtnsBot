@@ -889,6 +889,7 @@ const allTabs = [
   ["lfg", "swords", "LFG", "lfg", "Community modules"],
   ["tickets", "ticket", "Tickets", "tickets", "Community modules"],
   ["voice", "headphones", "Temp Voice", "voice", "Community modules"],
+  ["roles", "user-plus", "Welcome & roles", "roles", "Community modules"],
   ["content", "layout-template", "Panels & posts", "content", "Community modules"],
   ["announce", "megaphone", "Announcements", "announce", "Community modules"],
   ["overview", "layout-dashboard", "Dashboard", "admin", "Administration"],
@@ -908,8 +909,8 @@ const can = perm => {
 };
 const MEMBER_TABS = ["home", "play", "chars"];
 const visibleTabs = () => allTabs.filter(t => can(t[3]));
-const PERM_LABELS = { lfg: "LFG", tickets: "Tickets", voice: "Temp Voice", texts: "Panel texts", posts: "Posts", announce: "Announcements", log: "Log", settings: "Settings" };
-const PERM_ICONS = { lfg: "swords", tickets: "ticket", voice: "headphones", texts: "file-pen-line", posts: "pin", announce: "megaphone", log: "scroll-text", settings: "settings" };
+const PERM_LABELS = { lfg: "LFG", tickets: "Tickets", voice: "Temp Voice", roles: "Welcome & roles", texts: "Panel texts", posts: "Posts", announce: "Announcements", log: "Log", settings: "Settings" };
+const PERM_ICONS = { lfg: "swords", tickets: "ticket", voice: "headphones", roles: "user-plus", texts: "file-pen-line", posts: "pin", announce: "megaphone", log: "scroll-text", settings: "settings" };
 
 function renderLogin(message) {
   const params = new URLSearchParams(location.search);
@@ -989,7 +990,7 @@ function renderShell() {
   // ----- Sidebar: sections, Lucide icons, active route; collapses to icons on desktop, drawer on mobile
   const layout = h("div", { class: `layout${collapsed ? " collapsed" : ""}` });
   const closeDrawer = () => layout.classList.remove("drawer-open");
-  const NAV_TONES = { home: "violet", play: "violet", chars: "cyan", lfg: "violet", tickets: "amber", voice: "teal", content: "blue",
+  const NAV_TONES = { home: "violet", play: "violet", chars: "cyan", lfg: "violet", tickets: "amber", voice: "teal", roles: "green", content: "blue",
     announce: "pink", overview: "green", log: "blue", settings: "cyan", access: "amber" };
   const navButton = ([key, ic, label]) => h("button", {
     // Tooltip only when the menu is collapsed to icons (labels are visible otherwise)
@@ -1049,7 +1050,7 @@ function renderShell() {
 
   if (!state.guildId) { main.append(empty("No servers available for your account.")); return; }
   if (!visibleTabs().length) { main.append(empty("You have no sections on this server. Ask an admin for the member role.")); return; }
-  const page = { home: pageHome, content: pageContent, play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, tickets: pageTickets, voice: pageVoice, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess }[state.tab];
+  const page = { home: pageHome, content: pageContent, play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, tickets: pageTickets, voice: pageVoice, roles: pageRoles, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess }[state.tab];
   page(main);
   addGuideButton(main, state.tab);
   decorateHeading(main);
@@ -2665,6 +2666,180 @@ function roomRow(r) {
     h("td", { class: "actions" }, owner, " ", del));
 }
 
+
+// ================= Welcome & roles =================
+
+const ROLE_STYLES = [["Buttons", "🔘 Buttons"], ["Dropdown", "📋 Dropdown list"], ["Reactions", "😀 Reactions"]];
+const ROLE_MODES = [["Normal", "Get / remove (toggle)"], ["Unique", "Only one role of the panel"], ["Verify", "Give only (e.g. accept the rules)"]];
+
+async function pageRoles(main) {
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "👋 Welcome & roles"),
+    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
+
+  const welcomeHolder = h("div", { class: "card" }, skeletonLines(4));
+  const panelsHolder = h("div", { class: "card" }, skeletonLines(3));
+  main.append(welcomeHolder, panelsHolder);
+
+  let w, panels, emojis = [];
+  try {
+    [w, panels] = await Promise.all([gApi("GET", "/community/welcome"), gApi("GET", "/community/panels")]);
+    try { emojis = await gApi("GET", "/community/emojis"); } catch { /* only unicode then */ }
+  } catch (e) { welcomeHolder.replaceChildren(empty(e.message)); panelsHolder.remove(); return; }
+
+  welcomeHolder.replaceChildren(...welcomeCard(w).children);
+  const add = h("button", { class: "btn", onclick: () => rolePanelDialog(null, emojis) }, icon("plus", 15), "New role panel");
+  panelsHolder.replaceChildren(
+    h("div", { class: "card-head" }, h("h2", {}, "🎭 Role panels"), add),
+    h("p", { class: "muted small" }, "Members pick roles themselves with buttons, a dropdown list or reactions. ",
+      "The bot's role must be above every role on a panel (Server Settings → Roles) and it needs Manage Roles."),
+    panels.length ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
+      h("thead", {}, h("tr", {}, h("th", {}, "Panel"), h("th", {}, "Roles"), h("th", {}, "Posted in"), h("th", {}))),
+      h("tbody", {}, panels.map(p => rolePanelRow(p, emojis))))) : empty("No role panels yet."));
+}
+
+function welcomeCard(w) {
+  const channel = channelSelect("text", "Off — no channel message");
+  channel.value = w.channelId || "";
+  const channelText = h("textarea", { maxlength: "1800", style: "min-height:90px", value: w.channelText });
+  const sendDm = h("input", { type: "checkbox", checked: w.sendDm });
+  const dmText = h("textarea", { maxlength: "1800", style: "min-height:90px", value: w.dmText });
+  const applyButton = h("input", { type: "checkbox", checked: w.applyButton });
+
+  const mode = h("select", {}, h("option", { value: "off" }, "Off — don't give any role (default)"), h("option", { value: "join" }, "Give right when a member joins"));
+  mode.value = w.autoRoleMode || "off";
+  const roles = roleListEditor(w.autoRoles, state.roles);
+  const skipBots = h("input", { type: "checkbox", checked: w.skipBots });
+  const roleBox = h("div", {}, h("div", { class: "field" }, h("label", {}, "Auto roles"), roles.el),
+    h("label", { class: "row", style: "margin-bottom:8px" }, skipBots, "Don't give auto roles to bots"));
+  const sync = () => { roleBox.style.display = mode.value === "join" ? "" : "none"; };
+  mode.addEventListener("change", sync); sync();
+
+  const save = h("button", { class: "btn" }, icon("save", 15), "Save");
+  save.addEventListener("click", () => act(save, () => gApi("PUT", "/community/welcome", {
+    channelId: channel.value || null, channelText: channelText.value, sendDm: sendDm.checked, dmText: dmText.value,
+    applyButton: applyButton.checked, autoRoleMode: mode.value, autoRoleIds: roles.value(), skipBots: skipBots.checked
+  }), "Welcome settings saved."));
+  const test = h("button", { class: "btn secondary", title: "Sends the welcome to your DMs as if you just joined" }, icon("send", 15), "Send me a test");
+  test.addEventListener("click", () => act(test, () => gApi("POST", "/community/welcome/test"), "Sent to your DMs."));
+
+  const reset = (ta, text) => h("button", { class: "btn ghost sm", type: "button", title: "Default text", onclick: () => { ta.value = text; } }, "↩ Default");
+
+  return h("div", {},
+    h("div", { class: "card-head" }, h("h2", {}, "👋 Welcome")),
+    h("p", { class: "muted small" }, "Placeholders: ", h("code", {}, "{user}"), " mention, ", h("code", {}, "{name}"), " name, ",
+      h("code", {}, "{server}"), ", ", h("code", {}, "{members}"), " member count, ", h("code", {}, "{tickets}"), " link to the ticket panel",
+      w.ticketPanelUrl ? "." : " (post the ticket panel first — until then it is empty)."),
+    h("div", { class: "grid2" },
+      h("div", {},
+        h("div", { class: "field" }, h("label", {}, "Channel message"), channel),
+        h("div", { class: "field" }, h("label", { class: "row" }, "Text", h("span", { class: "spacer" }), reset(channelText, w.defaults.channelText)), channelText)),
+      h("div", {},
+        h("label", { class: "row", style: "margin:6px 0 12px" }, sendDm, "Also send it to the new member by DM"),
+        h("div", { class: "field" }, h("label", { class: "row" }, "DM text", h("span", { class: "spacer" }), reset(dmText, w.defaults.dmText)), dmText))),
+    h("label", { class: "row", style: "margin-bottom:12px" }, applyButton, "📝 “Apply” button under the welcome (link to the ticket panel)"),
+    h("h3", {}, "Auto role"),
+    h("p", { class: "muted small" }, "Off by default. For a role given after accepting the rules, make a role panel in the “Give only” mode below.",
+      w.canManageRoles ? null : h("span", { class: "error-text" }, " The bot has no Manage Roles permission.")),
+    h("div", { class: "field" }, h("label", {}, "Mode"), mode),
+    roleBox,
+    h("div", { class: "row" }, save, test));
+}
+
+function rolePanelRow(p, emojis) {
+  const post = channelSelect("text", "Channel…");
+  if (p.channelId) post.value = p.channelId;
+  const postBtn = h("button", { class: "btn secondary" }, icon("pin", 15), p.jumpUrl ? "Repost" : "Post");
+  postBtn.addEventListener("click", async () => {
+    if (!post.value) return toast("Choose a channel first.", "warn");
+    if (p.jumpUrl && !await confirmDialog("Post this panel again?", "The old message is deleted and the panel is posted in the chosen channel.", "Post", false)) return;
+    if (await act(postBtn, () => gApi("POST", `/community/panels/${p.id}/post`, { channelId: post.value }), "Panel posted.") !== undefined) refresh();
+  });
+  const edit = h("button", { class: "btn secondary", onclick: () => rolePanelDialog(p, emojis) }, icon("pencil", 15), "Edit");
+  const del = h("button", { class: "btn ghost" }, icon("trash-2", 15), "Delete");
+  del.addEventListener("click", async () => {
+    if (!await confirmDialog(`Delete “${p.title || "role panel"}”?`, "The posted message is deleted too. Members keep the roles they already have.", "Delete")) return;
+    if (await act(del, () => gApi("DELETE", `/community/panels/${p.id}`), "Panel deleted.") !== undefined) refresh();
+  });
+  const styleLabel = (ROLE_STYLES.find(([v]) => v === p.style) || [, p.style])[1];
+  const modeLabel = (ROLE_MODES.find(([v]) => v === p.mode) || [, p.mode])[1];
+  return h("tr", {},
+    h("td", {}, h("b", {}, p.title || "(no title)"), h("div", { class: "muted small" }, `${styleLabel} · ${modeLabel}`)),
+    h("td", {}, p.options.map(o => h("div", { class: "row", style: "gap:6px" },
+      o.emoji ? classMark({ classIcon: o.emoji }) : null, roleChip(o.role),
+      o.role.manageable ? null : h("span", { class: "chip warn", title: "The bot can't give this role" }, "bot can't give")))),
+    h("td", {}, p.jumpUrl ? h("a", { href: p.jumpUrl, target: "_blank", rel: "noopener" }, `#${p.channel || "channel"}`) : h("span", { class: "muted" }, "not posted"),
+      h("div", { class: "row", style: "margin-top:6px" }, post, postBtn)),
+    h("td", { class: "actions" }, edit, " ", del));
+}
+
+function rolePanelDialog(p, emojis) {
+  const d = dialog();
+  const v = p || { title: "Pick your roles", text: "", style: "Buttons", mode: "Normal", options: [] };
+  const title = h("input", { maxlength: "256", placeholder: "Title", value: v.title || "" });
+  const text = h("textarea", { maxlength: "3000", placeholder: "Text above the roles (Markdown works)", style: "min-height:90px", value: v.text || "" });
+  const color = h("input", { placeholder: "#5865f2 (empty = default)", maxlength: "7", style: "width:170px", value: v.color || "" });
+  const style = h("select", {}, ROLE_STYLES.map(([val, label]) => h("option", { value: val }, label)));
+  style.value = v.style;
+  const mode = h("select", {}, ROLE_MODES.map(([val, label]) => h("option", { value: val }, label)));
+  mode.value = v.mode;
+  const placeholder = h("input", { maxlength: "150", placeholder: "Dropdown hint (empty = default)", value: v.placeholder || "" });
+  const channel = p ? null : channelSelect("text", "Don't post yet");
+
+  let rows = v.options.map(o => ({ roleId: o.role.id, label: o.label || "", emoji: o.emoji || "", description: o.description || "" }));
+  const list = h("div", {});
+  const draw = () => {
+    const isDropdown = style.value === "Dropdown";
+    placeholderField.style.display = isDropdown ? "" : "none";
+    list.replaceChildren(...rows.map((r, i) => {
+      const role = roleSelect("Role…", rows.filter((x, j) => j !== i).map(x => x.roleId));
+      role.value = r.roleId || "";
+      role.addEventListener("change", () => { r.roleId = role.value; });
+      const emoji = h("input", { placeholder: "emoji", style: "width:120px", value: r.emoji });
+      const prev = h("span", { style: "min-width:20px" }, r.emoji ? classMark({ classIcon: r.emoji }) : null);
+      emoji.addEventListener("input", () => { r.emoji = emoji.value; prev.replaceChildren(r.emoji ? classMark({ classIcon: r.emoji }) : ""); });
+      const pick = emojis.length ? h("select", { style: "width:120px" }, h("option", { value: "" }, "server emoji…"),
+        emojis.map(e => h("option", { value: e.code }, `:${e.name}:${e.app ? " (bot)" : ""}`))) : null;
+      if (pick) pick.addEventListener("change", () => { if (pick.value) { r.emoji = emoji.value = pick.value; prev.replaceChildren(classMark({ classIcon: r.emoji })); pick.value = ""; } });
+      const label = h("input", { maxlength: "80", placeholder: "Label (empty = role name)", value: r.label });
+      label.addEventListener("input", () => { r.label = label.value; });
+      const descr = isDropdown ? h("input", { maxlength: "100", placeholder: "Description (optional)", value: r.description }) : null;
+      if (descr) descr.addEventListener("input", () => { r.description = descr.value; });
+      return h("div", { class: "row question-row" }, role, prev, emoji, pick, label, descr,
+        h("button", { class: "btn ghost", type: "button", title: "Remove", onclick: () => { rows.splice(i, 1); draw(); } }, "✖"));
+    }));
+  };
+  const placeholderField = h("div", { class: "field" }, h("label", {}, "Dropdown hint"), placeholder);
+  style.addEventListener("change", draw);
+  const addRow = h("button", { class: "btn secondary", type: "button" }, icon("plus", 14), "Add role");
+  addRow.addEventListener("click", () => { rows.push({ roleId: "", label: "", emoji: "", description: "" }); draw(); });
+  if (!rows.length) rows.push({ roleId: "", label: "", emoji: "", description: "" });
+  draw();
+
+  const save = h("button", { class: "btn" }, icon("save", 15), p ? "Save" : "Create");
+  save.addEventListener("click", async () => {
+    const body = {
+      title: title.value, text: text.value, color: color.value || null, style: style.value, mode: mode.value,
+      placeholder: placeholder.value || null, options: rows.filter(r => r.roleId), channelId: channel ? channel.value || null : null
+    };
+    const res = await act(save, () => p ? gApi("PUT", `/community/panels/${p.id}`, body) : gApi("POST", "/community/panels", body),
+      p ? (p.jumpUrl ? "Saved — the posted panel is updated." : "Saved.") : (body.channelId ? "Panel created and posted." : "Panel created — post it from the list."));
+    if (res !== undefined) { d.close(); refresh(); }
+  });
+
+  d.replaceChildren(h("h2", {}, p ? "Edit role panel" : "New role panel"),
+    h("div", { class: "field" }, h("label", {}, "Title"), title),
+    h("div", { class: "field" }, h("label", {}, "Text"), text),
+    h("div", { class: "grid2" },
+      h("div", { class: "field" }, h("label", {}, "How members pick"), style),
+      h("div", { class: "field" }, h("label", {}, "Mode"), mode)),
+    h("div", { class: "grid2" }, placeholderField, h("div", { class: "field" }, h("label", {}, "Stripe color"), color)),
+    h("div", { class: "field" }, h("label", {}, "Roles"), h("span", { class: "muted small" }, "With reactions every role needs its own emoji."), list,
+      h("div", { style: "margin-top:6px" }, addRow)),
+    channel ? h("div", { class: "field" }, h("label", {}, "Post in channel"), channel) : null,
+    h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), save));
+  d.showModal();
+}
+
 // ================= Panel texts =================
 
 async function pageTexts(main) {
@@ -3978,6 +4153,27 @@ const HELP = {
       "Edit the room name template and limit of each channel, or remove it (the channel itself stays).",
       "**Room control panel** — post it into a text channel.",
       "**Active rooms** — owner, who is inside, 👑 transfer ownership, delete the room."
+    ]]]
+  },
+  roles: {
+    title: "Welcome & roles",
+    features: [["What it can do", [
+      "**Welcome**: a message in a channel and/or a DM to every new member, with placeholders and an 📝 **Apply** button that opens the ticket panel.",
+      "**Auto role** (off by default): roles given right when a member joins.",
+      "**Role panels**: members take roles themselves — 🔘 buttons, 📋 a dropdown list or 😀 reactions.",
+      "Panel modes: **Get / remove** (click again to remove), **Only one role** (a new pick replaces the old one), **Give only** (e.g. a role for accepting the rules — it can't be removed via the panel).",
+      "Every role change is in the Log."
+    ]]],
+    discord: [["In Discord", [
+      "New members see the welcome in the channel and/or DMs. On a role panel: click a button, pick in the list or add a reaction — the bot answers only to you.",
+      "The bot's role must be **above** the roles it gives (Server Settings → Roles) and it needs **Manage Roles**; for reactions in the “only one” mode also **Manage Messages**."
+    ]]],
+    panel: [["Using it", [
+      "**Welcome**: choose the channel (or off), write the texts, tick the DM / Apply button → **Save**. **Send me a test** sends it to your DMs.",
+      "**Auto role**: Mode → Give when a member joins, add roles → **Save**.",
+      "**New role panel**: title, text, how members pick, mode, roles (emoji, label, description for the list) → **Create** (optionally post right away).",
+      "In the list: **Post / Repost** in a channel, **Edit** (a posted panel updates at once), **Delete** (removes the message too).",
+      "Texts of the bot's answers and the hints under panels: Panels & posts → 💬 Bot messages → Welcome & role panels."
     ]]]
   },
   texts: {
