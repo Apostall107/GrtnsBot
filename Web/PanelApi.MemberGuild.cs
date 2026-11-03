@@ -118,9 +118,10 @@ public static partial class PanelApi
                     .OrderBy(x => x.character, StringComparer.OrdinalIgnoreCase)
                     .ToList<object>();
 
-            var top = p.MemberTop
-                ? history.Get(guildId, DateTimeOffset.UtcNow.AddDays(-30))
-                    .Where(e => Allowed(e.ProjectKey ?? def))
+            // Топ: по каждому проекту отдельно (ключ проекта; "" — все доступные вместе)
+            var recent = history.Get(guildId, DateTimeOffset.UtcNow.AddDays(-30)).Where(e => Allowed(e.ProjectKey ?? def)).ToList();
+            List<object> Top(string? projectKey) => recent
+                    .Where(e => projectKey is null || (e.ProjectKey ?? def) == projectKey)
                     .SelectMany(e => e.Members.Where(m => m.Attended != false))
                     .GroupBy(m => m.UserId)
                     .Where(x => OnServer(guild, x.Key))
@@ -131,14 +132,16 @@ public static partial class PanelApi
                         role = x.GroupBy(m => m.Role).OrderByDescending(r => r.Count()).First().Key
                     })
                     .OrderByDescending(x => x.groups).Take(10)
-                    .ToList<object>()
-                : null;
+                    .ToList<object>();
+            var top = p.MemberTop ? Top(null) : null;
+            var topByProject = p.MemberTop ? allowedProjects.ToDictionary(x => x.Key, x => Top(x.Key)) : null;
 
             return Results.Ok(new
             {
                 projects = allowedProjects.Select(x => new { key = x.Key, name = x.Name, isDefault = x.Key == def }),
                 roster,
-                top
+                top,
+                topByProject
             });
         });
     }
