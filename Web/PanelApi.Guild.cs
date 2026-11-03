@@ -168,6 +168,8 @@ public static partial class PanelApi
                         gs = c.Info?.Gs,
                         armory = ArmoryDto(c.Info?.Armory),
                         server = c.Info?.Armory?.ServerName ?? OfficialArmory.ServerName(c.Info?.ServerId),
+                        // Фракция по серверу: 1xxx — Elyos, 2xxx — Asmodians
+                        race = ArmorySyncService.RaceOfServer(c.Info?.Armory?.ServerId ?? c.Info?.ServerId ?? 0),
                         gsUpdated = c.Info?.GsUpdatedAt?.ToUnixTimeMilliseconds(),
                         joined = user?.JoinedAt?.ToUnixTimeMilliseconds(),
                         lastActive = act?.Last?.ToUnixTimeMilliseconds()

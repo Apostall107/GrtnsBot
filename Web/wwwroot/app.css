@@ -1522,3 +1522,5 @@ th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
 .armory-link { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600;
   text-decoration: none; white-space: nowrap; color: #7dd3fc; background: rgba(56, 189, 248, .12); box-shadow: inset 0 0 0 1px rgba(56, 189, 248, .35); }
 .armory-link:hover { background: rgba(56, 189, 248, .22); color: #bae6fd; }
+.chip.server.elyos { color: #7dd3fc; background: rgba(56, 189, 248, .14); box-shadow: inset 0 0 0 1px rgba(56, 189, 248, .4); }
+.chip.server.asmo { color: #d8b4fe; background: rgba(168, 85, 247, .16); box-shadow: inset 0 0 0 1px rgba(168, 85, 247, .45); }
