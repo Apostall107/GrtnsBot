@@ -839,12 +839,13 @@ public static partial class PanelApi
 
     private static readonly (string Method, string Suffix, string Module, string Action)[] AuditActions =
     [
-        ("PUT", "/community/welcome", "roles", "Changed welcome & auto role"),
-        ("POST", "/community/welcome/test", "roles", "Sent welcome test"),
-        ("POST", "/community/panels", "roles", "Created role panel"),
-        ("PUT", "/community/panels/{panelId}", "roles", "Edited role panel"),
-        ("POST", "/community/panels/{panelId}/post", "roles", "Posted role panel"),
-        ("DELETE", "/community/panels/{panelId}", "roles", "Deleted role panel"),
+        ("PUT", "/welcome/", "welcome", "Changed welcome & auto role"),
+        ("POST", "/welcome/test", "welcome", "Sent welcome test"),
+        ("POST", "/roles/panels", "roles", "Created role panel"),
+        ("PUT", "/roles/panels/{panelId}", "roles", "Edited role panel"),
+        ("POST", "/roles/panels/{panelId}/copy", "roles", "Copied role panel"),
+        ("POST", "/roles/panels/{panelId}/post", "roles", "Posted role panel"),
+        ("DELETE", "/roles/panels/{panelId}", "roles", "Deleted role panel"),
         ("POST", "/lfg/activities", "lfg", "Added activity"),
         ("DELETE", "/lfg/activities/{key}", "lfg", "Removed activity"),
         ("POST", "/lfg/groups/{groupId}/close", "lfg", "Force-closed LFG group"),

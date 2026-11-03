@@ -18,6 +18,11 @@ public sealed class CommunityStore
         _data = File.Exists(_path)
             ? JsonSerializer.Deserialize<CommunityData>(File.ReadAllText(_path)) ?? new()
             : new();
+        // Старый формат (до разделения на Welcome и Role panels) — перенести один раз
+        var migrated = false;
+        foreach (var w in _data.Welcome) migrated |= w.Migrate();
+        foreach (var p in _data.RolePanels) migrated |= p.Migrate();
+        if (migrated) Save();
     }
 
     // ---------- Приветствие ----------

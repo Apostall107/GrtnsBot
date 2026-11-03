@@ -387,6 +387,8 @@ public static class BotTextCatalog
         T("roles.hintNormal", "Role panel hint: normal (- = hide)", "Click a role to get it, click again to remove it.", null, 500, optional: true);
         T("roles.hintUnique", "Role panel hint: one role only (- = hide)", "You can have only one of these roles — picking another one replaces it.", null, 500, optional: true);
         T("roles.hintVerify", "Role panel hint: give only (- = hide)", "The role is given once and stays.", null, 500, optional: true);
+        T("roles.hintRemove", "Role panel hint: remove only (- = hide)", "Click to remove the role from yourself.", null, 500, optional: true);
+        T("roles.needRole", "Role panel: member lacks the required role", "This panel is only for {roles}.", "{roles}", 500);
         T("roles.added", "Role given", "✅ You now have {role}.", "{role}", 500);
         T("roles.removed", "Role removed", "➖ {role} removed.", "{role}", 500);
         T("roles.already", "Already has the role", "You already have {role}.", "{role}", 500);
@@ -396,6 +398,7 @@ public static class BotTextCatalog
         T("roles.cantManage", "Bot can't give the role", "⚠️ I can't give or remove {role} — my role must be above it and I need **Manage Roles**. Tell an admin.", "{role}", 500);
         T("roles.gone", "Panel or role no longer exists", "This role panel or role no longer exists.", null, 500);
         C("color.roles.panel", "Stripe color: role panel", 0x5865F2);
+        C("color.welcome", "Stripe color: welcome card", 0x9D7BFF);
 
         // ================= General =================
         Group("General");
