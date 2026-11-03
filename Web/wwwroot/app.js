@@ -5666,6 +5666,7 @@ async function guildRoster(holder) {
   const cls = h("select", {}, h("option", { value: "" }, "Any class"));
   const minGs = h("input", { type: "number", min: "0", placeholder: "min GS", style: "width:110px" });
   const minCp = h("input", { type: "number", min: "0", placeholder: "min CP", style: "width:120px" });
+  const srv = h("select", { "aria-label": "Server" }, h("option", { value: "" }, "Any server"));
   const search = h("input", { type: "search", placeholder: "Search member or character…", style: "flex:1;min-width:180px" });
   const onlyHere = h("input", { type: "checkbox", checked: true });
   const body = h("div", {});
@@ -5675,6 +5676,11 @@ async function guildRoster(holder) {
     const keep = cls.value;
     cls.replaceChildren(h("option", { value: "" }, "Any class"), ...[...seen.values()].sort((a, b) => a.name.localeCompare(b.name)).map(r => h("option", { value: r.id }, r.name)));
     cls.value = seen.has(keep) ? keep : "";
+    const keepSrv = srv.value;
+    const servers = [...new Set(d.characters.filter(c => c.server && (!project.value || c.project === project.value)).map(c => c.server))].sort();
+    srv.replaceChildren(h("option", { value: "" }, "Any server"), ...servers.map(x => h("option", { value: x }, x)));
+    srv.value = servers.includes(keepSrv) ? keepSrv : "";
+    srv.style.display = servers.length ? "" : "none";
   };
   const stale = ms => !ms || Date.now() - ms > 14 * 86400000;
   const draw = () => {
@@ -5686,6 +5692,7 @@ async function guildRoster(holder) {
       (!cls.value || (c.classRole && c.classRole.id === cls.value)) &&
       (minGs.value === "" || (c.gs ?? -1) >= Number(minGs.value)) &&
       (minCp.value === "" || ((c.armory && c.armory.combatPower) ?? -1) >= Number(minCp.value)) &&
+      (!srv.value || c.server === srv.value) &&
       (!onlyHere.checked || c.onServer) &&
       (!q || c.character.toLowerCase().includes(q) || c.member.name.toLowerCase().includes(q) || (c.armory && (c.armory.legion || "").toLowerCase().includes(q))));
     const players = new Set(rows.map(r => r.member.id)).size;
@@ -5697,20 +5704,21 @@ async function guildRoster(holder) {
           ? h("a", { href: r.armory.url, target: "_blank", rel: "noopener", class: "armory-name", title: "Official profile on aion2.plaync.com" }, h("b", {}, r.character), icon("external-link", 12))
           : h("b", {}, r.character)],
         ["Class", r => r.classRole ? r.classRole.name : "", r => r.classRole ? h("span", { class: "row", style: "gap:4px" }, classMark(r) || null, r.classRole.name) : h("span", { class: "muted" }, "—")],
+        ["Server", r => r.server || "", r => r.server ? h("span", { class: "chip" }, r.server) : h("span", { class: "muted" }, "—")],
         ["Roles", r => r.slotRoles.join(), r => r.slotRoles.length ? r.slotRoles.map(x => h("span", { class: "chip" }, SLOT_ROLE_CHIP[x] || x)) : h("span", { class: "muted small" }, "any")],
         ["GS", r => r.gs, r => r.gs == null ? h("span", { class: "muted" }, "—") :
           h("span", { title: r.gsUpdated ? `Updated ${new Date(r.gsUpdated).toLocaleDateString()}` : "Update date unknown" }, String(r.gs), stale(r.gsUpdated) ? " ⏳" : "")],
         ["Combat power", r => r.armory ? r.armory.combatPower ?? 0 : -1, armoryCell],
         ["On server since", r => r.joined, r => r.joined ? new Date(r.joined).toLocaleDateString() : "—"],
         ["Last active", r => r.lastActive, r => r.lastActive ? fmtRelative(r.lastActive) : h("span", { class: "muted small", title: `Activity is tracked since ${new Date(d.trackingSince).toLocaleDateString()}` }, "no data")]
-      ], 4) : emptyState("users", "Nobody matches", "Change the filters."));
+      ], 5) : emptyState("users", "Nobody matches", "Change the filters."));
   };
   project.addEventListener("change", () => { fillClasses(); draw(); });
-  for (const el of [role, cls, onlyHere]) el.addEventListener("change", draw);
+  for (const el of [role, cls, onlyHere, srv]) el.addEventListener("change", draw);
   for (const el of [minGs, minCp, search]) el.addEventListener("input", draw);
   fillClasses();
   holder.replaceChildren(h("div", { class: "card" },
-    h("div", { class: "row", style: "margin-bottom:10px;flex-wrap:wrap" }, d.projects.length ? project : null, role, cls, minGs, minCp, search,
+    h("div", { class: "row", style: "margin-bottom:10px;flex-wrap:wrap" }, d.projects.length ? project : null, role, cls, srv, minGs, minCp, search,
       h("label", { class: "toggle-line" }, onlyHere, h("span", {}, "Only members on the server"))), body));
   draw();
 }
@@ -5810,6 +5818,7 @@ function memberRoster(holder, guild) {
   const cls = h("select", {}, h("option", { value: "" }, "Any class"));
   const minGs = h("input", { type: "number", min: "0", placeholder: "min GS", style: "width:110px" });
   const minCp = h("input", { type: "number", min: "0", placeholder: "min CP", style: "width:120px" });
+  const srv = h("select", { "aria-label": "Server" }, h("option", { value: "" }, "Any server"));
   const search = h("input", { type: "search", placeholder: "Search member or character…", style: "flex:1;min-width:180px" });
   const body = h("div", {});
   // Classes of the chosen project (the ones characters have)
@@ -5819,6 +5828,11 @@ function memberRoster(holder, guild) {
     const keep = cls.value;
     cls.replaceChildren(h("option", { value: "" }, "Any class"), ...[...seen.values()].sort((a, b) => a.name.localeCompare(b.name)).map(r => h("option", { value: r.id }, r.name)));
     cls.value = seen.has(keep) ? keep : "";
+    const keepSrv = srv.value;
+    const servers = [...new Set(list.filter(c => c.server && (!project.value || c.project === project.value)).map(c => c.server))].sort();
+    srv.replaceChildren(h("option", { value: "" }, "Any server"), ...servers.map(x => h("option", { value: x }, x)));
+    srv.value = servers.includes(keepSrv) ? keepSrv : "";
+    srv.style.display = servers.length ? "" : "none";
   };
   const draw = () => {
     store.set("gb.mRosterProject", project.value);
@@ -5827,6 +5841,7 @@ function memberRoster(holder, guild) {
       (!cls.value || (c.classRole && c.classRole.id === cls.value)) &&
       (minGs.value === "" || (c.gs ?? -1) >= Number(minGs.value)) &&
       (minCp.value === "" || ((c.armory && c.armory.combatPower) ?? -1) >= Number(minCp.value)) &&
+      (!srv.value || c.server === srv.value) &&
       (!q || c.character.toLowerCase().includes(q) || c.member.name.toLowerCase().includes(q)));
     body.replaceChildren(h("p", { class: "muted small" }, `${rows.length} character(s). Find a tank or a healer for your group.`),
       rows.length ? sortTable(rows, [
@@ -5835,19 +5850,21 @@ function memberRoster(holder, guild) {
           ? h("a", { href: r.armory.url, target: "_blank", rel: "noopener", class: "armory-name", title: "Official profile on aion2.plaync.com" }, h("b", {}, r.character), icon("external-link", 12))
           : h("b", {}, r.character)],
         ["Class", r => r.classRole ? r.classRole.name : "", r => r.classRole ? h("span", { class: "row", style: "gap:4px" }, classMark(r) || null, r.classRole.name) : h("span", { class: "muted" }, "—")],
+        ["Server", r => r.server || "", r => r.server ? h("span", { class: "chip" }, r.server) : h("span", { class: "muted" }, "—")],
         ["Roles", r => r.slotRoles.join(), r => r.slotRoles.length ? r.slotRoles.map(x => h("span", { class: "chip" }, SLOT_ROLE_CHIP[x] || x)) : h("span", { class: "muted small" }, "any")],
         ["GS", r => r.gs, r => r.gs == null ? h("span", { class: "muted" }, "—") : String(r.gs)],
         ["Combat power", r => r.armory ? r.armory.combatPower ?? 0 : -1, armoryCell]
-      ], 4) : emptyState("users", "Nobody matches", "Change the filters."));
+      ], 5) : emptyState("users", "Nobody matches", "Change the filters."));
   };
   project.addEventListener("change", () => { fillClasses(); draw(); });
   role.addEventListener("change", draw);
   cls.addEventListener("change", draw);
+  srv.addEventListener("change", draw);
   for (const el of [minGs, minCp, search]) el.addEventListener("input", draw);
   fillClasses();
   drawTabs();
   holder.replaceChildren(h("div", { class: "card" }, tabsBox,
-    h("div", { class: "row", style: "margin-bottom:10px;flex-wrap:wrap" }, role, cls, minGs, minCp, search), body,
+    h("div", { class: "row", style: "margin-bottom:10px;flex-wrap:wrap" }, role, cls, srv, minGs, minCp, search), body,
     h("p", { class: "muted small", style: "margin-top:8px" }, "Only projects you have access to are shown.")));
   draw();
 }
