@@ -1204,6 +1204,8 @@ public static partial class PanelApi
     private static object Member(SocketGuild guild, ulong id)
     {
         var user = guild.GetUser(id);
+        if (user is null && MemberCache.TryGetValue((guild.Id, id), out var c))
+            return new { id = id.ToString(), name = c.Name, username = c.Username, avatarUrl = c.Avatar, onServer = c.OnServer };
         return new
         {
             id = id.ToString(),
@@ -1212,6 +1214,40 @@ public static partial class PanelApi
             avatarUrl = user?.GetDisplayAvatarUrl(size: 64),
             onServer = user is not null
         };
+    }
+
+    /// <summary>Участники, которых нет в кэше бота (кэш сервера ещё не догружен) — имя и аватар из Discord REST.</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(ulong Guild, ulong User),
+        (string Name, string? Username, string? Avatar, bool OnServer, DateTimeOffset At)> MemberCache = new();
+
+    /// <summary>Есть ли человек на сервере (кэш бота или подгруженный из Discord).</summary>
+    private static bool OnServer(SocketGuild guild, ulong id) =>
+        guild.GetUser(id) is not null || (MemberCache.TryGetValue((guild.Id, id), out var c) && c.OnServer);
+
+    /// <summary>Подгрузить из Discord тех, кого нет в кэше (до 40 за раз, повторно — не чаще раза в час); кэш сервера — догрузить в фоне.</summary>
+    private static async Task WarmMembersAsync(DiscordSocketClient client, SocketGuild guild, IEnumerable<ulong> ids)
+    {
+        if (!guild.HasAllMembers) _ = Task.Run(async () => { try { await guild.DownloadUsersAsync(); } catch { /* intent may be off */ } });
+        var missing = ids.Distinct().Where(id => guild.GetUser(id) is null &&
+            !(MemberCache.TryGetValue((guild.Id, id), out var c) && DateTimeOffset.UtcNow - c.At < TimeSpan.FromHours(1))).Take(40).ToList();
+        foreach (var id in missing)
+        {
+            try
+            {
+                var gu = await client.Rest.GetGuildUserAsync(guild.Id, id);
+                if (gu is not null)
+                {
+                    MemberCache[(guild.Id, id)] = (gu.DisplayName, gu.Username, gu.GetDisplayAvatarUrl(size: 64), true, DateTimeOffset.UtcNow);
+                    continue;
+                }
+                var u = await client.Rest.GetUserAsync(id);
+                MemberCache[(guild.Id, id)] = (u?.GlobalName ?? u?.Username ?? id.ToString(), u?.Username, u?.GetDisplayAvatarUrl(size: 64), false, DateTimeOffset.UtcNow);
+            }
+            catch
+            {
+                // нет ответа Discord — покажем ID
+            }
+        }
     }
 
     private static List<LfgGroup> ActiveGroups(LfgStore lfg, ulong guildId) => lfg.Groups.Values

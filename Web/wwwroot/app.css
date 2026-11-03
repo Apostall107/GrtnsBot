@@ -1487,3 +1487,18 @@ th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
 .list-row.me { background: rgba(123, 77, 255, .1); border-radius: 8px; }
 .card > div > .pref-row + .pref-row { margin-top: 12px; }
 .gs-age .btn { padding: 1px 6px; font-size: 12px; margin-left: 4px; }
+.wk-grid > .wk-day { min-width: 0; }
+.wk-event { min-width: 0; overflow: hidden; overflow-wrap: anywhere; }
+.wk-event > .badge { align-self: flex-start; }
+.wk-event .member { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; }
+.wk-event .member > :not(img):not(.avatar) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wk-event .member { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Agenda layout: one row per day, groups as cards side by side (columns were too narrow) */
+.wk-grid { display: flex; flex-direction: column; gap: 8px; }
+.wk-day { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 10px; align-items: start; min-height: 0; padding: 10px; }
+.wk-day.empty { opacity: .55; padding: 6px 10px; }
+.wk-day-head { padding-top: 6px; }
+.wk-day-events { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }
+.wk-event { padding: 8px 10px; }
+.wk-event .wk-actions .btn { white-space: nowrap; }
+@media (max-width: 720px) { .wk-day { grid-template-columns: 1fr; } }

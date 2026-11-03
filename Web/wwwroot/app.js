@@ -5356,7 +5356,7 @@ async function guildCalendar(holder, path = "/lfg/calendar", forMember = false) 
       const list = events.filter(ev => sameDay(ev.start, d));
       return h("div", { class: `wk-day${list.length ? "" : " empty"}` },
         h("div", { class: "wk-day-head" }, d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })),
-        list.length ? list.map(eventCard) : h("div", { class: "muted small" }, "—"));
+        list.length ? h("div", { class: "wk-day-events" }, list.map(eventCard)) : h("div", { class: "muted small", style: "padding-top:6px" }, "nothing planned"));
     })) : emptyState("calendar", "Nothing planned", "Groups with a start time and recurring groups appear here.")));
 }
 
