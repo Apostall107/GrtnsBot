@@ -1925,7 +1925,7 @@ function lfgForm(acts, opts) {
     if (!charSel) return;
     const keep = charSel.value;
     const list = myChars();
-    charSel.replaceChildren(...(list.length ? list.map(c => h("option", { value: c.name },
+    charSel.replaceChildren(...(list.length ? list.map(c => h("option", { value: c.name, "data-icon": c.icon || null },
       [c.name, c.gs != null ? `GS ${c.gs}` : "no GS", c.cp != null ? `CP ${fmtCp(c.cp)}` : null].filter(Boolean).join(" · ")))
       : [h("option", { value: "" }, "No characters in this project — add them in My characters")]));
     if (list.some(c => c.name === keep)) charSel.value = keep;
@@ -2747,7 +2747,7 @@ function groupCard(g) {
     g.reserve.length ? h("details", { class: "reserve", open: true }, h("summary", {}, icon("clock", 14), `Reserve · ${g.reserve.length}`),
       h("div", { class: "roster" }, g.reserve.map(r => h("div", { class: "slot taken reserve-row" },
         rolePill(r.role || "All"), h("span", { class: "slot-who" }, member(r.member), classMark(r), note(r.comment)),
-        h("span", { class: "slot-char" }, r.character || ""),
+        h("span", { class: "slot-char" }, r.character || "", r.gs ? h("span", { class: "gs" }, `GS ${r.gs}`) : null, r.cp ? h("span", { class: "gs cp" }, `CP ${fmtCp(r.cp)}`) : null),
         tool("arrow-left", "Move into the group (sends a DM)", () => roster("promote", r.member, "Moved into the group, DM sent.")),
         tool("pencil", "Change character", rename(r.member, r.character)),
         tool("x", "Remove from the reserve", async () => {
@@ -4780,7 +4780,12 @@ function playCard(g) {
   const fillChars = () => {
     const keep = charSel.value;
     const ok = characters.filter(c => fits(c, role.value));
-    charSel.replaceChildren(...ok.map(c => h("option", { value: c }, c)), h("option", { value: "" }, "+ New character…"));
+    const info = g.characterInfo || {};
+    charSel.replaceChildren(...ok.map(c => {
+      const x = info[c] || {};
+      return h("option", { value: c, "data-icon": x.icon || null },
+        [c, x.gs != null ? `GS ${x.gs}` : null, x.cp != null ? `CP ${fmtCp(x.cp)}` : null].filter(Boolean).join(" · "));
+    }), h("option", { value: "" }, "+ New character…"));
     charSel.title = ok.length < characters.length ? `${characters.length - ok.length} character(s) hidden — their class doesn't play this role` : "";
     if (ok.includes(keep)) charSel.value = keep;
     sync();
@@ -5731,9 +5736,9 @@ async function guildRoster(holder) {
   const body = h("div", {});
   const fillClasses = () => {
     const seen = new Map();
-    for (const c of d.characters) if (c.classRole && (!project.value || c.project === project.value)) seen.set(c.classRole.id, c.classRole);
+    for (const c of d.characters) if (c.classRole && (!project.value || c.project === project.value)) seen.set(c.classRole.id, { ...c.classRole, icon: c.classIcon });
     const keep = cls.value;
-    cls.replaceChildren(h("option", { value: "" }, "Any class"), ...[...seen.values()].sort((a, b) => a.name.localeCompare(b.name)).map(r => h("option", { value: r.id }, r.name)));
+    cls.replaceChildren(h("option", { value: "" }, "Any class"), ...[...seen.values()].sort((a, b) => a.name.localeCompare(b.name)).map(r => h("option", { value: r.id, "data-icon": r.icon || null }, r.name)));
     cls.value = seen.has(keep) ? keep : "";
     const keepSrv = srv.value;
     const servers = [...new Set(d.characters.filter(c => c.server && (!project.value || c.project === project.value)).map(c => c.server))].sort();
@@ -5890,9 +5895,9 @@ function memberRoster(holder, guild) {
   // Classes of the chosen project (the ones characters have)
   const fillClasses = () => {
     const seen = new Map();
-    for (const c of list) if (c.classRole && (!project.value || c.project === project.value)) seen.set(c.classRole.id, c.classRole);
+    for (const c of list) if (c.classRole && (!project.value || c.project === project.value)) seen.set(c.classRole.id, { ...c.classRole, icon: c.classIcon });
     const keep = cls.value;
-    cls.replaceChildren(h("option", { value: "" }, "Any class"), ...[...seen.values()].sort((a, b) => a.name.localeCompare(b.name)).map(r => h("option", { value: r.id }, r.name)));
+    cls.replaceChildren(h("option", { value: "" }, "Any class"), ...[...seen.values()].sort((a, b) => a.name.localeCompare(b.name)).map(r => h("option", { value: r.id, "data-icon": r.icon || null }, r.name)));
     cls.value = seen.has(keep) ? keep : "";
     const keepSrv = srv.value;
     const servers = [...new Set(list.filter(c => c.server && (!project.value || c.project === project.value)).map(c => c.server))].sort();

@@ -58,7 +58,7 @@ public static partial class PanelApi
     {
         // Активные сборы + моё место в каждом + мои персонажи для записи
         g.MapGet("/groups", async (ulong guildId, ClaimsPrincipal user, DiscordSocketClient client, LfgStore lfg, CharacterStore characters,
-            LfgSignupService signup, LfgProjectStore projects, [FromServices] GuildPrefsStore prefs) =>
+            LfgSignupService signup, LfgProjectStore projects, [FromServices] GuildPrefsStore prefs, [FromServices] LfgProfileService profiles) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             await WarmMembersAsync(client, guild, GroupPeople(lfg, guildId));
@@ -80,6 +80,8 @@ public static partial class PanelApi
                         blocked = signup.ProjectBlock(x, me) is { } b ? StripMarkdown(System.Text.RegularExpressions.Regex.Replace(b, "<@&(\\d+)>",
                             m => "@" + (guild.GetRole(ulong.Parse(m.Groups[1].Value))?.Name ?? "role"))) : null,
                         characters = characters.Get(guildId, me, signup.Scope(x)),
+                        // Иконка класса, GS и CP каждого персонажа — для меню выбора при записи
+                        characterInfo = profiles.PickerList(x, me).ToDictionary(c => c.Name, c => new { icon = c.Icon, gs = c.Gs, cp = c.Cp }),
                         // Какими ролями может играть каждый персонаж (по его классу; null — любыми)
                         characterRoles = characters.Get(guildId, me, signup.Scope(x)).ToDictionary(n => n, n =>
                             characters.GetInfo(guildId, me, n, signup.Scope(x))?.ClassRoleId is { } cid &&
@@ -434,7 +436,7 @@ public static partial class PanelApi
                 templates = TemplatesDto(guild, templates),
                 // Мои персонажи по проектам: организатор выбирает, с кем идёт; от GS зависят доступные активности
                 characters = projects.GetProjects(guildId).Where(p => LfgProjectStore.CanUse(member, p)).ToDictionary(p => p.Key,
-                    p => profiles.PickerFor(guildId, me, p.Key).Select(c => new { name = c.Name, gs = c.Gs, cp = c.Cp })),
+                    p => profiles.PickerFor(guildId, me, p.Key).Select(c => new { name = c.Name, gs = c.Gs, cp = c.Cp, icon = c.Icon })),
                 // Роли, связанные с каждым проектом — их показывают первыми при выборе требуемых ролей
                 relatedRoles = RelatedRoles(guild, activities, projects),
                 // Роли для требований сбора (организатор выбирает, какие нужны)
