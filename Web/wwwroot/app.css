@@ -1478,3 +1478,12 @@ tr.unsaved > td:first-child { box-shadow: inset 3px 0 0 var(--warning); }
 th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
 .warn-text { color: var(--warning); }
 .slot-req.set { color: var(--warning); }
+.gs-age { display: flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--text-secondary); margin: -2px 0 8px; }
+.gs-age.stale { color: var(--warning); }
+.ready-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.focus-flash { animation: focusFlash 2.4s ease; }
+@keyframes focusFlash { 0%, 60% { box-shadow: 0 0 0 2px var(--warning), 0 0 24px rgba(245, 185, 66, .25); } 100% { box-shadow: none; } }
+.top-place { width: 32px; text-align: center; font-size: 18px; }
+.list-row.me { background: rgba(123, 77, 255, .1); border-radius: 8px; }
+.card > div > .pref-row + .pref-row { margin-top: 12px; }
+.gs-age .btn { padding: 1px 6px; font-size: 12px; margin-left: 4px; }

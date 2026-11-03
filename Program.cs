@@ -37,6 +37,7 @@ builder.Services.AddSingleton(sp => new InteractionService(
 
 builder.Services.AddSingleton<BotSettingsStore>();
 builder.Services.AddSingleton<GuildPrefsStore>();
+builder.Services.AddSingleton<UserDmStore>();
 builder.Services.AddSingleton<MemberActivityStore>();
 builder.Services.AddSingleton<AuditLog>();
 builder.Services.AddSingleton<LfgHistoryStore>();

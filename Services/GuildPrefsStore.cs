@@ -35,6 +35,11 @@ public sealed class GuildPrefs
     public int GsReminderDays { get; set; } = 7;
     /// <summary>Когда напоминание отправлялось последний раз.</summary>
     public DateTimeOffset? GsReminderLastRun { get; set; }
+
+    /// <summary>Участникам на сайте (Member → Guild): состав гильдии (персонажи, классы, GS) — по умолчанию скрыт.</summary>
+    public bool MemberRoster { get; set; }
+    /// <summary>Участникам на сайте: топ активных игроков за 30 дней (без no-show).</summary>
+    public bool MemberTop { get; set; } = true;
 }
 
 /// <summary>data/guild-prefs.json — настройки по серверам (ЛС, готовность, автозамена, напоминание о GS).</summary>
@@ -81,4 +86,67 @@ public sealed class GuildPrefsStore
     }
 
     public DmPrefs Dm(ulong guildId) => Get(guildId).Dm;
+}
+
+/// <summary>
+/// Личные ЛС участника (data/user-dm.json): какие ЛС он отключил себе. ЛС приходит, только если её включил админ сервера
+/// (Settings → Direct messages) и участник не отключил её в My characters. ЛС о новых сборах — отдельно (LfgNotifyStore, /lfg-dm).
+/// </summary>
+public sealed class UserDmStore
+{
+    public static readonly string[] Keys = ["lfgPromoted", "lfgTimeChanged", "ticketResult", "gsReminder"];
+
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
+    private readonly object _lock = new();
+    private readonly string _path;
+    private readonly Dictionary<string, HashSet<string>> _off;
+    private readonly GuildPrefsStore _guild;
+
+    public UserDmStore(IConfiguration config, GuildPrefsStore guild)
+    {
+        _guild = guild;
+        _path = config["Storage:UserDmPath"] ?? "data/user-dm.json";
+        _off = File.Exists(_path)
+            ? JsonSerializer.Deserialize<Dictionary<string, HashSet<string>>>(File.ReadAllText(_path)) ?? new()
+            : new();
+    }
+
+    private static string Key(ulong guildId, ulong userId) => $"{guildId}:{userId}";
+
+    public bool IsOff(ulong guildId, ulong userId, string key)
+    {
+        lock (_lock) return _off.TryGetValue(Key(guildId, userId), out var set) && set.Contains(key);
+    }
+
+    public void Set(ulong guildId, ulong userId, string key, bool enabled)
+    {
+        lock (_lock)
+        {
+            var k = Key(guildId, userId);
+            if (!_off.TryGetValue(k, out var set)) _off[k] = set = [];
+            if (enabled) set.Remove(key); else set.Add(key);
+            if (set.Count == 0) _off.Remove(k);
+            var dir = Path.GetDirectoryName(Path.GetFullPath(_path));
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            File.WriteAllText(_path, JsonSerializer.Serialize(_off, JsonOptions));
+        }
+    }
+
+    /// <summary>Включена ли ЛС на сервере (админом).</summary>
+    public bool GuildEnabled(ulong guildId, string key)
+    {
+        var dm = _guild.Dm(guildId);
+        return key switch
+        {
+            "lfgPromoted" => dm.LfgPromoted,
+            "lfgTimeChanged" => dm.LfgTimeChanged,
+            "ticketResult" => dm.TicketResult,
+            "gsReminder" => dm.GsReminder,
+            "lfgNewGroup" => dm.LfgNewGroup,
+            _ => false
+        };
+    }
+
+    /// <summary>Можно ли слать эту ЛС человеку: включена на сервере и он её не отключил.</summary>
+    public bool Allowed(ulong guildId, ulong userId, string key) => GuildEnabled(guildId, key) && !IsOff(guildId, userId, key);
 }

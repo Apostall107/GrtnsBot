@@ -68,7 +68,7 @@ public sealed class TicketService(
     TicketStore store,
     TicketArchiveStore archive,
     AuditLog audit,
-    GuildPrefsStore prefs,
+    UserDmStore prefs,
     ILogger<TicketService> logger)
 {
     // Защита от двойного клика: пока создаётся тикет, второй не создаём
@@ -220,7 +220,7 @@ public sealed class TicketService(
     /// <summary>ЛС заявителю об одобрении (каналы тикета скоро исчезнут, итог должен остаться у него).</summary>
     public async Task NotifyApprovedAsync(Ticket ticket, TicketProject project, IEnumerable<ulong> roleIds)
     {
-        if (!prefs.Dm(ticket.GuildId).TicketResult) return;
+        if (!prefs.Allowed(ticket.GuildId, ticket.UserId, "ticketResult")) return;
         try
         {
             var guild = client.GetGuild(ticket.GuildId);
@@ -239,7 +239,7 @@ public sealed class TicketService(
     /// <summary>ЛС заявителю об отказе с причиной.</summary>
     public async Task NotifyDeniedAsync(Ticket ticket, TicketProject? project, string? reason)
     {
-        if (!prefs.Dm(ticket.GuildId).TicketResult) return;
+        if (!prefs.Allowed(ticket.GuildId, ticket.UserId, "ticketResult")) return;
         try
         {
             var user = client.GetUser(ticket.UserId) as IUser ?? await client.Rest.GetUserAsync(ticket.UserId);

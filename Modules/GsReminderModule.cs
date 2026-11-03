@@ -51,7 +51,7 @@ public sealed class GsReminderModule(GsReminderService reminder, CharacterStore 
             return;
         }
         await DeferAsync(ephemeral: true);
-        characters.SetGs(guildId, Context.User.Id, name, gs, scope);
+        characters.SetGs(guildId, Context.User.Id, name, gs, scope, confirm: true);
         var updated = await profiles.RefreshCharacterAsync(guildId, Context.User.Id, name, scope);
         await FollowupAsync(Tx.Get(guildId, "gs.reminder.saved", ("name", Format.Sanitize(name)), ("gs", gs), ("groups", updated)), ephemeral: true);
     }
