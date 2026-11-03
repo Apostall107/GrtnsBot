@@ -6,6 +6,7 @@ using LfgBot.Models;
 using LfgBot.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 
 namespace LfgBot.Web;
@@ -55,7 +56,8 @@ public static partial class PanelApi
 
         // Bot messages: все экраны группы текстов (шаги мастера, меню, окна) — с черновыми текстами и списком ключей каждого экрана
         texts.MapPost("/bot/screens", (ulong guildId, BotPreviewBody body, ClaimsPrincipal user, DiscordSocketClient client,
-            LfgStore lfg, ActivityStore activities, LfgTemplateStore templates, LfgProfileService profile, TicketStore ticketStore, TimeService time) =>
+            [FromServices] LfgStore lfg, [FromServices] ActivityStore activities, [FromServices] LfgTemplateStore templates,
+            [FromServices] LfgProfileService profile, [FromServices] TicketStore ticketStore, [FromServices] TimeService time) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var values = (body.Values ?? []).Where(kv => kv.Value is not null).ToDictionary(kv => kv.Key, kv => kv.Value!);
