@@ -13,6 +13,8 @@ public static class LfgRenderer
     public const int MaxSize = 25; // лимит опций в select menu
     public const string CustomActivityValue = "__custom";
     public const string NewCharacterValue = "__new";
+    /// <summary>Версия вида поста сбора: увеличить при изменении поста/кнопок — активные посты перерисуются при старте бота.</summary>
+    public const int PostVersion = 2;
 
     // ---------- Панель в канале ----------
     /// <summary>Тексты по умолчанию — <see cref="PanelDefs.Lfg"/>, свои — из веб-админки (PanelTextStore).</summary>
