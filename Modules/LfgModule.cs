@@ -437,6 +437,12 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         }
 
         var slotRole = Enum.Parse<SlotRole>(role);
+        if (slotRole == SlotRole.Any)
+        {
+            // Старые посты с кнопкой «All»: записываются ролью DD / Tank / Sup
+            await RespondAsync(Tx.Get(group.GuildId, "lfg.join.pickRole"), ephemeral: true);
+            return;
+        }
         string? error;
         await group.Gate.WaitAsync();
         try { error = group.CheckJoin(Context.User.Id, slotRole); }
