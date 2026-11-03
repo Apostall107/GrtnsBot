@@ -10,12 +10,13 @@ set OUT=deploy-linux
 echo === Building Greatness Bot for %RID% ===
 if exist "%OUT%" rmdir /s /q "%OUT%"
 
+rem To build AND update the server in one go use deploy-from-pc.bat.
 rem Self-contained single file: .NET is inside, nothing to install on the server except system libraries.
 rem No IncludeNativeLibrariesForSelfExtract on Linux: native .so files stay next to the binary,
 rem so the service user does not need a writable home folder for self-extraction.
 dotnet publish -c Release -r %RID% --self-contained true ^
   -p:PublishSingleFile=true ^
-  -p:EnableCompressionInSingleFile=true ^
+  -p:PublishReadyToRun=true ^
   -p:DebugType=None ^
   -o "%OUT%\app"
 if errorlevel 1 (
