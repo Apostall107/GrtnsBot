@@ -1264,7 +1264,21 @@ async function pageAnnounce(main) {
     if (await act(saveTpl, () => gApi("PUT", "/announce/templates/new", tplBody(name)), "Template saved.") !== undefined) refresh();
   });
 
-  main.append(h("div", { class: "card" }, h("div", { class: "card-head" }, title, cancelEdit),
+  // Live preview of the post (first message — Discord cuts at 2000 characters, the bot splits the rest)
+  const annFrame = h("div", { class: "dc-frame" });
+  const annNote = h("p", { class: "muted small" });
+  let annTimer = 0;
+  const drawAnn = () => {
+    const line = [ping.everyone ? `@${ping.everyone.replace(/^@/, "")}` : "", ...ping.roles.map(r => `<@&${r.id}>`), ...ping.users.map(u => `<@${u.id}>`)].filter(Boolean).join(" ");
+    for (const u of ping.users) knownUsers.set(u.id, u.name);
+    const full = [line, text.value].filter(x => x.trim()).join("\n");
+    annFrame.replaceChildren(full.trim() ? dcMessage({ content: full.slice(0, 2000) }) : h("div", { class: "muted small" }, "Write the text to see the post."));
+    annNote.textContent = full.length > 2000 ? `First message shown — the bot splits the rest into ~${Math.ceil(full.length / 1900)} messages (see Preview & send).` : "How the post will look in Discord.";
+  };
+  const queueAnn = () => { clearTimeout(annTimer); annTimer = setTimeout(drawAnn, 200); };
+  text.addEventListener("input", queueAnn);
+  const annPreview = h("div", { class: "card preview-card" }, h("h3", {}, "Preview"), annFrame, annNote);
+  const composer = h("div", { class: "card", style: "margin:0" }, h("div", { class: "card-head" }, title, cancelEdit),
     h("p", { class: "muted small" }, "The bot posts your text in a channel (or a voice channel's chat). Longer than 2000 characters — split into several messages automatically. You see the preview and confirm before anything is sent."),
     h("div", { class: "row", style: "margin-bottom:12px" }, h("div", { class: "grow" }, tplSel), saveTpl),
     h("div", { class: "field" }, h("label", {}, "Channel"), channel),
@@ -1273,7 +1287,11 @@ async function pageAnnounce(main) {
       h("div", { class: "row" }, everyoneSel, addRoles, addUser)),
     h("label", { class: "row", style: "margin-bottom:10px" }, pings, "Ping mentions written in the text (@ suggestions turn this on) — off: they are shown but nobody is notified"),
     h("div", { class: "row", style: "margin-bottom:12px" }, when, whenBox),
-    h("div", { class: "row" }, go)));
+    h("div", { class: "row" }, go));
+  composer.addEventListener("change", queueAnn);
+  composer.addEventListener("click", queueAnn);
+  main.append(h("div", { class: "editor-layout", style: "margin-bottom:16px" }, composer, h("div", { class: "editor-preview" }, annPreview)));
+  drawAnn();
 
   const tplCard = h("div", { class: "card" }, h("h2", {}, "📄 Templates"),
     h("p", { class: "muted small" }, "Saved channel + text + pings. Fill the form and press 💾 Save as template; load one with 📄 Load a template."),
@@ -2462,8 +2480,8 @@ function menuButton(items) {
 
 function projectCard(p) {
   const nameIn = h("input", { maxlength: "100", value: p.name, style: "font-weight:600;min-width:200px" });
-  const staff = roleListEditor(p.staffRoles);
-  const members = roleListEditor(p.memberRoles);
+  const staff = roleListEditor(p.staffRoles, state.roles, () => preview.refresh());
+  const members = roleListEditor(p.memberRoles, state.roles, () => preview.refresh());
   const cat = channelSelect("categories", "Default category “Tickets”");
   if (p.category) cat.value = p.category.id;
   const text = h("textarea", { maxlength: "4000", placeholder: "Markdown works. {applicant} = applicant mention, {project} = project name" });
@@ -2473,6 +2491,10 @@ function projectCard(p) {
 
   const form = questionEditor(p);
   const autoClose = h("input", { type: "number", min: "2", max: "90", placeholder: "off", value: p.autoCloseDays ?? "", style: "width:100px" });
+  const preview = livePreview(() => gApi("POST", `/tickets/projects/${encodeURIComponent(p.key)}/preview`, {
+    staffRoleIds: staff.value(), memberRoleIds: members.value(), customText: text.value, name: nameIn.value,
+    formEnabled: form.enabled(), questions: form.value()
+  }), "Ticket message preview");
 
   const save = h("button", { class: "btn" }, "💾 Save");
   save.addEventListener("click", async () => {
@@ -2493,7 +2515,7 @@ function projectCard(p) {
     if (await act(remove, () => gApi("DELETE", `/tickets/projects/${encodeURIComponent(p.key)}`), "Project removed.") !== undefined) refresh();
   });
 
-  return h("div", { class: "card" },
+  const card = h("div", { class: "card", style: "margin:0" },
     h("div", { class: "card-head" }, h("div", { class: "field", style: "margin:0;margin-right:auto" }, h("label", {}, "Project name"), nameIn),
       h("span", { class: "badge wait" }, `${p.open} open`)),
     h("div", { class: "grid2" },
@@ -2505,6 +2527,12 @@ function projectCard(p) {
     h("div", { class: "field" }, h("label", {}, "Auto-close inactive tickets after (days)"),
       h("div", { class: "row" }, autoClose, h("span", { class: "muted small" }, "Empty = never. The bot warns 24 h before closing; any message resets the timer."))),
     h("div", { class: "row" }, save, remove));
+  // Any edit in the form (name, text, questions) refreshes the preview
+  card.addEventListener("input", () => preview.refresh());
+  card.addEventListener("change", () => preview.refresh());
+  card.addEventListener("click", e => { if (e.target.closest("button")) preview.refresh(); });
+  preview.now();
+  return h("div", { class: "editor-layout", style: "margin-bottom:16px" }, card, h("div", { class: "editor-preview" }, preview.el));
 }
 
 /** Application form editor: on/off + up to 5 questions (Discord form limit). */
@@ -2700,30 +2728,58 @@ function roomRow(r) {
 
 // ================= Discord-like preview (Welcome & Role panels) =================
 
-/** Very small markdown → DOM for previews: **bold**, *italic*, __underline__, `code`, -# small, # headings, links, mentions. */
-function mdPreview(text) {
+/** Small Discord-markdown → DOM for previews: **bold**, *italic*, __underline__, ~~strike~~, `code`, # headings, -# small, > quotes,
+ *  [text](url), links, mentions (<@id> <@&id> <#id>, by name), <t:unix:F> times, custom emoji. mentions: optional {code: "@name"}. */
+function mdPreview(text, mentions = {}) {
   const wrap = h("div", { class: "dc-md" });
+  const tsFmt = { t: { hour: "2-digit", minute: "2-digit" }, T: { hour: "2-digit", minute: "2-digit", second: "2-digit" }, d: { day: "2-digit", month: "2-digit", year: "numeric" },
+    D: { day: "numeric", month: "long", year: "numeric" }, f: { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" },
+    F: { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" } };
+  const inline = (line, el) => {
+    const re = /(\*\*[^*]+\*\*|__[^_]+__|~~[^~]+~~|\*[^*\s][^*]*\*|`[^`]+`|\[[^\]]+\]\(https?:\/\/[^)]+\)|<a?:\w+:\d+>|<t:-?\d+(?::[tTdDfFR])?>|<@&?!?\d+>|<#\d+>|@everyone|@here|@NewMember|https?:\/\/\S+)/g;
+    let last = 0, m;
+    while ((m = re.exec(line))) {
+      if (m.index > last) el.append(line.slice(last, m.index));
+      const t = m[0];
+      if (t.startsWith("**")) inline(t.slice(2, -2), el.appendChild(h("b")));
+      else if (t.startsWith("__")) inline(t.slice(2, -2), el.appendChild(h("u")));
+      else if (t.startsWith("~~")) inline(t.slice(2, -2), el.appendChild(h("s")));
+      else if (t.startsWith("*")) inline(t.slice(1, -1), el.appendChild(h("i")));
+      else if (t.startsWith("`")) el.append(h("code", {}, t.slice(1, -1)));
+      else if (t.startsWith("[")) el.append(h("span", { class: "dc-link" }, t.slice(1, t.indexOf("]"))));
+      else if (/^<a?:/.test(t)) el.append(emojiEl(t, 20));
+      else if (t.startsWith("<t:")) {
+        const [, unix, style = "f"] = /<t:(-?\d+):?(\w)?>/.exec(t);
+        const d = new Date(Number(unix) * 1000);
+        let txt;
+        if (style === "R") { const min = Math.round((d - Date.now()) / 60000), a = Math.abs(min);
+          const v = a < 60 ? `${a} minutes` : a < 1440 ? `${Math.round(a / 60)} hours` : `${Math.round(a / 1440)} days`; txt = min >= 0 ? `in ${v}` : `${v} ago`; }
+        else txt = d.toLocaleString(undefined, tsFmt[style] || tsFmt.f);
+        el.append(h("span", { class: "dc-time-chip" }, txt));
+      }
+      else if (t.startsWith("http")) el.append(h("span", { class: "dc-link" }, t));
+      else if (t.startsWith("<") || t.startsWith("@")) {
+        let name = mentions[t];
+        if (!name) { const mm = /<@&(\d+)>|<@!?(\d+)>|<#(\d+)>/.exec(t); name = mm ? mentionName(t, mm[1], mm[2], mm[3]).text : t; }
+        el.append(h("span", { class: "dc-mention" }, name));
+      }
+      last = m.index + t.length;
+    }
+    if (last < line.length) el.append(line.slice(last));
+  };
+  let inCode = false, code = null;
   for (const raw of String(text || "").split("\n")) {
+    if (raw.trim().startsWith("```")) { if (inCode) { inCode = false; } else { inCode = true; code = h("pre", { class: "dc-code" }); wrap.append(code); } continue; }
+    if (inCode) { code.append(raw + "\n"); continue; }
     let line = raw, cls = "";
     if (line.startsWith("-# ")) { cls = "dc-small"; line = line.slice(3); }
     else if (line.startsWith("### ")) { cls = "dc-h3"; line = line.slice(4); }
     else if (line.startsWith("## ")) { cls = "dc-h2"; line = line.slice(3); }
     else if (line.startsWith("# ")) { cls = "dc-h1"; line = line.slice(2); }
+    else if (line.startsWith("> ")) { cls = "dc-quote"; line = line.slice(2); }
+    else if (/^\s*[-*] /.test(line)) { cls = "dc-li"; line = "• " + line.replace(/^\s*[-*] /, ""); }
     const el = h("div", { class: cls });
-    const re = /(\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|`[^`]+`|<@&?\d+>|@NewMember|https?:\/\/\S+)/g;
-    let last = 0, m;
-    while ((m = re.exec(line))) {
-      if (m.index > last) el.append(line.slice(last, m.index));
-      const t = m[0];
-      if (t.startsWith("**")) el.append(h("b", {}, t.slice(2, -2)));
-      else if (t.startsWith("__")) el.append(h("u", {}, t.slice(2, -2)));
-      else if (t.startsWith("*")) el.append(h("i", {}, t.slice(1, -1)));
-      else if (t.startsWith("`")) el.append(h("code", {}, t.slice(1, -1)));
-      else if (t.startsWith("http")) el.append(h("span", { class: "dc-link" }, t));
-      else el.append(h("span", { class: "dc-mention" }, t.startsWith("<@&") ? `@${(state.roles.find(r => `<@&${r.id}>` === t) || { name: "role" }).name}` : t));
-      last = m.index + t.length;
-    }
-    if (last < line.length) el.append(line.slice(last));
+    inline(line, el);
     if (!line.length) el.append(" ");
     wrap.append(el);
   }
@@ -2732,28 +2788,63 @@ function mdPreview(text) {
 
 function emojiEl(code, size = 18) {
   if (!code) return null;
-  const m = /^<a?:([^:]+):(\d+)>$/.exec(code);
-  return m ? h("img", { src: `https://cdn.discordapp.com/emojis/${m[2]}.webp?size=48`, alt: m[1], style: `width:${size}px;height:${size}px;vertical-align:-3px` })
+  const m = /^<(a?):([^:]+):(\d+)>$/.exec(code);
+  return m ? h("img", { src: `https://cdn.discordapp.com/emojis/${m[3]}.${m[1] ? "gif" : "webp"}?size=48`, alt: m[2], style: `width:${size}px;height:${size}px;vertical-align:-3px` })
     : h("span", {}, code);
 }
 
-/** A Discord message mock: bot header, text, embed, component rows, reactions. */
-function dcMessage({ content, embed, rows = [], reactions = [] }) {
+function dcEmbed(e, mentions = {}) {
+  const fields = (e.fields || []);
+  return h("div", { class: "dc-embed", style: `border-left-color:${e.color || "#1e1f22"}` },
+    h("div", { class: "dc-embed-main" },
+      e.title ? h("div", { class: "dc-embed-title" }, mdPreview(e.title, mentions)) : null,
+      e.description ? mdPreview(e.description, mentions) : null,
+      fields.length ? h("div", { class: "dc-fields" }, fields.map(f => h("div", { class: `dc-field${f.inline ? " inline" : ""}` },
+        h("div", { class: "dc-field-name" }, mdPreview(f.name, mentions)), mdPreview(f.value, mentions)))) : null,
+      e.image ? h("img", { class: "dc-embed-image", src: e.image, alt: "" }) : null,
+      e.footer || e.timestamp ? h("div", { class: "dc-embed-footer" }, [e.footer, e.timestamp ? new Date(e.timestamp).toLocaleString() : null].filter(Boolean).join(" • ")) : null),
+    e.thumbnail ? h("img", { class: "dc-embed-thumb", src: e.thumbnail, alt: "" }) : e.avatar ? h("span", { class: "dc-embed-thumb dc-avatar-ph" }) : null);
+}
+
+/** A Discord message mock: bot header, text, embeds, component rows, reactions. */
+function dcMessage({ content, embed, embeds, rows = [], reactions = [], mentions = {} }) {
   const bot = state.bot || { name: "Greatness Bot" };
+  const list = embeds || (embed ? [embed] : []);
   return h("div", { class: "dc-msg" },
     h("div", { class: "dc-avatar" }, bot.avatarUrl ? h("img", { src: bot.avatarUrl, alt: "" }) : null),
     h("div", { class: "dc-body" },
       h("div", { class: "dc-head" }, h("b", {}, bot.name), h("span", { class: "dc-bot" }, "APP"), h("span", { class: "dc-time" }, "Today at 21:00")),
-      content ? mdPreview(content) : null,
-      embed ? h("div", { class: "dc-embed", style: `border-left-color:${embed.color || "#5865f2"}` },
-        h("div", { class: "dc-embed-main" },
-          embed.title ? h("div", { class: "dc-embed-title" }, embed.title) : null,
-          embed.description ? mdPreview(embed.description) : null,
-          embed.image ? h("img", { class: "dc-embed-image", src: embed.image, alt: "" }) : null,
-          embed.footer ? h("div", { class: "dc-embed-footer" }, embed.footer) : null),
-        embed.thumbnail ? h("img", { class: "dc-embed-thumb", src: embed.thumbnail, alt: "" }) : embed.avatar ? h("span", { class: "dc-embed-thumb dc-avatar-ph" }) : null) : null,
+      content ? mdPreview(content, mentions) : null,
+      list.map(e => dcEmbed(e, mentions)),
       rows.map(r => h("div", { class: "dc-row" }, r)),
       reactions.length ? h("div", { class: "dc-reactions" }, reactions.map(e => h("span", { class: "dc-reaction" }, emojiEl(e, 16), " 1"))) : null));
+}
+
+/** Message built by the bot (/preview endpoints) → mock. */
+function dcFromPreview(p) {
+  const styleColor = { Primary: "Blurple", Secondary: "Grey", Success: "Green", Danger: "Red", Link: "Grey", Premium: "Blurple" };
+  const rows = (p.rows || []).map(row => row.map(c => c.type === "select"
+    ? h("span", { class: "dc-select" }, h("span", {}, c.label || "Make a selection"), icon("chevron-down", 14))
+    : h("span", { class: c.disabled ? "dc-disabled" : "" }, dcButton(c.label, c.emoji, styleColor[c.style] || "Grey", !!c.url))));
+  return dcMessage({ content: p.content, embeds: p.embeds || [], rows, mentions: p.mentions || {} });
+}
+
+/** Live preview box: load() → preview DTO; refresh() is debounced. */
+function livePreview(load, title = "Preview") {
+  const frame = h("div", { class: "dc-frame" }, h("div", { class: "muted small" }, "Loading preview…"));
+  const note = h("p", { class: "muted small" });
+  let timer = 0, seq = 0;
+  const run = async () => {
+    const my = ++seq;
+    try {
+      const p = await load();
+      if (my !== seq || !p) return;
+      frame.replaceChildren(dcFromPreview(p));
+      note.textContent = p.note ? `${p.note} · how the bot will post it.` : "How the bot will post it.";
+    } catch (e) { if (my === seq) note.textContent = `Preview: ${e.message}`; }
+  };
+  const refresh = () => { clearTimeout(timer); timer = setTimeout(run, 350); };
+  return { el: h("div", { class: "card preview-card" }, h("h3", {}, title), frame, note), refresh, now: run };
 }
 
 function dcButton(label, emoji, color = "Grey", link = false) {
@@ -3191,7 +3282,7 @@ function textCard(p) {
   const counter = h("span", { class: "muted small" }, `${desc.value.length}/${p.maxDescription}`);
   desc.addEventListener("input", () => { counter.textContent = `${desc.value.length}/${p.maxDescription}`; });
 
-  const color = colorField(p.color, p.defaultColor);
+  const color = colorField(p.color, p.defaultColor, () => preview.refresh());
 
   const labelInputs = p.labels.map(l => {
     const input = h("input", { maxlength: String(l.max), placeholder: l.default, value: l.value || l.default });
@@ -3199,6 +3290,13 @@ function textCard(p) {
   });
 
   const labelsOnly = p.kind === "labels";
+  const draft = () => {
+    const labels = {};
+    for (const { l, input } of labelInputs) labels[l.id] = input.value;
+    return { title: title.value, description: desc.value, labels, color: color.value() };
+  };
+  const preview = livePreview(() => gApi("POST", `/texts/${p.key}/preview`, draft()));
+  for (const f of [title, desc, ...labelInputs.map(x => x.input)]) f.addEventListener("input", () => preview.refresh());
   const what = p.key === "lfgpost" ? "active group post(s)" : p.key === "ticketmsg" ? "open ticket(s)" : "posted panel(s)";
   const resultToast = (res, done) => {
     if (!res) return;
@@ -3225,7 +3323,8 @@ function textCard(p) {
   });
 
   const custom = p.title || p.description || p.color || p.labels.some(l => l.value);
-  return h("div", { class: "card" },
+  preview.now();
+  return h("div", { class: "editor-layout", style: "margin-bottom:16px" }, h("div", { class: "card", style: "margin:0" },
     h("div", { class: "card-head" }, h("h2", {}, p.name),
       custom ? h("span", { class: "badge wait" }, "custom") : h("span", { class: "badge ok" }, "default"),
       labelsOnly ? null : h("span", { class: "muted small" }, `${p.posted} posted`)),
@@ -3238,7 +3337,8 @@ function textCard(p) {
     labelsOnly ? null : h("div", { class: "field" }, h("label", {}, "Stripe color"), color.el,
       h("span", { class: "muted small" }, "The colored line on the left of the panel in Discord.")),
     labelInputs.length ? h("div", { class: "grid2" }, labelInputs.map(x => x.el)) : null,
-    h("div", { class: "row" }, save, reset));
+    h("div", { class: "row" }, save, reset)),
+    h("div", { class: "editor-preview" }, preview.el));
 }
 
 /** Color picker: swatch + #hex field + reset. value() → "#rrggbb" or "" (= default). */
@@ -3312,24 +3412,36 @@ async function pageBotTexts(main) {
     const head = h("button", { type: "button", class: "bt-head" }, toneChip(ic, 16), h("b", {}, g.name),
       h("span", { class: "muted small" }, `${g.items.length} texts`), badge, h("span", { class: "bt-chevron" }, icon("chevron-down", 18)));
     const card = h("div", { class: "card bt-card" }, head, body);
+    // Group post / ticket message texts: the bot builds a sample message with the unsaved texts
+    const sample = (g.items.find(i => i.refresh === "lfgpost" || i.refresh === "ticketmsg") || {}).refresh;
+    const preview = sample ? livePreview(() => gApi("POST", "/texts/bot/preview", { sample, values: Object.fromEntries(dirty) }),
+      sample === "lfgpost" ? "Preview — group post" : "Preview — ticket message") : null;
+    let previewLoaded = false;
     const groupRows = g.items.map(it => {
       const row = botTextRow(it, v => {
         const original = it.value || "";
         if ((v || "") === original) dirty.delete(it.key); else dirty.set(it.key, v || "");
         row.el.classList.toggle("changed", dirty.has(it.key));
         updateBar();
+        if (preview) preview.refresh();
       });
       rows.push({ it, row, card });
       return row;
     });
-    body.append(...groupRows.map(r => r.el));
+    if (preview) {
+      preview.el.classList.add("bt-preview");
+      body.append(h("div", { class: "editor-layout" }, h("div", {}, ...groupRows.map(r => r.el)), h("div", { class: "editor-preview" }, preview.el)));
+    } else body.append(...groupRows.map(r => r.el));
     const countCustom = () => {
       const n = g.items.filter(x => x.value).length;
       badge.textContent = `${n} changed`;
       badge.style.display = n ? "" : "none";
     };
     countCustom();
-    head.addEventListener("click", () => card.classList.toggle("open"));
+    head.addEventListener("click", () => {
+      card.classList.toggle("open");
+      if (preview && !previewLoaded && card.classList.contains("open")) { previewLoaded = true; preview.now(); }
+    });
     return { card, g, countCustom };
   });
 
@@ -3392,9 +3504,16 @@ function botTextRow(it, onChange) {
     requestAnimationFrame(fit); upd();
     const reset = h("button", { type: "button", class: "btn ghost icon-only sm", title: "Back to default",
       onclick: () => { area.value = it.default; fit(); upd(); onChange(""); } }, icon("undo-2", 15));
+    // Messages (not buttons/titles): a small preview of the text as Discord shows it, while editing
+    const bubble = it.max >= 500 && !it.refresh ? h("div", { class: "dc-frame bt-bubble" }) : null;
+    if (bubble) {
+      const draw = () => bubble.replaceChildren(mdPreview(area.value.trim() === "-" ? "(hidden)" : area.value));
+      area.addEventListener("focus", () => { draw(); bubble.classList.add("show"); });
+      area.addEventListener("input", draw);
+    }
     control = h("div", { class: "bt-control" }, area, h("div", { class: "bt-meta" },
       it.placeholders ? h("span", { class: "bt-ph" }, ...it.placeholders.split(/,\s*/).map(p => h("code", {}, p))) : null,
-      it.optional ? h("span", { class: "muted small" }, "- = hide") : null, h("span", { style: "flex:1" }), counter, reset));
+      it.optional ? h("span", { class: "muted small" }, "- = hide") : null, h("span", { style: "flex:1" }), counter, reset), bubble);
   }
   const el = h("div", { class: "bt-row" }, h("div", { class: "bt-name" }, h("span", {}, it.name), custom), control);
   return { el };

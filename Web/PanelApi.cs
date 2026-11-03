@@ -81,11 +81,14 @@ public static partial class PanelApi
         MapCommon(guild);
         // Каждый модуль — своя группа с проверкой права (владелец бота проходит всегда)
         MapLfg(guild.MapGroup("/lfg").AddEndpointFilter(Require(PanelPermissions.Lfg)));
-        MapTickets(guild.MapGroup("/tickets").AddEndpointFilter(Require(PanelPermissions.Tickets)));
+        var ticketsGroup = guild.MapGroup("/tickets").AddEndpointFilter(Require(PanelPermissions.Tickets));
+        MapTickets(ticketsGroup);
         MapVoice(guild.MapGroup("/voice").AddEndpointFilter(Require(PanelPermissions.Voice)));
         MapWelcome(guild.MapGroup("/welcome").AddEndpointFilter(Require(PanelPermissions.Welcome)));
         MapRolePanels(guild.MapGroup("/roles").AddEndpointFilter(Require(PanelPermissions.Roles)));
-        MapTexts(guild.MapGroup("/texts").AddEndpointFilter(Require(PanelPermissions.Texts)));
+        var textsGroup = guild.MapGroup("/texts").AddEndpointFilter(Require(PanelPermissions.Texts));
+        MapTexts(textsGroup);
+        MapPreviews(textsGroup, ticketsGroup);
         MapMember(guild.MapGroup("/me").AddEndpointFilter(RequireMember));
         MapMemberRoles(guild.MapGroup("/member-roles").AddEndpointFilter(Require(PanelPermissions.Settings)));
         MapLfgExtra(guild.MapGroup("/lfg").AddEndpointFilter(Require(PanelPermissions.Lfg)));

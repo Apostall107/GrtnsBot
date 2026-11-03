@@ -19,11 +19,31 @@ public static class Tx
 
     public static BotTextStore? Store { get; set; }
 
+    /// <summary>Черновые тексты для предпросмотра на сайте: действуют только внутри <see cref="Preview"/> (этот async-поток).</summary>
+    private static readonly AsyncLocal<IReadOnlyDictionary<string, string>?> Overrides = new();
+
+    /// <summary>Подставить черновые тексты (ключ → значение) на время рендера предпросмотра.</summary>
+    public static IDisposable Preview(IReadOnlyDictionary<string, string>? values)
+    {
+        var previous = Overrides.Value;
+        Overrides.Value = values;
+        return new Restore(() => Overrides.Value = previous);
+    }
+
+    private sealed class Restore(Action undo) : IDisposable
+    {
+        public void Dispose() => undo();
+    }
+
+    private static string? Custom(ulong guildId, string key) =>
+        Overrides.Value is { } o && o.TryGetValue(key, out var v) ? (string.IsNullOrEmpty(v) ? null : v)
+        : guildId == 0 ? null : Store?.Get(guildId, key);
+
     /// <summary>Текст с подстановками {name}. Неизвестный ключ — сам ключ (видно, что забыли добавить в каталог).</summary>
     public static string Get(ulong guildId, string key, params (string Name, object? Value)[] args)
     {
         BotTextCatalog.ByKey.TryGetValue(key, out var def);
-        var custom = guildId == 0 ? null : Store?.Get(guildId, key);
+        var custom = Custom(guildId, key);
         var text = custom ?? def?.Default ?? key;
         if (custom is not null && custom.Trim() == Empty && def is { Optional: true }) text = "";
         foreach (var (name, value) in args)
@@ -44,7 +64,7 @@ public static class Tx
     public static Discord.Color Color(ulong guildId, string key)
     {
         BotTextCatalog.ByKey.TryGetValue(key, out var def);
-        var custom = guildId == 0 ? null : Store?.Get(guildId, key);
+        var custom = Custom(guildId, key);
         return ParseColor(custom) ?? ParseColor(def?.Default) ?? Discord.Color.Default;
     }
 

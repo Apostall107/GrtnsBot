@@ -1396,3 +1396,17 @@ dialog.xwide { width: min(1240px, calc(100vw - 32px)); }
 .dc-reactions { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
 .dc-reaction { background: #2b2d31; border: 1px solid #3f4147; border-radius: 8px; padding: 1px 6px; font-size: 13px; }
 .preview-box .seg { margin-bottom: 10px; }
+
+/* Previews everywhere */
+.dc-md { overflow-wrap: anywhere; }
+.dc-md .dc-quote { border-left: 4px solid #4e5058; padding-left: 10px; }
+.dc-code { background: #2b2d31; border: 1px solid #1e1f22; border-radius: 4px; padding: 6px 8px; margin: 4px 0; white-space: pre-wrap; font-size: 13px; }
+.dc-time-chip { background: rgba(255, 255, 255, .06); border-radius: 3px; padding: 0 3px; }
+.dc-fields { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 8px; }
+.dc-field { flex: 1 1 100%; min-width: 0; } .dc-field.inline { flex: 1 1 30%; }
+.dc-field-name { font-weight: 700; color: #f2f3f5; }
+.dc-disabled { opacity: .5; }
+.dc-embed + .dc-embed { margin-top: 4px; }
+.bt-bubble { display: none; margin-top: 6px; padding: 8px 10px; }
+.bt-bubble.show { display: block; }
+.bt-preview { margin: 0; }

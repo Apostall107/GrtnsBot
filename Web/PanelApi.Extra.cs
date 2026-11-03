@@ -934,7 +934,7 @@ public static partial class PanelApi
         var pattern = (http.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText ?? http.Request.Path.Value ?? "";
         var suffix = pattern.Replace("/api/guilds/{guildId}", "").Replace("/api", "");
         if (!suffix.EndsWith('/') && suffix == "/settings") suffix = "/settings/";
-        if (suffix == "/announce/preview") return await next(ctx); // предпросмотр ничего не меняет
+        if (suffix.EndsWith("/preview", StringComparison.Ordinal)) return await next(ctx); // предпросмотр ничего не меняет
         var def = Array.Find(AuditActions, a => a.Method == http.Request.Method && a.Suffix == suffix);
 
         string? details = null;

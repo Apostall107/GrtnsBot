@@ -180,8 +180,26 @@ public sealed class PanelTextStore
             : new();
     }
 
+    /// <summary>Черновой текст панели для предпросмотра на сайте (действует только внутри <see cref="Preview"/>).</summary>
+    private static readonly AsyncLocal<(string Key, PanelText? Text)?> PreviewText = new();
+
+    public static IDisposable Preview(string key, PanelText? text)
+    {
+        var previous = PreviewText.Value;
+        PreviewText.Value = (key, text);
+        return new PreviewScope(() => PreviewText.Value = previous);
+    }
+
+    private sealed class PreviewScope(Action undo) : IDisposable
+    {
+        public void Dispose() => undo();
+    }
+
     public PanelText? GetText(ulong guildId, string key)
     {
+        if (PreviewText.Value is { } p && p.Key == key)
+            return p.Text is null ? null
+                : new PanelText { Title = p.Text.Title, Description = p.Text.Description, Color = p.Text.Color, Labels = new(p.Text.Labels) };
         lock (_lock)
         {
             if (!_data.TryGetValue(guildId, out var g) || !g.Texts.TryGetValue(key, out var t)) return null;
