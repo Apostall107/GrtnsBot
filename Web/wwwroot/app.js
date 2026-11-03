@@ -1619,31 +1619,28 @@ async function pageAnnounce(main) {
   sentCard.replaceChildren(h("h2", {}, "🗂️ Sent"), data.sent.length ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
     h("thead", {}, h("tr", {}, h("th", {}, "Sent"), h("th", {}, "Channel"), h("th", {}, "Text"), h("th", {}, "Status"), h("th", {}))),
     h("tbody", {}, data.sent.map(p => {
-      // Compact icon buttons (names in tooltips)
-      const ib = (ic, title, extra = "") => h("button", { class: `btn ghost icon-only sm${extra}`, title, "aria-label": title }, icon(ic, 16));
-      const again = ib("undo-2", "Reuse — copy into the form");
-      again.addEventListener("click", () => loadIntoForm(p, false));
-      const editSent = p.status === "sent" && p.messages ? ib("pencil", "Edit — change the messages in Discord") : null;
-      if (editSent) editSent.addEventListener("click", () => loadIntoForm(p, "sent"));
-      const delMsgs = ib("trash-2", "Delete the messages in Discord", " danger-text");
-      delMsgs.addEventListener("click", async () => {
-        if (!await confirmDialog("Delete this post in Discord?", `${p.messages} message(s) in ${where(p)} will be deleted.`, "Delete")) return;
-        if (await act(delMsgs, () => gApi("POST", `/announce/${p.id}/delete-messages`), r => `Deleted ${r.deleted} message(s).`) !== undefined) refresh();
-      });
-      const forget = ib("x", "Remove from this list (the messages in Discord stay)");
-      forget.addEventListener("click", async () => {
-        if (!await confirmDialog("Remove from the list?", "Only the record here is removed — the messages in Discord stay.", "Remove")) return;
-        if (await act(forget, () => gApi("DELETE", `/announce/${p.id}`), "Removed.") !== undefined) refresh();
-      });
+      // Main actions as buttons, the rest in «⋯»
+      const editSent = p.status === "sent" && p.messages
+        ? h("button", { class: "btn secondary sm", title: "Change the messages in Discord", onclick: () => loadIntoForm(p, "sent") }, icon("pencil", 14), "Edit") : null;
+      const again = h("button", { class: "btn secondary sm", title: "Copy into the form", onclick: () => loadIntoForm(p, false) }, icon("undo-2", 14), "Reuse");
+      const more = menuButton([
+        p.jumpUrl ? { icon: "external-link", label: "Open in Discord", href: p.jumpUrl } : null,
+        p.messages ? { icon: "trash-2", label: "Delete the messages in Discord", danger: true, onclick: async () => {
+          if (!await confirmDialog("Delete this post in Discord?", `${p.messages} message(s) in ${where(p)} will be deleted.`, "Delete")) return;
+          if (await act(null, () => gApi("POST", `/announce/${p.id}/delete-messages`), r => `Deleted ${r.deleted} message(s).`) !== undefined) refresh();
+        } } : null,
+        { icon: "x", label: "Remove from this list", onclick: async () => {
+          if (!await confirmDialog("Remove from the list?", "Only the record here is removed — the messages in Discord stay.", "Remove")) return;
+          if (await act(null, () => gApi("DELETE", `/announce/${p.id}`), "Removed.") !== undefined) refresh();
+        } }
+      ].filter(Boolean));
       return h("tr", {},
         h("td", {}, fmtDate(p.sentAt), p.sendAt ? h("div", { class: "muted small" }, "scheduled") : null),
         h("td", {}, where(p)),
         h("td", { class: "small" }, short(p.content), h("div", { class: "muted small" }, "by ", member(p.createdBy))),
         h("td", {}, p.status === "sent" ? h("span", { class: "badge ok" }, `${p.messages} msg`) : h("span", { class: "badge lock", title: p.error || "" }, "failed"),
           p.error ? h("div", { class: "error-text small" }, p.error) : null),
-        h("td", { class: "actions icon-actions" },
-          p.jumpUrl ? h("a", { class: "btn ghost icon-only sm", href: p.jumpUrl, target: "_blank", rel: "noopener", title: "Open in Discord", "aria-label": "Open in Discord" }, icon("external-link", 16)) : null,
-          editSent, again, p.messages ? delMsgs : null, forget));
+        h("td", { class: "actions icon-actions" }, editSent, again, more));
     })))) : empty("Nothing sent yet."));
 }
 
