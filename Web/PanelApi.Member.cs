@@ -234,12 +234,17 @@ public static partial class PanelApi
                         gs = info?.Gs,
                         gsUpdated = info?.GsUpdatedAt?.ToUnixTimeMilliseconds(),
                         armory = ArmoryDto(info?.Armory),
-                        gsLocked = armory.GsLocked(guildId, info)
+                        gsLocked = armory.GsLocked(guildId, info),
+                        race = info?.Race,
+                        serverId = info?.ServerId
                     };
                 }),
                 // Через сколько дней GS считается устаревшим (как в напоминании о GS)
                 gsStaleDays = Math.Clamp(prefs.Get(guildId).GsReminderDays, 1, 365),
                 armoryGs = prefs.Get(guildId).ArmoryGs,
+                // Официальная оружейная AION 2 для этого проекта: включена, фракция и сервер по умолчанию
+                armoryProject = armory.ProjectPrefs(guildId, current?.Key) is { } ap
+                    ? new { enabled = ap.Enabled, race = ap.Race, serverId = ap.ServerId } : null,
                 maxCharacters = CharacterStore.MaxPerUser,
                 maxComment = CharacterStore.MaxCommentLength
             });
@@ -273,6 +278,10 @@ public static partial class PanelApi
             characters.SetInfo(guildId, me, exact, true, roleId, true, body.Comment, scope.Value);
             // GS привязанного к оружейной персонажа приходит оттуда — с сайта не меняется
             characters.SetGs(guildId, me, exact, body.Gs is > 0 ? body.Gs : null, scope.Value);
+            // Фракция и сервер: у привязанного к оружейной берутся оттуда
+            if (characters.GetInfo(guildId, me, exact, scope.Value)?.Armory is null)
+                characters.SetRealm(guildId, me, exact, body.Race is 1 or 2 ? body.Race : null,
+                    body.ServerId is > 0 and < 100000 ? body.ServerId : null, scope.Value);
             var groups = await profiles.RefreshCharacterAsync(guildId, me, exact, scope.Value);
             return Results.Ok(new { groupsUpdated = groups });
         });
@@ -627,7 +636,7 @@ public static partial class PanelApi
 public sealed record MemberRolesBody(List<string>? RoleIds);
 public sealed record JoinBody(string? Role, string? Character);
 public sealed record CharacterBody(string? Name);
-public sealed record CharacterProfileBody(string? ClassRoleId, string? Comment, int? Gs = null);
+public sealed record CharacterProfileBody(string? ClassRoleId, string? Comment, int? Gs = null, int? Race = null, int? ServerId = null);
 public sealed record DmBody(bool Enabled);
 public sealed record RoomPrefsBody(string? Name, int? Limit, bool Locked);
 public sealed record ApplyBody(string? ProjectKey, Dictionary<string, string?>? Answers);

@@ -1510,3 +1510,6 @@ th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
 .armory-box .btn.sm { padding: 3px 8px; }
 .armory-cell { white-space: nowrap; text-decoration: none; }
 .armory-cell .small { white-space: normal; }
+.armory-proj { align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 0; }
+.armory-proj + .armory-proj { border-top: 1px solid var(--border); }
+.pick-list button.exact { border-color: var(--success, #3fb950); }

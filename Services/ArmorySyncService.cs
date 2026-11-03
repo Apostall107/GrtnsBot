@@ -1,28 +1,31 @@
 using System.Collections.Concurrent;
 using Discord.WebSocket;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace LfgBot.Services;
 
 /// <summary>Итог синхронизации одного персонажа.</summary>
-public enum ArmorySyncResult { Updated, NotFound, Unavailable, NotLinked }
+public enum ArmorySyncResult { Updated, NotFound, Unavailable, NotLinked, Ambiguous }
+
+/// <summary>Состояние массовой привязки/обновления на сервере.</summary>
+public sealed record ArmoryBulkStatus(bool Running, int Total, int Done, int Linked, int Updated, int NotFound, int Ambiguous, int Failed,
+    DateTimeOffset Started, DateTimeOffset? Finished, string? Error);
 
 /// <summary>
-/// Привязанные к официальной оружейной персонажи обновляются раз в сутки (по одному запросу в несколько секунд):
-/// боевая мощь, уровень предметов, легион, класс. GS берётся оттуда (LFG → Group options → GS from the armory).
-/// Оружейная отказывает (403/429/503) — пауза, данные остаются прежними.
+/// Официальная оружейная: каждый привязывает и обновляет своих персонажей кнопкой на сайте; админ может запустить
+/// массовую привязку/обновление (по одному запросу в несколько секунд). Автоматически ничего не обновляется.
+/// GS берётся оттуда (LFG → Group options). Оружейная отказывает (403/429/503) — пауза, данные остаются прежними.
 /// </summary>
 public sealed class ArmorySyncService(OfficialArmory armory, CharacterStore characters, GuildPrefsStore prefs, LfgProjectStore projects,
-    LfgProfileService profiles, DiscordSocketClient client, ILogger<ArmorySyncService> logger) : BackgroundService
+    LfgProfileService profiles, DiscordSocketClient client, ILogger<ArmorySyncService> logger)
 {
-    public static readonly TimeSpan MaxAge = TimeSpan.FromHours(24);
     public static readonly TimeSpan ManualCooldown = TimeSpan.FromMinutes(15);
-    private static readonly TimeSpan Step = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan Step = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan Pause = TimeSpan.FromMinutes(30);
 
     private DateTimeOffset _pausedUntil;
     private readonly ConcurrentDictionary<ulong, DateTimeOffset> _searches = new();
+    private readonly ConcurrentDictionary<ulong, ArmoryBulkStatus> _bulk = new();
 
     /// <summary>Оружейная недавно отказала — не дёргать её.</summary>
     public bool Paused => DateTimeOffset.UtcNow < _pausedUntil;
@@ -39,49 +42,120 @@ public sealed class ArmorySyncService(OfficialArmory armory, CharacterStore char
 
     public void MarkUnavailable() => _pausedUntil = DateTimeOffset.UtcNow + Pause;
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    /// <summary>Настройки оружейной для проекта персонажа (scope null — проект по умолчанию).</summary>
+    public ArmoryProjectPrefs ProjectPrefs(ulong guildId, string? scopeOrKey)
     {
-        try
-        {
-            await Task.Delay(TimeSpan.FromMinutes(2), stoppingToken);
-            using var timer = new PeriodicTimer(TimeSpan.FromHours(1));
-            do
-            {
-                try
-                {
-                    await SyncDueAsync(stoppingToken);
-                }
-                catch (Exception e) when (e is not OperationCanceledException)
-                {
-                    logger.LogWarning(e, "Armory sync failed");
-                }
-            } while (await timer.WaitForNextTickAsync(stoppingToken));
-        }
-        catch (OperationCanceledException)
-        {
-            // остановка
-        }
+        var project = projects.Effective(guildId, scopeOrKey);
+        return prefs.ArmoryFor(guildId, project?.Key, project?.Name);
     }
 
-    private async Task SyncDueAsync(CancellationToken ct)
+    /// <summary>Сервер для поиска персонажа: его собственный, иначе по умолчанию для проекта.</summary>
+    public int? SearchServer(ulong guildId, string? scope, CharacterInfo? info) =>
+        info?.Armory?.ServerId ?? info?.ServerId ?? ProjectPrefs(guildId, scope).ServerId;
+
+    public ArmoryBulkStatus? BulkStatus(ulong guildId) => _bulk.TryGetValue(guildId, out var s) ? s : null;
+
+    /// <summary>
+    /// Массово: привязанных — обновить, непривязанных — найти по точному имени на их сервере (или сервере по умолчанию)
+    /// и привязать, если такой персонаж ровно один. false — уже идёт.
+    /// </summary>
+    public bool StartBulk(ulong guildId, string? projectKey, bool linkNew)
     {
-        var count = 0;
-        foreach (var guild in client.Guilds)
+        if (BulkStatus(guildId) is { Running: true }) return false;
+        var guild = client.GetGuild(guildId);
+        var def = projects.DefaultKey(guildId);
+        var list = characters.All(guildId)
+            .Where(c => guild?.GetUser(c.UserId) is not null)
+            .Where(c => projectKey is null || (c.Scope ?? def) == projectKey)
+            .Where(c => ProjectPrefs(guildId, c.Scope).Enabled)
+            .Where(c => linkNew || c.Info?.Armory is not null)
+            .ToList();
+        var status = new ArmoryBulkStatus(true, list.Count, 0, 0, 0, 0, 0, 0, DateTimeOffset.UtcNow, null, null);
+        _bulk[guildId] = status;
+        _ = Task.Run(async () =>
         {
-            var due = characters.All(guild.Id)
-                .Where(c => c.Info?.Armory is { } a && (a.SyncedAt is not { } at || DateTimeOffset.UtcNow - at > MaxAge))
-                .OrderBy(c => c.Info!.Armory!.SyncedAt ?? DateTimeOffset.MinValue)
-                .ToList();
-            foreach (var c in due)
+            try
             {
-                if (Paused) return;
-                await SyncAsync(guild.Id, c.UserId, c.Name, c.Scope, ct);
-                count++;
-                await Task.Delay(Step, ct);
+                foreach (var c in list)
+                {
+                    if (Paused)
+                    {
+                        status = status with { Error = "The official armory refused requests — try again in 30 minutes." };
+                        break;
+                    }
+                    var result = c.Info?.Armory is not null
+                        ? await SyncAsync(guildId, c.UserId, c.Name, c.Scope)
+                        : await AutoLinkAsync(guildId, c.UserId, c.Name, c.Scope, c.Info);
+                    status = result switch
+                    {
+                        ArmorySyncResult.Updated when c.Info?.Armory is null => status with { Linked = status.Linked + 1 },
+                        ArmorySyncResult.Updated => status with { Updated = status.Updated + 1 },
+                        ArmorySyncResult.NotFound => status with { NotFound = status.NotFound + 1 },
+                        ArmorySyncResult.Ambiguous => status with { Ambiguous = status.Ambiguous + 1 },
+                        _ => status with { Failed = status.Failed + 1 }
+                    };
+                    status = status with { Done = status.Done + 1 };
+                    _bulk[guildId] = status;
+                    await Task.Delay(Step);
+                }
             }
-        }
-        if (count > 0) logger.LogInformation("Armory sync: {Count} character(s)", count);
+            catch (Exception e)
+            {
+                logger.LogWarning(e, "Armory bulk sync failed");
+                status = status with { Error = e.Message };
+            }
+            _bulk[guildId] = status with { Running = false, Finished = DateTimeOffset.UtcNow };
+            logger.LogInformation("Armory bulk on {Guild}: {Done}/{Total}, linked {Linked}, updated {Updated}", guildId, status.Done, status.Total,
+                status.Linked, status.Updated);
+        });
+        return true;
     }
+
+    /// <summary>Найти персонажа по точному имени на его сервере и привязать (если найден ровно один).</summary>
+    public async Task<ArmorySyncResult> AutoLinkAsync(ulong guildId, ulong userId, string name, string? scope, CharacterInfo? info)
+    {
+        if (Paused) return ArmorySyncResult.Unavailable;
+        var server = SearchServer(guildId, scope, info);
+        IReadOnlyList<ArmoryHit> hits;
+        try
+        {
+            hits = await armory.SearchAsync(name, server);
+        }
+        catch (ArmoryUnavailableException)
+        {
+            MarkUnavailable();
+            return ArmorySyncResult.Unavailable;
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            return ArmorySyncResult.Unavailable;
+        }
+        var race = info?.Race;
+        var exact = hits.Where(h => h.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+            .Where(h => race is null || server is not null || RaceId(h.Race) == race)
+            .ToList();
+        if (exact.Count == 0) return ArmorySyncResult.NotFound;
+        if (exact.Count > 1) return ArmorySyncResult.Ambiguous;
+        await Task.Delay(Step);
+        return await LinkAsync(guildId, userId, name, scope, exact[0].CharacterId, exact[0].ServerId);
+    }
+
+    /// <summary>Привязать к найденному персонажу и сразу взять данные. Не вышло — привязка остаётся прежней.</summary>
+    public async Task<ArmorySyncResult> LinkAsync(ulong guildId, ulong userId, string name, string? scope, string characterId, int serverId,
+        CancellationToken ct = default)
+    {
+        var old = characters.GetInfo(guildId, userId, name, scope)?.Armory;
+        characters.SetArmory(guildId, userId, name, new ArmoryLink { CharacterId = characterId, ServerId = serverId }, scope);
+        var result = await SyncAsync(guildId, userId, name, scope, ct);
+        if (result != ArmorySyncResult.Updated) characters.SetArmory(guildId, userId, name, old, scope);
+        return result;
+    }
+
+    public static int? RaceId(string? race) =>
+        race is null ? null : race.StartsWith("Ely", StringComparison.OrdinalIgnoreCase) ? 1 : race.StartsWith("Asmo", StringComparison.OrdinalIgnoreCase) ? 2 : null;
+
+    /// <summary>Фракция по ID сервера (1xxx — Elyos, 2xxx — Asmodians).</summary>
+    public static int? RaceOfServer(int serverId) => (serverId / 1000) is 1 or 2 ? serverId / 1000 : null;
 
     /// <summary>Обновить персонажа из оружейной сейчас.</summary>
     public async Task<ArmorySyncResult> SyncAsync(ulong guildId, ulong userId, string name, string? scope, CancellationToken ct = default)
@@ -117,6 +191,7 @@ public sealed class ArmorySyncService(OfficialArmory armory, CharacterStore char
             Name = p.Name, ClassName = p.ClassName, Level = p.Level, CombatPower = p.CombatPower, ItemLevel = p.ItemLevel,
             Legion = p.Legion, ServerName = p.ServerName ?? link.ServerName, SyncedAt = DateTimeOffset.UtcNow, Error = null
         }, scope);
+        characters.SetRealm(guildId, userId, name, RaceOfServer(link.ServerId) ?? RaceId(p.Race), link.ServerId, scope);
         await ApplyAsync(guildId, userId, name, scope, p);
         return ArmorySyncResult.Updated;
     }

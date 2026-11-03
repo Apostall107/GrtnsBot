@@ -54,6 +54,49 @@ public static partial class PanelApi
             return Results.Ok();
         });
 
+        // ----- Официальная оружейная AION 2: проекты (вкл., фракция и сервер по умолчанию), массовая привязка -----
+        lfg.MapGet("/armory", async (ulong guildId, DiscordSocketClient client, [FromServices] GuildPrefsStore prefs,
+            [FromServices] LfgProjectStore projects, [FromServices] OfficialArmory armory, [FromServices] ArmorySyncService sync,
+            [FromServices] CharacterStore characters, CancellationToken ct) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            var def = projects.DefaultKey(guildId);
+            var all = characters.All(guildId).Where(c => OnServer(guild, c.UserId)).ToList();
+            var list = projects.GetProjects(guildId).Select(p =>
+            {
+                var a = prefs.ArmoryFor(guildId, p.Key, p.Name);
+                var mine = all.Where(c => (c.Scope ?? def) == p.Key).ToList();
+                return new
+                {
+                    key = p.Key, name = p.Name, enabled = a.Enabled, race = a.Race, serverId = a.ServerId,
+                    characters = mine.Count, linked = mine.Count(c => c.Info?.Armory is not null)
+                };
+            });
+            return Results.Ok(new { projects = list, servers = await ArmoryServersDto(armory, ct), bulk = BulkDto(sync.BulkStatus(guildId)) });
+        });
+
+        lfg.MapPut("/armory", (ulong guildId, ArmoryPrefsBody body, DiscordSocketClient client, [FromServices] GuildPrefsStore prefs,
+            [FromServices] LfgProjectStore projects) =>
+        {
+            if (client.GetGuild(guildId) is null) return GuildNotFound();
+            var keys = projects.GetProjects(guildId).Select(p => p.Key).ToHashSet();
+            prefs.Update(guildId, p => p.Armory = (body.Projects ?? []).Where(x => x.Key is not null && keys.Contains(x.Key))
+                .ToDictionary(x => x.Key!, x => new ArmoryProjectPrefs
+                {
+                    Enabled = x.Enabled, Race = x.Race is 1 ? 1 : 2, ServerId = x.ServerId is > 0 and < 100000 ? x.ServerId : null
+                }));
+            return Results.Ok();
+        });
+
+        lfg.MapPost("/armory/bulk", (ulong guildId, ArmoryBulkBody body, [FromServices] ArmorySyncService sync, [FromServices] LfgProjectStore projects) =>
+        {
+            if (sync.Paused) return Error("The official armory isn't answering right now — try again later.");
+            var key = string.IsNullOrWhiteSpace(body.Project) ? null : projects.Find(guildId, body.Project)?.Key;
+            return sync.StartBulk(guildId, key, body.LinkNew) ? Results.Ok(BulkDto(sync.BulkStatus(guildId))) : Error("Already running.");
+        });
+
+        lfg.MapGet("/armory/bulk", (ulong guildId, [FromServices] ArmorySyncService sync) => Results.Ok(BulkDto(sync.BulkStatus(guildId))));
+
         // Разослать напоминание о GS прямо сейчас
         lfg.MapPost("/gs-reminder/run", async (ulong guildId, [FromServices] GsReminderService reminder) =>
             Results.Ok(new { members = await reminder.RunAsync(guildId) }));
@@ -254,6 +297,10 @@ public static partial class PanelApi
         return events;
     }
 }
+
+public sealed record ArmoryProjectBody(string? Key, bool Enabled, int Race, int? ServerId);
+public sealed record ArmoryPrefsBody(List<ArmoryProjectBody>? Projects);
+public sealed record ArmoryBulkBody(string? Project, bool LinkNew = true);
 
 public sealed record LfgPrefsBody(bool ReadyCheck, int? AutoPromoteMinutes, bool GsReminder, string? GsReminderChannelId, int? GsReminderDays,
     bool GsReminderDm, bool MemberTop = true, string? ArmoryGs = null);
