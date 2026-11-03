@@ -183,9 +183,9 @@ public sealed class ArmorySyncService(OfficialArmory armory, CharacterStore char
             }
             // Ник — как в игре (регистр)
             characters.Add(guildId, userId, hit[0].Name, scope);
-            var result = await LinkAsync(guildId, userId, hit[0].Name, scope, hit[0].CharacterId, hit[0].ServerId, ct);
+            var (result, linkedName) = await LinkNamedAsync(guildId, userId, hit[0].Name, scope, hit[0].CharacterId, hit[0].ServerId, ct);
             if (result == ArmorySyncResult.Unavailable) return (added, notFound, existing, true);
-            added.Add(hit[0].Name);
+            added.Add(linkedName);
             await Task.Delay(TimeSpan.FromSeconds(1), ct);
         }
         return (added, notFound, existing, false);
@@ -193,13 +193,17 @@ public sealed class ArmorySyncService(OfficialArmory armory, CharacterStore char
 
     /// <summary>Привязать к найденному персонажу и сразу взять данные. Не вышло — привязка остаётся прежней.</summary>
     public async Task<ArmorySyncResult> LinkAsync(ulong guildId, ulong userId, string name, string? scope, string characterId, int serverId,
-        CancellationToken ct = default)
+        CancellationToken ct = default) => (await LinkNamedAsync(guildId, userId, name, scope, characterId, serverId, ct)).Result;
+
+    /// <summary>Привязать; Name — ник после привязки (заменяется игровым, если отличается).</summary>
+    public async Task<(ArmorySyncResult Result, string Name)> LinkNamedAsync(ulong guildId, ulong userId, string name, string? scope,
+        string characterId, int serverId, CancellationToken ct = default)
     {
         var old = characters.GetInfo(guildId, userId, name, scope)?.Armory;
         characters.SetArmory(guildId, userId, name, new ArmoryLink { CharacterId = characterId, ServerId = serverId }, scope);
-        var result = await SyncAsync(guildId, userId, name, scope, ct);
-        if (result != ArmorySyncResult.Updated) characters.SetArmory(guildId, userId, name, old, scope);
-        return result;
+        var r = await SyncNamedAsync(guildId, userId, name, scope, ct);
+        if (r.Result != ArmorySyncResult.Updated) characters.SetArmory(guildId, userId, name, old, scope);
+        return r;
     }
 
     public static int? RaceId(string? race) =>
@@ -209,10 +213,15 @@ public sealed class ArmorySyncService(OfficialArmory armory, CharacterStore char
     public static int? RaceOfServer(int serverId) => (serverId / 1000) is 1 or 2 ? serverId / 1000 : null;
 
     /// <summary>Обновить персонажа из оружейной сейчас.</summary>
-    public async Task<ArmorySyncResult> SyncAsync(ulong guildId, ulong userId, string name, string? scope, CancellationToken ct = default)
+    public async Task<ArmorySyncResult> SyncAsync(ulong guildId, ulong userId, string name, string? scope, CancellationToken ct = default) =>
+        (await SyncNamedAsync(guildId, userId, name, scope, ct)).Result;
+
+    /// <summary>Обновить из оружейной; Name — ник после обновления (мог смениться на игровой).</summary>
+    public async Task<(ArmorySyncResult Result, string Name)> SyncNamedAsync(ulong guildId, ulong userId, string name, string? scope,
+        CancellationToken ct = default)
     {
-        if (characters.GetInfo(guildId, userId, name, scope)?.Armory is not { } link) return ArmorySyncResult.NotLinked;
-        if (Paused) return ArmorySyncResult.Unavailable;
+        if (characters.GetInfo(guildId, userId, name, scope)?.Armory is not { } link) return (ArmorySyncResult.NotLinked, name);
+        if (Paused) return (ArmorySyncResult.Unavailable, name);
         ArmoryProfile? p;
         try
         {
@@ -222,19 +231,19 @@ public sealed class ArmorySyncService(OfficialArmory armory, CharacterStore char
         {
             MarkUnavailable();
             logger.LogWarning("Armory refused ({Status}), pausing for {Minutes} min", e.Status, Pause.TotalMinutes);
-            return ArmorySyncResult.Unavailable;
+            return (ArmorySyncResult.Unavailable, name);
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException { CancellationToken.IsCancellationRequested: false }
                                      or System.Text.Json.JsonException)
         {
             logger.LogDebug(e, "Armory request failed");
-            return ArmorySyncResult.Unavailable;
+            return (ArmorySyncResult.Unavailable, name);
         }
 
         if (p is null)
         {
             characters.SetArmory(guildId, userId, name, link with { SyncedAt = DateTimeOffset.UtcNow, Error = "not found" }, scope);
-            return ArmorySyncResult.NotFound;
+            return (ArmorySyncResult.NotFound, name);
         }
 
         characters.SetArmory(guildId, userId, name, link with
@@ -243,8 +252,18 @@ public sealed class ArmorySyncService(OfficialArmory armory, CharacterStore char
             Legion = p.Legion, ServerName = p.ServerName ?? link.ServerName, SyncedAt = DateTimeOffset.UtcNow, Error = null
         }, scope);
         characters.SetRealm(guildId, userId, name, RaceOfServer(link.ServerId) ?? RaceId(p.Race), link.ServerId, scope);
+
+        // Ник как в игре: неточный регистр/опечатка при добавлении или персонажа переименовали в игре
+        if (p.Name.Length > 0 && !string.Equals(p.Name, name, StringComparison.Ordinal) &&
+            characters.Rename(guildId, userId, name, p.Name, scope) is null)
+        {
+            logger.LogInformation("Armory: character {Old} renamed to {New} (user {User})", name, p.Name, userId);
+            await profiles.RenameInGroupsAsync(guildId, userId, name, p.Name, scope);
+            name = p.Name;
+        }
+
         await ApplyAsync(guildId, userId, name, scope, p);
-        return ArmorySyncResult.Updated;
+        return (ArmorySyncResult.Updated, name);
     }
 
     /// <summary>GS и класс из оружейной в профиль персонажа; активные сборы обновляются, если что-то изменилось.</summary>

@@ -84,11 +84,15 @@ public static partial class PanelApi
             var id = (body.CharacterId ?? "").Trim();
             if (id.Length is 0 or > 200 || body.ServerId is not (> 0 and < 100000)) return Error("Pick a character from the search.");
 
-            var result = await sync.LinkAsync(guildId, me, exact, scope.Value, id, body.ServerId, ct);
+            var (result, current) = await sync.LinkNamedAsync(guildId, me, exact, scope.Value, id, body.ServerId, ct);
             if (result == ArmorySyncResult.Updated)
             {
-                var info = characters.GetInfo(guildId, me, exact, scope.Value);
-                return Results.Ok(new { gs = info?.Gs, combatPower = info?.Armory?.CombatPower, itemLevel = info?.Armory?.ItemLevel });
+                var info = characters.GetInfo(guildId, me, current, scope.Value);
+                return Results.Ok(new
+                {
+                    gs = info?.Gs, combatPower = info?.Armory?.CombatPower, itemLevel = info?.Armory?.ItemLevel,
+                    renamed = current != exact ? current : null
+                });
             }
             return Error(result == ArmorySyncResult.NotFound
                 ? "This character wasn't found in the official armory."
@@ -137,9 +141,10 @@ public static partial class PanelApi
             if (characters.GetInfo(guildId, me, exact, scope.Value)?.Armory is not { } link) return Error("Link the character first.");
             if (link.SyncedAt is { } at && DateTimeOffset.UtcNow - at < ArmorySyncService.ManualCooldown)
                 return Error($"Updated {(int)(DateTimeOffset.UtcNow - at).TotalMinutes} min ago — you can refresh once per {ArmorySyncService.ManualCooldown.TotalMinutes:0} minutes.");
-            return await sync.SyncAsync(guildId, me, exact, scope.Value, ct) switch
+            var (synced, current) = await sync.SyncNamedAsync(guildId, me, exact, scope.Value, ct);
+            return synced switch
             {
-                ArmorySyncResult.Updated => Results.Ok(),
+                ArmorySyncResult.Updated => Results.Ok(new { renamed = current != exact ? current : null }),
                 ArmorySyncResult.NotFound => Error("The character wasn't found in the official armory (renamed or deleted?). Link it again."),
                 _ => Error("The official armory isn't answering right now — try again later.")
             };
