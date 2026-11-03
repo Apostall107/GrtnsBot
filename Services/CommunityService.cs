@@ -7,8 +7,9 @@ using Microsoft.Extensions.Logging;
 namespace LfgBot.Services;
 
 /// <summary>
-/// Приветствие новичков (канал / ЛС), автороль при входе и панели самовыдачи ролей
-/// (кнопки, выпадающий список или реакции).
+/// Два модуля:
+/// Welcome — приветствие новичков (канал / ЛС, текст и/или embed, кнопки-ссылки) и автороль;
+/// Role panels — самовыдача ролей: кнопки, пункты выпадающего списка и реакции, каждая связка выдаёт 1–5 ролей.
 /// </summary>
 public sealed class CommunityService(
     DiscordSocketClient client,
@@ -33,7 +34,7 @@ public sealed class CommunityService(
         return Task.CompletedTask;
     }
 
-    // ================= Приветствие и автороль =================
+    // ================= Welcome =================
 
     private Task OnUserJoined(SocketGuildUser user)
     {
@@ -49,34 +50,35 @@ public sealed class CommunityService(
     {
         var guild = user.Guild;
 
-        // Автороль (по умолчанию выключена)
         if (w.AutoRoleMode == WelcomeDefaults.AutoRoleJoin && w.AutoRoleIds.Count > 0 && !(user.IsBot && w.SkipBots))
         {
-            var roles = w.AutoRoleIds.Select(guild.GetRole).Where(r => r is not null && CanManage(guild, r)).ToList();
-            if (roles.Count > 0)
+            if (w.AutoRoleDelaySeconds > 0) await Task.Delay(TimeSpan.FromSeconds(w.AutoRoleDelaySeconds));
+            var member = guild.GetUser(user.Id);
+            var roles = w.AutoRoleIds.Select(guild.GetRole).Where(r => CanManage(guild, r)).ToList();
+            if (member is not null && roles.Count > 0)
             {
                 try
                 {
-                    await user.AddRolesAsync(roles);
-                    audit.FromSystem(guild.Id, "roles", "Auto role on join",
-                        $"{user.DisplayName}: {string.Join(", ", roles.Select(r => "@" + r!.Name))}");
+                    await member.AddRolesAsync(roles);
+                    audit.FromSystem(guild.Id, "welcome", "Auto role on join", $"{user.DisplayName}: {Names(roles)}");
                 }
                 catch (Discord.Net.HttpException ex)
                 {
                     logger.LogWarning(ex, "Auto role failed in {Guild}", guild.Id);
-                    audit.FromSystem(guild.Id, "roles", "Auto role failed", $"{user.DisplayName}: {ex.Message}");
+                    audit.FromSystem(guild.Id, "welcome", "Auto role failed", $"{user.DisplayName}: {ex.Message}");
                 }
             }
         }
 
         if (user.IsBot) return;
-        var button = ApplyButton(guild, w);
+        var buttons = WelcomeButtons(guild, w);
 
-        if (w.ChannelId is { } channelId && guild.GetTextChannel(channelId) is { } channel)
+        if (w.Channel.Enabled && w.ChannelId is { } channelId && guild.GetTextChannel(channelId) is { } channel)
         {
+            var (content, embed) = BuildWelcome(w.Channel, user);
             try
             {
-                await channel.SendMessageAsync(Render(w.ChannelText, user), components: button,
+                await channel.SendMessageAsync(content, embed: embed, components: buttons,
                     allowedMentions: new AllowedMentions { UserIds = [user.Id] });
             }
             catch (Discord.Net.HttpException ex)
@@ -85,12 +87,13 @@ public sealed class CommunityService(
             }
         }
 
-        if (w.SendDm)
+        if (w.Dm.Enabled)
         {
+            var (content, embed) = BuildWelcome(w.Dm, user);
             try
             {
                 var dm = await user.CreateDMChannelAsync();
-                await dm.SendMessageAsync(Render(w.DmText, user), components: button, allowedMentions: AllowedMentions.None);
+                await dm.SendMessageAsync(content, embed: embed, components: buttons, allowedMentions: AllowedMentions.None);
             }
             catch (Discord.Net.HttpException)
             {
@@ -99,18 +102,20 @@ public sealed class CommunityService(
         }
     }
 
-    /// <summary>Тест приветствия: отправляет его в ЛС этому человеку (как будто он только что зашёл).</summary>
-    public async Task<string?> SendTestAsync(SocketGuildUser user)
+    /// <summary>Тест: оба приветствия приходят в ЛС тому, кто нажал (как будто он только что зашёл).</summary>
+    public async Task<string?> SendTestAsync(SocketGuildUser user, WelcomeSettings? draft = null)
     {
-        var w = store.GetWelcome(user.Guild.Id);
+        var w = draft ?? store.GetWelcome(user.Guild.Id);
+        if (!w.Channel.Enabled && !w.Dm.Enabled) return "Turn on the channel message or the DM first.";
         try
         {
             var dm = await user.CreateDMChannelAsync();
-            var parts = new List<string>();
-            if (w.ChannelId is not null) parts.Add($"**Channel message:**\n{Render(w.ChannelText, user)}");
-            if (w.SendDm) parts.Add($"**DM:**\n{Render(w.DmText, user)}");
-            if (parts.Count == 0) return "Turn on the channel message or the DM first.";
-            await dm.SendMessageAsync(string.Join("\n\n", parts), components: ApplyButton(user.Guild, w), allowedMentions: AllowedMentions.None);
+            var buttons = WelcomeButtons(user.Guild, w);
+            foreach (var (label, msg) in new[] { ("Channel message", w.Channel), ("DM", w.Dm) }.Where(x => x.Item2.Enabled))
+            {
+                var (content, embed) = BuildWelcome(msg, user);
+                await dm.SendMessageAsync($"-# Test · {label}\n{content}".Trim(), embed: embed, components: buttons, allowedMentions: AllowedMentions.None);
+            }
             return null;
         }
         catch (Discord.Net.HttpException)
@@ -119,17 +124,32 @@ public sealed class CommunityService(
         }
     }
 
-    /// <summary>Подстановки: {user} {name} {server} {members} {tickets}.</summary>
+    public (string? Content, Embed? Embed) BuildWelcome(WelcomeMessage m, SocketGuildUser user)
+    {
+        var content = string.IsNullOrWhiteSpace(m.Content) ? null : Cut(Render(m.Content, user), 2000);
+        if (!m.UseEmbed) return (content ?? "👋", null);
+
+        var e = new EmbedBuilder().WithColor(Tx.ParseColor(m.Color) ?? Tx.Color(user.Guild.Id, "color.welcome"));
+        if (!string.IsNullOrWhiteSpace(m.Title)) e.WithTitle(Cut(Render(m.Title, user), 256));
+        if (!string.IsNullOrWhiteSpace(m.Description)) e.WithDescription(Cut(Render(m.Description, user), 4000));
+        if (m.ShowAvatar) e.WithThumbnailUrl(user.GetDisplayAvatarUrl(size: 256));
+        if (IsUrl(m.ImageUrl)) e.WithImageUrl(m.ImageUrl);
+        if (!string.IsNullOrWhiteSpace(m.Footer)) e.WithFooter(Cut(Render(m.Footer, user), 2048));
+        if (e.Title is null && e.Description is null && e.ImageUrl is null) e.WithDescription(Render("👋 {user}", user));
+        return (content, e.Build());
+    }
+
+    /// <summary>Подстановки: {user} {name} {username} {server} {members} {tickets}.</summary>
     public string Render(string template, SocketGuildUser user)
     {
         var guild = user.Guild;
-        var text = (template ?? "")
+        return (template ?? "")
             .Replace("{user}", user.Mention)
             .Replace("{name}", Format.Sanitize(user.DisplayName))
+            .Replace("{username}", Format.Sanitize(user.Username))
             .Replace("{server}", Format.Sanitize(guild.Name))
             .Replace("{members}", guild.MemberCount.ToString())
             .Replace("{tickets}", TicketPanelUrl(guild.Id) ?? "");
-        return text.Length <= 2000 ? text : text[..2000];
     }
 
     /// <summary>Ссылка на первую опубликованную панель тикетов (или null).</summary>
@@ -138,79 +158,105 @@ public sealed class CommunityService(
             ? $"https://discord.com/channels/{guildId}/{p.ChannelId}/{p.MessageId}"
             : null;
 
-    private MessageComponent? ApplyButton(SocketGuild guild, WelcomeSettings w) =>
-        w.ApplyButton && TicketPanelUrl(guild.Id) is { } url
-            ? new ComponentBuilder().WithButton(Tx.Get(guild.Id, "welcome.applyButton"), style: ButtonStyle.Link, url: url, emote: new Emoji("📝")).Build()
-            : null;
+    private MessageComponent? WelcomeButtons(SocketGuild guild, WelcomeSettings w)
+    {
+        var b = new ComponentBuilder();
+        var any = false;
+        if (w.ApplyButton && TicketPanelUrl(guild.Id) is { } url)
+        {
+            b.WithButton(Cut(string.IsNullOrWhiteSpace(w.ApplyLabel) ? Tx.Get(guild.Id, "welcome.applyButton") : w.ApplyLabel!, 80),
+                style: ButtonStyle.Link, url: url, emote: new Emoji("📝"));
+            any = true;
+        }
+        foreach (var link in w.Links.Where(l => IsUrl(l.Url) && !string.IsNullOrWhiteSpace(l.Label)).Take(WelcomeDefaults.MaxLinks))
+        {
+            b.WithButton(Cut(link.Label, 80), style: ButtonStyle.Link, url: link.Url, emote: LfgProjectStore.ToEmote(link.Emoji));
+            any = true;
+        }
+        return any ? b.Build() : null;
+    }
 
-    // ================= Панели ролей =================
+    // ================= Role panels =================
 
-    /// <summary>Роль можно выдавать: не @everyone, не управляемая, ниже высшей роли бота.</summary>
+    /// <summary>Роль можно выдавать: не @everyone, не управляемая, ниже высшей роли бота, у бота есть Manage Roles.</summary>
     public static bool CanManage(SocketGuild guild, SocketRole? role) =>
         role is not null && !role.IsEveryone && !role.IsManaged && guild.CurrentUser.Hierarchy > role.Position &&
         guild.CurrentUser.GuildPermissions.ManageRoles;
 
+    private string RoleName(ulong guildId, ulong roleId) => client.GetGuild(guildId)?.GetRole(roleId)?.Name ?? "Role";
+
+    /// <summary>Подпись связки: своя или имя первой роли.</summary>
+    public string BindingLabel(RolePanel p, RoleBinding b) =>
+        !string.IsNullOrWhiteSpace(b.Label) ? b.Label! : b.RoleIds.Count > 0 ? RoleName(p.GuildId, b.RoleIds[0]) : "Role";
+
     public (Embed Embed, MessageComponent? Components) Render(RolePanel p)
     {
         var gid = p.GuildId;
-        var embed = new EmbedBuilder()
-            .WithColor(Tx.ParseColor(p.Color) ?? Tx.Color(gid, "color.roles.panel"));
-        if (!string.IsNullOrWhiteSpace(p.Title)) embed.WithTitle(p.Title);
+        var embed = new EmbedBuilder().WithColor(Tx.ParseColor(p.Color) ?? Tx.Color(gid, "color.roles.panel"));
+        if (!string.IsNullOrWhiteSpace(p.Title)) embed.WithTitle(Cut(p.Title!, 256));
+        if (IsUrl(p.ImageUrl)) embed.WithImageUrl(p.ImageUrl);
+        if (IsUrl(p.ThumbnailUrl)) embed.WithThumbnailUrl(p.ThumbnailUrl);
+        if (!string.IsNullOrWhiteSpace(p.Footer)) embed.WithFooter(Cut(p.Footer!, 2048));
 
-        var text = p.Text?.Trim() ?? "";
-        // Для реакций — список «эмодзи — роль», иначе непонятно, что ставить
-        if (p.Style == RolePanelStyle.Reactions)
-        {
-            var lines = p.Options.Select(o => $"{o.Emoji} — {(string.IsNullOrWhiteSpace(o.Label) ? $"<@&{o.RoleId}>" : $"{Format.Sanitize(o.Label)} (<@&{o.RoleId}>)")}");
-            text = string.Join("\n", new[] { text }.Concat(lines).Where(x => x.Length > 0));
-        }
-        var hint = Tx.Get(gid, p.Mode switch
-        {
-            RolePanelMode.Unique => "roles.hintUnique",
-            RolePanelMode.Verify => "roles.hintVerify",
-            _ => "roles.hintNormal"
-        });
-        if (hint.Length > 0) text += (text.Length > 0 ? "\n\n" : "") + $"-# {hint}";
-        if (text.Length > 0) embed.WithDescription(text.Length <= 4000 ? text : text[..4000]);
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(p.Text)) parts.Add(p.Text!.Trim());
+        // Список связок: эмодзи — роли — описание. Для реакций без него непонятно, что ставить
+        if (p.ShowList && p.Bindings.Count > 0)
+            parts.Add(string.Join("\n", p.Bindings.Select(b =>
+            {
+                var line = $"{(string.IsNullOrWhiteSpace(b.Emoji) ? "•" : b.Emoji)} {string.Join(" ", b.RoleIds.Select(id => $"<@&{id}>"))}";
+                return string.IsNullOrWhiteSpace(b.Description) ? line : $"{line} — {b.Description}";
+            })));
+        if (p.ShowHint && Tx.Get(gid, p.Mode switch
+            {
+                RolePanelMode.Unique => "roles.hintUnique",
+                RolePanelMode.Verify => "roles.hintVerify",
+                RolePanelMode.Remove => "roles.hintRemove",
+                _ => "roles.hintNormal"
+            }) is { Length: > 0 } hint)
+            parts.Add($"-# {hint}");
+        if (parts.Count > 0) embed.WithDescription(Cut(string.Join("\n\n", parts), 4000));
+        if (embed.Title is null && embed.Description is null) embed.WithDescription("​");
 
-        MessageComponent? comps = null;
-        if (p.Style == RolePanelStyle.Buttons)
+        // Компоненты: выпадающий список (1 ряд) + кнопки по 5 в ряд, всего до 5 рядов
+        var builder = new ComponentBuilder();
+        var row = 0;
+        var options = p.Options.Take(25).ToList();
+        if (options.Count > 0)
         {
-            var b = new ComponentBuilder();
-            foreach (var (o, i) in p.Options.Take(RolePanel.MaxOptions).Select((o, i) => (o, i)))
-                b.WithButton(Trim(Label(o), 80), $"rp:b:{p.Id}:{o.RoleId}", ButtonStyle.Secondary,
-                    LfgProjectStore.ToEmote(o.Emoji), row: i / 5);
-            comps = b.Build();
-        }
-        else if (p.Style == RolePanelStyle.Dropdown && p.Options.Count > 0)
-        {
+            var max = p.Mode == RolePanelMode.Unique ? 1 : p.MaxPick is > 0 ? Math.Min(p.MaxPick, options.Count) : options.Count;
             var menu = new SelectMenuBuilder()
                 .WithCustomId($"rp:s:{p.Id}")
-                .WithPlaceholder(Trim(string.IsNullOrWhiteSpace(p.Placeholder) ? Tx.Get(gid, "roles.placeholder") : p.Placeholder!, 150))
-                .WithMinValues(p.Mode == RolePanelMode.Verify ? 1 : 0)
-                .WithMaxValues(p.Mode == RolePanelMode.Unique ? 1 : Math.Min(p.Options.Count, 25));
-            foreach (var o in p.Options.Take(25))
+                .WithPlaceholder(Cut(string.IsNullOrWhiteSpace(p.Placeholder) ? Tx.Get(gid, "roles.placeholder") : p.Placeholder!, 150))
+                .WithMinValues(0)
+                .WithMaxValues(max);
+            foreach (var o in options)
             {
-                var opt = new SelectMenuOptionBuilder().WithLabel(Trim(Label(o), 100)).WithValue(o.RoleId.ToString());
-                if (!string.IsNullOrWhiteSpace(o.Description)) opt.WithDescription(Trim(o.Description!, 100));
+                var opt = new SelectMenuOptionBuilder().WithLabel(Cut(BindingLabel(p, o), 100)).WithValue(o.Id);
+                if (!string.IsNullOrWhiteSpace(o.Description)) opt.WithDescription(Cut(o.Description!, 100));
                 if (LfgProjectStore.ToEmote(o.Emoji) is { } e) opt.WithEmote(e);
                 menu.AddOption(opt);
             }
-            comps = new ComponentBuilder().WithSelectMenu(menu).Build();
+            builder.WithSelectMenu(menu, row++);
         }
-        return (embed.Build(), comps);
+        foreach (var (b, i) in p.Buttons.Take((5 - row) * 5).Select((b, i) => (b, i)))
+            builder.WithButton(Cut(BindingLabel(p, b), 80), $"rp:b:{p.Id}:{b.Id}", b.Color switch
+            {
+                RoleButtonColor.Blurple => ButtonStyle.Primary,
+                RoleButtonColor.Green => ButtonStyle.Success,
+                RoleButtonColor.Red => ButtonStyle.Danger,
+                _ => ButtonStyle.Secondary
+            }, LfgProjectStore.ToEmote(b.Emoji), row: row + i / 5);
 
-        string Label(RolePanelOption o) =>
-            !string.IsNullOrWhiteSpace(o.Label) ? o.Label! : client.GetGuild(gid)?.GetRole(o.RoleId)?.Name ?? "Role";
+        var comps = builder.Build();
+        return (embed.Build(), comps.Components.Count > 0 ? comps : null);
     }
-
-    private static string Trim(string s, int max) => s.Length <= max ? s : s[..max];
 
     /// <summary>Публикует панель в канал (старое сообщение панели удаляется).</summary>
     public async Task<string?> PostAsync(RolePanel panel, ulong channelId)
     {
         if (client.GetGuild(panel.GuildId)?.GetTextChannel(channelId) is not { } channel) return "Channel not found.";
-        if (panel.Options.Count == 0) return "Add at least one role first.";
+        if (panel.Bindings.Count == 0) return "Add at least one button, reaction or list item first.";
 
         var (embed, comps) = Render(panel);
         IUserMessage message;
@@ -226,8 +272,8 @@ public sealed class CommunityService(
         var oldChannel = panel.ChannelId;
         var oldMessage = panel.MessageId;
         store.SetPosted(panel.Id, channel.Id, message.Id);
-        if (panel.Style == RolePanelStyle.Reactions) await AddReactionsAsync(message, panel);
-        if (oldChannel is { } oc && oldMessage is { } om) await DeleteMessageAsync(panel.GuildId, oc, om);
+        await SyncReactionsAsync(message, panel);
+        if (oldChannel is { } oc && oldMessage is { } om && om != message.Id) await DeleteMessageAsync(panel.GuildId, oc, om);
         return null;
     }
 
@@ -250,7 +296,7 @@ public sealed class CommunityService(
                 m.Embeds = new[] { embed };
                 m.Components = comps ?? new ComponentBuilder().Build();
             });
-            if (panel.Style == RolePanelStyle.Reactions) await AddReactionsAsync(message, panel);
+            await SyncReactionsAsync(message, panel);
             return null;
         }
         catch (Discord.Net.HttpException ex)
@@ -275,73 +321,107 @@ public sealed class CommunityService(
         }
     }
 
-    private async Task AddReactionsAsync(IUserMessage message, RolePanel panel)
+    /// <summary>Реакции бота под панелью: нужные — поставить, лишние (от удалённых связок) — убрать.</summary>
+    private async Task SyncReactionsAsync(IUserMessage message, RolePanel panel)
     {
-        foreach (var o in panel.Options)
+        var wanted = panel.Reactions.Select(b => LfgProjectStore.ToEmote(b.Emoji)).Where(e => e is not null).Cast<IEmote>().ToList();
+        foreach (var (emote, meta) in message.Reactions)
+            if (meta.IsMe && !wanted.Any(w => SameEmote(w, emote)))
+                try { await message.RemoveReactionAsync(emote, client.CurrentUser.Id); } catch (Discord.Net.HttpException) { }
+        foreach (var emote in wanted)
         {
-            if (LfgProjectStore.ToEmote(o.Emoji) is not { } emote) continue;
+            if (message.Reactions.Any(r => r.Value.IsMe && SameEmote(emote, r.Key))) continue;
             try { await message.AddReactionAsync(emote); }
-            catch (Discord.Net.HttpException ex) { logger.LogWarning(ex, "Can't add reaction {Emoji}", o.Emoji); }
+            catch (Discord.Net.HttpException ex) { logger.LogWarning(ex, "Can't add reaction {Emoji}", emote.Name); }
         }
     }
 
+    /// <summary>Нет одной из ролей-допусков панели — текст отказа.</summary>
+    private string? Gate(RolePanel panel, SocketGuildUser member)
+    {
+        if (panel.RequiredRoleIds.Count == 0 || member.Roles.Any(r => panel.RequiredRoleIds.Contains(r.Id))) return null;
+        return Tx.Get(panel.GuildId, "roles.needRole", ("roles", string.Join(" / ", panel.RequiredRoleIds.Select(id => $"<@&{id}>"))));
+    }
+
     /// <summary>
-    /// Нажатие на роль (кнопка или реакция): выдать / снять с учётом режима панели.
-    /// add: true — только выдать (реакция поставлена), false — только снять (реакция убрана), null — переключить (кнопка).
-    /// Возвращает текст для ответа.
+    /// Связка нажата (кнопка или реакция). add: true — только выдать (реакция поставлена),
+    /// false — только снять (реакция убрана), null — переключить (кнопка). Возвращает текст ответа.
     /// </summary>
-    public async Task<string> PickAsync(RolePanel panel, SocketGuildUser member, ulong roleId, bool? add = null)
+    public async Task<string> PickAsync(RolePanel panel, SocketGuildUser member, string bindingId, bool? add = null)
     {
         var gid = panel.GuildId;
         var guild = member.Guild;
-        if (panel.Options.All(o => o.RoleId != roleId) || guild.GetRole(roleId) is not { } role) return Tx.Get(gid, "roles.gone");
-        if (!CanManage(guild, role)) return Tx.Get(gid, "roles.cantManage", ("role", role.Mention));
+        if (panel.Bindings.Find(b => b.Id == bindingId) is not { } binding) return Tx.Get(gid, "roles.gone");
+        if (Gate(panel, member) is { } denied) return denied;
 
-        var has = member.Roles.Any(r => r.Id == roleId);
-        var give = add ?? !has;
+        var roles = binding.RoleIds.Select(guild.GetRole).Where(r => r is not null).ToList();
+        if (roles.Count == 0) return Tx.Get(gid, "roles.gone");
+        if (roles.FirstOrDefault(r => !CanManage(guild, r)) is { } blocked) return Tx.Get(gid, "roles.cantManage", ("role", blocked!.Mention));
+
+        var hasAll = roles.All(r => member.Roles.Any(x => x.Id == r!.Id));
+        var give = panel.Mode switch
+        {
+            RolePanelMode.Verify => true,
+            RolePanelMode.Remove => false,
+            _ => add ?? !hasAll
+        };
+        // Реакцию убрали в режиме «только выдать» / поставили в режиме «только снять» — ничего не делать
+        if (add is { } a && a != give) return Tx.Get(gid, "roles.nothingChanged");
+
         try
         {
             if (give)
             {
-                if (has) return Tx.Get(gid, "roles.already", ("role", role.Mention));
-                // Unique: другие роли этой панели снимаются
-                if (panel.Mode == RolePanelMode.Unique)
-                {
-                    var others = panel.Options.Select(o => o.RoleId).Where(id => id != roleId && member.Roles.Any(r => r.Id == id))
-                        .Select(guild.GetRole).Where(r => CanManage(guild, r)).ToList();
-                    if (others.Count > 0) await member.RemoveRolesAsync(others);
-                }
-                await member.AddRoleAsync(role);
-                audit.FromDiscord(gid, member, "roles", "Took a role from a panel", $"{panel.Title}: @{role.Name}");
-                return Tx.Get(gid, "roles.added", ("role", role.Mention));
+                var missing = roles.Where(r => member.Roles.All(x => x.Id != r!.Id)).ToList();
+                // Unique: роли других связок панели снимаются
+                var others = panel.Mode == RolePanelMode.Unique
+                    ? panel.Bindings.Where(b => b.Id != binding.Id).SelectMany(b => b.RoleIds).Except(binding.RoleIds)
+                        .Where(id => member.Roles.Any(r => r.Id == id)).Select(guild.GetRole).Where(r => CanManage(guild, r)).ToList()
+                    : [];
+                if (missing.Count == 0 && others.Count == 0) return Tx.Get(gid, "roles.already", ("role", Mentions(roles)));
+                if (others.Count > 0) await member.RemoveRolesAsync(others);
+                if (missing.Count > 0) await member.AddRolesAsync(missing);
+                audit.FromDiscord(gid, member, "roles", "Took roles from a panel", $"{panel.Title}: +{Names(missing)}{(others.Count > 0 ? $" −{Names(others)}" : "")}");
+                return Tx.Get(gid, "roles.added", ("role", Mentions(roles)));
             }
 
-            if (!has) return Tx.Get(gid, "roles.notHave", ("role", role.Mention));
-            if (panel.Mode == RolePanelMode.Verify) return Tx.Get(gid, "roles.verifyKeep", ("role", role.Mention));
-            await member.RemoveRoleAsync(role);
-            audit.FromDiscord(gid, member, "roles", "Removed a role via a panel", $"{panel.Title}: @{role.Name}");
-            return Tx.Get(gid, "roles.removed", ("role", role.Mention));
+            var present = roles.Where(r => member.Roles.Any(x => x.Id == r!.Id)).ToList();
+            if (present.Count == 0) return Tx.Get(gid, "roles.notHave", ("role", Mentions(roles)));
+            await member.RemoveRolesAsync(present);
+            audit.FromDiscord(gid, member, "roles", "Removed roles via a panel", $"{panel.Title}: −{Names(present)}");
+            return Tx.Get(gid, "roles.removed", ("role", Mentions(present)));
         }
         catch (Discord.Net.HttpException ex)
         {
-            logger.LogWarning(ex, "Role panel {Panel}: failed to change {Role}", panel.Id, roleId);
-            return Tx.Get(gid, "roles.cantManage", ("role", role.Mention));
+            logger.LogWarning(ex, "Role panel {Panel}: failed to change roles of binding {Binding}", panel.Id, bindingId);
+            return Tx.Get(gid, "roles.cantManage", ("role", Mentions(roles)));
         }
     }
 
-    /// <summary>Выпадающий список: выбранные роли панели — выдать, невыбранные — снять (в Verify только выдать).</summary>
-    public async Task<string> SelectAsync(RolePanel panel, SocketGuildUser member, IReadOnlyCollection<ulong> selected)
+    /// <summary>Выпадающий список: роли выбранных пунктов — выдать, остальных пунктов — снять (по режиму панели).</summary>
+    public async Task<string> SelectAsync(RolePanel panel, SocketGuildUser member, IReadOnlyCollection<string> selectedIds)
     {
         var gid = panel.GuildId;
         var guild = member.Guild;
-        var panelRoles = panel.Options.Select(o => o.RoleId).ToHashSet();
-        var want = selected.Where(panelRoles.Contains).ToHashSet();
-        var current = member.Roles.Select(r => r.Id).Where(panelRoles.Contains).ToHashSet();
+        if (Gate(panel, member) is { } denied) return denied;
 
-        var toAdd = want.Except(current).Select(guild.GetRole).Where(r => CanManage(guild, r)).ToList();
-        var toRemove = panel.Mode == RolePanelMode.Verify ? []
-            : current.Except(want).Select(guild.GetRole).Where(r => CanManage(guild, r)).ToList();
-        var blocked = want.Except(current).Select(guild.GetRole).Where(r => r is not null && !CanManage(guild, r)).ToList();
+        var options = panel.Options.ToList();
+        var chosen = options.Where(o => selectedIds.Contains(o.Id)).ToList();
+        var wantIds = chosen.SelectMany(o => o.RoleIds).ToHashSet();
+        var allIds = options.SelectMany(o => o.RoleIds).ToHashSet();
+        var mine = member.Roles.Select(r => r.Id).ToHashSet();
+
+        var toAdd = panel.Mode == RolePanelMode.Remove ? [] : wantIds.Where(id => !mine.Contains(id)).Select(guild.GetRole).ToList();
+        var toRemove = panel.Mode switch
+        {
+            RolePanelMode.Verify => [],
+            // «Только снять»: выбранные пункты — снять их роли
+            RolePanelMode.Remove => wantIds.Where(mine.Contains).Select(guild.GetRole).ToList(),
+            _ => allIds.Except(wantIds).Where(mine.Contains).Select(guild.GetRole).ToList()
+        };
+        var blocked = toAdd.Concat(toRemove).Where(r => r is not null && !CanManage(guild, r)).ToList();
+        toAdd = toAdd.Where(r => CanManage(guild, r)).ToList();
+        toRemove = toRemove.Where(r => CanManage(guild, r)).ToList();
 
         try
         {
@@ -351,17 +431,16 @@ public sealed class CommunityService(
         catch (Discord.Net.HttpException ex)
         {
             logger.LogWarning(ex, "Role panel {Panel}: failed to set roles", panel.Id);
-            return Tx.Get(gid, "roles.cantManage", ("role", string.Join(", ", toAdd.Concat(toRemove).Select(r => r!.Mention))));
+            return Tx.Get(gid, "roles.cantManage", ("role", Mentions(toAdd.Concat(toRemove))));
         }
 
         if (toAdd.Count + toRemove.Count > 0)
-            audit.FromDiscord(gid, member, "roles", "Changed roles via a panel",
-                $"{panel.Title}: +{string.Join(", ", toAdd.Select(r => "@" + r!.Name))} −{string.Join(", ", toRemove.Select(r => "@" + r!.Name))}");
+            audit.FromDiscord(gid, member, "roles", "Changed roles via a panel", $"{panel.Title}: +{Names(toAdd)} −{Names(toRemove)}");
 
         var lines = new List<string>();
-        if (toAdd.Count > 0) lines.Add(Tx.Get(gid, "roles.added", ("role", string.Join(", ", toAdd.Select(r => r!.Mention)))));
-        if (toRemove.Count > 0) lines.Add(Tx.Get(gid, "roles.removed", ("role", string.Join(", ", toRemove.Select(r => r!.Mention)))));
-        if (blocked.Count > 0) lines.Add(Tx.Get(gid, "roles.cantManage", ("role", string.Join(", ", blocked.Select(r => r!.Mention)))));
+        if (toAdd.Count > 0) lines.Add(Tx.Get(gid, "roles.added", ("role", Mentions(toAdd))));
+        if (toRemove.Count > 0) lines.Add(Tx.Get(gid, "roles.removed", ("role", Mentions(toRemove))));
+        if (blocked.Count > 0) lines.Add(Tx.Get(gid, "roles.cantManage", ("role", Mentions(blocked))));
         return lines.Count > 0 ? string.Join("\n", lines) : Tx.Get(gid, "roles.nothingChanged");
     }
 
@@ -376,22 +455,22 @@ public sealed class CommunityService(
     private Task HandleReactionAsync(ulong messageId, SocketReaction reaction, bool added)
     {
         if (reaction.UserId == client.CurrentUser?.Id) return Task.CompletedTask;
-        if (store.FindPanelByMessage(messageId) is not { Style: RolePanelStyle.Reactions } panel) return Task.CompletedTask;
+        if (store.FindPanelByMessage(messageId) is not { } panel) return Task.CompletedTask;
+        var binding = panel.Reactions.FirstOrDefault(b => LfgProjectStore.ToEmote(b.Emoji) is { } e && SameEmote(e, reaction.Emote));
+        if (binding is null) return Task.CompletedTask;
 
         _ = Task.Run(async () =>
         {
             try
             {
-                        if (client.GetGuild(panel.GuildId)?.GetUser(reaction.UserId) is not { IsBot: false } member) return;
-                var option = panel.Options.Find(o => SameEmote(o.Emoji, reaction.Emote));
-                if (option is null) return;
-                await PickAsync(panel, member, option.RoleId, added);
+                if (client.GetGuild(panel.GuildId)?.GetUser(reaction.UserId) is not { IsBot: false } member) return;
+                await PickAsync(panel, member, binding.Id, added);
 
                 // Unique: убрать остальные реакции этого человека на панели (нужно Manage Messages)
                 if (added && panel.Mode == RolePanelMode.Unique && reaction.Channel is ITextChannel tc &&
                     await tc.GetMessageAsync(messageId) is IUserMessage msg)
                 {
-                    foreach (var other in panel.Options.Where(o => o != option))
+                    foreach (var other in panel.Reactions.Where(b => b.Id != binding.Id))
                         if (LfgProjectStore.ToEmote(other.Emoji) is { } e)
                             try { await msg.RemoveReactionAsync(e, reaction.UserId); } catch (Discord.Net.HttpException) { }
                 }
@@ -404,14 +483,19 @@ public sealed class CommunityService(
         return Task.CompletedTask;
     }
 
-    private static bool SameEmote(string? configured, IEmote emote)
+    private static bool SameEmote(IEmote a, IEmote b) => a switch
     {
-        if (LfgProjectStore.ToEmote(configured) is not { } e) return false;
-        return e switch
-        {
-            Emote custom when emote is Emote other => custom.Id == other.Id,
-            Emoji uni => uni.Name == emote.Name,
-            _ => false
-        };
-    }
+        Emote x when b is Emote y => x.Id == y.Id,
+        Emoji x => x.Name == b.Name,
+        _ => false
+    };
+
+    // ---------- Мелочи ----------
+
+    private static string Mentions(IEnumerable<SocketRole?> roles) => string.Join(", ", roles.Where(r => r is not null).Select(r => r!.Mention));
+    private static string Names(IEnumerable<SocketRole?> roles) => string.Join(", ", roles.Where(r => r is not null).Select(r => "@" + r!.Name));
+    private static string Cut(string s, int max) => s.Length <= max ? s : s[..max];
+
+    public static bool IsUrl(string? url) =>
+        !string.IsNullOrWhiteSpace(url) && Uri.TryCreate(url, UriKind.Absolute, out var u) && (u.Scheme == "https" || u.Scheme == "http");
 }

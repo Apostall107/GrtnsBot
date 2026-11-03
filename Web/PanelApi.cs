@@ -83,7 +83,8 @@ public static partial class PanelApi
         MapLfg(guild.MapGroup("/lfg").AddEndpointFilter(Require(PanelPermissions.Lfg)));
         MapTickets(guild.MapGroup("/tickets").AddEndpointFilter(Require(PanelPermissions.Tickets)));
         MapVoice(guild.MapGroup("/voice").AddEndpointFilter(Require(PanelPermissions.Voice)));
-        MapCommunity(guild.MapGroup("/community").AddEndpointFilter(Require(PanelPermissions.Roles)));
+        MapWelcome(guild.MapGroup("/welcome").AddEndpointFilter(Require(PanelPermissions.Welcome)));
+        MapRolePanels(guild.MapGroup("/roles").AddEndpointFilter(Require(PanelPermissions.Roles)));
         MapTexts(guild.MapGroup("/texts").AddEndpointFilter(Require(PanelPermissions.Texts)));
         MapMember(guild.MapGroup("/me").AddEndpointFilter(RequireMember));
         MapMemberRoles(guild.MapGroup("/member-roles").AddEndpointFilter(Require(PanelPermissions.Settings)));
