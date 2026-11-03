@@ -24,12 +24,26 @@ public static class SiteLink
             : null;
     }
 
-    /// <summary>Блок о сайте в панели (поле под текстом): ссылка и что там есть. Не редактируется — как и кнопка.</summary>
-    public static EmbedBuilder WithSiteField(this EmbedBuilder embed) => Url is null ? embed : embed.AddField(
-        "🌐 Bot website — everything in one place",
-        $"### [{new Uri(Url).Host}]({Url})\n" +
-        "📅 Calendar of groups · ✍️ sign up in one click · 🧙 your characters with GS, CP and the official AION 2 profile · 👥 guild roster\n" +
-        "-# Log in with your Discord account — no password needed.");
+    /// <summary>
+    /// Блок о сайте в конце текста панели — крупным заголовком (в полях embed заголовки Discord не рисует).
+    /// Не редактируется — как и кнопка: дописывается после текста из админки.
+    /// </summary>
+    public static string SiteBlock() => Url is null ? "" :
+        "\n\n## 🌐 [" + new Uri(Url).Host + "](" + Url + ")\n" +
+        "**Bot website — everything in one place:** 📅 calendar of groups · ✍️ sign up in one click · " +
+        "🧙 your characters with GS, CP and the official AION 2 profile · 👥 guild roster\n" +
+        "-# Log in with your Discord account — no password needed.";
+
+    /// <summary>Добавляет блок о сайте в конец описания панели.</summary>
+    public static EmbedBuilder WithSiteField(this EmbedBuilder embed)
+    {
+        if (Url is null) return embed;
+        var block = SiteBlock();
+        var text = (embed.Description ?? "").TrimEnd();
+        var max = EmbedBuilder.MaxDescriptionLength - block.Length;
+        if (text.Length > max) text = text[..max];
+        return embed.WithDescription(text + block);
+    }
 
     /// <summary>Добавляет кнопку-ссылку в указанный ряд (если адрес задан).</summary>
     public static ComponentBuilder WithSiteButton(this ComponentBuilder builder, int row = 0) =>
