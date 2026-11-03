@@ -1966,7 +1966,7 @@ function lfgForm(acts, opts) {
     else if (autoGs != null && Number(minGs.value) === autoGs) { minGs.value = ""; autoGs = null; }
   };
   activity.addEventListener("change", applyActGs);
-  if (charSel) charSel.addEventListener("change", () => { fillActivities(currentProject()); syncCustom(); applyActGs(); });
+  if (charSel) charSel.addEventListener("change", () => { fillActivities(currentProject()); syncCustom(); applyActGs(); if (typeof drawSlots === "function") drawSlots(); });
   syncCustom();
 
   if (projectSel) {
@@ -2055,11 +2055,18 @@ function lfgForm(acts, opts) {
       h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), ok));
     d.showModal();
   };
+  // Members creating a group: slot 1 is theirs — role from the class of the chosen character, no requirements, not editable
+  const ownerChar = () => charSel && charSel.value ? myChars().find(x => x.name === charSel.value) : null;
   const drawSlots = () => {
     size.value = String(slots.length);
     if (typeof syncSizeUi === "function") syncSizeUi();
     slotReqs = slots.map((_, i) => slotReqs[i] || "");
+    const oc = ownerChar();
+    if (oc && slots.length) { slots[0] = oc.slotRole || "Any"; slotReqs[0] = ""; }
     slotBox.replaceChildren(...slots.map((r, i) => {
+      if (i === 0 && oc) return h("div", { class: "owner-slot", title: "Slot 1 is yours — the role comes from your character's class" },
+        h("span", { class: "muted small" }, "1."), rolePill((SLOT_ROLES.find(([v]) => v === slots[0]) || [, "🎲 All"])[1].replace(/^\S+\s/, "")),
+        h("span", { class: "small" }, icon("crown", 12), " you · ", oc.name));
       const sel = h("select", { title: `Slot ${i + 1}`, "data-render": "role" }, SLOT_ROLES.map(([val, label]) => h("option", { value: val }, `${i + 1}. ${label}`)));
       sel.value = r;
       sel.addEventListener("change", () => { slots[i] = sel.value; });
@@ -5070,8 +5077,25 @@ async function pageChars(main) {
     h("div", { class: "row" }, h("div", { class: "grow" }, nameIn), add),
     altsBtn ? h("div", { class: "row", style: "margin-top:8px" }, altsBtn) : null);
 
+  // Update all linked characters of the project at once
+  const linkedCount = data.characters.filter(c => c.armory).length;
+  const updAll = ap && linkedCount ? h("button", { class: "btn secondary", title: "Refresh GS, CP, class, level and legion of all your linked characters (skips the ones updated in the last 15 minutes)" },
+    icon("refresh-cw", 15), `Update all (${linkedCount})`) : null;
+  if (updAll) updAll.addEventListener("click", async () => {
+    const r = await act(updAll, () => gApi("POST", `/me/characters/armory-refresh-all${pq}`));
+    if (!r) return;
+    const parts = [`Updated ${r.updated}`];
+    if (r.skipped) parts.push(`${r.skipped} were updated less than 15 min ago`);
+    if (r.renamed.length) parts.push(`renamed: ${r.renamed.join(", ")}`);
+    if (r.notFound.length) parts.push(`not found: ${r.notFound.join(", ")}`);
+    if (r.unavailable) parts.push("the official site stopped answering — try the rest later");
+    toast(parts.join(" · ") + ".", r.unavailable || r.notFound.length ? "warn" : undefined);
+    refresh();
+  });
   holder.replaceChildren(prefs, projTabs,
-    h("p", { class: "muted small", style: "margin:-6px 0 14px" }, "Each game has its own characters. Class — any class of the project (its icon is shown after your name in group posts). GS is checked by group requirements."),
+    h("div", { class: "row", style: "margin:-6px 0 14px;align-items:center" },
+      h("p", { class: "muted small grow", style: "margin:0" }, "Each game has its own characters. Class — any class of the project (its icon is shown after your name in group posts). GS is checked by group requirements."),
+      updAll),
     h("div", { class: "char-edit-grid" }, cards, addCard));
 }
 

@@ -64,6 +64,15 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
         }).ToList();
     }
 
+    /// <summary>Роль слота для персонажа по его классу (LFG → Classes): первая из ролей класса; null — класс не задан или играет любую.</summary>
+    public SlotRole? OwnerSlotRole(ulong guildId, ulong userId, string? characterName, string? projectKey)
+    {
+        if (characterName is null) return null;
+        var info = characters.GetInfo(guildId, userId, characterName, projects.Scope(guildId, projectKey));
+        return info?.ClassRoleId is { } id && projects.EffectiveClassSlotRoles(guildId, projectKey).TryGetValue(id, out var roles) && roles.Count > 0
+            ? roles[0] : null;
+    }
+
     /// <summary>Иконка класса для показа (заданная админом или эмодзи роли).</summary>
     public string? Icon(ulong guildId, IRole? role, string? projectKey = null) => projects.ClassIcon(guildId, role, projectKey);
 

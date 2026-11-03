@@ -191,6 +191,40 @@ public sealed class ArmorySyncService(OfficialArmory armory, CharacterStore char
         return (added, notFound, existing, false);
     }
 
+    /// <summary>Обновить всех привязанных персонажей игрока в проекте (кроме обновлённых за последние 15 минут).</summary>
+    public async Task<(int Updated, int Skipped, List<string> Renamed, List<string> NotFound, bool Unavailable)> RefreshAllAsync(
+        ulong guildId, ulong userId, string? scope, CancellationToken ct = default)
+    {
+        var updated = 0;
+        var skipped = 0;
+        var renamed = new List<string>();
+        var notFound = new List<string>();
+        foreach (var name in characters.Get(guildId, userId, scope))
+        {
+            if (characters.GetInfo(guildId, userId, name, scope)?.Armory is not { } link) continue;
+            if (link.SyncedAt is { } at && DateTimeOffset.UtcNow - at < ManualCooldown)
+            {
+                skipped++;
+                continue;
+            }
+            var (result, current) = await SyncNamedAsync(guildId, userId, name, scope, ct);
+            switch (result)
+            {
+                case ArmorySyncResult.Updated:
+                    updated++;
+                    if (current != name) renamed.Add($"{name} → {current}");
+                    break;
+                case ArmorySyncResult.NotFound:
+                    notFound.Add(name);
+                    break;
+                case ArmorySyncResult.Unavailable:
+                    return (updated, skipped, renamed, notFound, true);
+            }
+            await Task.Delay(TimeSpan.FromSeconds(1), ct);
+        }
+        return (updated, skipped, renamed, notFound, false);
+    }
+
     /// <summary>Привязать к найденному персонажу и сразу взять данные. Не вышло — привязка остаётся прежней.</summary>
     public async Task<ArmorySyncResult> LinkAsync(ulong guildId, ulong userId, string name, string? scope, string characterId, int serverId,
         CancellationToken ct = default) => (await LinkNamedAsync(guildId, userId, name, scope, characterId, serverId, ct)).Result;

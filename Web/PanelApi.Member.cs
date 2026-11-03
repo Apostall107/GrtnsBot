@@ -436,7 +436,12 @@ public static partial class PanelApi
                 templates = TemplatesDto(guild, templates),
                 // Мои персонажи по проектам: организатор выбирает, с кем идёт; от GS зависят доступные активности
                 characters = projects.GetProjects(guildId).Where(p => LfgProjectStore.CanUse(member, p)).ToDictionary(p => p.Key,
-                    p => profiles.PickerFor(guildId, me, p.Key).Select(c => new { name = c.Name, gs = c.Gs, cp = c.Cp, icon = c.Icon })),
+                    p => profiles.PickerFor(guildId, me, p.Key).Select(c => new
+                    {
+                        name = c.Name, gs = c.Gs, cp = c.Cp, icon = c.Icon,
+                        // Роль слота 1 (организатор) по классу персонажа
+                        slotRole = profiles.OwnerSlotRole(guildId, me, c.Name, p.Key)?.ToString()
+                    })),
                 // Роли, связанные с каждым проектом — их показывают первыми при выборе требуемых ролей
                 relatedRoles = RelatedRoles(guild, activities, projects),
                 // Роли для требований сбора (организатор выбирает, какие нужны)
@@ -450,7 +455,7 @@ public static partial class PanelApi
         g.MapPost("/create", async (ulong guildId, LfgCreateBody body, ClaimsPrincipal user, DiscordSocketClient client,
             ActivityStore activities, LfgPublisher publisher, BotSettingsStore settings, PanelTextStore panels,
             LfgProjectStore projects, PanelAccess access, [Microsoft.AspNetCore.Mvc.FromServices] TimeService time,
-            [FromServices] CharacterStore characters) =>
+            [FromServices] CharacterStore characters, [FromServices] LfgProfileService profiles) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var me = user.UserId()!.Value;
@@ -475,6 +480,12 @@ public static partial class PanelApi
                     return Error($"{activity.Name} needs GS {activity.MinGs}+ — {ownerCharacter} has {ownerGs?.ToString() ?? "no GS"}.");
             }
             var minGs = body.MinGs is > 0 and <= 99999 ? body.MinGs : activity?.MinGs;
+            // Слот 1 — организатор: роль по классу его персонажа, без требований
+            if (profiles.OwnerSlotRole(guildId, me, ownerCharacter, project?.Key) is { } ownerRole && slots!.Count > 0)
+            {
+                slots[0] = ownerRole;
+                if (body.SlotRequirements is { Count: > 0 } sr) sr[0] = null;
+            }
 
             DateTimeOffset? startsAt = null;
             if (!string.IsNullOrWhiteSpace(body.Date) || !string.IsNullOrWhiteSpace(body.Time))
