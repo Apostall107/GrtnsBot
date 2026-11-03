@@ -46,15 +46,23 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
     /// <summary>Иконка класса для показа (заданная админом или эмодзи роли).</summary>
     public string? Icon(ulong guildId, IRole? role, string? projectKey = null) => projects.ClassIcon(guildId, role, projectKey);
 
-    /// <summary>Меню «класс» + кнопка «заметка» под ответом о записи. null — человека нет в сборе.</summary>
+    /// <summary>
+    /// Под ответом о записи — только то, что у персонажа ещё не заполнено: меню класса (класса нет) и кнопка «Note &amp; GS» (GS нет).
+    /// Всё заполнено — null: класс и GS меняют на сайте (My characters) или командой /character.
+    /// </summary>
     public MessageComponent? Controls(LfgGroup group, ulong userId)
     {
         var current = CurrentEntry(group, userId);
         if (current is null) return null;
 
         var gid = group.GuildId;
+        var info = characters.GetInfo(gid, userId, current.Value.Name, signup.Scope(group));
+        var needClass = info?.ClassRoleId is null;
+        var needGs = info?.Gs is null;
+        if (!needClass && !needGs) return null;
+
         var builder = new ComponentBuilder();
-        var roles = ClassRoles(group.GuildId, userId, group.ProjectKey);
+        var roles = needClass ? ClassRoles(group.GuildId, userId, group.ProjectKey) : [];
         if (roles.Count > 0)
         {
             var menu = new SelectMenuBuilder()
@@ -73,9 +81,10 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
             builder.WithSelectMenu(menu, row: 0);
         }
 
-        builder.WithButton(Tx.Get(gid, string.IsNullOrEmpty(current.Value.Comment) ? "lfg.profile.note" : "lfg.profile.editNote"),
-            $"lfgp:note:{group.Id}", ButtonStyle.Secondary, new Emoji("💬"), row: 1);
-        return builder.Build();
+        if (needGs)
+            builder.WithButton(Tx.Get(gid, string.IsNullOrEmpty(current.Value.Comment) ? "lfg.profile.note" : "lfg.profile.editNote"),
+                $"lfgp:note:{group.Id}", ButtonStyle.Secondary, new Emoji("💬"), row: 1);
+        return roles.Count == 0 && !needGs ? null : builder.Build();
     }
 
     /// <summary>Окно заметки с текущим текстом. null — человека нет в сборе.</summary>

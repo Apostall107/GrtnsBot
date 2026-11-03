@@ -63,7 +63,9 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
 
         var guild = client.GetGuild(group.GuildId);
         var role = info?.ClassRoleId is { } roleId ? guild?.GetRole(roleId) : null;
-        if (role is not null && guild?.GetUser(userId) is { } member && member.Roles.All(r => r.Id != role.Id)) role = null;
+        // Класс из списка классов проекта роли не требует (так он и выбирается); роль игрока — только пока она у него есть
+        if (role is not null && !projects.EffectiveClassIcons(group.GuildId, group.ProjectKey).ContainsKey(role.Id)
+            && guild?.GetUser(userId) is { } member && member.Roles.All(r => r.Id != role.Id)) role = null;
 
         var icon = projects.ClassIcon(group.GuildId, role, group.ProjectKey);
         if (slot is not null)
@@ -79,6 +81,38 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
             entry.ClassIcon = icon;
             entry.Comment = info?.Comment;
             entry.Gs = info?.Gs;
+        }
+    }
+
+    /// <summary>
+    /// Заново подставить классы, иконки и GS персонажей во все активные сборы (при старте бота) —
+    /// посты, где что-то изменилось, перерисовываются.
+    /// </summary>
+    public async Task ReapplyProfilesAsync()
+    {
+        foreach (var group in store.Groups.Values.Where(g => !g.IsClosed).ToList())
+        {
+            await group.Gate.WaitAsync();
+            try
+            {
+                string Snapshot() => string.Join("|", group.Slots.Select(x => $"{x.UserId}:{x.ClassRoleId}:{x.ClassIcon}:{x.Gs}")
+                    .Concat(group.Reserve.Select(x => $"{x.UserId}:{x.ClassRoleId}:{x.ClassIcon}:{x.Gs}")));
+                var before = Snapshot();
+                var users = group.Slots.Where(x => x.UserId is not null).Select(x => x.UserId!.Value)
+                    .Concat(group.Reserve.Select(x => x.UserId)).Distinct().ToList();
+                foreach (var userId in users) ApplyProfile(group, userId);
+                if (Snapshot() == before) continue;
+                store.SaveGroups();
+                await RefreshPostAsync(group);
+            }
+            catch (Exception e)
+            {
+                logger.LogWarning(e, "Reapply profiles for group {Id} failed", group.Id);
+            }
+            finally
+            {
+                group.Gate.Release();
+            }
         }
     }
 

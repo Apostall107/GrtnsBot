@@ -126,7 +126,7 @@ public static class BotTextCatalog
         T("lfg.sign.reserveRequirements", "Reserve: requirements not met", "🕓 This group requires {requirements} — you are on the **reserve** list (#{position}) for **{activity}** as **{name}**. The organizer can still move you into the group.", "{requirements}, {position}, {activity}, {name}", 1500);
         T("lfg.sign.gsRequirement", "Requirement: GS", "GS {gs}+ (set it with `/character gs`)", "{gs}", 200);
         T("lfg.sign.projectRole", "Project role required", "This group is for **{project}** — you need {roles} to sign up.", "{project}, {roles}", 1000);
-        T("lfg.sign.profileHint", "Hint under the signup reply (- = hide)", "-# Optional: pick your class role (its icon is shown next to your name) and set GS / a personal note for this character below.", null, 400, optional: true);
+        T("lfg.sign.profileHint", "Hint under the signup reply (- = hide)", "-# This character has no class or GS yet — fill them in below (the class icon is shown next to your name). Later you can change them on the site, in My characters.", null, 400, optional: true);
         T("lfg.err.closed", "Error: signups closed", "Signups are closed.", null, 1000);
         T("lfg.err.groupClosed", "Error: group closed", "This group is closed.", null, 1000);
         T("lfg.err.reserveFull", "Error: reserve full", "The reserve list is full.", null, 1000);
