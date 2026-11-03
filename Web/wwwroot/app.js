@@ -49,6 +49,7 @@ async function api(method, path, body) {
 const gApi = (method, path, body) => api(method, `/api/guilds/${state.guildId}${path}`, body);
 
 function toast(text, kind = "ok") {
+  if (pending.quiet && kind === "ok") return; // Save all: one summary instead of a toast per card
   const el = h("div", { class: `toast ${kind}` }, text);
   document.getElementById("toasts").append(el);
   setTimeout(() => el.remove(), kind === "error" ? 7000 : 4000);
@@ -68,6 +69,126 @@ async function act(button, fn, okText) {
     if (button) button.disabled = false;
   }
 }
+
+// ================= Unsaved changes: one sticky bar for the whole page (Save all / Discard) =================
+
+const pending = { items: [], saving: false, deferred: false, quiet: false, bar: null, timer: 0 };
+
+/**
+ * Tracks one editor (a card, a table row, a form). It is "unsaved" while snapshot() differs from the saved state.
+ * save() → truthy on success. Returns { save, attach(root) → root, rebase() }.
+ * Use t.save as the card's own Save button; the bar at the bottom saves every unsaved one at once.
+ */
+function track(name, snapshot, save) {
+  const t = { name, snapshot, root: null, base: null, dirty: false, seen: false };
+  const snap = () => { try { return JSON.stringify(snapshot()); } catch { return null; } };
+  t.rebase = () => { t.base = snap(); t.dirty = false; t.root?.classList.remove("unsaved"); schedulePendingCheck(); };
+  t.attach = root => {
+    pending.items = pending.items.filter(x => x === t || x.root !== root);
+    t.root = root;
+    t.rebase();
+    return root;
+  };
+  t.save = async () => {
+    const ok = await save();
+    if (ok) t.rebase();
+    afterPendingSave();
+    return ok;
+  };
+  t.check = () => {
+    const live = !!t.root && t.root.isConnected;
+    if (live) t.seen = true;
+    t.dirty = live && t.base !== null && snap() !== t.base;
+    t.root?.classList.toggle("unsaved", t.dirty);
+  };
+  pending.items.push(t);
+  return t;
+}
+
+function pendingCheck() {
+  for (const t of pending.items) t.check();
+  pending.items = pending.items.filter(t => !(t.seen && !t.root.isConnected));
+  drawPendingBar();
+  return pending.items.filter(t => t.dirty);
+}
+
+function schedulePendingCheck() {
+  clearTimeout(pending.timer);
+  pending.timer = setTimeout(pendingCheck, 60);
+}
+
+function drawPendingBar() {
+  if (!pending.bar) {
+    const count = h("b", { class: "pending-count" });
+    const names = h("span", { class: "pending-names muted small" });
+    const discard = h("button", { class: "btn secondary", type: "button" }, icon("undo-2", 15), "Discard");
+    const saveAll = h("button", { class: "btn", type: "button" }, icon("save", 15), h("span", {}, "Save all"));
+    discard.addEventListener("click", async () => {
+      const n = pendingCheck().length;
+      if (n > 1 && !await confirmDialog(`Discard ${n} unsaved changes?`, "The page is reloaded with the saved values.", "Discard")) return;
+      renderShell();
+    });
+    saveAll.addEventListener("click", savePendingAll);
+    pending.bar = { el: h("div", { class: "pending-bar", role: "status" }, icon("triangle-alert", 18, "pending-icon"),
+      h("div", { class: "pending-text" }, count, names), discard, saveAll), count, names, discard, saveAll };
+    document.body.append(pending.bar.el);
+  }
+  const dirty = pending.items.filter(t => t.dirty);
+  const show = dirty.length > 0 || pending.saving;
+  const b = pending.bar;
+  b.el.classList.toggle("show", show);
+  document.body.classList.toggle("has-pending", show);
+  if (!show) return;
+  b.count.textContent = pending.saving ? "Saving…" : dirty.length === 1 ? "Unsaved changes" : `${dirty.length} unsaved changes`;
+  b.names.textContent = dirty.map(t => t.name).join(" · ");
+  b.names.title = b.names.textContent;
+  b.saveAll.lastChild.textContent = dirty.length > 1 ? `Save all (${dirty.length})` : "Save";
+  b.saveAll.disabled = b.discard.disabled = pending.saving;
+}
+
+async function savePendingAll() {
+  const dirty = pendingCheck();
+  if (!dirty.length) return;
+  pending.saving = true;
+  pending.quiet = dirty.length > 1;
+  drawPendingBar();
+  let ok = 0;
+  try {
+    for (const t of dirty) if (await t.save()) ok++;
+  } finally {
+    pending.saving = false;
+    pending.quiet = false;
+  }
+  if (dirty.length > 1) toast(ok === dirty.length ? `Saved all ${ok} changes.` : `Saved ${ok} of ${dirty.length} — the highlighted ones still need a look.`,
+    ok === dirty.length ? "ok" : "warn");
+  afterPendingSave();
+}
+
+/** A refresh asked for while other edits are unsaved waits until they are saved or discarded. */
+function afterPendingSave() {
+  if (pending.saving) return;
+  const dirty = pendingCheck();
+  if (pending.deferred && !dirty.length) renderShell();
+}
+
+/** Before leaving the page (menu, tabs, server, Refresh): ask when something is unsaved. */
+async function leavePage() {
+  const n = pendingCheck().length;
+  if (!n) return true;
+  return confirmDialog(n === 1 ? "Leave without saving?" : `Leave without saving ${n} changes?`,
+    "Your edits on this page are not saved yet. Use Save in the bar at the bottom to keep them.", "Discard changes");
+}
+
+function hardRefresh() { leavePage().then(ok => { if (ok) renderShell(); }); }
+
+document.addEventListener("input", schedulePendingCheck, true);
+document.addEventListener("change", schedulePendingCheck, true);
+document.addEventListener("click", () => setTimeout(schedulePendingCheck, 30), true);
+document.addEventListener("close", schedulePendingCheck, true); // dialogs (e.g. "Remove this question?")
+setInterval(() => { if (pending.items.length) pendingCheck(); }, 1500);
+window.addEventListener("beforeunload", e => {
+  if (pendingCheck().length) { e.preventDefault(); e.returnValue = ""; }
+});
 
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
@@ -129,7 +250,7 @@ function confirmDialog(title, text, okLabel = "Confirm", danger = true) {
 /** Tabs row (projects etc.): remembers the choice in storeKey and reloads the page. */
 function tabsRow(items, current, storeKey, ...extra) {
   return h("div", { class: "tabs" }, items.map(([k, label]) =>
-    h("button", { class: `btn secondary${k === current ? " active-tab" : ""}`, onclick: () => { store.set(storeKey, k); refresh(); } }, label)),
+    h("button", { class: `btn secondary${k === current ? " active-tab" : ""}`, onclick: async () => { if (!await leavePage()) return; store.set(storeKey, k); renderShell(); } }, label)),
     ...extra);
 }
 
@@ -1014,6 +1135,9 @@ async function selectGuild(id) {
 }
 
 function renderShell() {
+  pending.items = [];
+  pending.deferred = false;
+  if (pending.bar) drawPendingBar();
   const connected = state.connection === "Connected";
   if (!visibleTabs().some(t => t[0] === state.tab)) state.tab = (visibleTabs()[0] || ["overview"])[0];
   const collapsed = store.get("gb.navCollapsed") === "1";
@@ -1027,7 +1151,7 @@ function renderShell() {
     // Tooltip only when the menu is collapsed to icons (labels are visible otherwise)
     class: `nav-item tone-${NAV_TONES[key] || "violet"}${state.tab === key ? " active" : ""}`, title: collapsed ? label : null, "aria-label": label,
     "aria-current": state.tab === key ? "page" : null,
-    onclick: () => { state.tab = key; store.set("gb.tab", key); renderShell(); }
+    onclick: async () => { if (!await leavePage()) return; state.tab = key; store.set("gb.tab", key); renderShell(); }
   }, icon(ic, 18), h("span", { class: "nav-label" }, label));
   const navItems = [];
   let section = null;
@@ -1036,14 +1160,14 @@ function renderShell() {
     navItems.push(navButton(t));
   }
   const collapseBtn = h("button", { class: "nav-item nav-collapse", title: collapsed ? "Expand menu" : "Collapse menu",
-    onclick: () => { store.set("gb.navCollapsed", collapsed ? "0" : "1"); renderShell(); } },
+    onclick: async () => { if (!await leavePage()) return; store.set("gb.navCollapsed", collapsed ? "0" : "1"); renderShell(); } },
     icon(collapsed ? "panel-left-open" : "panel-left-close", 18), h("span", { class: "nav-label" }, "Collapse"));
   const nav = h("nav", { class: "nav", "aria-label": "Sections" }, navItems, h("div", { class: "nav-footer" }, collapseBtn));
   const main = h("main", { class: "main" });
   layout.append(nav, h("div", { class: "nav-backdrop", onclick: closeDrawer }), main);
 
   // ----- Header: menu (mobile), brand, server, bot status, account menu
-  const guildSel = h("select", { "aria-label": "Server", onchange: e => selectGuild(e.target.value) },
+  const guildSel = h("select", { "aria-label": "Server", onchange: async e => { if (await leavePage()) selectGuild(e.target.value); else e.target.value = state.guildId; } },
     state.guilds.map(g => h("option", { value: g.id, selected: g.id === state.guildId }, g.name)));
   // Owner: switch between the full view and the view of a normal member
   const viewAs = state.me.isOwner ? (() => {
@@ -1103,13 +1227,16 @@ function decorateHeading(main) {
 }
 
 /** Re-renders the current page only (keeps the shell). */
-function refresh() { renderShell(); }
+function refresh() {
+  if (pending.saving || pendingCheck().length) { pending.deferred = true; return; }
+  renderShell();
+}
 
 // ================= Announcements: posts from the bot =================
 
 async function pageAnnounce(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "✍️ Announcements"),
-    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
+    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
 
   let editing = null; // scheduled post being edited
   const channel = h("select", {}, h("option", { value: "" }, "Channel…"),
@@ -1395,7 +1522,7 @@ async function pageAnnounce(main) {
 // ================= Overview =================
 
 async function pageOverview(main) {
-  main.append(h("div", { class: "card-head" }, h("h1", {}, "Dashboard"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "Dashboard"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
   const holder = h("div", {}, h("div", { class: "stats" }, [0, 1, 2, 3].map(() => skeletonStat())));
   main.append(holder);
   const go = tab => can(tab) ? () => { state.tab = tab; store.set("gb.tab", tab); renderShell(); } : null;
@@ -1419,7 +1546,7 @@ async function pageOverview(main) {
         h("p", { class: "muted small", style: "margin-top:12px" }, "Changes made here apply immediately — the panel uses the same data as the bot in Discord.")),
       sectionLabel("Sections"),
       h("div", { class: "quick-actions" }, allTabs.filter(t => t[3] !== "member" && t[0] !== "overview" && can(t[3])).map(([key, ic, label]) =>
-        h("button", { class: `quick-action ${toneOf(ic)}`, onclick: () => { state.tab = key; store.set("gb.tab", key); renderShell(); } },
+        h("button", { class: `quick-action ${toneOf(ic)}`, onclick: async () => { if (!await leavePage()) return; state.tab = key; store.set("gb.tab", key); renderShell(); } },
           h("span", { class: "qa-icon" }, icon(ic, 18)), h("span", { class: "qa-text" }, h("b", {}, label), h("span", { class: "muted small" }, "Open"))))));
   } catch (e) { holder.replaceChildren(empty(e.message)); }
 }
@@ -1427,7 +1554,7 @@ async function pageOverview(main) {
 // ================= LFG =================
 
 async function pageLfg(main) {
-  main.append(h("div", { class: "card-head" }, h("h1", {}, "📣 LFG"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "📣 LFG"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
 
   // Projects (games): every project has its own tab — activities, panel, classes, templates, schedules, groups, stats.
   // ⚙️ General — projects, settings and everything shared by all projects.
@@ -1514,12 +1641,17 @@ async function pageLfg(main) {
     const chSel = channelSelect("text", "Not set — use the LFG panel channel");
     const chSave = h("button", { class: "btn" }, "💾 Save");
     const chInfo = h("div", { class: "muted small", style: "margin-top:6px" });
-    chSave.addEventListener("click", async () => {
-      if (await act(chSave, () => gApi("PUT", "/lfg/channel", { channelId: chSel.value || null }), "Channel saved.") !== undefined) refresh();
+    const tracker = track("Channel for groups", () => chSel.value, async () => {
+      const ok = await act(chSave, () => gApi("PUT", "/lfg/channel", { channelId: chSel.value || null }), "Channel saved.") !== undefined;
+      if (ok) refresh();
+      return ok;
     });
+    chSave.addEventListener("click", tracker.save);
+    tracker.attach(chCard);
     chCard.append(h("div", { class: "row" }, h("div", { class: "grow" }, chSel), chSave), chInfo);
     gApi("GET", "/lfg/channel").then(c => {
       if (c.channelId) chSel.value = c.channelId;
+      tracker.rebase();
       chInfo.textContent = c.effective
         ? `Now: #${c.effective.name}${c.fromPanel ? " (the LFG panel's channel)" : ""}`
         : "Now: not set — members can't create groups until you pick a channel or post the LFG panel.";
@@ -1543,12 +1675,17 @@ async function pageLfg(main) {
     const save = h("button", { class: "btn" }, "💾 Save");
     const info = h("div", { class: "muted small", style: "margin-top:6px" });
     const q = mode === "project" ? `?project=${encodeURIComponent(P)}` : "";
-    save.addEventListener("click", async () => {
-      if (await act(save, () => gApi("PUT", `/lfg/voice-category${q}`, { channelId: sel.value || null }), "Voice room category saved.") !== undefined) refresh();
+    const tracker = track("Voice room category", () => sel.value, async () => {
+      const ok = await act(save, () => gApi("PUT", `/lfg/voice-category${q}`, { channelId: sel.value || null }), "Voice room category saved.") !== undefined;
+      if (ok) refresh();
+      return ok;
     });
+    save.addEventListener("click", tracker.save);
+    tracker.attach(vc);
     vc.append(h("div", { class: "row" }, h("div", { class: "grow" }, sel), save), info);
     gApi("GET", `/lfg/voice-category${q}`).then(c => {
       if (c.categoryId) sel.value = c.categoryId;
+      tracker.rebase();
       info.textContent = c.effective ? `Now: ${c.effective.name}${c.inherited ? " (common)" : ""}` : "Now: the category of the post's channel.";
     }).catch(e => { info.textContent = e.message; });
     return vc;
@@ -1580,13 +1717,18 @@ async function pageLfg(main) {
       add.value = "";
     });
     const save = h("button", { class: "btn" }, "💾 Save");
-    save.addEventListener("click", async () => {
-      if (await act(save, () => gApi("PUT", `/lfg/auto-mirrors${q}`, { channelIds: list.map(c => c.id) }), "Saved — new groups are duplicated there.") !== undefined) refresh();
+    const tracker = track("Duplicate posts", () => list.map(c => c.id), async () => {
+      const ok = await act(save, () => gApi("PUT", `/lfg/auto-mirrors${q}`, { channelIds: list.map(c => c.id) }), "Saved — new groups are duplicated there.") !== undefined;
+      if (ok) refresh();
+      return ok;
     });
+    save.addEventListener("click", tracker.save);
+    tracker.attach(mc);
     mc.append(chips, h("div", { class: "row" }, h("div", { class: "grow" }, add), save), info);
     gApi("GET", `/lfg/auto-mirrors${q}`).then(r => {
       list = r.channels;
       draw();
+      tracker.rebase();
       info.textContent = r.inherited ? `Now uses the common list: ${r.inherited.map(label).join(", ")}` : "";
     }).catch(e => { info.textContent = e.message; });
     return mc;
@@ -1943,16 +2085,19 @@ async function renderLfgSettings(card) {
   const hours = h("input", { type: "number", min: "1", max: "72", placeholder: String(s.defaults.autoDeleteHours), value: s.autoDeleteHours ?? "", style: "width:120px" });
   const reminder = h("input", { type: "number", min: "0", max: "180", placeholder: String(s.defaults.reminderMinutes), value: s.reminderMinutes ?? "", style: "width:120px" });
   const save = h("button", { class: "btn" }, "💾 Save");
-  save.addEventListener("click", async () => {
-    const res = await act(save, () => gApi("PUT", "/lfg/settings", {
-      timeZone: zone.value.trim() || null,
-      autoDeleteHours: hours.value === "" ? null : Number(hours.value),
-      reminderMinutes: reminder.value === "" ? null : Number(reminder.value)
-    }));
-    if (res === undefined) return;
+  const body = () => ({
+    timeZone: zone.value.trim() || null,
+    autoDeleteHours: hours.value === "" ? null : Number(hours.value),
+    reminderMinutes: reminder.value === "" ? null : Number(reminder.value)
+  });
+  const tracker = track("LFG settings", body, async () => {
+    const res = await act(save, () => gApi("PUT", "/lfg/settings", body()));
+    if (res === undefined) return false;
     toast(`Saved: ${res.timeZone}, auto-delete ${res.autoDeleteHours} h, reminder ${res.reminderMinutes ? res.reminderMinutes + " min" : "off"}.`);
     refresh();
+    return true;
   });
+  save.addEventListener("click", tracker.save);
 
   card.replaceChildren(h("h2", {}, "⚙️ LFG settings"),
     h("p", { class: "muted small" }, "Empty field = the value from appsettings.json (shown as the placeholder). Changes apply immediately."),
@@ -1966,6 +2111,7 @@ async function renderLfgSettings(card) {
         h("div", { class: "field" }, h("label", {}, "Reminder before the start (minutes, 0 = off)"), reminder,
           h("span", { class: "muted small" }, `Now: ${s.current.reminderMinutes ? s.current.reminderMinutes + " min" : "off"}.`)))),
     save);
+  tracker.attach(card);
 }
 
 // ----- LFG projects (games) & classes (admin) -----
@@ -2083,8 +2229,10 @@ async function renderClasses(card, projectList = [], projectKey = store.get("gb.
     importIcons(fromRoles, emptyOnes.length ? emptyOnes : withIcon);
   });
   const save = h("button", { class: "btn" }, "💾 Save classes");
-  save.addEventListener("click", () => act(save, () => gApi("PUT", `/lfg/classes${q}`, { classes: rows.map(r => ({ roleId: r.roleId, icon: r.icon })) }),
-    "Classes saved. New signups use the icons; existing posts update when someone changes their class."));
+  const classesBody = () => rows.map(r => ({ roleId: r.roleId, icon: r.icon || "" }));
+  const tracker = track("Classes", classesBody, async () => await act(save, () => gApi("PUT", `/lfg/classes${q}`, { classes: classesBody() }),
+    "Classes saved. New signups use the icons; existing posts update when someone changes their class.") !== undefined);
+  save.addEventListener("click", tracker.save);
   draw();
   const projName = (projectList.find(p => p.key === projectKey) || {}).name;
   const title = opts.noTabs ? (projectKey ? `🎭 Classes · ${projName}` : "🎭 Common classes") : "🎭 Classes";
@@ -2106,6 +2254,7 @@ async function renderClasses(card, projectList = [], projectKey = store.get("gb.
       projectKey ? "This project's own classes — if empty, the common list is used." : "Common classes — used by every project that has no classes of its own. ",
       "Use a unicode emoji, a server emoji, or 🎨 Use role icons — the roles' own icons from Discord (image icons are uploaded as the bot's emojis, no server emoji slots used)."),
     list, h("div", { class: "row", style: "margin-top:8px" }, addSel, copy, fromRoles, save)].filter(Boolean));
+  tracker.attach(card);
 }
 
 // ----- LFG templates (admin) -----
@@ -2330,7 +2479,7 @@ function groupCard(g) {
 // ================= Tickets =================
 
 async function pageTickets(main) {
-  main.append(h("div", { class: "card-head" }, h("h1", {}, "🎫 Tickets"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "🎫 Tickets"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
 
   // A tab per ticket project; ⚙️ General — ticket panel, all open tickets, archive
   let projects = [];
@@ -2497,18 +2646,21 @@ function projectCard(p) {
   }), "Ticket message preview");
 
   const save = h("button", { class: "btn" }, "💾 Save");
-  save.addEventListener("click", async () => {
-    const res = await act(save, () => gApi("PUT", `/tickets/projects/${encodeURIComponent(p.key)}`, {
-      staffRoleIds: staff.value(), memberRoleIds: members.value(), categoryId: cat.value || null, customText: text.value,
-      formEnabled: form.enabled(), questions: form.value(), name: nameIn.value,
-      autoCloseDays: autoClose.value === "" ? null : Number(autoClose.value)
-    }));
-    if (res === undefined) return;
+  const body = () => ({
+    staffRoleIds: staff.value(), memberRoleIds: members.value(), categoryId: cat.value || null, customText: text.value,
+    formEnabled: form.enabled(), questions: form.value(), name: nameIn.value,
+    autoCloseDays: autoClose.value === "" ? null : Number(autoClose.value)
+  });
+  const tracker = track(`Project ${p.name}`, body, async () => {
+    const res = await act(save, () => gApi("PUT", `/tickets/projects/${encodeURIComponent(p.key)}`, body()));
+    if (res === undefined) return false;
     toast(`Project ${nameIn.value.trim() || p.name} saved.`);
     if (nameIn.value.trim() && nameIn.value.trim() !== p.name) refresh();
     if (res.warning) toast(res.warning, "warn");
     if (res.ticketsTotal) toast(`Updated ${res.ticketsUpdated} of ${res.ticketsTotal} open tickets.`, res.ticketsUpdated === res.ticketsTotal ? "ok" : "warn");
+    return true;
   });
+  save.addEventListener("click", tracker.save);
   const remove = h("button", { class: "btn danger" }, "🗑️ Remove");
   remove.addEventListener("click", async () => {
     if (!await confirmDialog(`Remove ${p.name}?`, "New tickets for this project can't be created. Open tickets stay until they are closed.", "Remove project")) return;
@@ -2532,7 +2684,7 @@ function projectCard(p) {
   card.addEventListener("change", () => preview.refresh());
   card.addEventListener("click", e => { if (e.target.closest("button")) preview.refresh(); });
   preview.now();
-  return h("div", { class: "editor-layout", style: "margin-bottom:16px" }, card, h("div", { class: "editor-preview" }, preview.el));
+  return tracker.attach(h("div", { class: "editor-layout", style: "margin-bottom:16px" }, card, h("div", { class: "editor-preview" }, preview.el)));
 }
 
 /** Application form editor: on/off + up to 5 questions (Discord form limit). */
@@ -2627,7 +2779,7 @@ function ticketArchiveCard() {
 // ================= Temp Voice =================
 
 async function pageVoice(main) {
-  main.append(h("div", { class: "card-head" }, h("h1", {}, "🔊 Temp Voice"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "🔊 Temp Voice"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
 
   // New channel
   const nName = h("input", { placeholder: "➕ Create room", maxlength: "100" });
@@ -2692,17 +2844,18 @@ function creatorRow(c) {
   const tpl = h("input", { placeholder: "auto", maxlength: "100", value: c.template || "" });
   const lim = h("input", { type: "number", min: "0", max: "99", style: "width:80px", value: c.limit ?? "" });
   const save = h("button", { class: "btn secondary" }, "Save");
-  save.addEventListener("click", () => act(save, () => gApi("PUT", `/voice/creators/${c.channelId}`, {
+  const tracker = track(`🔊 ${c.name}`, () => [tpl.value, lim.value], async () => await act(save, () => gApi("PUT", `/voice/creators/${c.channelId}`, {
     template: tpl.value, limit: lim.value === "" ? null : Number(lim.value)
-  }), "Saved."));
+  }), "Saved.") !== undefined);
+  save.addEventListener("click", tracker.save);
   const rm = h("button", { class: "btn ghost" }, "Remove");
   rm.addEventListener("click", async () => {
     if (!await confirmDialog("Stop using this channel?", "The channel itself is not deleted. Existing rooms keep working until they are empty.", "Remove")) return;
     if (await act(rm, () => gApi("DELETE", `/voice/creators/${c.channelId}`), "Removed.") !== undefined) refresh();
   });
-  return h("tr", {},
+  return tracker.attach(h("tr", {},
     h("td", {}, c.exists ? `🔊 ${c.name}` : h("span", { class: "chip warn" }, "deleted channel"), c.category ? h("div", { class: "muted small" }, c.category) : null),
-    h("td", {}, tpl), h("td", {}, lim), h("td", { class: "actions" }, save, " ", rm));
+    h("td", {}, tpl), h("td", {}, lim), h("td", { class: "actions" }, save, " ", rm)));
 }
 
 function roomRow(r) {
@@ -2905,7 +3058,7 @@ function toggle(checked, label, onChange) {
 
 async function pageWelcome(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "👋 Welcome"),
-    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
+    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
   const holder = h("div", {}, h("div", { class: "card" }, skeletonLines(5)));
   main.append(holder);
   let w, emojis = [];
@@ -3018,7 +3171,8 @@ async function pageWelcome(main) {
   }
 
   const save = h("button", { class: "btn" }, icon("save", 15), "Save");
-  save.addEventListener("click", () => act(save, () => gApi("PUT", "/welcome", body()), "Welcome saved."));
+  const tracker = track("Welcome", body, async () => await act(save, () => gApi("PUT", "/welcome", body()), "Welcome saved.") !== undefined);
+  save.addEventListener("click", tracker.save);
   const test = h("button", { class: "btn secondary", title: "Sends the messages from this form to your DMs (even before saving)" }, icon("send", 15), "Send me a test");
   test.addEventListener("click", () => act(test, () => gApi("POST", "/welcome/test", body()), "Sent to your DMs."));
 
@@ -3035,6 +3189,7 @@ async function pageWelcome(main) {
         h("div", { class: "field" }, h("label", {}, "Mode"), mode), roleBox),
       h("div", { class: "row sticky-actions" }, save, test)),
     h("div", { class: "editor-preview" }, h("div", { class: "card preview-card" }, h("h3", {}, "Preview"), previewBox))));
+  tracker.attach(holder.firstElementChild);
   drawPreview();
 }
 
@@ -3051,7 +3206,7 @@ const BTN_COLORS = [["Grey", "Grey"], ["Blurple", "Blurple"], ["Green", "Green"]
 
 async function pageRoles(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "🎭 Role panels"),
-    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
+    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
   const holder = h("div", {}, h("div", { class: "card" }, skeletonLines(4)));
   main.append(holder);
   let data, emojis = [];
@@ -3251,7 +3406,7 @@ function rolePanelEditor(p, emojis) {
 
 async function pageTexts(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "📝 Panel texts"),
-    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
+    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
   main.append(h("p", { class: "muted" },
     "Edit the text of the panels the bot posts and the button labels of group posts and tickets. Saving updates what is already posted. ",
     "Panels posted before this feature are unknown to the bot — click “Find posted panels” once to pick them up."));
@@ -3307,24 +3462,31 @@ function textCard(p) {
   };
 
   const save = h("button", { class: "btn" }, labelsOnly ? "💾 Save & update posts" : "💾 Save & update panels");
-  save.addEventListener("click", async () => {
-    const labels = {};
-    for (const { l, input } of labelInputs) labels[l.id] = input.value;
-    const res = await act(save, () => gApi("PUT", `/texts/${p.key}`, { title: title.value, description: desc.value, labels, color: color.value() }));
+  const tracker = track(p.name, draft, async () => {
+    const res = await act(save, () => gApi("PUT", `/texts/${p.key}`, draft()));
     resultToast(res, "Saved.");
+    return res !== undefined;
   });
+  save.addEventListener("click", tracker.save);
   const reset = h("button", { class: "btn secondary" }, "↩️ Reset to default");
   reset.addEventListener("click", async () => {
     if (!await confirmDialog(`Reset ${p.name}?`, `The default text is restored and ${what} are updated.`, "Reset", false)) return;
     const res = await act(reset, () => gApi("DELETE", `/texts/${p.key}`));
     if (res === undefined) return;
     resultToast(res, "Reset.");
+    // Defaults back in the form; the rest of the page keeps its unsaved edits
+    title.value = p.defaults.title === "-" ? "" : p.defaults.title || "";
+    desc.value = p.defaults.description || "";
+    for (const { l, input } of labelInputs) input.value = l.default;
+    color.set("", null);
+    tracker.rebase();
+    preview.refresh();
     refresh();
   });
 
   const custom = p.title || p.description || p.color || p.labels.some(l => l.value);
   preview.now();
-  return h("div", { class: "editor-layout", style: "margin-bottom:16px" }, h("div", { class: "card", style: "margin:0" },
+  return tracker.attach(h("div", { class: "editor-layout", style: "margin-bottom:16px" }, h("div", { class: "card", style: "margin:0" },
     h("div", { class: "card-head" }, h("h2", {}, p.name),
       custom ? h("span", { class: "badge wait" }, "custom") : h("span", { class: "badge ok" }, "default"),
       labelsOnly ? null : h("span", { class: "muted small" }, `${p.posted} posted`)),
@@ -3338,7 +3500,7 @@ function textCard(p) {
       h("span", { class: "muted small" }, "The colored line on the left of the panel in Discord.")),
     labelInputs.length ? h("div", { class: "grid2" }, labelInputs.map(x => x.el)) : null,
     h("div", { class: "row" }, save, reset)),
-    h("div", { class: "editor-preview" }, preview.el));
+    h("div", { class: "editor-preview" }, preview.el)));
 }
 
 /** Color picker: swatch + #hex field + reset. value() → "#rrggbb" or "" (= default). */
@@ -3373,7 +3535,7 @@ const BOT_TEXT_ICONS = [["LFG — group post", "swords"], ["LFG — creating", "
 
 async function pageBotTexts(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "💬 Bot messages"),
-    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
+    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
   main.append(h("p", { class: "muted" },
     "Every text the bot writes to members — replies, DMs, group posts, ticket messages, menus, buttons and windows — and the stripe colors of its messages. ",
     "Words in {braces} are filled in by the bot. Empty field = default text; in fields marked “- = hide” a single - removes the line."));
@@ -3387,15 +3549,19 @@ async function pageBotTexts(main) {
   const rows = [];
   const search = h("input", { type: "search", placeholder: "Search texts… (e.g. reserve, DM, Approve)", style: "flex:1;min-width:200px" });
   const onlyCustom = h("input", { type: "checkbox" });
-  const saveBtn = h("button", { class: "btn" }, icon("save", 16), " Save changes");
-  const discard = h("button", { class: "btn secondary" }, "Discard");
-  const bar = h("div", { class: "save-bar" }, h("span", { class: "save-count" }), discard, saveBtn);
   const resetAll = h("button", { class: "btn ghost danger-text" }, icon("undo-2", 15), " Reset all to default");
 
-  const updateBar = () => {
-    bar.classList.toggle("show", dirty.size > 0);
-    bar.querySelector(".save-count").textContent = `${dirty.size} unsaved change${dirty.size === 1 ? "" : "s"}`;
-  };
+  // Unsaved texts go to the page's sticky bar (Save / Discard) — one save for all of them
+  const tracker = track("Bot messages", () => [...dirty].sort((a, b) => a[0].localeCompare(b[0])), async () => {
+    const res = await act(null, () => gApi("PUT", "/texts/bot", { values: Object.fromEntries(dirty) }));
+    if (res === undefined) return false;
+    toast(res.postsTotal ? `Saved ${dirty.size} text(s). Updated ${res.postsUpdated} of ${res.postsTotal} posted message(s).` : `Saved ${dirty.size} text(s). New messages use it.`,
+      res.postsUpdated === res.postsTotal ? "ok" : "warn");
+    dirty.clear();
+    refresh();
+    return true;
+  });
+  const updateBar = () => tracker.check && schedulePendingCheck();
 
   // Groups → cards (collapsed; search opens the matching ones)
   const groups = [];
@@ -3462,27 +3628,19 @@ async function pageBotTexts(main) {
   search.addEventListener("input", filter);
   onlyCustom.addEventListener("change", filter);
 
-  discard.addEventListener("click", () => { refresh(); });
-  saveBtn.addEventListener("click", async () => {
-    const values = Object.fromEntries(dirty);
-    const res = await act(saveBtn, () => gApi("PUT", "/texts/bot", { values }));
-    if (res === undefined) return;
-    toast(res.postsTotal ? `Saved. Updated ${res.postsUpdated} of ${res.postsTotal} posted message(s).` : "Saved. New messages use it.",
-      res.postsUpdated === res.postsTotal ? "ok" : "warn");
-    refresh();
-  });
   resetAll.addEventListener("click", async () => {
     const n = items.filter(x => x.value).length;
     if (!n) return toast("Everything is already the default.");
     if (!await confirmDialog("Reset all bot messages?", `${n} changed text(s) and color(s) go back to the defaults. Active group posts and open tickets are updated.`, "Reset all")) return;
     const res = await act(resetAll, () => gApi("POST", "/texts/bot/reset", { keys: [] }), "All bot messages are back to default.");
-    if (res !== undefined) refresh();
+    if (res !== undefined) renderShell();
   });
 
   holder.replaceChildren(
     h("div", { class: "card bt-tools" }, h("div", { class: "row" }, icon("search", 18), search,
       h("label", { class: "toggle-line" }, onlyCustom, h("span", {}, "Only changed")), resetAll)),
-    ...cards.map(c => c.card), bar);
+    ...cards.map(c => c.card));
+  tracker.attach(holder);
   if (cards[0]) cards[0].card.classList.add("open");
 }
 
@@ -3528,7 +3686,7 @@ const KIND_LABELS = {
 
 async function pagePosts(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "📌 Posts"),
-    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
+    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
 
   // --- Panels
   const discover = h("button", { class: "btn secondary" }, "🔍 Find posted panels");
@@ -3672,7 +3830,7 @@ const SOURCE_LABELS = { web: "🌐 site", discord: "💬 Discord", system: "🤖
 
 async function pageLog(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "📜 Log"),
-    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
+    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
   main.append(h("p", { class: "muted" }, "What was done on the site and in the bot: who, when and with what. The last 5000 actions are kept."));
 
   const actor = h("select", {}, h("option", { value: "" }, "Everyone"));
@@ -3761,8 +3919,11 @@ async function pageSettings(main) {
     const current = await gApi("GET", "/member-roles");
     const editor = roleListEditor(current);
     const saveRoles = h("button", { class: "btn" }, "💾 Save member roles");
-    saveRoles.addEventListener("click", () => act(saveRoles, () => gApi("PUT", "/member-roles", { roleIds: editor.value() }), "Member roles saved."));
+    const tracker = track("Member roles", () => editor.value(), async () =>
+      await act(saveRoles, () => gApi("PUT", "/member-roles", { roleIds: editor.value() }), "Member roles saved.") !== undefined);
+    saveRoles.addEventListener("click", tracker.save);
     card.append(editor.el, h("div", { class: "row", style: "margin-top:12px" }, saveRoles));
+    tracker.attach(card);
   } catch (e) { card.append(empty(e.message)); }
 }
 
@@ -3770,7 +3931,7 @@ async function pageSettings(main) {
 
 async function pageHome(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "Home"),
-    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
+    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
   const go = (tab, extra) => () => { if (extra) extra(); state.tab = tab; store.set("gb.tab", tab); renderShell(); };
   const guild = currentGuild();
 
@@ -3872,11 +4033,13 @@ async function pageHome(main) {
     const pl = h("input", { type: "number", min: "0", max: "99", placeholder: "no limit", value: pr.limit ?? "", style: "width:110px" });
     const pk = h("input", { type: "checkbox", checked: pr.locked });
     const ps = h("button", { class: "btn" }, icon("save", 16), "Save defaults");
-    ps.addEventListener("click", () => {
-      if (pl.value !== "" && (Number(pl.value) < 0 || Number(pl.value) > 99)) return toast("The limit is 0–99.", "warn");
-      act(ps, () => gApi("PUT", "/me/room-prefs", { name: pn.value || null, limit: pl.value === "" ? null : Number(pl.value), locked: pk.checked }),
-        "Room defaults saved — used for your next room.");
+    const tracker = track("Room defaults", () => [pn.value, pl.value, pk.checked], async () => {
+      if (pl.value !== "" && (Number(pl.value) < 0 || Number(pl.value) > 99)) { toast("The limit is 0–99.", "warn"); return false; }
+      return await act(ps, () => gApi("PUT", "/me/room-prefs", { name: pn.value || null, limit: pl.value === "" ? null : Number(pl.value), locked: pk.checked }),
+        "Room defaults saved — used for your next room.") !== undefined;
     });
+    ps.addEventListener("click", tracker.save);
+    tracker.attach(prefsCard);
     prefsCard.append(
       h("div", { class: "field" }, h("label", {}, "Room name"), pn, h("span", { class: "muted small" }, "{user} is replaced with your name.")),
       h("div", { class: "row", style: "margin-bottom:12px" },
@@ -3989,7 +4152,7 @@ async function pageContent(main) {
 const ROLE_CHOICES = [["Dps", "⚔️ DD"], ["Tank", "🛡️ Tank"], ["Healer", "💚 Sup"], ["Any", "🎲 All"]];
 
 async function pagePlay(main) {
-  main.append(h("div", { class: "card-head" }, h("h1", {}, "🎮 Groups"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "🎮 Groups"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
   const holder = h("div", {}, h("div", { class: "muted" }, "Loading…"));
 
   // Project tabs: groups of one game at a time
@@ -4153,7 +4316,7 @@ function playCard(g) {
 // ================= Member: characters =================
 
 async function pageChars(main) {
-  main.append(h("div", { class: "card-head" }, h("h1", {}, "My characters"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "My characters"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
   const holder = h("div", {}, h("div", { class: "card" }, skeletonLines(3)));
   main.append(holder);
 
@@ -4198,11 +4361,12 @@ async function pageChars(main) {
     const note = h("input", { maxlength: String(data.maxComment), placeholder: "e.g. can lead, healer alt", value: c.comment || "" });
     const gs = h("input", { type: "number", min: "0", max: "99999", placeholder: "—", value: c.gs ?? "" });
     const save = h("button", { class: "btn" }, icon("save", 15), "Save");
-    save.addEventListener("click", () => {
-      if (gs.value !== "" && (Number(gs.value) < 0 || Number(gs.value) > 99999)) return toast("GS: 0–99999.", "warn");
-      act(save, () => gApi("PUT", `/me/characters/${encodeURIComponent(c.name)}${pq}`, { classRoleId: cls.value || null, comment: note.value, gs: gs.value === "" ? null : Number(gs.value) }),
-        r => r.groupsUpdated ? `Saved. Updated ${r.groupsUpdated} active group(s).` : "Saved.");
+    const tracker = track(c.name, () => [cls.value, note.value, gs.value], async () => {
+      if (gs.value !== "" && (Number(gs.value) < 0 || Number(gs.value) > 99999)) { toast("GS: 0–99999.", "warn"); return false; }
+      return await act(save, () => gApi("PUT", `/me/characters/${encodeURIComponent(c.name)}${pq}`, { classRoleId: cls.value || null, comment: note.value, gs: gs.value === "" ? null : Number(gs.value) }),
+        r => r.groupsUpdated ? `Saved. Updated ${r.groupsUpdated} active group(s).` : "Saved.") !== undefined;
     });
+    save.addEventListener("click", tracker.save);
     const rm = h("button", { class: "btn danger" }, icon("trash-2", 15), "Remove");
     rm.addEventListener("click", async () => {
       if (!await confirmDialog(`Remove ${c.name}?`, "The character, its class and note are deleted.", "Remove")) return;
@@ -4216,7 +4380,7 @@ async function pageChars(main) {
       if (await act(rename, () => gApi("POST", `/me/characters/${encodeURIComponent(c.name)}/rename${pq}`, { name }),
         r => r.groupsUpdated ? `Renamed. Updated ${r.groupsUpdated} active group(s).` : "Renamed.") !== undefined) refresh();
     });
-    return h("div", { class: "card char-edit" },
+    return tracker.attach(h("div", { class: "card char-edit" },
       h("div", { class: "char-edit-head" }, badge,
         h("div", { class: "grow" }, h("div", { class: "row", style: "gap:4px;flex-wrap:nowrap" }, h("b", { class: "char-name" }, c.name), rename), clsName),
         c.gs ? h("span", { class: "gs big" }, `GS ${c.gs}`) : null),
@@ -4224,7 +4388,7 @@ async function pageChars(main) {
         h("div", { class: "field" }, h("label", {}, "Class"), cls),
         h("div", { class: "field gs-field" }, h("label", {}, "GS"), gs)),
       h("div", { class: "field" }, h("label", {}, "Personal note — only you see it"), note),
-      h("div", { class: "char-actions" }, save, h("span", { class: "spacer" }), rm));
+      h("div", { class: "char-actions" }, save, h("span", { class: "spacer" }), rm)));
   });
 
   // Add a character
@@ -4249,7 +4413,7 @@ async function pageChars(main) {
 
 async function pageAccess(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "🔑 Access"),
-    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: refresh }, "🔄 Refresh")));
+    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
   main.append(h("p", { class: "muted" },
     "Who can log in to this panel and which sections they see. Only you (the bot owner) can open this page. ",
     "Changes apply immediately — no re-login needed."));
@@ -4300,21 +4464,22 @@ async function pageAccess(main) {
   const rows = data.grants.map(g => {
     const perms = permChecks(g.permissions);
     const save = h("button", { class: "btn secondary" }, "Save");
-    save.addEventListener("click", async () => {
+    const tracker = track(`Access · ${g.user.name}`, () => perms.value(), async () => {
       const value = perms.value();
-      if (!value.length) return toast("No sections ticked — use Remove to take away access.", "warn");
-      await act(save, () => api("PUT", `/api/access/${g.user.id}`, { permissions: value }), "Saved.");
+      if (!value.length) { toast("No sections ticked — use Remove to take away access.", "warn"); return false; }
+      return await act(save, () => api("PUT", `/api/access/${g.user.id}`, { permissions: value }), "Saved.") !== undefined;
     });
+    save.addEventListener("click", tracker.save);
     const rm = h("button", { class: "btn danger" }, "Remove");
     rm.addEventListener("click", async () => {
       if (!await confirmDialog(`Remove access for ${g.user.name}?`, "They won't be able to use the panel anymore.", "Remove")) return;
       if (await act(rm, () => api("DELETE", `/api/access/${g.user.id}`), "Access removed.") !== undefined) refresh();
     });
-    return h("tr", {},
+    return tracker.attach(h("tr", {},
       h("td", {}, member(g.user), h("div", { class: "muted small" }, g.user.id)),
       h("td", {}, perms.el),
       h("td", { class: "muted small" }, new Date(g.grantedAt).toLocaleDateString()),
-      h("td", { class: "actions" }, save, " ", rm));
+      h("td", { class: "actions" }, save, " ", rm)));
   });
 
   holder.replaceChildren(addCard,
@@ -4641,7 +4806,7 @@ const HELP = {
       "Grouped by module; search finds a text by its name or words, **Only changed** shows what you edited.",
       "Words in `{braces}` are filled in by the bot — keep them where you need the value. In fields marked “- = hide”, a single `-` removes the line.",
       "Stripe colors of group posts (recruiting / full / closed), tickets, DMs, invites and the verification are set here too.",
-      "**Save changes** saves everything at once; texts of group posts and ticket messages update the active posts right away. ↩ returns one text to the default, **Reset all to default** — every text."
+      "**Save** in the bar at the bottom saves everything at once; texts of group posts and ticket messages update the active posts right away. ↩ returns one text to the default, **Reset all to default** — every text."
     ]]],
     discord: [["Where it shows", [
       "Panels posted by `/lfg-panel`, `/ticket-panel`, `/tempvoice panel`, `/admin` or this site use your text; `/room panel` too.",
@@ -4649,7 +4814,7 @@ const HELP = {
     ]]],
     panel: [["Editing", [
       "Change the fields of a panel → **Save & update panels**. Empty field = default text.",
-      "Bot messages: open a group, edit the text or color (the row turns yellow), then **Save changes** at the bottom.",
+      "Bot messages: open a group, edit the text or color (the row turns yellow), then **Save** in the bar at the bottom.",
       "In Discord, `/panel-text` edits the title, text and stripe color of a panel.",
       "Panels posted before the bot started remembering them: click **Find posted panels** once."
     ]]]
