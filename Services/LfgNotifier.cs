@@ -51,7 +51,7 @@ public sealed class LfgNotifier(DiscordSocketClient client, LfgNotifyStore prefs
             var embed = LfgRenderer.DmNotice(group, guild.Name);
             // Запись прямо из ЛС: кнопки ролей (серая = мест нет, запишет в резерв) + ссылка на пост
             var builder = new ComponentBuilder();
-            foreach (var slotRole in SlotRoleExtensions.All)
+            foreach (var slotRole in SlotRoleExtensions.JoinRoles)
                 builder.WithButton(slotRole.Label(), $"lfgdm:join:{group.Id}:{slotRole}",
                     group.CanJoinAs(slotRole) ? ButtonStyle.Primary : ButtonStyle.Secondary,
                     new Emoji(slotRole.Emoji()), row: 0);

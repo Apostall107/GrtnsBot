@@ -151,7 +151,7 @@ public static partial class PanelApi
         {
             if (!lfg.Groups.TryGetValue(groupId, out var group) || group.GuildId != guildId) return Error("This group is no longer active.");
             if (signup.ProjectBlock(group, user.UserId()!.Value) is not null) return Error("You don't have the role of this group's project.");
-            if (!Enum.TryParse<SlotRole>(body.Role, true, out var role)) return Error("Pick a role.");
+            if (!Enum.TryParse<SlotRole>(body.Role, true, out var role) || role == SlotRole.Any) return Error("Pick a role: DD, Tank or Sup.");
             var name = (body.Character ?? "").Replace("`", "").Trim();
             if (name.Length is 0 or > CharacterStore.MaxNameLength) return Error($"Character name: 1–{CharacterStore.MaxNameLength} characters.");
 

@@ -292,7 +292,7 @@ public static class LfgRenderer
 
         var builder = new ComponentBuilder();
         // Серая кнопка роли = мест нет, нажатие запишет в резерв
-        foreach (var role in SlotRoleExtensions.All)
+        foreach (var role in SlotRoleExtensions.JoinRoles)
             builder.WithButton(role.Label(), $"lfg:join:{g.Id}:{role}",
                 g.CanJoinAs(role) ? ButtonStyle.Primary : ButtonStyle.Secondary,
                 new Emoji(role.Emoji()), disabled: g.IsClosed, row: 0);

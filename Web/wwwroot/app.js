@@ -4665,7 +4665,8 @@ async function pageContent(main) {
 
 // ================= Member: groups =================
 
-const ROLE_CHOICES = [["Dps", "⚔️ DD"], ["Tank", "🛡️ Tank"], ["Healer", "💚 Sup"], ["Any", "🎲 All"]];
+// Roles players sign up with («All» is only a slot type — anyone can take such a slot with their role)
+const ROLE_CHOICES = [["Dps", "⚔️ DD"], ["Tank", "🛡️ Tank"], ["Healer", "💚 Sup"]];
 
 async function pagePlay(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "🎮 Groups"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
@@ -4799,7 +4800,7 @@ function playCard(g) {
   };
   charSel.addEventListener("change", sync);
   role.addEventListener("change", fillChars);
-  if (g.me) role.value = g.me.role;
+  if (g.me && ROLE_CHOICES.some(([v]) => v === g.me.role)) role.value = g.me.role;
   fillChars();
   if (g.me && g.me.character && fits(g.me.character, role.value) && characters.includes(g.me.character)) { charSel.value = g.me.character; sync(); }
 

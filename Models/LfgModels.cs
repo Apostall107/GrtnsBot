@@ -10,6 +10,8 @@ public enum SlotRole { Any, Dps, Tank, Healer }
 public static class SlotRoleExtensions
 {
     public static readonly SlotRole[] All = [SlotRole.Dps, SlotRole.Tank, SlotRole.Healer, SlotRole.Any];
+    /// <summary>Роли, которыми записываются игроки: All — только тип слота (любая роль), записаться «All» нельзя.</summary>
+    public static readonly SlotRole[] JoinRoles = [SlotRole.Dps, SlotRole.Tank, SlotRole.Healer];
 
     public static string Label(this SlotRole role) => role switch
     {
