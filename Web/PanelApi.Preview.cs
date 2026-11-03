@@ -104,7 +104,10 @@ public static partial class PanelApi
             switch (body.Sample)
             {
                 case "LFG — creating a group":
+                    Add("Step 0 · your character", () => Msg(LfgRenderer.OwnerCharacterStep(Draft(false),
+                        [new PickerCharacter("Kayleth", "main", null, 2903, 149159), new PickerCharacter("Apostall", null, null, 2450)])));
                     Add("Step 1", () => Msg(LfgRenderer.SizeStep(Draft(false))));
+                    Add("Step 1 · other size", () => { var d = Draft(false); d.AllSizes = true; return Msg(LfgRenderer.SizeStep(d)); });
                     Add("Step 1 · templates", () => Msg(LfgRenderer.SizeStep(Draft(false), sampleTemplates)));
                     Add("Step 2", () => Msg(LfgRenderer.ActivityStep(Draft(false), acts)));
                     Add("Step 2 · no activities", () => Msg(LfgRenderer.ActivityStep(Draft(false), [])));

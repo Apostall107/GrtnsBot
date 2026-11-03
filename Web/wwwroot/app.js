@@ -1678,7 +1678,7 @@ async function pageLfg(main) {
     return el;
   };
   actCard.append(actList.length ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
-    h("thead", {}, h("tr", {}, h("th", {}, "Activity"), h("th", {}, "Ping role"), projects.length ? h("th", {}, "Project") : null, h("th", {}))),
+    h("thead", {}, h("tr", {}, h("th", {}, "Activity"), h("th", {}, "Ping role"), h("th", { title: "Characters with a lower GS don't see the activity when creating a group" }, "Min GS"), projects.length ? h("th", {}, "Project") : null, h("th", {}))),
     h("tbody", {}, actList.map(a => {
       const edit = h("button", { class: "btn secondary", onclick: () => activityDialog(a) }, "✏️ Edit");
       const rm = h("button", { class: "btn ghost" }, "Remove");
@@ -1687,17 +1687,19 @@ async function pageLfg(main) {
         if (await act(rm, () => gApi("DELETE", `/lfg/activities/${encodeURIComponent(a.key)}`), "Activity removed.") !== undefined) refresh();
       });
       return h("tr", {}, h("td", {}, a.name, mode === "project" && !a.projectKey ? h("div", {}, shared.cloneNode(true)) : null),
-        h("td", {}, roleChip(a.role)), projects.length ? h("td", {}, moveSel(a)) : null, h("td", { class: "actions" }, edit, " ", rm));
+        h("td", {}, roleChip(a.role)), h("td", {}, a.minGs != null ? h("span", { class: "chip" }, `GS ${a.minGs}+`) : h("span", { class: "muted" }, "—")),
+        projects.length ? h("td", {}, moveSel(a)) : null, h("td", { class: "actions" }, edit, " ", rm));
     })))) : empty("No activities yet."));
   const nameIn = h("input", { placeholder: "Activity name, e.g. Fire Temple", maxlength: "100" });
   const roleIn = roleSelect("Role to ping…");
+  const minGsIn = h("input", { type: "number", min: "0", max: "99999", placeholder: "min GS", style: "width:110px", title: "Optional: characters with a lower GS don't see the activity" });
   const addBtn = h("button", { class: "btn" }, "➕ Add");
   addBtn.addEventListener("click", async () => {
-    const ok = await act(addBtn, () => gApi("POST", "/lfg/activities", { name: nameIn.value, roleId: roleIn.value, projectKey: P }),
+    const ok = await act(addBtn, () => gApi("POST", "/lfg/activities", { name: nameIn.value, roleId: roleIn.value, projectKey: P, minGs: minGsIn.value === "" ? null : Number(minGsIn.value) }),
       mode === "project" ? `Activity added to ${project.name}.` : "Activity added.");
     if (ok !== undefined) refresh();
   });
-  actCard.append(h("div", { class: "row", style: "margin-top:12px" }, h("div", { class: "grow" }, nameIn), roleIn, addBtn));
+  actCard.append(h("div", { class: "row", style: "margin-top:12px" }, h("div", { class: "grow" }, nameIn), roleIn, minGsIn, addBtn));
 
   // --- LFG panel of the project (posted panels are linked to it right away)
   const panelCard = () => {
@@ -1854,14 +1856,17 @@ function activityDialog(a) {
   const name = h("input", { maxlength: "100", value: a.name, style: "width:100%" });
   const role = roleSelect("Role to ping…");
   role.value = a.role.id;
+  const minGs = h("input", { type: "number", min: "0", max: "99999", placeholder: "none", value: a.minGs ?? "", style: "width:120px" });
   const save = h("button", { class: "btn" }, "💾 Save");
   save.addEventListener("click", async () => {
-    if (await act(save, () => gApi("PUT", `/lfg/activities/${encodeURIComponent(a.key)}`, { name: name.value, roleId: role.value }),
+    if (await act(save, () => gApi("PUT", `/lfg/activities/${encodeURIComponent(a.key)}`, { name: name.value, roleId: role.value, minGs: minGs.value === "" ? null : Number(minGs.value) }),
       "Activity saved.") !== undefined) { d.close(); refresh(); }
   });
   d.replaceChildren(h("h2", {}, `Edit activity: ${a.name}`),
     h("div", { class: "field" }, h("label", {}, "Name"), name),
     h("div", { class: "field" }, h("label", {}, "Role to ping"), role),
+    h("div", { class: "field" }, h("label", {}, "Minimum GS (optional)"), minGs,
+      h("span", { class: "muted small" }, "When creating a group, the organizer picks a character first: with a lower GS the activity isn't shown. The group gets this GS requirement.")),
     h("p", { class: "muted small" }, "Groups that are already posted keep the old name."),
     h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), save));
   d.showModal();
@@ -1910,14 +1915,34 @@ function lfgForm(acts, opts) {
   const nameIn = h("input", { placeholder: "Template name, e.g. Dungeon 4: Tank/Sup/DD/DD", maxlength: "80", value: v.name || "" });
 
   const activity = h("select", {});
-  // Only activities of the chosen project (+ the ones for all projects)
+  // Members: first the character they go with — activities with a higher min GS than its GS are hidden
+  const charSel = opts.characters ? h("select", { "aria-label": "Your character" }) : null;
+  const charHint = h("span", { class: "muted small" });
+  const myChars = () => (opts.characters && opts.characters[currentProject() || ""]) || [];
+  const ownerGs = () => { const c = myChars().find(x => x.name === (charSel && charSel.value)); return c ? c.gs : null; };
+  const gsFits = a => !charSel || !charSel.value || a.minGs == null || (ownerGs() ?? -1) >= a.minGs;
+  const fillChars = () => {
+    if (!charSel) return;
+    const keep = charSel.value;
+    const list = myChars();
+    charSel.replaceChildren(...(list.length ? list.map(c => h("option", { value: c.name },
+      [c.name, c.gs != null ? `GS ${c.gs}` : "no GS", c.cp != null ? `CP ${fmtCp(c.cp)}` : null].filter(Boolean).join(" · ")))
+      : [h("option", { value: "" }, "No characters in this project — add them in My characters")]));
+    if (list.some(c => c.name === keep)) charSel.value = keep;
+  };
+  // Only activities of the chosen project (+ the ones for all projects) that the character's GS allows
   const fillActivities = projectKey => {
     const keep = activity.value;
+    const ofProject = acts.filter(a => !projectKey || !a.projectKey || a.projectKey === projectKey);
+    const ok = ofProject.filter(gsFits);
     activity.replaceChildren(h("option", { value: "" }, "✏️ Custom activity (no ping)"),
-      ...acts.filter(a => !projectKey || !a.projectKey || a.projectKey === projectKey)
-        .map(a => h("option", { value: a.key }, `${a.name}  ·  @${a.role.name}`)));
+      ...ok.map(a => h("option", { value: a.key }, `${a.name}${a.minGs != null ? ` · GS ${a.minGs}+` : ""}  ·  @${a.role.name}`)));
     if ([...activity.options].some(o => o.value === keep)) activity.value = keep;
+    else if (keep && ok.length) activity.value = ok[0].key; // the chosen activity is hidden now — take the first that fits
+    const hidden = ofProject.length - ok.length;
+    charHint.textContent = hidden ? `${hidden} activit${hidden === 1 ? "y is" : "ies are"} hidden — this character's GS is too low.` : "";
   };
+  fillChars();
   fillActivities(currentProject());
   const custom = h("input", { placeholder: "Activity name", maxlength: "100" });
   if (v.activityKey !== undefined) {
@@ -1932,10 +1957,20 @@ function lfgForm(acts, opts) {
   }
   const syncCustom = () => { custom.style.display = activity.value ? "none" : ""; };
   activity.addEventListener("change", syncCustom);
+  // The activity's min GS becomes the group's GS requirement (can still be changed); cleared again when the activity has none
+  let autoGs = null;
+  const applyActGs = () => {
+    if (typeof minGs === "undefined") return;
+    const a = acts.find(x => x.key === activity.value);
+    if (a && a.minGs != null) { minGs.value = a.minGs; autoGs = a.minGs; }
+    else if (autoGs != null && Number(minGs.value) === autoGs) { minGs.value = ""; autoGs = null; }
+  };
+  activity.addEventListener("change", applyActGs);
+  if (charSel) charSel.addEventListener("change", () => { fillActivities(currentProject()); syncCustom(); applyActGs(); });
   syncCustom();
 
   if (projectSel) {
-    projectSel.addEventListener("change", () => { fillActivities(projectSel.value); fillTemplates(); syncCustom(); });
+    projectSel.addEventListener("change", () => { fillChars(); fillActivities(projectSel.value); fillTemplates(); syncCustom(); });
     if (opts.fixedChannel) {
       // The post goes to the channel of the project's LFG panel
       const syncChannel = () => {
@@ -1961,9 +1996,26 @@ function lfgForm(acts, opts) {
   const makeReq = initial => roleListEditor(initial, projectRoles, () => drawSlots(), null, "➕ Add classes…");
 
   // Slots: role (DD/Tank/Sup/All) and the classes a slot accepts: as the group / any class / its own classes (several)
-  let slots = v.slots ? v.slots.slice() : ["Any", "Any", "Any", "Any"];
+  let slots = v.slots ? v.slots.slice() : ["Any", "Any", "Any", "Any", "Any"]; // 5 — the usual AION 2 group
   let slotReqs = (v.slotRequirements || []).slice();
   const size = h("select", {}, Array.from({ length: 24 }, (_, i) => i + 2).map(n => h("option", { value: n }, `${n} slots`)));
+  // Favorite sizes as buttons; «Other…» shows the full choice (2–25)
+  const FAV_SIZES = [5, 10, 20];
+  let allSizes = false;
+  const favBtns = FAV_SIZES.map(n => h("button", { type: "button", class: "seg-btn", onclick: () => {
+    allSizes = false; size.value = String(n); size.dispatchEvent(new Event("change"));
+  } }, `👥 ${n}`));
+  const otherBtn = h("button", { type: "button", class: "seg-btn", onclick: () => { allSizes = true; syncSizeUi(); } }, "Other…");
+  const sizeWrap = h("span", {}, size);
+  const syncSizeUi = () => {
+    const n = Number(size.value);
+    const fav = FAV_SIZES.includes(n);
+    if (!fav) allSizes = true;
+    favBtns.forEach((b, i) => b.classList.toggle("active", !allSizes && FAV_SIZES[i] === n));
+    otherBtn.classList.toggle("active", allSizes);
+    sizeWrap.style.display = allSizes ? "" : "none";
+  };
+  const sizeControl = h("div", { class: "row", style: "gap:8px;flex-wrap:wrap" }, h("div", { class: "seg" }, favBtns, otherBtn), sizeWrap);
   const slotBox = h("div", { class: "row", style: "gap:6px;align-items:flex-start" });
   let req = null;
   const roleName = id => (rolePool.find(r => r.id === id) || { name: "class" }).name;
@@ -2005,6 +2057,7 @@ function lfgForm(acts, opts) {
   };
   const drawSlots = () => {
     size.value = String(slots.length);
+    if (typeof syncSizeUi === "function") syncSizeUi();
     slotReqs = slots.map((_, i) => slotReqs[i] || "");
     slotBox.replaceChildren(...slots.map((r, i) => {
       const sel = h("select", { title: `Slot ${i + 1}`, "data-render": "role" }, SLOT_ROLES.map(([val, label]) => h("option", { value: val }, `${i + 1}. ${label}`)));
@@ -2025,6 +2078,7 @@ function lfgForm(acts, opts) {
   drawSlots();
   const reqBox = h("div", {}, req.el);
   const minGs = h("input", { type: "number", min: "0", max: "99999", placeholder: "none", value: v.minGs ?? "", style: "width:110px" });
+  if (v.minGs == null) applyActGs();
 
   // Templates: prefill activity, slots and requirements
   // Only templates of the current project (+ the ones for all projects)
@@ -2056,12 +2110,13 @@ function lfgForm(acts, opts) {
 
   const fields = [
     projectSel ? h("div", { class: "field" }, h("label", {}, "🎮 Project (game)"), projectSel) : null,
+    charSel ? h("div", { class: "field" }, h("label", {}, "🧙 Your character (you take slot 1 with it)"), charSel, charHint) : null,
     tplSel ? h("div", { class: "field" }, h("label", {}, "📋 Template"), tplSel) : null,
     h("div", { class: "grid2" },
       tplMode ? h("div", { class: "field" }, h("label", {}, "Template name"), nameIn)
         : h("div", { class: "field" }, h("label", {}, opts.fixedChannel ? "Posted in" : "Channel"), channelEl),
       h("div", { class: "field" }, h("label", {}, "Activity"), activity, custom)),
-    h("div", { class: "field" }, h("label", {}, "Slots"), h("div", { class: "row", style: "margin-bottom:6px" }, size), slotBox),
+    h("div", { class: "field" }, h("label", {}, "Slots"), h("div", { class: "row", style: "margin-bottom:6px" }, sizeControl), slotBox),
     h("div", { class: "grid2" },
       h("div", { class: "field" }, h("label", {}, "Required class (any of)"), reqBox,
         h("span", { class: "muted small" }, "Only this project's classes (LFG → Classes). Checked by the class of the character the player signs up with. Under each slot you can set its own classes, e.g. Templar or Gladiator for a tank slot.")),
@@ -2123,7 +2178,8 @@ function lfgForm(acts, opts) {
       requiredRoleIds: req.value(), slotRequirements: slotReqs.slice(),
       minGs: minGs.value === "" ? null : Number(minGs.value),
       projectKey: currentProject(), createVoice: voice.checked,
-      mirrorChannelIds: mirrorIds.slice(), note: tplMode ? undefined : (noteIn.value.trim() || null), ...extra()
+      mirrorChannelIds: mirrorIds.slice(), note: tplMode ? undefined : (noteIn.value.trim() || null),
+      ownerCharacter: charSel && charSel.value ? charSel.value : undefined, ...extra()
     })
   };
 }
@@ -4620,7 +4676,7 @@ async function pagePlay(main) {
   const createBody = h("div", { style: "display:none" });
   const toggle = h("button", { class: "btn" }, "➕ Create a group");
   const createCard = h("div", { class: "card" }, cardHead("circle-plus", "Create a group", toggle),
-    h("p", { class: "muted small" }, "Posted like /lfg in Discord. You are the organizer and take slot 1 with your last used character."),
+    h("p", { class: "muted small" }, "Posted like /lfg in Discord. You are the organizer and take slot 1 with the character you choose."),
     createBody);
   let formLoaded = false;
   toggle.addEventListener("click", async () => {
@@ -4635,6 +4691,7 @@ async function pagePlay(main) {
       if (!opt.channel && !(opt.projects || []).some(p => p.channel)) { createBody.replaceChildren(empty("The channel for groups isn't set yet — ask an admin.")); return; }
       const form = lfgForm(opt.activities, { mode: "once", fixedChannel: opt.channel || { id: "", name: "" }, hideSeat: true,
         templates: opt.templates, roles: opt.roles, relatedRoles: opt.relatedRoles || {}, projects: opt.projects, mirrorChannels: opt.mirrorChannels,
+        characters: opt.characters || {},
         initial: tab !== "all" ? { projectKey: tab } : {} });
       const publish = h("button", { class: "btn" }, "📣 Publish");
       publish.addEventListener("click", async () => {

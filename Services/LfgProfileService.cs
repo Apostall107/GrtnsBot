@@ -50,6 +50,20 @@ public sealed class LfgProfileService(DiscordSocketClient client, LfgStore store
         .Select(x => x.Character).ToList();
     }
 
+    /// <summary>Персонажи игрока в проекте (для выбора организатором при создании сбора).</summary>
+    public IReadOnlyList<PickerCharacter> PickerFor(ulong guildId, ulong userId, string? projectKey)
+    {
+        var scope = projects.Scope(guildId, projectKey);
+        var guild = client.GetGuild(guildId);
+        return characters.Get(guildId, userId, scope).Select(name =>
+        {
+            var info = characters.GetInfo(guildId, userId, name, scope);
+            var role = info?.ClassRoleId is { } id ? guild?.GetRole(id) : null;
+            return new PickerCharacter(name, info?.Comment, projects.ClassIcon(guildId, role, projectKey), info?.Gs,
+                info?.Armory is { Error: null } a ? a.CombatPower : null);
+        }).ToList();
+    }
+
     /// <summary>Иконка класса для показа (заданная админом или эмодзи роли).</summary>
     public string? Icon(ulong guildId, IRole? role, string? projectKey = null) => projects.ClassIcon(guildId, role, projectKey);
 
