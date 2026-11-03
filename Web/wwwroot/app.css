@@ -1513,3 +1513,6 @@ th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
 .armory-proj { align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 0; }
 .armory-proj + .armory-proj { border-top: 1px solid var(--border); }
 .pick-list button.exact { border-color: var(--success, #3fb950); }
+.gs.cp, .gs.big.cp { background: rgba(56, 189, 248, .12); color: #7dd3fc; box-shadow: inset 0 0 0 1px rgba(56, 189, 248, .3); }
+.armory-name { display: inline-flex; align-items: center; gap: 4px; text-decoration: none; color: inherit; }
+.armory-name:hover b { text-decoration: underline; }

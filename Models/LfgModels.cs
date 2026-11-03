@@ -123,6 +123,8 @@ public sealed class Slot
     public int? Gs { get; set; }
     /// <summary>Сокращение игрового сервера персонажа (TRI, LUD…) — для /invite Имя[LUD] игрокам с других серверов.</summary>
     public string? Server { get; set; }
+    /// <summary>Боевая мощь (CP) из официальной оружейной AION 2 (снимок).</summary>
+    public int? Cp { get; set; }
     /// <summary>Явка (отмечает организатор после старта): true — пришёл, false — не пришёл, null — не отмечено.</summary>
     public bool? Attended { get; set; }
     /// <summary>
@@ -146,6 +148,7 @@ public sealed class Slot
         Comment = null;
         Gs = null;
         Server = null;
+        Cp = null;
         Attended = null;
         Ready = false;
     }
@@ -167,6 +170,7 @@ public sealed class ReserveEntry
     public string? Comment { get; set; }
     public int? Gs { get; set; }
     public string? Server { get; set; }
+    public int? Cp { get; set; }
     public DateTimeOffset JoinedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
@@ -334,10 +338,10 @@ public sealed class LfgGroup
 
         if (current.TakenAs == wanted) return null; // смена персонажа на той же роли
 
-        var snapshot = (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment, current.Gs, current.Server);
+        var snapshot = (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment, current.Gs, current.Server, current.Cp);
         current.Clear();
         var fits = FindFreeSlot(wanted) >= 0;
-        (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment, current.Gs, current.Server) = snapshot;
+        (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment, current.Gs, current.Server, current.Cp) = snapshot;
 
         return fits ? null : Tx.Get(GuildId, "lfg.err.noSlots", ("role", $"{wanted.Emoji()} {wanted.Label()}"));
     }
@@ -378,7 +382,7 @@ public sealed class LfgGroup
             return null;
         }
 
-        var snapshot = current is null ? default : (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment, current.Gs, current.Server);
+        var snapshot = current is null ? default : (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment, current.Gs, current.Server, current.Cp);
         current?.Clear();
 
         var index = FindFreeSlot(wanted, fits);
@@ -394,7 +398,7 @@ public sealed class LfgGroup
         if (current is not null)
         {
             // Уже в группе: не выкидываем в резерв из-за смены роли
-            (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment, current.Gs, current.Server) = snapshot;
+            (current.UserId, current.TakenAs, current.CharacterName, current.ClassRoleId, current.ClassIcon, current.Comment, current.Gs, current.Server, current.Cp) = snapshot;
             return Tx.Get(GuildId, "lfg.err.noSlots", ("role", $"{wanted.Emoji()} {wanted.Label()}"));
         }
 
@@ -480,6 +484,7 @@ public sealed class LfgGroup
         slot.Comment = entry.Comment;
         slot.Gs = entry.Gs;
         slot.Server = entry.Server;
+        slot.Cp = entry.Cp;
         return slot;
     }
 

@@ -516,7 +516,7 @@ public static class LfgRenderer
             sb.AppendText(Tx.Get(g.GuildId, "lfg.post.reserve", ("count", g.Reserve.Count)));
             foreach (var r in g.Reserve)
             {
-                sb.AppendLine($"{r.Role.Emoji()} <@{r.UserId}>{ClassIcon(r.ClassIcon)} **{Format.Sanitize(r.CharacterName ?? "-")}**{ServerMark(r.Server, home)}{GsText(r.Gs)}");
+                sb.AppendLine($"{r.Role.Emoji()} <@{r.UserId}>{ClassIcon(r.ClassIcon)} **{Format.Sanitize(r.CharacterName ?? "-")}**{ServerMark(r.Server, home)}{GsText(r.Gs, r.Cp)}");
                 if (withComments) AppendComment(sb, r.Comment);
             }
         }
@@ -539,13 +539,18 @@ public static class LfgRenderer
         var takenAs = s.Role == SlotRole.Any && s.TakenAs is { } t && t != SlotRole.Any
             ? $" ({t.Emoji()} {t.Label()})"
             : "";
-        var character = s.CharacterName is { } name ? $" **{Format.Sanitize(name)}**{ServerMark(s.Server, home)}{GsText(s.Gs)}" : "";
+        var character = s.CharacterName is { } name ? $" **{Format.Sanitize(name)}**{ServerMark(s.Server, home)}{GsText(s.Gs, s.Cp)}" : "";
         // Явка (после старта) важнее отметки готовности (🟢 — нажал «Готов» в напоминании)
         var attended = s.Attended switch { true => " ✅", false => " ❌", _ => s.Ready ? " 🟢" : "" };
         return $"{SlotHead(i, s)} — <@{userId}>{ClassIcon(s.ClassIcon)}{character}{takenAs}{attended}";
     }
 
-    private static string GsText(int? gs) => gs is { } v ? $" · GS {v}" : "";
+    private static string GsText(int? gs, int? cp = null) => (gs is { } v ? $" · GS {v}" : "") + (cp is { } c ? $" · CP {Compact(c)}" : "");
+
+    /// <summary>149159 → 149.2K (как на официальном сайте).</summary>
+    public static string Compact(int v) => v >= 1_000_000
+        ? (v / 1_000_000d).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "M"
+        : v >= 10_000 ? (v / 1000d).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "K" : v.ToString();
 
     /// <summary>Требования сбора текстом: роли (любая из) и минимальный GS.</summary>
     public static string? Requirements(LfgGroup g)
