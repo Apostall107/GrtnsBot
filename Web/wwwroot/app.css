@@ -1517,3 +1517,4 @@ th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
 .armory-name { display: inline-flex; align-items: center; gap: 4px; text-decoration: none; color: inherit; }
 .armory-name:hover b { text-decoration: underline; }
 .field input:disabled, .num-wrap:has(input:disabled) { opacity: .55; cursor: not-allowed; }
+.owner-slot { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; padding: 6px 10px; border: 1px dashed var(--border-strong); border-radius: var(--radius-control); }

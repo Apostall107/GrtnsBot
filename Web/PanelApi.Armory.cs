@@ -118,6 +118,18 @@ public static partial class PanelApi
             return Results.Ok(new { added = r.Added, notFound = r.NotFound, existing = r.Existing, unavailable = r.Unavailable });
         });
 
+        // Обновить всех своих привязанных персонажей проекта
+        g.MapPost("/characters/armory-refresh-all", async (ulong guildId, string? project, ClaimsPrincipal user, DiscordSocketClient client,
+            [FromServices] LfgProjectStore projects, [FromServices] ArmorySyncService sync, CancellationToken ct) =>
+        {
+            if (CharacterScope(guildId, project, user, client, projects) is not { } scope) return Error("You don't have the role of this project.");
+            if (sync.Paused) return Error("The official armory isn't answering right now — try again later.");
+            var me = user.UserId()!.Value;
+            if (!sync.TrySearchSlot(me)) return Error("Too fast — wait a few seconds.");
+            var r = await sync.RefreshAllAsync(guildId, me, scope.Value, ct);
+            return Results.Ok(new { updated = r.Updated, skipped = r.Skipped, renamed = r.Renamed, notFound = r.NotFound, unavailable = r.Unavailable });
+        });
+
         g.MapDelete("/characters/{name}/armory", (ulong guildId, string name, string? project, ClaimsPrincipal user, DiscordSocketClient client,
             [FromServices] CharacterStore characters, [FromServices] LfgProjectStore projects) =>
         {

@@ -935,6 +935,7 @@ public static partial class PanelApi
         ("POST", "/me/characters/{name}/armory", "lfg", "Linked character to the official armory (site)"),
         ("DELETE", "/me/characters/{name}/armory", "lfg", "Unlinked character from the official armory (site)"),
         ("POST", "/me/characters/{name}/armory/refresh", "lfg", "Refreshed character from the official armory (site)"),
+        ("POST", "/me/characters/armory-refresh-all", "lfg", "Updated all own characters from the official armory (site)"),
         ("POST", "/me/characters/armory-alts", "lfg", "Added characters from the official armory (site)"),
         ("PUT", "/lfg/armory", "lfg", "Changed official armory settings (projects, faction, server)"),
         ("POST", "/lfg/armory/bulk", "lfg", "Started bulk link/update from the official armory")

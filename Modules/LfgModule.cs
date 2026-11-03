@@ -95,6 +95,13 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         return LfgRenderer.ActivityStep(d, fit, all.Count - fit.Count);
     }
 
+    /// <summary>Слот 1 — организатор: роль по классу его персонажа (если у класса несколько ролей — первая).</summary>
+    private void OwnerSlot(LfgDraft d)
+    {
+        if (d.Slots.Count > 0 && profile.OwnerSlotRole(d.GuildId, d.OwnerId, d.OwnerCharacter, d.ProjectKey) is { } role)
+            d.Slots[0].Role = role;
+    }
+
     [ComponentInteraction("lfg:ochar:*")]
     public async Task OnOwnerCharacter(string draftId, string[] values)
     {
@@ -111,6 +118,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         if (await GetDraftAsync(draftId) is not { } d) return;
         if (!int.TryParse(size, out var n) || n is < LfgRenderer.MinSize or > LfgRenderer.MaxSize) return;
         d.Slots = Enumerable.Range(0, n).Select(_ => new Slot()).ToList();
+        OwnerSlot(d);
         d.Selected.Clear();
         await ShowAsync(ActivityScreen(d));
     }
@@ -132,6 +140,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
 
         var size = int.Parse(values[0]);
         d.Slots = Enumerable.Range(0, size).Select(_ => new Slot()).ToList();
+        OwnerSlot(d);
         d.Selected.Clear();
 
         await ShowAsync(ActivityScreen(d));
