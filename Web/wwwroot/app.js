@@ -4793,7 +4793,8 @@ function playCard(g) {
 /** My characters: the official armory profile (linked — data and buttons; not linked — the Link button). */
 function armoryBox(c, pq, gsSource, servers, realm) {
   const path = `/me/characters/${encodeURIComponent(c.name)}/armory`;
-  const linked = res => res.gs != null ? `Linked to the official profile. GS ${res.gs.toLocaleString()} taken from the game.` : "Linked to the official profile.";
+  const linked = res => (res.gs != null ? `Linked to the official profile. GS ${res.gs.toLocaleString()} taken from the game.` : "Linked to the official profile.") +
+    (res.renamed ? ` Name corrected to ${res.renamed}.` : "");
   const link = async e => {
     const btn = e.currentTarget;
     const r = realm.value();
@@ -4833,7 +4834,7 @@ function armoryBox(c, pq, gsSource, servers, realm) {
     h("div", { class: "row", style: "gap:4px" },
       a.error ? h("button", { class: "btn secondary sm", onclick: link }, icon("link", 14), "Link again")
         : h("button", { class: "btn ghost sm", title: "Update now (once per 15 minutes)", onclick: async e => {
-          if (await act(e.currentTarget, () => gApi("POST", `${path}/refresh${pq}`), "Updated from the official profile.") !== undefined) refresh();
+          if (await act(e.currentTarget, () => gApi("POST", `${path}/refresh${pq}`), r => r && r.renamed ? `Updated. The character was renamed in the game — now ${r.renamed}.` : "Updated from the official profile.") !== undefined) refresh();
         } }, icon("refresh-cw", 14), "Update"),
       h("a", { class: "btn ghost sm", href: a.url, target: "_blank", rel: "noopener", title: "Open on aion2.plaync.com" }, icon("external-link", 14)),
       h("button", { class: "btn ghost sm", title: "Unlink", "aria-label": "Unlink the official profile", onclick: async e => {
