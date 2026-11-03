@@ -54,6 +54,8 @@ public sealed class BotService(
 
         // Перерисовать опубликованные панели: встроенная кнопка «Website» появляется в старых панелях без ручного обновления
         _ = Task.Run(RefreshPanelsAsync);
+        // Классы и их иконки в активных сборах — по текущим настройкам (например, после исправлений)
+        _ = Task.Run(() => services.GetRequiredService<LfgSignupService>().ReapplyProfilesAsync());
     }
 
     private async Task RefreshPanelsAsync()
