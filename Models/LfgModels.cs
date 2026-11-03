@@ -295,6 +295,8 @@ public sealed class LfgGroup
     public bool Reminded { get; set; }
     /// <summary>Проект (игра) сбора: персонажи берутся из него, записаться можно только с ролью проекта.</summary>
     public string? ProjectKey { get; set; }
+    /// <summary>Версия вида поста, с которой он нарисован (<see cref="LfgBot.Services.LfgRenderer.PostVersion"/>): другая — пост перерисуется при старте.</summary>
+    public int PostVersion { get; set; }
     /// <summary>Сервер проекта по умолчанию (сокращение) — «свой» сервер, если у организатора сервер не указан.</summary>
     public string? HomeServer { get; set; }
     /// <summary>Копии поста в других каналах (обновляются и удаляются вместе с основным).</summary>

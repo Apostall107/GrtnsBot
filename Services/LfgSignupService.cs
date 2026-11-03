@@ -94,7 +94,7 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
 
     /// <summary>
     /// Заново подставить классы, иконки и GS персонажей во все активные сборы (при старте бота) —
-    /// посты, где что-то изменилось, перерисовываются.
+    /// посты, где что-то изменилось или нарисованные старой версией вида, перерисовываются.
     /// </summary>
     public async Task ReapplyProfilesAsync()
     {
@@ -109,7 +109,9 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
                 var users = group.Slots.Where(x => x.UserId is not null).Select(x => x.UserId!.Value)
                     .Concat(group.Reserve.Select(x => x.UserId)).Distinct().ToList();
                 foreach (var userId in users) ApplyProfile(group, userId);
-                if (Snapshot() == before) continue;
+                // Изменились данные игроков или вид поста (кнопки, разметка) — перерисовать
+                if (Snapshot() == before && group.PostVersion == LfgRenderer.PostVersion) continue;
+                group.PostVersion = LfgRenderer.PostVersion;
                 store.SaveGroups();
                 await RefreshPostAsync(group);
             }

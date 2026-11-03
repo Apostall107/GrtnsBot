@@ -57,6 +57,7 @@ public sealed class LfgPublisher(
         {
             StartsAt = r.StartsAt,
             ExpiresAt = time.ExpiresAt(r.StartsAt),
+            PostVersion = LfgRenderer.PostVersion,
             // Напоминание — только если до старта больше времени, чем «за сколько напоминать»
             Reminded = !time.ReminderNeeded(r.StartsAt)
         };
