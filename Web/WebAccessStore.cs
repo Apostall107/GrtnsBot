@@ -9,7 +9,9 @@ public static class PanelPermissions
     public const string Lfg = "lfg";
     public const string Tickets = "tickets";
     public const string Voice = "voice";
-    /// <summary>Приветствие, автороль и панели ролей.</summary>
+    /// <summary>Приветствие новичков и автороль.</summary>
+    public const string Welcome = "welcome";
+    /// <summary>Панели самовыдачи ролей.</summary>
     public const string Roles = "roles";
     public const string Texts = "texts";
     /// <summary>Сообщения бота: панели и посты — просмотр, обновление, удаление.</summary>
@@ -24,7 +26,7 @@ public static class PanelPermissions
     public const string Access = "access";
 
     /// <summary>Права, которые владелец может выдавать.</summary>
-    public static readonly string[] Grantable = [Lfg, Tickets, Voice, Roles, Texts, Posts, Announce, Log, Settings];
+    public static readonly string[] Grantable = [Lfg, Tickets, Voice, Welcome, Roles, Texts, Posts, Announce, Log, Settings];
 }
 
 public sealed class WebGrant
@@ -52,6 +54,14 @@ public sealed class WebAccessStore
         _data = File.Exists(_path)
             ? JsonSerializer.Deserialize<List<WebGrant>>(File.ReadAllText(_path)) ?? []
             : [];
+        // «Welcome & roles» разделён на два модуля: у кого был доступ к ролям — получает и Welcome
+        var changed = false;
+        foreach (var g in _data.Where(g => g.Permissions.Contains(PanelPermissions.Roles) && !g.Permissions.Contains(PanelPermissions.Welcome)))
+        {
+            g.Permissions.Add(PanelPermissions.Welcome);
+            changed = true;
+        }
+        if (changed) Save();
     }
 
     public IReadOnlyList<WebGrant> GetAll()

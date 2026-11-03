@@ -5,21 +5,16 @@ using LfgBot.Services;
 
 namespace LfgBot.Modules;
 
-/// <summary>Кнопки и выпадающие списки панелей ролей (панели настраиваются на сайте: Welcome &amp; roles).</summary>
+/// <summary>Кнопки и выпадающие списки панелей ролей (панели настраиваются на сайте: Role panels).</summary>
 public sealed class RolePanelModule(CommunityStore store, CommunityService community)
     : InteractionModuleBase<SocketInteractionContext>
 {
     [ComponentInteraction("rp:b:*:*")]
-    public async Task OnButton(string panelId, string roleIdText)
+    public async Task OnButton(string panelId, string bindingId)
     {
         if (await ResolveAsync(panelId) is not { } x) return;
-        if (!ulong.TryParse(roleIdText, out var roleId))
-        {
-            await RespondAsync(Tx.Get(Context.Guild.Id, "roles.gone"), ephemeral: true);
-            return;
-        }
         await DeferAsync(ephemeral: true);
-        var text = await community.PickAsync(x.Panel, x.Member, roleId);
+        var text = await community.PickAsync(x.Panel, x.Member, bindingId);
         await FollowupAsync(text, ephemeral: true, allowedMentions: AllowedMentions.None);
     }
 
@@ -28,8 +23,7 @@ public sealed class RolePanelModule(CommunityStore store, CommunityService commu
     {
         if (await ResolveAsync(panelId) is not { } x) return;
         await DeferAsync(ephemeral: true);
-        var ids = values.Select(v => ulong.TryParse(v, out var id) ? id : 0).Where(id => id != 0).ToList();
-        var text = await community.SelectAsync(x.Panel, x.Member, ids);
+        var text = await community.SelectAsync(x.Panel, x.Member, values);
         await FollowupAsync(text, ephemeral: true, allowedMentions: AllowedMentions.None);
     }
 
