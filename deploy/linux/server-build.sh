@@ -2,6 +2,8 @@
 # Build Greatness Bot from the git repository ON THE SERVER and install/update the service.
 # Run from anywhere as the user who owns the repo (needs sudo):
 #     bash /opt/GrtnsBot/deploy/linux/server-build.sh
+# Quick build without precompilation (about a minute; the bot starts a bit slower after a restart):
+#     R2R=false bash /opt/GrtnsBot/deploy/linux/server-build.sh
 # Data (/opt/greatnessbot/data) and token (/etc/greatnessbot.env) are never overwritten.
 set -euo pipefail
 
@@ -23,13 +25,15 @@ fi
 echo "=== git pull ==="
 git pull --ff-only
 
-echo "=== Build for $RID ==="
+R2R="${R2R:-true}"
+echo "=== Build for $RID (ReadyToRun: $R2R) ==="
 rm -rf "$OUT"
 # No compression inside the single file: it was unpacked into memory on every start (slower start, more RAM).
-# ReadyToRun: code is precompiled — the bot is fast right after a restart (first build downloads the crossgen package once).
+# ReadyToRun: code is precompiled — the bot is fast right after a restart. The first build compiles every library (slow on
+# a small VPS); later builds reuse obj/ and recompile only what changed. Don't delete obj/ and don't interrupt it.
 dotnet publish -c Release -r "$RID" --self-contained true \
     -p:PublishSingleFile=true \
-    -p:PublishReadyToRun=true \
+    -p:PublishReadyToRun="$R2R" \
     -p:DebugType=None \
     -o "$OUT/app"
 
