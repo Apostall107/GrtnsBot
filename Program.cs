@@ -23,7 +23,8 @@ builder.Services.AddSingleton(new DiscordSocketConfig
 {
     // GuildVoiceStates — временные комнаты.
     // GuildMembers — ЛС-оповещения LFG (привилегированный: включить "Server Members Intent" в Developer Portal → Bot)
-    GatewayIntents = GatewayIntents.Guilds | GatewayIntents.GuildVoiceStates | GatewayIntents.GuildMembers,
+    // GuildMessageReactions — роли по реакциям (панели ролей)
+    GatewayIntents = GatewayIntents.Guilds | GatewayIntents.GuildVoiceStates | GatewayIntents.GuildMembers | GatewayIntents.GuildMessageReactions,
     AlwaysDownloadUsers = true,
     LogLevel = LogSeverity.Info
 });
@@ -62,6 +63,9 @@ builder.Services.AddSingleton<PanelTextStore>();
 builder.Services.AddSingleton<BotTextStore>();
 builder.Services.AddSingleton<PanelService>();
 builder.Services.AddSingleton<LfgPublisher>();
+builder.Services.AddSingleton<CommunityStore>();
+builder.Services.AddSingleton<CommunityService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<CommunityService>());
 builder.Services.AddSingleton<RecurringLfgStore>();
 builder.Services.AddSingleton<AnnouncementStore>();
 builder.Services.AddSingleton<AnnouncementTemplateStore>();

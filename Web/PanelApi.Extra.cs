@@ -839,6 +839,12 @@ public static partial class PanelApi
 
     private static readonly (string Method, string Suffix, string Module, string Action)[] AuditActions =
     [
+        ("PUT", "/community/welcome", "roles", "Changed welcome & auto role"),
+        ("POST", "/community/welcome/test", "roles", "Sent welcome test"),
+        ("POST", "/community/panels", "roles", "Created role panel"),
+        ("PUT", "/community/panels/{panelId}", "roles", "Edited role panel"),
+        ("POST", "/community/panels/{panelId}/post", "roles", "Posted role panel"),
+        ("DELETE", "/community/panels/{panelId}", "roles", "Deleted role panel"),
         ("POST", "/lfg/activities", "lfg", "Added activity"),
         ("DELETE", "/lfg/activities/{key}", "lfg", "Removed activity"),
         ("POST", "/lfg/groups/{groupId}/close", "lfg", "Force-closed LFG group"),
@@ -976,6 +982,9 @@ public static partial class PanelApi
                 case "ticketId" when services.GetRequiredService<TicketStore>().FindTicket(text) is { } t:
                     parts.Add($"ticket: {services.GetRequiredService<TicketStore>().FindProject(t.GuildId, t.ProjectKey)?.Name} · " +
                               (guild?.GetUser(t.UserId)?.DisplayName ?? t.UserId.ToString()));
+                    break;
+                case "panelId" when services.GetRequiredService<CommunityStore>().FindPanel(text) is { } rp:
+                    parts.Add($"role panel: {rp.Title}");
                     break;
                 case "channelId" when ulong.TryParse(text, out var ch) && guild?.GetChannel(ch) is { } channel:
                     parts.Add($"channel: #{channel.Name}");
