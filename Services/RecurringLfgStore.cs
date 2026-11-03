@@ -29,6 +29,8 @@ public sealed class RecurringLfg
     public List<ulong> RequiredRoleIds { get; set; } = [];
     /// <summary>Требование роли по слотам (коды <see cref="SlotRequirement"/>; пусто — у всех общее).</summary>
     public List<ulong> SlotRequirements { get; set; } = [];
+    /// <summary>Свои классы слотов (любой из; пусто — как у сбора).</summary>
+    public List<List<ulong>> SlotClasses { get; set; } = [];
     public int? MinGs { get; set; }
     /// <summary>Проект (игра) сборов.</summary>
     public string? ProjectKey { get; set; }
@@ -181,7 +183,7 @@ public sealed class RecurringLfgService(
             var (group, _, _) = await publisher.PublishAsync(new LfgPublishRequest(
                 item.GuildId, item.ChannelId, item.OwnerId, item.ActivityName, item.PingRoleId,
                 item.Slots, start, item.NotifyByDm, item.SeatOwner, item.RequiredRoleIds, item.MinGs, item.ProjectKey,
-                SlotRequirements: item.SlotRequirements, Note: item.Note));
+                SlotRequirements: item.SlotRequirements, Note: item.Note, SlotClasses: item.SlotClasses));
             store.Update(item.Id, r =>
             {
                 r.LastStart = start;

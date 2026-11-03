@@ -43,11 +43,11 @@ public static partial class PanelApi
             try
             {
                 var required = Requirements(guild, body.RequiredRoleIds);
+                var slotReq = SlotRequirement.Parse(body.SlotRequirements, slots!.Count, GuildRoleIds(guild));
                 var (group, jumpUrl, dms) = await publisher.PublishAsync(new LfgPublishRequest(
                     guildId, channelId, ownerId, name!, pingRole, slots!, startsAt, body.NotifyByDm, body.SeatOwner,
                     required, body.MinGs is > 0 ? body.MinGs : null,
-                    SlotRequirements: SlotRequirement.Parse(body.SlotRequirements, slots!.Count, required ?? []),
-                    Note: LfgNote.Clean(body.Note)));
+                    SlotRequirements: slotReq.Codes, Note: LfgNote.Clean(body.Note), SlotClasses: slotReq.Classes));
                 return Results.Ok(new { id = group.Id, jumpUrl, dmsStarted = dms });
             }
             catch (Exception ex) when (ex is InvalidOperationException or Discord.Net.HttpException)
@@ -319,6 +319,7 @@ public static partial class PanelApi
             if (body.MinGs is < 0 or > 99999) return Error("Minimum GS: 0–99999.");
 
             var required = Requirements(guild, body.RequiredRoleIds) ?? [];
+            var slotReq = SlotRequirement.Parse(body.SlotRequirements, slots.Count, GuildRoleIds(guild));
             var error = templates.Save(guildId, new LfgTemplate
             {
                 Key = key == "new" ? IdGen.New() : key,
@@ -327,7 +328,8 @@ public static partial class PanelApi
                 CustomActivity = string.IsNullOrWhiteSpace(body.ActivityKey) ? (body.CustomActivity ?? name).Trim() : null,
                 Slots = slots,
                 RequiredRoleIds = required,
-                SlotRequirements = SlotRequirement.Parse(body.SlotRequirements, slots.Count, required),
+                SlotRequirements = slotReq.Codes,
+                SlotClasses = slotReq.Classes,
                 MinGs = body.MinGs is > 0 ? body.MinGs : null,
                 ProjectKey = projectKey
             });
@@ -426,7 +428,7 @@ public static partial class PanelApi
                     seatOwner = r.SeatOwner,
                     projectKey = r.ProjectKey,
                     requiredRoles = r.RequiredRoleIds.Select(id => Role(guild, id)),
-                    slotRequirements = SlotRequirement.ToDto(r.SlotRequirements, r.Slots.Count),
+                    slotRequirements = SlotRequirement.ToDto(r.SlotRequirements, r.SlotClasses, r.Slots.Count),
                     minGs = r.MinGs,
                     note = r.Note,
                     enabled = r.Enabled,
@@ -571,6 +573,7 @@ public static partial class PanelApi
         }
 
         if (error is null && promoted is not null) await signup.NotifyPromotedAsync(group, userId, promoted);
+        if (error is null && body.Action == "remove") _ = signup.TryAutoPromoteAsync(group);
         return error;
     }
 
@@ -594,6 +597,9 @@ public static partial class PanelApi
         }
     }
 
+    /// <summary>Id всех ролей сервера (классы слотов проверяются по ним; на сайте выбор — только из классов проекта).</summary>
+    private static HashSet<ulong> GuildRoleIds(SocketGuild guild) => guild.Roles.Select(r => r.Id).ToHashSet();
+
     private static List<ulong>? Requirements(SocketGuild guild, List<string>? roleIds)
     {
         var ids = ParseIds(roleIds).Where(id => guild.GetRole(id) is not null).Take(10).ToList();
@@ -609,27 +615,21 @@ public static partial class PanelApi
             customActivity = t.CustomActivity,
             slots = t.Slots.Select(s => s.ToString()),
             requiredRoles = t.RequiredRoleIds.Select(id => Role(guild, id)),
-            slotRequirements = SlotRequirement.ToDto(t.SlotRequirements, t.Slots.Count),
+            slotRequirements = SlotRequirement.ToDto(t.SlotRequirements, t.SlotClasses, t.Slots.Count),
             minGs = t.MinGs,
             projectKey = t.ProjectKey
         }).ToList();
 
     /// <summary>
-    /// Роли, связанные с проектом, — для выбора требуемых ролей сбора: роли доступа проекта, роли его активностей
-    /// (и активностей для всех проектов) и роли классов проекта. Ключ "" — без проекта (всё вместе).
+    /// Классы проекта — для выбора требуемых классов сбора и слотов (LFG → Classes: свои у проекта, иначе общие).
+    /// Ключ "" — без проекта: все классы (общие и всех проектов).
     /// </summary>
     internal static Dictionary<string, List<string>> RelatedRoles(SocketGuild guild, ActivityStore activities, LfgProjectStore projects)
     {
-        var acts = activities.Get(guild.Id);
         var list = projects.GetProjects(guild.Id);
         IEnumerable<ulong> For(LfgProject? p) => p is null
-            ? list.SelectMany(x => x.RoleIds)
-                .Concat(acts.Select(a => a.RoleId))
-                .Concat(projects.ClassIcons(guild.Id).Keys)
-                .Concat(list.SelectMany(x => projects.ClassIcons(guild.Id, x.Key).Keys))
-            : p.RoleIds
-                .Concat(acts.Where(a => a.ProjectKey is null || a.ProjectKey == p.Key).Select(a => a.RoleId))
-                .Concat(projects.EffectiveClassIcons(guild.Id, p.Key).Keys);
+            ? projects.ClassIcons(guild.Id).Keys.Concat(list.SelectMany(x => projects.ClassIcons(guild.Id, x.Key).Keys))
+            : projects.EffectiveClassIcons(guild.Id, p.Key).Keys;
         List<string> Ids(LfgProject? p) => For(p).Distinct()
             .Where(id => guild.GetRole(id) is { IsEveryone: false, IsManaged: false })
             .Select(id => id.ToString()).ToList();
@@ -767,7 +767,9 @@ public static partial class PanelApi
         item.SeatOwner = body.SeatOwner;
         item.ProjectKey = string.IsNullOrWhiteSpace(body.ProjectKey) ? null : body.ProjectKey;
         item.RequiredRoleIds = ParseIds(body.RequiredRoleIds).Where(id => guild.GetRole(id) is not null).Take(10).ToList();
-        item.SlotRequirements = SlotRequirement.Parse(body.SlotRequirements, item.Slots.Count, item.RequiredRoleIds);
+        var slotReq = SlotRequirement.Parse(body.SlotRequirements, item.Slots.Count, GuildRoleIds(guild));
+        item.SlotRequirements = slotReq.Codes;
+        item.SlotClasses = slotReq.Classes;
         if (body.MinGs is < 0 or > 99999) return "Minimum GS: 0–99999.";
         item.MinGs = body.MinGs is > 0 ? body.MinGs : null;
         item.Note = LfgNote.Clean(body.Note);
@@ -923,7 +925,10 @@ public static partial class PanelApi
         ("POST", "/me/groups/{groupId}/close", "lfg", "Organizer closed group (site)"),
         ("POST", "/me/room", "voice", "Changed own room (site)"),
         ("POST", "/me/tickets", "tickets", "Applied (site)"),
-        ("PUT", "/me/room-prefs", "voice", "Saved room defaults (site)")
+        ("PUT", "/me/room-prefs", "voice", "Saved room defaults (site)"),
+        ("PUT", "/lfg/prefs", "lfg", "Changed LFG options (ready check, auto-replace, GS reminder)"),
+        ("POST", "/lfg/gs-reminder/run", "lfg", "Sent the GS reminder"),
+        ("PUT", "/dm-prefs", "settings", "Changed bot DM settings")
     ];
 
     private static readonly JsonSerializerOptions AuditJson = new(JsonSerializerDefaults.Web);

@@ -21,7 +21,8 @@ public sealed record LfgPublishRequest(
     IReadOnlyList<ulong>? MirrorChannelIds = null,
     bool CreateVoice = false,
     IReadOnlyList<ulong>? SlotRequirements = null,
-    string? Note = null);
+    string? Note = null,
+    IReadOnlyList<List<ulong>>? SlotClasses = null);
 
 /// <summary>Публикация сбора: пост с пингом роли, сохранение, ЛС участникам с ролью активности.</summary>
 public sealed class LfgPublisher(
@@ -49,7 +50,7 @@ public sealed class LfgPublisher(
             ProjectKey = r.ProjectKey,
             Note = r.Note
         };
-        SlotRequirement.Apply(draft.Slots, draft.RequiredRoleIds.Count > 0 ? r.SlotRequirements : null);
+        SlotRequirement.Apply(draft.Slots, r.SlotRequirements, r.SlotClasses);
 
         var group = new LfgGroup(draft)
         {

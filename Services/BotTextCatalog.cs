@@ -230,6 +230,7 @@ public static class BotTextCatalog
         T("lfg.dm.onFromDm", "DMs turned on (from a DM)", "🔔 DMs on: you will get a DM when a group is started for your roles on **{server}**.", "{server}", 1000);
         T("lfg.dm.offFromDm", "DMs turned off (from a DM)", "🔕 DMs off: you will no longer get LFG DMs from **{server}**. You can turn them back on here, with 🔔 on the LFG panel or `/lfg-dm on`.", "{server}", 1000);
         T("lfg.dm.notMember", "Not a member of the server", "You are not a member of this group's server.", null, 500);
+        T("lfg.autoPromoted", "Moved from the reserve automatically (reply under the post)", "🔁 {user} moved from the reserve into **{activity}**: {role} — **{name}**", "{user}, {activity}, {role}, {name}", 1000);
         T("lfg.dm.promotedTitle", "Moved into the group DM: title", "✅ You're in: {activity}", "{activity}", Title);
         T("lfg.dm.promoted", "Moved into the group DM: text (- = hide)", "{user} moved you from the reserve into the group.\nRole: {role} — **{name}**", "{user}, {role}, {name}", 1000, optional: true);
         C("color.lfg.promoted", "Stripe color: moved into the group", 0x2ECC71);
@@ -237,8 +238,24 @@ public static class BotTextCatalog
         T("lfg.dm.timeChanged", "Time changed DM: text", "{user} moved the group.\nNew start: {time}", "{user}, {time}", 1000);
         C("color.lfg.timeChanged", "Stripe color: time changed", 0xE67E22);
         T("lfg.reminder", "Reminder before the start", "⏰ **{activity}** starts {time}! {members}\n-# Organizer: press 📋 Invite to group or 🏰 Invite to dungeon under the post.", "{activity}, {time}, {members}", 2000);
+        T("lfg.ready.button", "Reminder: “Ready” button", "Ready", null, Button);
+        T("lfg.ready.hint", "Reminder: ready check line (- = hide)", "-# Press ✅ Ready — the organizer sees 🟢 next to your name in the post.", null, 500, optional: true);
+        T("lfg.ready.done", "Marked as ready", "🟢 You're marked as ready for **{activity}**.", "{activity}", 500);
+        T("lfg.ready.notMember", "Ready: not in the group", "You're not in this group.", null, 500);
+        T("lfg.manage.notReady", "Manage menu: who isn't ready (- = hide)", "Not ready yet: {list}", "{list}", 1500, optional: true);
 
         // ================= Tickets: the ticket message =================
+        // ================= LFG: GS reminder =================
+        Group("LFG — GS reminder");
+        T("gs.reminder.channel", "Message in the channel", "📈 Time to update your GS! {members}\n-# Not updated for {days}+ days. Press the button below or edit it on the site (My characters).", "{members}, {days}", 2000);
+        T("gs.reminder.dm", "DM", "📈 **{server}**: time to update the GS of {characters}. Press the button below or edit it on the site (My characters).", "{server}, {characters}", 2000);
+        T("gs.reminder.button", "“Update GS” button", "Update GS", null, Button);
+        T("gs.reminder.which", "Character picker text", "Which character?", null, 500);
+        T("gs.reminder.pick", "Character menu placeholder", "Choose a character", null, Placeholder);
+        T("gs.reminder.modalTitle", "Window: title", "GS of {name}", "{name}", ModalTitle);
+        T("gs.reminder.saved", "GS saved", "✅ GS of **{name}**: {gs}. Active groups updated: {groups}.", "{name}, {gs}, {groups}", 500);
+        T("gs.reminder.noCharacters", "No characters", "You have no characters on this server yet — add one on the site (My characters) or when signing up.", null, 500);
+
         Group("Tickets — ticket message", "ticketmsg");
         T("ticket.msg.pings", "Pings above the message (- = none)", "{applicant} {leadership}", "{applicant}, {leadership}", 2000, optional: true);
         T("ticket.msg.title", "Title", "🎫 {project} — application", "{project}", Title);

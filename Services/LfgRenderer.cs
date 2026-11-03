@@ -143,7 +143,7 @@ public static class LfgRenderer
     private static readonly CultureInfo En = CultureInfo.GetCultureInfo("en-US");
     public const int DateDaysAhead = 14;
 
-    public static Screen TimeStep(LfgDraft d, DateOnly today, DateTimeOffset? startsAt, string zoneName, string? warning = null)
+    public static Screen TimeStep(LfgDraft d, DateOnly today, DateTimeOffset? startsAt, string zoneName, string? warning = null, bool dmAvailable = true)
     {
         var gid = d.GuildId;
         var dateMenu = new SelectMenuBuilder()
@@ -180,7 +180,7 @@ public static class LfgRenderer
             .WithButton(Tx.Get(gid, "lfg.wiz.cancel"), $"lfg:cancel:{d.Id}", ButtonStyle.Danger, row: 3);
 
         // ЛС-рассылка есть только у активностей с ролью
-        if (d.PingRoleId is not null)
+        if (d.PingRoleId is not null && dmAvailable)
             builder.WithButton(Tx.Get(gid, d.NotifyByDm ? "lfg.wiz.dmOn" : "lfg.wiz.dmOff"), $"lfg:dm:{d.Id}",
                 d.NotifyByDm ? ButtonStyle.Success : ButtonStyle.Secondary,
                 new Emoji(d.NotifyByDm ? "🔔" : "🔕"), row: 4);
@@ -309,6 +309,13 @@ public static class LfgRenderer
         sb.AppendText(Tx.Get(gid, "lfg.manage.head", ("activity", Format.Sanitize(g.ActivityName)),
             ("free", g.Slots.Count(s => s.IsFree)), ("reserve", g.Reserve.Count)));
         if (Tx.Get(gid, "lfg.manage.hint") is { Length: > 0 } hint) sb.AppendLine(hint);
+        // После напоминания: кто ещё не нажал «Готов»
+        if (g.ReminderMessageId is not null)
+        {
+            var notReady = g.Slots.Where(s => s.UserId is not null && !s.Ready).Select(s => $"<@{s.UserId}>").ToList();
+            if (notReady.Count > 0 && Tx.Get(gid, "lfg.manage.notReady", ("list", string.Join(" ", notReady))) is { Length: > 0 } nr)
+                sb.AppendLine(nr);
+        }
 
         var builder = new ComponentBuilder();
         var row = 0;
@@ -473,7 +480,7 @@ public static class LfgRenderer
     private static string SlotHead(int i, Slot s) => $"`{i + 1,2}.` {s.Role.Emoji()} **{s.Role.Label()}**{SlotRequirementText(s)}";
 
     /// <summary>Своё требование слота: 🔒 роль — нужна именно она; 🔓 — слот без требования роли.</summary>
-    private static string SlotRequirementText(Slot s) => s.Requirement switch
+    private static string SlotRequirementText(Slot s) => s.Classes.Count > 0 ? $" 🔒 {string.Join(" / ", s.Classes.Select(id => $"<@&{id}>"))}" : s.Requirement switch
     {
         SlotRequirement.Inherit => "",
         SlotRequirement.Open => " 🔓",
@@ -519,7 +526,8 @@ public static class LfgRenderer
             ? $" ({t.Emoji()} {t.Label()})"
             : "";
         var character = s.CharacterName is { } name ? $" **{Format.Sanitize(name)}**{GsText(s.Gs)}" : "";
-        var attended = s.Attended switch { true => " ✅", false => " ❌", _ => "" };
+        // Явка (после старта) важнее отметки готовности (🟢 — нажал «Готов» в напоминании)
+        var attended = s.Attended switch { true => " ✅", false => " ❌", _ => s.Ready ? " 🟢" : "" };
         return $"{SlotHead(i, s)} — <@{userId}>{ClassIcon(s.ClassIcon)}{character}{takenAs}{attended}";
     }
 
@@ -530,7 +538,7 @@ public static class LfgRenderer
     {
         var parts = new List<string>();
         // Общие роли — только если есть слоты без своего требования
-        if (g.RequiredRoleIds.Count > 0 && g.Slots.Any(s => s.Requirement == SlotRequirement.Inherit))
+        if (g.RequiredRoleIds.Count > 0 && g.Slots.Any(s => s.Requirement == SlotRequirement.Inherit && s.Classes.Count == 0))
             parts.Add(string.Join(" / ", g.RequiredRoleIds.Select(id => $"<@&{id}>")));
         if (g.MinGs is { } min) parts.Add($"GS {min}+");
         return parts.Count == 0 ? null : string.Join(" · ", parts);

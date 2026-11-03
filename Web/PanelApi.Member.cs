@@ -111,6 +111,7 @@ public static partial class PanelApi
                             gs = s.Gs,
                             attended = s.Attended,
                             requiredRole = SlotRequiredRole(guild, s),
+                            requiredClasses = SlotClasses(guild, s),
                             noRequirement = x.RequiredRoleIds.Count > 0 && s.Requirement == SlotRequirement.Open
                         }),
                         reserve = x.Reserve.Select(r => new
@@ -172,6 +173,7 @@ public static partial class PanelApi
             {
                 group.Gate.Release();
             }
+            if (error is null) _ = signup.TryAutoPromoteAsync(group);
             return error is null ? Results.Ok() : Error(error);
         });
 
@@ -432,6 +434,7 @@ public static partial class PanelApi
             try
             {
                 var required = Requirements(guild, body.RequiredRoleIds);
+                var slotReq = SlotRequirement.Parse(body.SlotRequirements, slots!.Count, GuildRoleIds(guild));
                 var (group, jumpUrl, dms) = await publisher.PublishAsync(new LfgPublishRequest(
                     guildId, channelId, me, name!, pingRole, slots!, startsAt, body.NotifyByDm, true,
                     required, body.MinGs is > 0 and <= 99999 ? body.MinGs : null,
@@ -439,8 +442,8 @@ public static partial class PanelApi
                     // Дублировать пост в другие каналы может только админ
                     access.IsAdmin(me) ? ParseIds(body.MirrorChannelIds).Where(id => guild.GetTextChannel(id) is not null).Take(LfgPublisher.MaxMirrors).ToList() : null,
                     body.CreateVoice,
-                    SlotRequirement.Parse(body.SlotRequirements, slots!.Count, required ?? []),
-                    LfgNote.Clean(body.Note)));
+                    slotReq.Codes,
+                    LfgNote.Clean(body.Note), slotReq.Classes));
                 return Results.Ok(new { id = group.Id, jumpUrl, dmsStarted = dms });
             }
             catch (Exception ex) when (ex is InvalidOperationException or Discord.Net.HttpException)

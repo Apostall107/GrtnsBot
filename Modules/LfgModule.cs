@@ -11,7 +11,7 @@ namespace LfgBot.Modules;
 public sealed class LfgModule(PanelService panels, LfgPublisher publisher, AuditLog audit, LfgProfileService profile,
     LfgTemplateStore templates, LfgStore store, ActivityStore activities, CharacterStore characters, TimeService time,
     LfgNotifyStore notifyPrefs, LfgSignupService signup, BotOwner botOwner,
-    LfgProjectStore projects, PanelTextStore panelStore, AdminStore admins)
+    LfgProjectStore projects, PanelTextStore panelStore, AdminStore admins, GuildPrefsStore guildPrefs)
     : InteractionModuleBase<SocketInteractionContext>
 {
     private SocketMessageComponent Component => (SocketMessageComponent)Context.Interaction;
@@ -109,7 +109,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         d.Slots = t.Slots.Select(r => new Slot { Role = r }).ToList();
         d.Selected.Clear();
         d.RequiredRoleIds = t.RequiredRoleIds.ToList();
-        SlotRequirement.Apply(d.Slots, d.RequiredRoleIds.Count > 0 ? t.SlotRequirements : null);
+        SlotRequirement.Apply(d.Slots, t.SlotRequirements, t.SlotClasses);
         d.MinGs = t.MinGs;
         await ShowAsync(TimeScreen(d));
     }
@@ -282,7 +282,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         var startsAt = StartsAt(d);
         if (warning is null && startsAt is { } st && st < DateTimeOffset.UtcNow)
             warning = T("lfg.wiz.pastTime");
-        return LfgRenderer.TimeStep(d, time.Today, startsAt, time.ZoneName, warning);
+        return LfgRenderer.TimeStep(d, time.Today, startsAt, time.ZoneName, warning, guildPrefs.Dm(d.GuildId).LfgNewGroup);
     }
 
     [ComponentInteraction("lfg:dnote:*")]
@@ -332,7 +332,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         var (group, jumpUrl, dmsStarted) = await publisher.PublishAsync(new LfgPublishRequest(
             d.GuildId, d.ChannelId, d.OwnerId, d.ActivityName ?? "Activity", d.PingRoleId,
             d.Slots.Select(x => x.Role).ToList(), startsAt, d.NotifyByDm, true, d.RequiredRoleIds, d.MinGs,
-            d.ProjectKey, null, d.CreateVoice, SlotRequirement.Of(d.Slots), d.Note));
+            d.ProjectKey, null, d.CreateVoice, SlotRequirement.Of(d.Slots), d.Note, SlotRequirement.ClassesOf(d.Slots)));
         audit.FromDiscord(d.GuildId, Context.User, "lfg", "Created LFG group",
             $"{group.ActivityName} · {group.Slots.Count} slots · {(startsAt is { } at ? at.ToString("u") : "no time")}");
 
@@ -692,9 +692,46 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         await FollowupAsync(error ?? T(note is null ? "lfg.manage.noteRemoved" : "lfg.manage.noteSaved"), ephemeral: true);
     }
 
+    // Кнопка «Готов» в напоминании перед стартом
+    [ComponentInteraction("lfg:ready:*")]
+    public async Task OnReady(string groupId)
+    {
+        if (!store.Groups.TryGetValue(groupId, out var group))
+        {
+            await RespondAsync(T("lfg.gone"), ephemeral: true);
+            return;
+        }
+        await DeferAsync(ephemeral: true);
+        string text;
+        await group.Gate.WaitAsync();
+        try
+        {
+            var slot = group.Slots.Find(s => s.UserId == Context.User.Id);
+            if (slot is null) text = T("lfg.ready.notMember");
+            else
+            {
+                if (!slot.Ready)
+                {
+                    slot.Ready = true;
+                    store.SaveGroups();
+                    await signup.RefreshPostAsync(group);
+                }
+                text = T("lfg.ready.done", ("activity", Format.Sanitize(group.ActivityName)));
+            }
+        }
+        finally
+        {
+            group.Gate.Release();
+        }
+        await FollowupAsync(text, ephemeral: true);
+    }
+
     [ComponentInteraction("lfg:leave:*")]
-    public Task OnLeave(string groupId) =>
-        WithGroupAsync(groupId, g => g.Leave(Context.User.Id));
+    public async Task OnLeave(string groupId)
+    {
+        await WithGroupAsync(groupId, g => g.Leave(Context.User.Id));
+        if (store.Groups.TryGetValue(groupId, out var group)) _ = signup.TryAutoPromoteAsync(group);
+    }
 
     // Закрыть может только организатор. Сначала подтверждение + список /invite, потом пост удаляется.
     [ComponentInteraction("lfg:close:*")]

@@ -978,7 +978,7 @@ function channelSelect(kind, placeholder) {
  * pool: array or a function returning the short list for the picker (e.g. roles of the current project);
  * with fullPool the picker can also show all server roles. onChange — after add/remove.
  */
-function roleListEditor(initial, pool = state.roles, onChange = null, fullPool = null) {
+function roleListEditor(initial, pool = state.roles, onChange = null, fullPool = null, addLabel = "➕ Add roles…") {
   let ids = initial.map(r => r.id);
   const known = new Map(initial.map(r => [r.id, r]));
   for (const r of fullPool || (typeof pool === "function" ? pool() : pool)) known.set(r.id, { ...r, exists: true });
@@ -986,10 +986,10 @@ function roleListEditor(initial, pool = state.roles, onChange = null, fullPool =
   const changed = () => { draw(); if (onChange) onChange(); };
   const draw = () => {
     // Search + tick several roles at once (the plain dropdown was too long)
-    const sel = h("button", { class: "btn secondary", type: "button" }, "➕ Add roles…");
+    const sel = h("button", { class: "btn secondary", type: "button" }, addLabel);
     sel.addEventListener("click", async () => {
       const short = typeof pool === "function" ? pool() : pool;
-      const picked = await pickRolesDialog("Add roles", ids, short, fullPool);
+      const picked = await pickRolesDialog(addLabel.replace(/^➕\s*|…$/g, ""), ids, short, fullPool);
       if (picked) { for (const r of picked) known.set(r.id, { ...r, exists: true }); ids.push(...picked.map(r => r.id)); changed(); }
     });
     el.replaceChildren(
@@ -1038,6 +1038,7 @@ const allTabs = [
   ["play", "users-round", "Groups", "member", "Member"],
   ["chars", "user-round", "My characters", "member", "Member"],
   ["lfg", "swords", "LFG", "lfg", "Community modules"],
+  ["guild", "calendar", "Guild", "lfg", "Community modules"],
   ["tickets", "ticket", "Tickets", "tickets", "Community modules"],
   ["voice", "headphones", "Temp Voice", "voice", "Community modules"],
   ["welcome", "door-open", "Welcome", "welcome", "Community modules"],
@@ -1145,7 +1146,7 @@ function renderShell() {
   // ----- Sidebar: sections, Lucide icons, active route; collapses to icons on desktop, drawer on mobile
   const layout = h("div", { class: `layout${collapsed ? " collapsed" : ""}` });
   const closeDrawer = () => layout.classList.remove("drawer-open");
-  const NAV_TONES = { home: "violet", play: "violet", chars: "cyan", lfg: "violet", tickets: "amber", voice: "teal", welcome: "pink", roles: "green", content: "blue",
+  const NAV_TONES = { home: "violet", play: "violet", chars: "cyan", lfg: "violet", guild: "teal", tickets: "amber", voice: "teal", welcome: "pink", roles: "green", content: "blue",
     announce: "pink", overview: "green", log: "blue", settings: "cyan", access: "amber" };
   const navButton = ([key, ic, label]) => h("button", {
     // Tooltip only when the menu is collapsed to icons (labels are visible otherwise)
@@ -1205,7 +1206,7 @@ function renderShell() {
 
   if (!state.guildId) { main.append(empty("No servers available for your account.")); return; }
   if (!visibleTabs().length) { main.append(empty("You have no sections on this server. Ask an admin for the member role.")); return; }
-  const page = { home: pageHome, content: pageContent, play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, tickets: pageTickets, voice: pageVoice, welcome: pageWelcome, roles: pageRoles, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess }[state.tab];
+  const page = { home: pageHome, content: pageContent, play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, guild: pageGuild, tickets: pageTickets, voice: pageVoice, welcome: pageWelcome, roles: pageRoles, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess }[state.tab];
   page(main);
   addGuideButton(main, state.tab);
   decorateHeading(main);
@@ -1736,10 +1737,11 @@ async function pageLfg(main) {
 
   if (mode === "shared") {
     // ⚙️ General: projects, settings, channel, shared activities / templates, common classes
-    const projCard = card(), lfgSettingsCard = card();
-    main.append(projCard, h("div", { class: "grid-main" }, actCard, h("div", {}, channelCard(), voiceCard(), mirrorCard())), lfgSettingsCard, classCard, tplCard);
+    const projCard = card(), lfgSettingsCard = card(), lfgPrefsCard = card();
+    main.append(projCard, h("div", { class: "grid-main" }, actCard, h("div", {}, channelCard(), voiceCard(), mirrorCard())), lfgSettingsCard, lfgPrefsCard, classCard, tplCard);
     renderProjects(projCard, lfgProjects);
     renderLfgSettings(lfgSettingsCard);
+    renderLfgPrefs(lfgPrefsCard);
     renderClasses(classCard, projects, "", { noTabs: true });
     renderTemplates(tplCard, acts, templates, null, "shared");
     return;
@@ -1865,46 +1867,70 @@ function lfgForm(acts, opts) {
     }
   }
 
-  // Requirements: one of these roles, minimum character GS — others go to the reserve.
-  // The picker shows the roles of the current project first (access roles, its activities' roles, its classes);
-  // "Show all server roles" opens the rest.
+  // Requirements: classes of the project (the class set on the character), minimum character GS — others go to the reserve.
+  // Only the classes of the current project are offered (LFG → Classes).
   const rolePool = opts.roles || state.roles;
   let related = opts.relatedRoles || null;
-  if (!related) gApi("GET", "/lfg/related-roles").then(r => { related = r; }).catch(() => { related = {}; });
+  if (!related) gApi("GET", "/lfg/related-roles").then(r => { related = r; drawSlots(); }).catch(() => { related = {}; });
   const projectRoles = () => {
     const ids = related && related[currentProject() || ""];
-    return ids ? rolePool.filter(r => ids.includes(r.id)) : rolePool;
+    return ids ? rolePool.filter(r => ids.includes(r.id)) : [];
   };
-  const makeReq = initial => roleListEditor(initial, projectRoles, () => drawSlots(), rolePool);
+  const makeReq = initial => roleListEditor(initial, projectRoles, () => drawSlots(), null, "➕ Add classes…");
 
-  // Slots: role (DD/Tank/Sup/All) and — when the group has required roles — which of them this slot needs
+  // Slots: role (DD/Tank/Sup/All) and the classes a slot accepts: as the group / any class / its own classes (several)
   let slots = v.slots ? v.slots.slice() : ["Any", "Any", "Any", "Any"];
   let slotReqs = (v.slotRequirements || []).slice();
   const size = h("select", {}, Array.from({ length: 24 }, (_, i) => i + 2).map(n => h("option", { value: n }, `${n} slots`)));
   const slotBox = h("div", { class: "row", style: "gap:6px;align-items:flex-start" });
   let req = null;
+  const roleName = id => (rolePool.find(r => r.id === id) || { name: "class" }).name;
+  const slotReqLabel = x => {
+    const groupHas = req && req.value().length;
+    if (x === "none") return "🔓 any class";
+    if (x) return "🔒 " + x.split(",").map(roleName).join(" / ");
+    return groupHas ? "🔒 as the group" : "any class";
+  };
+  const editSlotReq = i => {
+    const d = dialog();
+    const current = slotReqs[i] || "";
+    const pool = projectRoles();
+    const mode = current === "none" ? "none" : current ? "own" : "group";
+    const radio = (val, label) => {
+      const r = h("input", { type: "radio", name: "slotreq", value: val, checked: mode === val });
+      return { r, el: h("label", { class: "row", style: "margin-bottom:6px" }, r, label) };
+    };
+    const rg = radio("group", "Same as the group"), rn = radio("none", "Any class (no requirement)"), ro = radio("own", "Only these classes:");
+    const chosen = new Set(mode === "own" ? current.split(",") : []);
+    const boxes = pool.map(r => {
+      const cb = h("input", { type: "checkbox", checked: chosen.has(r.id) });
+      cb.addEventListener("change", () => { ro.r.checked = true; });
+      return { r, cb, el: h("label", {}, cb, roleChip(r)) };
+    });
+    const ok = h("button", { class: "btn", onclick: () => {
+      const ids = boxes.filter(x => x.cb.checked).map(x => x.r.id);
+      slotReqs[i] = rn.r.checked ? "none" : ro.r.checked && ids.length ? ids.join(",") : "";
+      d.close();
+      drawSlots();
+    } }, "OK");
+    d.replaceChildren(h("h2", {}, `Slot ${i + 1} · ${slots[i] === "Any" ? "All" : (SLOT_ROLES.find(([v]) => v === slots[i]) || [, slots[i]])[1]}`),
+      h("p", { class: "muted small" }, "The class is the one set on the character the player signs up with. Others go to the reserve."),
+      rg.el, rn.el, ro.el,
+      pool.length ? h("div", { class: "check-list", style: "margin-left:24px" }, boxes.map(x => x.el))
+        : h("p", { class: "muted small" }, "This project has no classes yet — add them in LFG → Classes."),
+      h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), ok));
+    d.showModal();
+  };
   const drawSlots = () => {
     size.value = String(slots.length);
-    const reqRoles = req ? req.roles() : (v.requiredRoles || []);
-    const reqIds = reqRoles.map(r => r.id);
-    // Drop slot requirements whose role was removed from the list
-    slotReqs = slots.map((_, i) => {
-      const x = slotReqs[i] || "";
-      return x === "" || x === "none" || reqIds.includes(x) ? x : "";
-    });
-    if (!reqIds.length) slotReqs = slots.map(() => "");
+    slotReqs = slots.map((_, i) => slotReqs[i] || "");
     slotBox.replaceChildren(...slots.map((r, i) => {
       const sel = h("select", { title: `Slot ${i + 1}`, "data-render": "role" }, SLOT_ROLES.map(([val, label]) => h("option", { value: val }, `${i + 1}. ${label}`)));
       sel.value = r;
       sel.addEventListener("change", () => { slots[i] = sel.value; });
-      if (!reqIds.length) return sel;
-      const rsel = h("select", { title: `Required role for slot ${i + 1}`, style: "max-width:170px" },
-        h("option", { value: "" }, reqIds.length > 1 ? "🔒 any required" : `🔒 @${reqRoles[0].name}`),
-        reqIds.length > 1 ? reqRoles.map(x => h("option", { value: x.id }, `🔒 @${x.name}`)) : null,
-        h("option", { value: "none" }, "🔓 no role needed"));
-      rsel.value = slotReqs[i];
-      rsel.addEventListener("change", () => { slotReqs[i] = rsel.value; });
-      return h("div", { style: "display:flex;flex-direction:column;gap:4px" }, sel, rsel);
+      const rbtn = h("button", { type: "button", class: `btn ghost sm slot-req${slotReqs[i] ? " set" : ""}`, title: `Classes for slot ${i + 1}`,
+        style: "max-width:170px", onclick: () => editSlotReq(i) }, slotReqLabel(slotReqs[i]));
+      return h("div", { style: "display:flex;flex-direction:column;gap:4px" }, sel, rbtn);
     }));
   };
   size.addEventListener("change", () => {
@@ -1955,10 +1981,10 @@ function lfgForm(acts, opts) {
       h("div", { class: "field" }, h("label", {}, "Activity"), activity, custom)),
     h("div", { class: "field" }, h("label", {}, "Slots"), h("div", { class: "row", style: "margin-bottom:6px" }, size), slotBox),
     h("div", { class: "grid2" },
-      h("div", { class: "field" }, h("label", {}, "Required role (any of)"), reqBox,
-        h("span", { class: "muted small" }, "Roles of this project are listed first. Once set, pick under each slot which role it needs.")),
+      h("div", { class: "field" }, h("label", {}, "Required class (any of)"), reqBox,
+        h("span", { class: "muted small" }, "Only this project's classes (LFG → Classes). Checked by the class of the character the player signs up with. Under each slot you can set its own classes, e.g. Templar or Gladiator for a tank slot.")),
       h("div", { class: "field" }, h("label", {}, "Minimum GS"), minGs,
-        h("span", { class: "muted small" }, "Players without the role / GS go to the reserve; the organizer can still move them in.")))
+        h("span", { class: "muted small" }, "Players without the class / GS go to the reserve; the organizer can still move them in.")))
   ];
 
   let extra;
@@ -2012,7 +2038,7 @@ function lfgForm(acts, opts) {
     value: () => ({
       channelId: channel.value || null, activityKey: activity.value || null, customName: activity.value ? null : custom.value,
       slots: slots.slice(), notifyByDm: dm.checked, seatOwner: seat.checked,
-      requiredRoleIds: req.value(), slotRequirements: req.value().length ? slotReqs.slice() : [],
+      requiredRoleIds: req.value(), slotRequirements: slotReqs.slice(),
       minGs: minGs.value === "" ? null : Number(minGs.value),
       projectKey: currentProject(), createVoice: voice.checked,
       mirrorChannelIds: mirrorIds.slice(), note: tplMode ? undefined : (noteIn.value.trim() || null), ...extra()
@@ -2111,6 +2137,46 @@ async function renderLfgSettings(card) {
         h("div", { class: "field" }, h("label", {}, "Reminder before the start (minutes, 0 = off)"), reminder,
           h("span", { class: "muted small" }, `Now: ${s.current.reminderMinutes ? s.current.reminderMinutes + " min" : "off"}.`)))),
     save);
+  tracker.attach(card);
+}
+
+/** Ready check, auto-replace from the reserve, GS reminder. */
+async function renderLfgPrefs(card) {
+  card.replaceChildren(h("h2", {}, "🧩 Group options"), skeletonLines(3));
+  let p;
+  try { p = await gApi("GET", "/lfg/prefs"); } catch (e) { card.replaceChildren(h("h2", {}, "🧩 Group options"), empty(e.message)); return; }
+  const ready = toggle(p.readyCheck, "✅ “Ready” button in the reminder before the start — those who pressed it get 🟢 in the post, the organizer sees who didn't");
+  const auto = h("input", { type: "number", min: "0", max: "1440", value: p.autoPromoteMinutes, style: "width:100px" });
+  const gsOn = toggle(p.gsReminder, "📈 Weekly reminder to update GS");
+  const gsDays = h("input", { type: "number", min: "1", max: "365", value: p.gsReminderDays, style: "width:90px" });
+  const gsChannel = channelSelect("text", "No channel — DMs only");
+  gsChannel.value = p.gsReminderChannelId || "";
+  const gsDm = toggle(p.gsReminderDm, "Also by DM (each member gets a DM with their characters)");
+  const gsBox = h("div", { class: "subcard" },
+    h("div", { class: "row", style: "margin-bottom:8px" }, h("span", { class: "muted" }, "GS is outdated after"), gsDays, h("span", { class: "muted" }, "days (or not set)")),
+    h("div", { class: "field" }, h("label", {}, "Post the reminder in (mentions those members)"), gsChannel), gsDm.el,
+    h("p", { class: "muted small" }, p.gsReminderLastRun ? `Last sent: ${new Date(p.gsReminderLastRun).toLocaleString()}. ` : "Not sent yet. ",
+      "Sent once a week. The button in it opens a window to enter the GS of a character."));
+  const syncGs = () => { gsBox.style.display = gsOn.cb.checked ? "" : "none"; };
+  gsOn.cb.addEventListener("change", syncGs); syncGs();
+  const save = h("button", { class: "btn" }, "💾 Save");
+  const body = () => ({ readyCheck: ready.cb.checked, autoPromoteMinutes: Number(auto.value || 0), gsReminder: gsOn.cb.checked,
+    gsReminderChannelId: gsChannel.value || null, gsReminderDays: Number(gsDays.value || 7), gsReminderDm: gsDm.cb.checked });
+  const tracker = track("Group options", body, async () => await act(save, () => gApi("PUT", "/lfg/prefs", body()), "Group options saved.") !== undefined);
+  save.addEventListener("click", tracker.save);
+  const runNow = h("button", { class: "btn secondary", title: "Send the GS reminder now (with the saved settings)" }, "📈 Send the GS reminder now");
+  runNow.addEventListener("click", async () => {
+    if (!await confirmDialog("Send the GS reminder now?", "Members whose GS is outdated are mentioned in the channel and/or get a DM — as saved.", "Send", false)) return;
+    const r = await act(runNow, () => gApi("POST", "/lfg/gs-reminder/run"));
+    if (r) toast(r.members ? `Reminded ${r.members} member(s).` : "Everyone's GS is up to date.");
+  });
+  card.replaceChildren(h("h2", {}, "🧩 Group options"),
+    ready.el,
+    h("div", { class: "field" }, h("label", {}, "🔁 Auto-replace from the reserve"),
+      h("div", { class: "row" }, h("span", { class: "muted" }, "In the last"), auto, h("span", { class: "muted" }, "minutes before the start (0 = off)")),
+      h("span", { class: "muted small" }, "When a slot frees up then, the first player from the reserve who fits (role, class, GS) moves in; the bot replies under the post. Earlier the organizer decides.")),
+    gsOn.el, gsBox,
+    h("div", { class: "row", style: "margin-top:8px" }, save, runNow));
   tracker.attach(card);
 }
 
@@ -2408,7 +2474,9 @@ function attendanceButton(s, url) {
 
 /** Own requirement of an open slot: 🔒 the role it needs, or 🔓 when this slot needs no role. */
 function slotReqMark(s) {
-  if (s.requiredRole) return h("span", { title: "Only players with this role can take this slot" }, "🔒 ", roleChip(s.requiredRole));
+  if (s.requiredClasses && s.requiredClasses.length)
+    return h("span", { title: "Only characters of these classes can take this slot" }, "🔒 ", s.requiredClasses.map(r => roleChip(r)));
+  if (s.requiredRole) return h("span", { title: "Only characters of this class can take this slot" }, "🔒 ", roleChip(s.requiredRole));
   if (s.noRequirement) return h("span", { class: "chip", title: "This slot needs no role" }, "🔓 any");
   return null;
 }
@@ -2465,7 +2533,8 @@ function groupCard(g) {
     h("div", { class: "roster" }, g.slots.map((s, i) => s.member
       ? h("div", { class: "slot taken" },
           h("span", { class: "slot-num" }, i + 1), rolePill(s.role || s.slotRole),
-          h("span", { class: "slot-who" }, member(s.member), classMark(s), note(s.comment)),
+          h("span", { class: "slot-who" }, member(s.member), classMark(s), note(s.comment),
+            s.ready && s.attended == null ? h("span", { title: "Pressed ✅ Ready in the reminder" }, " 🟢") : null),
           h("span", { class: "slot-char" }, s.character || "", s.gs ? h("span", { class: "gs" }, `GS ${s.gs}`) : null),
           g.started ? attendanceButton(s, `/lfg/groups/${gid}/attendance`) : null,
           tool("pencil", "Change character", rename(s.member, s.character)),
@@ -4124,6 +4193,29 @@ async function pageSettings(main) {
       h("div", { class: "row" }, file, restore)));
   }
 
+  // Bot DMs: all off by default
+  if (can("settings")) {
+    const dmCard = h("div", { class: "card" }, h("h2", {}, "✉️ Direct messages"), skeletonLines(3));
+    holder.append(dmCard);
+    gApi("GET", "/dm-prefs").then(p => {
+      const items = [
+        ["lfgNewGroup", "📣 New LFG group — to members with the activity role (they can still turn it off for themselves)"],
+        ["lfgPromoted", "⬆️ Moved from the reserve into the group"],
+        ["lfgTimeChanged", "🕒 The group's start time changed"],
+        ["ticketResult", "🎫 Ticket result — approved / denied"],
+        ["gsReminder", "📈 GS reminder (LFG → Group options)"]
+      ].map(([k, label]) => ({ k, t: toggle(!!p[k], label) }));
+      const save = h("button", { class: "btn" }, "💾 Save");
+      const body = () => Object.fromEntries(items.map(x => [x.k, x.t.cb.checked]));
+      const tracker = track("Direct messages", body, async () => await act(save, () => gApi("PUT", "/dm-prefs", body()), "DM settings saved.") !== undefined);
+      save.addEventListener("click", tracker.save);
+      dmCard.replaceChildren(h("h2", {}, "✉️ Direct messages"),
+        h("p", { class: "muted small" }, "Which DMs the bot may send on this server. All are off until you turn them on. The welcome DM is set in Welcome."),
+        ...items.map(x => x.t.el), save);
+      tracker.attach(dmCard);
+    }).catch(e => dmCard.replaceChildren(h("h2", {}, "✉️ Direct messages"), empty(e.message)));
+  }
+
   // Member roles of the selected server
   const card = h("div", { class: "card" }, h("h2", {}, "👥 Member roles"),
     h("p", { class: "muted small" }, "Everyone with one of these roles on this server can log in and use the Member section (Groups, My characters). Admin sections still need rights from Access."));
@@ -5150,3 +5242,192 @@ new MutationObserver(() => {
 }).observe(document.body, { childList: true, subtree: true });
 
 boot();
+
+// ================= Guild: calendar, attendance, roster, inactive =================
+
+const SLOT_ROLE_CHIP = { Dps: "⚔️ DD", Tank: "🛡️ Tank", Healer: "💚 Sup" };
+
+async function pageGuild(main) {
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "🏰 Guild"),
+    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
+  const tab = ["calendar", "attendance", "roster", "inactive"].includes(store.get("gb.guildTab")) ? store.get("gb.guildTab") : "calendar";
+  main.append(tabsRow([["calendar", "📅 Calendar"], ["attendance", "📊 Attendance"], ["roster", "👥 Roster"], ["inactive", "💤 Inactive"]], tab, "gb.guildTab"));
+  const holder = h("div", {}, h("div", { class: "card" }, skeletonLines(4)));
+  main.append(holder);
+  try {
+    await ({ calendar: guildCalendar, attendance: guildAttendance, roster: guildRoster, inactive: guildInactive }[tab])(holder);
+  } catch (e) { holder.replaceChildren(empty(e.message)); }
+}
+
+/** "Add to Google Calendar" link for one event (2 hours by default). */
+function googleCalendarUrl(ev) {
+  const fmt = ms => new Date(ms).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  const details = [ev.project ? `Project: ${ev.project}` : null, ev.note ? `Note: ${ev.note}` : null,
+    ev.organizer ? `Organizer: ${ev.organizer.name}` : null, ev.jumpUrl ? `Discord: ${ev.jumpUrl}` : null].filter(Boolean).join("\n");
+  const q = new URLSearchParams({ action: "TEMPLATE", text: ev.title, dates: `${fmt(ev.start)}/${fmt(ev.start + 2 * 3600000)}`, details });
+  if (ev.channel) q.set("location", `#${ev.channel}`);
+  return `https://calendar.google.com/calendar/render?${q}`;
+}
+
+async function guildCalendar(holder) {
+  const data = await gApi("GET", "/lfg/calendar");
+  const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + i); return d; });
+  const sameDay = (ms, d) => { const x = new Date(ms); return x.getFullYear() === d.getFullYear() && x.getMonth() === d.getMonth() && x.getDate() === d.getDate(); };
+  const events = data.events.slice().sort((a, b) => a.start - b.start);
+  const eventCard = ev => h("div", { class: `wk-event${ev.recurring ? " planned" : ""}` },
+    h("div", { class: "wk-time" }, new Date(ev.start).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }),
+      ev.recurring ? h("span", { class: "chip", title: "A recurring group — the post appears automatically before the start" }, "🔁 planned") : null),
+    h("b", {}, ev.title),
+    h("div", { class: "muted small" }, [ev.project, ev.channel ? `#${ev.channel}` : null].filter(Boolean).join(" · ")),
+    h("div", { class: "small" }, ev.recurring ? `${ev.total} slots` : `👥 ${ev.filled}/${ev.total}${ev.reserve ? ` · reserve ${ev.reserve}` : ""}`),
+    ev.organizer ? h("div", { class: "small" }, member(ev.organizer)) : null,
+    h("div", { class: "row wk-actions" },
+      ev.jumpUrl ? h("a", { class: "btn ghost sm", href: ev.jumpUrl, target: "_blank", rel: "noopener" }, icon("external-link", 14), "Discord") : null,
+      h("a", { class: "btn ghost sm", href: googleCalendarUrl(ev), target: "_blank", rel: "noopener", title: "Add this group to your Google Calendar" },
+        icon("calendar-plus", 14), "Google Calendar")));
+  holder.replaceChildren(h("div", { class: "card" },
+    h("p", { class: "muted small" }, `Groups with a start time and recurring groups for the next 7 days, in your local time (the server's time zone: ${data.zone}). `,
+      "Google Calendar adds one event (2 hours) to your own calendar."),
+    events.length ? h("div", { class: "wk-grid" }, days.map(d => {
+      const list = events.filter(ev => sameDay(ev.start, d));
+      return h("div", { class: `wk-day${list.length ? "" : " empty"}` },
+        h("div", { class: "wk-day-head" }, d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })),
+        list.length ? list.map(eventCard) : h("div", { class: "muted small" }, "—"));
+    })) : emptyState("calendar", "Nothing planned", "Groups with a start time and recurring groups appear here.")));
+}
+
+/** Sortable table: cols = [[title, value(row) for sorting, render(row)]]. */
+function sortTable(rows, cols, initial = 0, desc = true) {
+  let by = initial, down = desc;
+  const wrap = h("div", { class: "table-wrap" });
+  const draw = () => {
+    const sorted = rows.slice().sort((a, b) => {
+      const x = cols[by][1](a), y = cols[by][1](b);
+      const r = typeof x === "string" ? String(x).localeCompare(String(y)) : (x ?? -Infinity) - (y ?? -Infinity);
+      return down ? -r : r;
+    });
+    wrap.replaceChildren(h("table", { class: "table" },
+      h("thead", {}, h("tr", {}, cols.map(([title], i) => h("th", { class: "sortable", onclick: () => { if (by === i) down = !down; else { by = i; down = true; } draw(); } },
+        title, by === i ? (down ? " ▾" : " ▴") : "")))),
+      h("tbody", {}, sorted.map(r => h("tr", {}, cols.map(c => h("td", {}, c[2](r))))))));
+  };
+  draw();
+  return wrap;
+}
+
+async function guildAttendance(holder) {
+  const period = h("select", {}, [[7, "7 days"], [30, "30 days"], [90, "90 days"], [365, "a year"]].map(([v, l]) => h("option", { value: v }, l)));
+  period.value = store.get("gb.attDays") || "30";
+  let projects = [];
+  try { projects = (await gApi("GET", "/lfg/projects")).projects || []; } catch { /* no projects */ }
+  const project = h("select", {}, h("option", { value: "" }, "All projects"), projects.map(p => h("option", { value: p.key }, p.name)));
+  project.value = store.get("gb.attProject") || "";
+  const body = h("div", {}, skeletonLines(4));
+  const load = async () => {
+    store.set("gb.attDays", period.value); store.set("gb.attProject", project.value);
+    body.replaceChildren(skeletonLines(4));
+    const d = await gApi("GET", `/lfg/attendance?days=${period.value}${project.value ? `&project=${encodeURIComponent(project.value)}` : ""}`);
+    const rate = r => r.came + r.noShow ? Math.round(100 * r.came / (r.came + r.noShow)) : null;
+    body.replaceChildren(
+      h("p", { class: "muted small" }, `${d.groups} closed group(s), attendance marked in ${d.marked}. `,
+        "Came / No-show come from the organizer's attendance marks (Manage → Attendance after the start); unmarked groups count only as signed up."),
+      d.rows.length ? sortTable(d.rows, [
+        ["Member", r => r.member.name, r => member(r.member)],
+        ["Signed up", r => r.groups, r => String(r.groups)],
+        ["Came", r => r.came, r => h("span", { class: "badge ok" }, String(r.came))],
+        ["No-show", r => r.noShow, r => r.noShow ? h("span", { class: "badge lock" }, String(r.noShow)) : "0"],
+        ["Unmarked", r => r.unmarked, r => String(r.unmarked)],
+        ["Rate", r => rate(r), r => rate(r) == null ? "—" : `${rate(r)}%`],
+        ["Organized", r => r.organized, r => String(r.organized)],
+        ["Roles", r => r.roles.length, r => r.roles.map(x => h("span", { class: "chip" }, `${x.role} ×${x.count}`))],
+        ["Last", r => r.last, r => fmtRelative(r.last)]
+      ], 2) : emptyState("chart-column", "No data yet", "Closed groups of this period appear here."));
+  };
+  period.addEventListener("change", load);
+  project.addEventListener("change", load);
+  holder.replaceChildren(h("div", { class: "card" }, h("div", { class: "row", style: "margin-bottom:10px" }, period, projects.length ? project : null), body));
+  await load();
+}
+
+async function guildRoster(holder) {
+  const d = await gApi("GET", "/lfg/roster");
+  const project = h("select", {}, h("option", { value: "" }, "All projects"), d.projects.map(p => h("option", { value: p.key }, p.name)));
+  project.value = store.get("gb.rosterProject") || (d.projects.find(p => p.isDefault) || {}).key || "";
+  const role = h("select", {}, h("option", { value: "" }, "Any group role"), Object.entries(SLOT_ROLE_CHIP).map(([k, l]) => h("option", { value: k }, l)));
+  const cls = h("select", {}, h("option", { value: "" }, "Any class"));
+  const minGs = h("input", { type: "number", min: "0", placeholder: "min GS", style: "width:110px" });
+  const search = h("input", { type: "search", placeholder: "Search member or character…", style: "flex:1;min-width:180px" });
+  const onlyHere = h("input", { type: "checkbox", checked: true });
+  const body = h("div", {});
+  const fillClasses = () => {
+    const seen = new Map();
+    for (const c of d.characters) if (c.classRole && (!project.value || c.project === project.value)) seen.set(c.classRole.id, c.classRole);
+    const keep = cls.value;
+    cls.replaceChildren(h("option", { value: "" }, "Any class"), [...seen.values()].sort((a, b) => a.name.localeCompare(b.name)).map(r => h("option", { value: r.id }, r.name)));
+    cls.value = seen.has(keep) ? keep : "";
+  };
+  const stale = ms => !ms || Date.now() - ms > 14 * 86400000;
+  const draw = () => {
+    store.set("gb.rosterProject", project.value);
+    const q = search.value.trim().toLowerCase();
+    const rows = d.characters.filter(c =>
+      (!project.value || c.project === project.value) &&
+      (!role.value || c.slotRoles.includes(role.value)) &&
+      (!cls.value || (c.classRole && c.classRole.id === cls.value)) &&
+      (minGs.value === "" || (c.gs ?? -1) >= Number(minGs.value)) &&
+      (!onlyHere.checked || c.onServer) &&
+      (!q || c.character.toLowerCase().includes(q) || c.member.name.toLowerCase().includes(q)));
+    const players = new Set(rows.map(r => r.member.id)).size;
+    body.replaceChildren(h("p", { class: "muted small" }, `${rows.length} character(s) of ${players} member(s). `,
+      "Group roles come from the class (LFG → Classes: DD / Tank / Sup). GS older than 14 days is marked ⏳."),
+      rows.length ? sortTable(rows, [
+        ["Member", r => r.member.name, r => member(r.member)],
+        ["Character", r => r.character, r => h("b", {}, r.character)],
+        ["Class", r => r.classRole ? r.classRole.name : "", r => r.classRole ? h("span", { class: "row", style: "gap:4px" }, classMark(r) || null, r.classRole.name) : h("span", { class: "muted" }, "—")],
+        ["Roles", r => r.slotRoles.join(), r => r.slotRoles.length ? r.slotRoles.map(x => h("span", { class: "chip" }, SLOT_ROLE_CHIP[x] || x)) : h("span", { class: "muted small" }, "any")],
+        ["GS", r => r.gs, r => r.gs == null ? h("span", { class: "muted" }, "—") :
+          h("span", { title: r.gsUpdated ? `Updated ${new Date(r.gsUpdated).toLocaleDateString()}` : "Update date unknown" }, String(r.gs), stale(r.gsUpdated) ? " ⏳" : "")],
+        ["On server since", r => r.joined, r => r.joined ? new Date(r.joined).toLocaleDateString() : "—"],
+        ["Last active", r => r.lastActive, r => r.lastActive ? fmtRelative(r.lastActive) : h("span", { class: "muted small", title: `Activity is tracked since ${new Date(d.trackingSince).toLocaleDateString()}` }, "no data")]
+      ], 4) : emptyState("users", "Nobody matches", "Change the filters."));
+  };
+  project.addEventListener("change", () => { fillClasses(); draw(); });
+  for (const el of [role, cls, onlyHere]) el.addEventListener("change", draw);
+  for (const el of [minGs, search]) el.addEventListener("input", draw);
+  fillClasses();
+  holder.replaceChildren(h("div", { class: "card" },
+    h("div", { class: "row", style: "margin-bottom:10px;flex-wrap:wrap" }, d.projects.length ? project : null, role, cls, minGs, search,
+      h("label", { class: "toggle-line" }, onlyHere, h("span", {}, "Only members on the server"))), body));
+  draw();
+}
+
+async function guildInactive(holder) {
+  const days = h("input", { type: "number", min: "1", max: "365", value: store.get("gb.inactiveDays") || "14", style: "width:90px" });
+  const role = roleSelect("Any role");
+  role.value = store.get("gb.inactiveRole") || "";
+  const body = h("div", {}, skeletonLines(4));
+  const load = async () => {
+    store.set("gb.inactiveDays", days.value); store.set("gb.inactiveRole", role.value);
+    const d = await gApi("GET", `/lfg/inactive?days=${Number(days.value) || 14}${role.value ? `&roleId=${role.value}` : ""}`);
+    const since = new Date(d.trackingSince);
+    const tooEarly = Date.now() - d.trackingSince < (Number(days.value) || 14) * 86400000;
+    body.replaceChildren(
+      h("p", { class: "muted small" }, `${d.rows.length} of ${d.members} member(s) didn't write in any channel and didn't sit in voice for ${days.value}+ days. `,
+        `Activity is tracked since ${since.toLocaleDateString()}.`),
+      tooEarly ? h("p", { class: "warn-text small" }, "⚠️ Tracking started less than this many days ago — “no data” only means nothing was seen since then.") : null,
+      d.rows.length ? sortTable(d.rows, [
+        ["Member", r => r.member.name, r => member(r.member)],
+        ["On server since", r => r.joined, r => r.joined ? new Date(r.joined).toLocaleDateString() : "—"],
+        ["Last message", r => r.lastMessage, r => r.lastMessage ? fmtRelative(r.lastMessage) : h("span", { class: "muted small" }, "no data")],
+        ["Last in voice", r => r.lastVoice, r => r.lastVoice ? fmtRelative(r.lastVoice) : h("span", { class: "muted small" }, "no data")],
+        ["Roles", r => r.roles.length, r => r.roles.map(x => roleChip(x))],
+        ["Characters", r => r.characters, r => String(r.characters)]
+      ], 2, false) : emptyState("check", "Everyone is active", "Nobody matches this period."));
+  };
+  days.addEventListener("change", load);
+  role.addEventListener("change", load);
+  holder.replaceChildren(h("div", { class: "card" },
+    h("div", { class: "row", style: "margin-bottom:10px" }, h("span", { class: "muted" }, "No activity for"), days, h("span", { class: "muted" }, "days"), role),
+    body));
+  await load();
+}

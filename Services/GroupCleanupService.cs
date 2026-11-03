@@ -41,6 +41,19 @@ public sealed class GroupCleanupService(
                     }
                 }
 
+                // Автозамена из резерва в последний час (или сколько задано) перед стартом
+                foreach (var group in store.Groups.Values.Where(g => !g.IsClosed && g.Reserve.Count > 0 && g.Slots.Any(s => s.IsFree)).ToList())
+                {
+                    try
+                    {
+                        await signup.TryAutoPromoteAsync(group);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Auto-promote failed for group {GroupId}", group.Id);
+                    }
+                }
+
                 foreach (var group in store.Groups.Values.Where(g => g.ExpiresAt <= now).ToList())
                 {
                     try

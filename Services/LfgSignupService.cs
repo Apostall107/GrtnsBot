@@ -10,7 +10,7 @@ namespace LfgBot.Services;
 /// в меню организатора и для напоминаний.
 /// </summary>
 public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store, CharacterStore characters, LfgProjectStore projects,
-    ILogger<LfgSignupService> logger)
+    GuildPrefsStore prefs, ILogger<LfgSignupService> logger)
 {
     /// <summary>Запись в слот или в резерв + сохранение + обновление поста.</summary>
     public async Task<string> JoinAsync(LfgGroup group, ulong userId, SlotRole role, string characterName)
@@ -22,7 +22,7 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
             // Требования сбора: GS не хватает — только резерв; роль проверяется по слоту (у слота может быть своя).
             // Организатор может перевести из резерва в группу в любом случае.
             var gsUnmet = GsUnmet(group, userId, characterName);
-            var fits = SlotFilter(group, userId);
+            var fits = SlotFilter(group, userId, characterName);
             var error = group.TryJoin(userId, role, characterName, out var reserved, forceReserve: gsUnmet is not null, fits: fits);
             if (error is not null) return error;
             ApplyProfile(group, userId);
@@ -113,6 +113,63 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
         }
     }
 
+    /// <summary>
+    /// Автозамена: за N минут до старта (LFG settings, по умолчанию 60) свободные слоты занимают первые подходящие из резерва
+    /// (по роли, классу и GS). Каждому — ответ под постом с упоминанием и ЛС, если ЛС «перевод из резерва» включены.
+    /// </summary>
+    public async Task TryAutoPromoteAsync(LfgGroup group)
+    {
+        var minutes = prefs.Get(group.GuildId).AutoPromoteMinutes;
+        if (minutes <= 0 || group.IsClosed || group.StartsAt is not { } start) return;
+        var now = DateTimeOffset.UtcNow;
+        if (now < start - TimeSpan.FromMinutes(minutes) || now >= start) return;
+        if (group.Reserve.Count == 0 || group.Slots.All(s => !s.IsFree)) return;
+
+        var moved = new List<(ulong UserId, Slot Slot)>();
+        await group.Gate.WaitAsync();
+        try
+        {
+            if (group.IsClosed) return;
+            foreach (var entry in group.Reserve.ToList())
+            {
+                if (group.Slots.All(s => !s.IsFree)) break;
+                if (GsUnmet(group, entry.UserId, entry.CharacterName) is not null) continue;
+                var index = group.FindFreeSlot(entry.Role, SlotFilter(group, entry.UserId, entry.CharacterName));
+                if (index < 0) continue;
+                moved.Add((entry.UserId, group.PromoteInto(entry, index)));
+            }
+            if (moved.Count == 0) return;
+            store.SaveGroups();
+            await RefreshPostAsync(group);
+        }
+        finally
+        {
+            group.Gate.Release();
+        }
+
+        foreach (var (userId, slot) in moved)
+        {
+            logger.LogInformation("LFG {GroupId}: {User} moved from the reserve automatically", group.Id, userId);
+            try
+            {
+                if (await GetChannelAsync(group.ChannelId) is { } channel)
+                {
+                    var role = slot.TakenAs ?? slot.Role;
+                    await channel.SendMessageAsync(Tx.Get(group.GuildId, "lfg.autoPromoted", ("user", $"<@{userId}>"),
+                            ("activity", Format.Sanitize(group.ActivityName)), ("role", $"{role.Emoji()} **{role.Label()}**"),
+                            ("name", Format.Sanitize(slot.CharacterName ?? "-"))),
+                        allowedMentions: new AllowedMentions { UserIds = [userId] },
+                        messageReference: new MessageReference(group.MessageId, failIfNotExists: false));
+                }
+            }
+            catch (Exception e)
+            {
+                logger.LogWarning(e, "Auto-promote notice for group {GroupId} failed", group.Id);
+            }
+            await NotifyPromotedAsync(group, userId, slot);
+        }
+    }
+
     /// <summary>Не хватает GS персонажа (текст требования) или null.</summary>
     public string? GsUnmet(LfgGroup group, ulong userId, string? characterName)
     {
@@ -123,31 +180,32 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
     }
 
     /// <summary>
-    /// Под какие слоты игрок подходит по роли: у слота своя требуемая роль или общие роли сбора (любая из).
-    /// null — под все (требований роли нет или это организатор).
+    /// Под какие слоты подходит персонаж по классу: у слота свои классы или классы сбора (любой из).
+    /// Класс — тот, что задан у персонажа (My characters / после записи). null — под все (требований нет или это организатор).
     /// </summary>
-    public Func<Slot, bool>? SlotFilter(LfgGroup group, ulong userId)
+    public Func<Slot, bool>? SlotFilter(LfgGroup group, ulong userId, string? characterName)
     {
-        if (userId == group.OwnerId || (group.RequiredRoleIds.Count == 0 && group.Slots.All(s => s.Requirement == SlotRequirement.Inherit)))
-            return null;
-        var member = client.GetGuild(group.GuildId)?.GetUser(userId);
-        var mine = member?.Roles.Select(r => r.Id).ToHashSet() ?? new HashSet<ulong>();
+        if (userId == group.OwnerId || !group.HasClassRequirements) return null;
+        // Учитываются только классы проекта: старые требования-роли (не классы) не мешают записи
+        var classes = projects.EffectiveClassIcons(group.GuildId, group.ProjectKey).Keys.ToHashSet();
+        if (classes.Count == 0) return null;
+        var classId = characters.GetInfo(group.GuildId, userId, characterName, Scope(group))?.ClassRoleId;
         return s =>
         {
-            var need = group.RequiredFor(s);
-            return need.Count == 0 || need.Any(mine.Contains);
+            var need = group.RequiredFor(s).Where(classes.Contains).ToList();
+            return need.Count == 0 || (classId is { } c && need.Contains(c));
         };
     }
 
     /// <summary>
-    /// Игрок попал в резерв, хотя свободный слот его роли есть — значит, не подошёл по требуемой роли слота.
-    /// Текст: роли этих слотов (любая из), иначе null (просто нет мест).
+    /// Игрок попал в резерв, хотя свободный слот его роли есть — значит, класс персонажа не подошёл.
+    /// Текст: классы этих слотов (любой из), иначе null (просто нет мест).
     /// </summary>
-    private static string? RoleUnmet(LfgGroup group, SlotRole wanted, Func<Slot, bool>? fits)
+    private string? RoleUnmet(LfgGroup group, SlotRole wanted, Func<Slot, bool>? fits)
     {
         if (fits is null || group.FindFreeSlot(wanted) < 0) return null;
         var roles = group.Slots.Where(s => s.IsFree && !fits(s) && (wanted == SlotRole.Any || s.Role == wanted || s.Role == SlotRole.Any))
-            .SelectMany(s => group.RequiredFor(s)).Distinct().ToList();
+            .SelectMany(s => group.RequiredFor(s)).Where(projects.EffectiveClassIcons(group.GuildId, group.ProjectKey).ContainsKey).Distinct().ToList();
         return roles.Count == 0 ? null : string.Join(" / ", roles.Select(id => $"<@&{id}>"));
     }
 
@@ -198,7 +256,7 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
             .WithColor(Tx.Color(gid, "color.lfg.timeChanged"))
             .Build();
         var buttons = new ComponentBuilder().WithButton(Tx.Get(gid, "lfg.dm.openGroup"), style: ButtonStyle.Link, url: JumpUrl(group)).Build();
-        _ = Task.Run(async () =>
+        if (prefs.Dm(gid).LfgTimeChanged) _ = Task.Run(async () =>
         {
             foreach (var id in members)
             {
@@ -273,6 +331,7 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
     /// <summary>ЛС человеку, которого организатор перевёл из резерва в группу.</summary>
     public async Task NotifyPromotedAsync(LfgGroup group, ulong userId, Slot slot)
     {
+        if (!prefs.Dm(group.GuildId).LfgPromoted) return;
         try
         {
             var user = client.GetUser(userId) as IUser ?? await client.Rest.GetUserAsync(userId);
@@ -317,10 +376,17 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
                 await GetChannelAsync(group.ChannelId) is { } channel)
             {
                 var mentions = string.Join(" ", members.Select(id => $"<@{id}>"));
+                // Проверка готовности: кнопка «Готов», нажавшие отмечены 🟢 в посте
+                var ready = prefs.Get(group.GuildId).ReadyCheck;
+                var comps = ready
+                    ? new ComponentBuilder().WithButton(Tx.Get(group.GuildId, "lfg.ready.button"), $"lfg:ready:{group.Id}", ButtonStyle.Success, new Emoji("✅")).Build()
+                    : null;
                 var message = await channel.SendMessageAsync(
                     Tx.Get(group.GuildId, "lfg.reminder", ("activity", Format.Sanitize(group.ActivityName)),
-                        ("time", $"<t:{startsAt.ToUnixTimeSeconds()}:R>"), ("members", mentions)),
+                        ("time", $"<t:{startsAt.ToUnixTimeSeconds()}:R>"), ("members", mentions))
+                    + (ready ? Tx.Line(group.GuildId, "lfg.ready.hint") : ""),
                     allowedMentions: new AllowedMentions { UserIds = members },
+                    components: comps,
                     messageReference: new MessageReference(group.MessageId, failIfNotExists: false));
                 group.ReminderMessageId = message.Id;
             }
