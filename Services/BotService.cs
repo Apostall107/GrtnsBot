@@ -45,6 +45,9 @@ public sealed class BotService(
 
     private async Task OnReadyAsync()
     {
+        // Список участников серверов: без него сайт не знает имён и считает людей вышедшими. Ошибка — в лог (обычно выключен Server Members Intent)
+        _ = Task.Run(DownloadMembersAsync);
+
         if (_commandsRegistered) return;
         _commandsRegistered = true;
 
@@ -56,6 +59,22 @@ public sealed class BotService(
         _ = Task.Run(RefreshPanelsAsync);
         // Классы и их иконки в активных сборах — по текущим настройкам (например, после исправлений)
         _ = Task.Run(() => services.GetRequiredService<LfgSignupService>().ReapplyProfilesAsync());
+    }
+
+    private async Task DownloadMembersAsync()
+    {
+        foreach (var guild in client.Guilds)
+        {
+            try
+            {
+                if (!guild.HasAllMembers) await guild.DownloadUsersAsync();
+                logger.LogInformation("Members of {Guild}: {Cached}/{Total} in cache", guild.Name, guild.Users.Count, guild.MemberCount);
+            }
+            catch (Exception e)
+            {
+                logger.LogWarning(e, "Can't download members of {Guild} — turn on Server Members Intent (Developer Portal → Bot)", guild.Name);
+            }
+        }
     }
 
     private async Task RefreshPanelsAsync()

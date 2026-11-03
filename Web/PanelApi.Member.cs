@@ -57,10 +57,11 @@ public static partial class PanelApi
     private static void MapMember(RouteGroupBuilder g)
     {
         // Активные сборы + моё место в каждом + мои персонажи для записи
-        g.MapGet("/groups", (ulong guildId, ClaimsPrincipal user, DiscordSocketClient client, LfgStore lfg, CharacterStore characters,
+        g.MapGet("/groups", async (ulong guildId, ClaimsPrincipal user, DiscordSocketClient client, LfgStore lfg, CharacterStore characters,
             LfgSignupService signup, LfgProjectStore projects, [FromServices] GuildPrefsStore prefs) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            await WarmMembersAsync(client, guild, GroupPeople(lfg, guildId));
             var me = user.UserId()!.Value;
             var readyCheck = prefs.Get(guildId).ReadyCheck;
             return Results.Ok(new

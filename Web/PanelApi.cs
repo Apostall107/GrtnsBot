@@ -237,8 +237,9 @@ public static partial class PanelApi
         g.MapDelete("/activities/{key}", (ulong guildId, string key, ActivityStore activities) =>
             activities.Remove(guildId, key) is null ? Error("Activity not found.") : Results.Ok());
 
-        g.MapGet("/groups", (ulong guildId, DiscordSocketClient client, LfgStore lfg, LfgProjectStore projects) =>
+        g.MapGet("/groups", async (ulong guildId, DiscordSocketClient client, LfgStore lfg, LfgProjectStore projects) =>
         {
+            if (client.GetGuild(guildId) is { } g0) await WarmMembersAsync(client, g0, GroupPeople(lfg, guildId));
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var defaultProject = projects.DefaultKey(guildId);
             return Results.Ok(ActiveGroups(lfg, guildId).Select(x => new
@@ -1219,6 +1220,10 @@ public static partial class PanelApi
     /// <summary>Участники, которых нет в кэше бота (кэш сервера ещё не догружен) — имя и аватар из Discord REST.</summary>
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<(ulong Guild, ulong User),
         (string Name, string? Username, string? Avatar, bool OnServer, DateTimeOffset At)> MemberCache = new();
+
+    /// <summary>Все люди активных сборов сервера: организаторы, участники, резерв.</summary>
+    private static IEnumerable<ulong> GroupPeople(LfgStore lfg, ulong guildId) => lfg.Groups.Values.Where(g => g.GuildId == guildId)
+        .SelectMany(g => g.Slots.Where(s => s.UserId is not null).Select(s => s.UserId!.Value).Concat(g.Reserve.Select(r => r.UserId)).Append(g.OwnerId));
 
     /// <summary>Есть ли человек на сервере (кэш бота или подгруженный из Discord).</summary>
     private static bool OnServer(SocketGuild guild, ulong id) =>
