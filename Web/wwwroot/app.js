@@ -407,6 +407,13 @@ function armoryPickDialog(name, servers, race, serverId, initialHits = null) {
   });
 }
 
+/** Visible link to the official AION 2 profile (aion2.plaync.com); null — not linked. */
+function armoryLink(a, label = "Armory") {
+  if (!a || !a.url) return null;
+  return h("a", { class: "armory-link", href: a.url, target: "_blank", rel: "noopener",
+    title: `Official profile on aion2.plaync.com${a.server ? ` · ${a.server}` : ""}` }, icon("external-link", 12), label);
+}
+
 /** Combat power like on the official site: 149159 → 149.2K. */
 function fmtCp(v) {
   if (v == null) return "";
@@ -420,7 +427,7 @@ function armoryCell(r) {
   return h("a", { href: a.url, target: "_blank", rel: "noopener", class: "armory-cell",
     title: `Official profile${a.server ? ` · ${a.server}` : ""}${a.synced ? ` · updated ${fmtRelative(a.synced)}` : ""}${a.error ? " · not found" : ""}` },
     a.combatPower != null ? a.combatPower.toLocaleString() : "profile", a.error ? " ⚠️" : "",
-    a.legion ? h("div", { class: "muted small" }, a.legion) : null);
+    null);
 }
 
 /** Member picker with search (for room ownership transfer). */
@@ -4907,7 +4914,7 @@ function armoryBox(c, pq, gsSource, servers, realm) {
         : h("button", { class: "btn ghost sm", title: "Update now (once per 15 minutes)", onclick: async e => {
           if (await act(e.currentTarget, () => gApi("POST", `${path}/refresh${pq}`), r => r && r.renamed ? `Updated. The character was renamed in the game — now ${r.renamed}.` : "Updated from the official profile.") !== undefined) refresh();
         } }, icon("refresh-cw", 14), "Update"),
-      h("a", { class: "btn ghost sm", href: a.url, target: "_blank", rel: "noopener", title: "Open on aion2.plaync.com" }, icon("external-link", 14)),
+      armoryLink(a, "Open profile"),
       h("button", { class: "btn ghost sm", title: "Unlink", "aria-label": "Unlink the official profile", onclick: async e => {
         if (!await confirmDialog(`Unlink ${c.name}?`, "The official data is removed; GS can be entered by hand again.", "Unlink")) return;
         if (await act(e.currentTarget, () => gApi("DELETE", `${path}${pq}`), "Unlinked.") !== undefined) refresh();
@@ -5756,6 +5763,7 @@ async function guildRoster(holder) {
   const minGs = h("input", { type: "number", min: "0", placeholder: "min GS", style: "width:110px" });
   const minCp = h("input", { type: "number", min: "0", placeholder: "min CP", style: "width:120px" });
   const srv = h("select", { "aria-label": "Server" }, h("option", { value: "" }, "Any server"));
+  const leg = h("select", { "aria-label": "Legion" }, h("option", { value: "" }, "Any legion"));
   const search = h("input", { type: "search", placeholder: "Search member or character…", style: "flex:1;min-width:180px" });
   const onlyHere = h("input", { type: "checkbox", checked: true });
   const body = h("div", {});
@@ -5770,6 +5778,11 @@ async function guildRoster(holder) {
     srv.replaceChildren(h("option", { value: "" }, "Any server"), ...servers.map(x => h("option", { value: x }, x)));
     srv.value = servers.includes(keepSrv) ? keepSrv : "";
     srv.style.display = servers.length ? "" : "none";
+    const keepLeg = leg.value;
+    const legions = [...new Set(d.characters.filter(c => c.armory && c.armory.legion && (!project.value || c.project === project.value)).map(c => c.armory.legion))].sort();
+    leg.replaceChildren(h("option", { value: "" }, "Any legion"), ...legions.map(x => h("option", { value: x }, x)));
+    leg.value = legions.includes(keepLeg) ? keepLeg : "";
+    leg.style.display = legions.length ? "" : "none";
   };
   const stale = ms => !ms || Date.now() - ms > 14 * 86400000;
   const draw = () => {
@@ -5782,19 +5795,18 @@ async function guildRoster(holder) {
       (minGs.value === "" || (c.gs ?? -1) >= Number(minGs.value)) &&
       (minCp.value === "" || ((c.armory && c.armory.combatPower) ?? -1) >= Number(minCp.value)) &&
       (!srv.value || c.server === srv.value) &&
+      (!leg.value || (c.armory && c.armory.legion) === leg.value) &&
       (!onlyHere.checked || c.onServer) &&
       (!q || c.character.toLowerCase().includes(q) || c.member.name.toLowerCase().includes(q) || (c.armory && (c.armory.legion || "").toLowerCase().includes(q))));
     const players = new Set(rows.map(r => r.member.id)).size;
     body.replaceChildren(h("p", { class: "muted small" }, `${rows.length} character(s) of ${players} member(s). `,
-      "Group roles come from the class (LFG → Classes: DD / Tank / Sup). GS older than 14 days is marked ⏳."),
+      "The group-role filter uses the class (LFG → Classes: DD / Tank / Sup). GS older than 14 days is marked ⏳."),
       rows.length ? sortTable(rows, [
         ["Member", r => r.member.name, r => member(r.member)],
-        ["Character", r => r.character, r => r.armory && r.armory.url
-          ? h("a", { href: r.armory.url, target: "_blank", rel: "noopener", class: "armory-name", title: "Official profile on aion2.plaync.com" }, h("b", {}, r.character), icon("external-link", 12))
-          : h("b", {}, r.character)],
+        ["Character", r => r.character, r => h("span", { class: "row", style: "gap:6px;flex-wrap:nowrap" }, h("b", {}, r.character), armoryLink(r.armory))],
         ["Class", r => r.classRole ? r.classRole.name : "", r => r.classRole ? h("span", { class: "row", style: "gap:4px" }, classMark(r) || null, r.classRole.name) : h("span", { class: "muted" }, "—")],
         ["Server", r => r.server || "", r => r.server ? h("span", { class: "chip" }, r.server) : h("span", { class: "muted" }, "—")],
-        ["Roles", r => r.slotRoles.join(), r => r.slotRoles.length ? r.slotRoles.map(x => h("span", { class: "chip" }, SLOT_ROLE_CHIP[x] || x)) : h("span", { class: "muted small" }, "any")],
+        ["Legion", r => (r.armory && r.armory.legion) || "", r => r.armory && r.armory.legion ? h("span", { class: "chip legion" }, icon("shield", 12), r.armory.legion) : h("span", { class: "muted" }, "—")],
         ["GS", r => r.gs, r => r.gs == null ? h("span", { class: "muted" }, "—") :
           h("span", { title: r.gsUpdated ? `Updated ${new Date(r.gsUpdated).toLocaleDateString()}` : "Update date unknown" }, String(r.gs), stale(r.gsUpdated) ? " ⏳" : "")],
         ["Combat power", r => r.armory ? r.armory.combatPower ?? 0 : -1, armoryCell],
@@ -5803,11 +5815,11 @@ async function guildRoster(holder) {
       ], 5) : emptyState("users", "Nobody matches", "Change the filters."));
   };
   project.addEventListener("change", () => { fillClasses(); draw(); });
-  for (const el of [role, cls, onlyHere, srv]) el.addEventListener("change", draw);
+  for (const el of [role, cls, onlyHere, srv, leg]) el.addEventListener("change", draw);
   for (const el of [minGs, minCp, search]) el.addEventListener("input", draw);
   fillClasses();
   holder.replaceChildren(h("div", { class: "card" },
-    h("div", { class: "row", style: "margin-bottom:10px;flex-wrap:wrap" }, d.projects.length ? project : null, role, cls, srv, minGs, minCp, search,
+    h("div", { class: "row", style: "margin-bottom:10px;flex-wrap:wrap" }, d.projects.length ? project : null, role, cls, srv, leg, minGs, minCp, search,
       h("label", { class: "toggle-line" }, onlyHere, h("span", {}, "Only members on the server"))), body));
   draw();
 }
@@ -5915,6 +5927,7 @@ function memberRoster(holder, guild) {
   const minGs = h("input", { type: "number", min: "0", placeholder: "min GS", style: "width:110px" });
   const minCp = h("input", { type: "number", min: "0", placeholder: "min CP", style: "width:120px" });
   const srv = h("select", { "aria-label": "Server" }, h("option", { value: "" }, "Any server"));
+  const leg = h("select", { "aria-label": "Legion" }, h("option", { value: "" }, "Any legion"));
   const search = h("input", { type: "search", placeholder: "Search member or character…", style: "flex:1;min-width:180px" });
   const body = h("div", {});
   // Classes of the chosen project (the ones characters have)
@@ -5929,6 +5942,11 @@ function memberRoster(holder, guild) {
     srv.replaceChildren(h("option", { value: "" }, "Any server"), ...servers.map(x => h("option", { value: x }, x)));
     srv.value = servers.includes(keepSrv) ? keepSrv : "";
     srv.style.display = servers.length ? "" : "none";
+    const keepLeg = leg.value;
+    const legions = [...new Set(list.filter(c => c.armory && c.armory.legion && (!project.value || c.project === project.value)).map(c => c.armory.legion))].sort();
+    leg.replaceChildren(h("option", { value: "" }, "Any legion"), ...legions.map(x => h("option", { value: x }, x)));
+    leg.value = legions.includes(keepLeg) ? keepLeg : "";
+    leg.style.display = legions.length ? "" : "none";
   };
   const draw = () => {
     store.set("gb.mRosterProject", project.value);
@@ -5938,16 +5956,15 @@ function memberRoster(holder, guild) {
       (minGs.value === "" || (c.gs ?? -1) >= Number(minGs.value)) &&
       (minCp.value === "" || ((c.armory && c.armory.combatPower) ?? -1) >= Number(minCp.value)) &&
       (!srv.value || c.server === srv.value) &&
+      (!leg.value || (c.armory && c.armory.legion) === leg.value) &&
       (!q || c.character.toLowerCase().includes(q) || c.member.name.toLowerCase().includes(q)));
     body.replaceChildren(h("p", { class: "muted small" }, `${rows.length} character(s). Find a tank or a healer for your group.`),
       rows.length ? sortTable(rows, [
         ["Member", r => r.member.name, r => member(r.member)],
-        ["Character", r => r.character, r => r.armory && r.armory.url
-          ? h("a", { href: r.armory.url, target: "_blank", rel: "noopener", class: "armory-name", title: "Official profile on aion2.plaync.com" }, h("b", {}, r.character), icon("external-link", 12))
-          : h("b", {}, r.character)],
+        ["Character", r => r.character, r => h("span", { class: "row", style: "gap:6px;flex-wrap:nowrap" }, h("b", {}, r.character), armoryLink(r.armory))],
         ["Class", r => r.classRole ? r.classRole.name : "", r => r.classRole ? h("span", { class: "row", style: "gap:4px" }, classMark(r) || null, r.classRole.name) : h("span", { class: "muted" }, "—")],
         ["Server", r => r.server || "", r => r.server ? h("span", { class: "chip" }, r.server) : h("span", { class: "muted" }, "—")],
-        ["Roles", r => r.slotRoles.join(), r => r.slotRoles.length ? r.slotRoles.map(x => h("span", { class: "chip" }, SLOT_ROLE_CHIP[x] || x)) : h("span", { class: "muted small" }, "any")],
+        ["Legion", r => (r.armory && r.armory.legion) || "", r => r.armory && r.armory.legion ? h("span", { class: "chip legion" }, icon("shield", 12), r.armory.legion) : h("span", { class: "muted" }, "—")],
         ["GS", r => r.gs, r => r.gs == null ? h("span", { class: "muted" }, "—") : String(r.gs)],
         ["Combat power", r => r.armory ? r.armory.combatPower ?? 0 : -1, armoryCell]
       ], 5) : emptyState("users", "Nobody matches", "Change the filters."));
@@ -5956,11 +5973,12 @@ function memberRoster(holder, guild) {
   role.addEventListener("change", draw);
   cls.addEventListener("change", draw);
   srv.addEventListener("change", draw);
+  leg.addEventListener("change", draw);
   for (const el of [minGs, minCp, search]) el.addEventListener("input", draw);
   fillClasses();
   drawTabs();
   holder.replaceChildren(h("div", { class: "card" }, tabsBox,
-    h("div", { class: "row", style: "margin-bottom:10px;flex-wrap:wrap" }, role, cls, srv, minGs, minCp, search), body,
+    h("div", { class: "row", style: "margin-bottom:10px;flex-wrap:wrap" }, role, cls, srv, leg, minGs, minCp, search), body,
     h("p", { class: "muted small", style: "margin-top:8px" }, "Only projects you have access to are shown.")));
   draw();
 }
