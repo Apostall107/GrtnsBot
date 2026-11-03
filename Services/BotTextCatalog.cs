@@ -32,6 +32,7 @@ public static class BotTextCatalog
         T("lfg.post.roster", "Roster line (also in DMs) (- = hide)", "Roster: **{filled}/{total}**", "{filled}, {total}", Embed, optional: true);
         T("lfg.post.requirements", "Requirements line (- = hide)", "📋 Requirements: {list} — others go to the reserve", "{list}", Embed, optional: true);
         T("lfg.post.voice", "Voice room line (- = hide)", "🔊 Voice room: {channel}", "{channel}", Embed, optional: true);
+        T("lfg.post.note", "Organizer's note line (- = hide)", "📝 {note}", "{note}", Embed, optional: true);
         T("lfg.post.open", "Free slot", "*open*", null, 200);
         T("lfg.post.reserve", "Reserve heading (- = hide)", "**Reserve ({count}):**", "{count}", 200, optional: true);
         T("lfg.post.expires", "Auto-delete line (- = hide)", "-# Post will be removed {time}", "{time}", Embed, optional: true);
@@ -87,6 +88,11 @@ public static class BotTextCatalog
         T("lfg.wiz.dmOff", "“DM role members: OFF” button", "DM role members: OFF", null, Button);
         T("lfg.wiz.voiceOn", "“Voice room: ON” button", "Voice room: ON", null, Button);
         T("lfg.wiz.voiceOff", "“Voice room: OFF” button", "Voice room: OFF", null, Button);
+        T("lfg.wiz.noteButton", "“Note” button", "Note", null, Button);
+        T("lfg.wiz.note", "Step 4: note line (- = hide)", "📝 Note: {note}", "{note}", 1000, optional: true);
+        T("lfg.wiz.noteTitle", "Note window: title", "Group note", null, ModalTitle);
+        T("lfg.wiz.noteLabel", "Note window: field", "Note (optional, empty = none)", null, ModalTitle);
+        T("lfg.wiz.noteHint", "Note window: placeholder", "e.g. bring buff food, voice chat required", null, 100);
         T("lfg.wiz.timeTitle", "Time window: title", "Start time", null, ModalTitle);
         T("lfg.wiz.timeLabel", "Time window: field", "Date and time (server time zone)", null, ModalTitle);
         T("lfg.wiz.timeHint", "Time window: placeholder", "21:30 or 15.10 21:30", null, 100);
@@ -187,6 +193,9 @@ public static class BotTextCatalog
         T("lfg.manage.badTime", "Time not recognized", "I couldn't read the time. Use `21:30` or `15.10 21:30`.", null, 500);
         T("lfg.manage.pastTime", "Time in the past", "This time is in the past.", null, 500);
         T("lfg.manage.rescheduled", "Time changed", "🕒 New start: {time}. Everyone in the group got a DM.", "{time}", 500);
+        T("lfg.manage.noteButton", "“Note” button (manage)", "Note", null, Button);
+        T("lfg.manage.noteSaved", "Note saved", "📝 Note updated.", null, 500);
+        T("lfg.manage.noteRemoved", "Note removed", "📝 Note removed.", null, 500);
         T("lfg.close.question", "Close: question", "Close this group? The post will be deleted. Copy the invites below first if you need them.", null, 1000);
         T("lfg.close.confirm", "Close: confirm button", "Close & delete post", null, Button);
         T("lfg.close.keep", "Close: keep button", "Keep", null, Button);

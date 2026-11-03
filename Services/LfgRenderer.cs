@@ -187,6 +187,9 @@ public static class LfgRenderer
         // Голосовая комната сбора — только если включить
         builder.WithButton(Tx.Get(gid, d.CreateVoice ? "lfg.wiz.voiceOn" : "lfg.wiz.voiceOff"), $"lfg:dvoice:{d.Id}",
             d.CreateVoice ? ButtonStyle.Success : ButtonStyle.Secondary, new Emoji("🔊"), row: 4);
+        // Заметка к сбору (необязательная)
+        builder.WithButton(Tx.Get(gid, "lfg.wiz.noteButton"), $"lfg:dnote:{d.Id}",
+            string.IsNullOrWhiteSpace(d.Note) ? ButtonStyle.Secondary : ButtonStyle.Success, new Emoji("📝"), row: 4);
 
         var comps = builder.Build();
 
@@ -202,6 +205,7 @@ public static class LfgRenderer
             if (d.MinGs is { } gs) req.Add($"GS {gs}+");
             sb.AppendText(Tx.Get(gid, "lfg.wiz.requirements", ("list", string.Join(" · ", req))));
         }
+        if (!string.IsNullOrWhiteSpace(d.Note)) sb.AppendText(Tx.Get(gid, "lfg.wiz.note", ("note", Format.Sanitize(d.Note))));
         if (warning is not null) sb.AppendLine($"⚠️ {warning}");
 
         return new Screen(sb.ToString(), null, comps);
@@ -224,6 +228,7 @@ public static class LfgRenderer
         sb.AppendText(Tx.Get(gid, "lfg.post.roster", ("filled", g.FilledCount), ("total", g.Slots.Count)));
         if (Requirements(g) is { } req) sb.AppendText(Tx.Get(gid, "lfg.post.requirements", ("list", req)));
         if (g.VoiceChannelId is { } voice) sb.AppendText(Tx.Get(gid, "lfg.post.voice", ("channel", $"<#{voice}>")));
+        if (!string.IsNullOrWhiteSpace(g.Note)) sb.AppendText(Tx.Get(gid, "lfg.post.note", ("note", Format.Sanitize(g.Note))));
         sb.AppendLine();
         // Заметки к персонажам в посте не показываются — их видит владелец при выборе персонажа
         sb.Append(Roster(g, withComments: false));
@@ -365,6 +370,7 @@ public static class LfgRenderer
         }
 
         builder.WithButton(Tx.Get(gid, "lfg.manage.changeTime"), $"lfg:resched:{g.Id}", ButtonStyle.Secondary, new Emoji("🕒"), row: Math.Min(row, 4));
+        builder.WithButton(Tx.Get(gid, "lfg.manage.noteButton"), $"lfg:mnote:{g.Id}", ButtonStyle.Secondary, new Emoji("📝"), row: Math.Min(row, 4));
 
         if (members.Count == 0 && g.Reserve.Count == 0)
             sb.AppendText(Tx.Get(gid, "lfg.manage.nobody"));
@@ -387,6 +393,13 @@ public static class LfgRenderer
         .WithCustomId(customId)
         .AddTextInput(Tx.Get(gid, "lfg.wiz.customLabel"), "name", TextInputStyle.Short,
             placeholder: Tx.Get(gid, "lfg.wiz.customHint"), maxLength: 100, required: true)
+        .Build();
+
+    public static Modal NoteModal(ulong gid, string customId, string? current) => new ModalBuilder()
+        .WithTitle(Tx.Get(gid, "lfg.wiz.noteTitle"))
+        .WithCustomId(customId)
+        .AddTextInput(Tx.Get(gid, "lfg.wiz.noteLabel"), "note", TextInputStyle.Paragraph,
+            placeholder: Tx.Get(gid, "lfg.wiz.noteHint"), maxLength: LfgNote.MaxLength, required: false, value: current)
         .Build();
 
     public static Modal TimeModal(ulong gid, string customId) => new ModalBuilder()
