@@ -212,8 +212,7 @@ public sealed class ArmorySyncService(OfficialArmory armory, CharacterStore char
         if (p.ClassName is { Length: > 0 } className && client.GetGuild(guildId) is { } guild)
         {
             var projectKey = scope ?? projects.DefaultKey(guildId);
-            var match = profiles.ClassRoles(guildId, userId, projectKey)
-                .FirstOrDefault(r => r.Name.Contains(className, StringComparison.OrdinalIgnoreCase));
+            var match = profiles.ClassRoles(guildId, userId, projectKey).FirstOrDefault(r => SameClass(r.Name, className));
             if (match is not null && info?.ClassRoleId != match.Id)
             {
                 characters.SetInfo(guildId, userId, name, true, match.Id, false, null, scope);
@@ -222,6 +221,33 @@ public sealed class ArmorySyncService(OfficialArmory armory, CharacterStore char
         }
 
         if (changed) await profiles.RefreshCharacterAsync(guildId, userId, name, scope);
+    }
+
+    // Названия классов AION 2 на русском/украинском — роли сервера могут называться и так
+    private static readonly Dictionary<string, string[]> ClassAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Gladiator"] = ["гладиатор", "гладіатор", "glad"],
+        ["Templar"] = ["страж", "темплар", "храмовник", "templ"],
+        ["Assassin"] = ["убийца", "убивця", "ассасин", "асасин", "sin"],
+        ["Ranger"] = ["стрелок", "стрілець", "рейнджер", "лучник"],
+        ["Sorcerer"] = ["волшебник", "чарівник", "маг", "сорк", "sorc"],
+        ["Spiritmaster"] = ["заклинатель", "заклинач", "спиритмастер", "призыватель", "sm"],
+        ["Elementalist"] = ["заклинатель", "заклинач", "элементалист", "елементаліст"],
+        ["Cleric"] = ["целитель", "цілитель", "клерик", "клірик", "хил", "лекарь"],
+        ["Chanter"] = ["чародей", "чародій", "чантер", "чант"],
+    };
+
+    private static string Letters(string s) => new(s.Where(char.IsLetter).Select(char.ToLowerInvariant).ToArray());
+
+    /// <summary>Роль сервера — этот класс: название содержит английское имя класса или его русское/украинское название.</summary>
+    public static bool SameClass(string roleName, string className)
+    {
+        var role = Letters(roleName);
+        if (role.Length == 0) return false;
+        if (role.Contains(Letters(className))) return true;
+        if (!ClassAliases.TryGetValue(className, out var aliases)) return false;
+        // Короткие сокращения (sin, sm) — только целиком, чтобы не ловить случайные совпадения
+        return aliases.Any(a => a.Length <= 4 ? role == a : role.Contains(a));
     }
 
     /// <summary>Какое число из оружейной считать GS на сервере (null — GS вводят вручную).</summary>
