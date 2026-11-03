@@ -2176,7 +2176,22 @@ async function renderClasses(card, projectList = [], projectKey = store.get("gb.
       h("button", { class: `btn secondary${k === projectKey ? " active-tab" : ""}`,
         onclick: () => { store.set("gb.classProject", k); renderClasses(card, projectList, k, opts); } }, label))) : null;
   const roleIcons = data.roleIcons || {};
-  let rows = data.classes.map(c => ({ roleId: c.role.id, role: c.role, icon: c.icon }));
+  let rows = data.classes.map(c => ({ roleId: c.role.id, role: c.role, icon: c.icon, slots: c.slots || [] }));
+  // Group roles a class can play: none ticked = any
+  const SLOT_ROLES = [["Dps", "⚔️", "DD"], ["Tank", "🛡️", "Tank"], ["Healer", "💚", "Sup"]];
+  const slotToggles = r => {
+    const hint = h("span", { class: "muted small" }, r.slots.length ? "" : "any role");
+    return h("span", { class: "class-slots", title: "Which group roles this class plays. None ticked = any role." },
+      SLOT_ROLES.map(([k, em, label]) => {
+        const b = h("button", { type: "button", class: `chip slot-chip${r.slots.includes(k) ? " on" : ""}` }, `${em} ${label}`);
+        b.addEventListener("click", () => {
+          r.slots = r.slots.includes(k) ? r.slots.filter(x => x !== k) : [...r.slots, k];
+          b.classList.toggle("on", r.slots.includes(k));
+          hint.textContent = r.slots.length ? "" : "any role";
+        });
+        return b;
+      }), hint);
+  };
   const list = h("div", {});
   const preview = icon => classMark({ classIcon: icon }) || h("span", { class: "muted small" }, "—");
   // The role's own icon (Discord role settings → Role icon)
@@ -2203,7 +2218,7 @@ async function renderClasses(card, projectList = [], projectKey = store.get("gb.
       const ri = roleIcons[r.roleId];
       const useRole = ri ? h("button", { class: "btn secondary", title: "Use this role's icon from Discord" }, roleIconEl(ri), "Role icon") : null;
       if (useRole) useRole.addEventListener("click", () => importIcons(useRole, [r]));
-      return h("div", { class: "row question-row" }, roleChip(r.role), prev, icon, pick, useRole,
+      return h("div", { class: "row question-row" }, roleChip(r.role), prev, icon, pick, useRole, slotToggles(r),
         h("button", { class: "btn ghost", title: "Remove", onclick: async () => {
           if (await confirmDialog(`Remove @${r.role.name} from classes?`, "Saved when you press Save classes.", "Remove")) { rows.splice(i, 1); draw(); }
         } }, "✖"));
@@ -2216,7 +2231,7 @@ async function renderClasses(card, projectList = [], projectKey = store.get("gb.
     if (!picked) return;
     for (const role of picked) {
       const ri = roleIcons[role.id];
-      rows.push({ roleId: role.id, role: { ...role, exists: true }, icon: ri && ri.emoji ? ri.emoji : "" });
+      rows.push({ roleId: role.id, role: { ...role, exists: true }, icon: ri && ri.emoji ? ri.emoji : "", slots: [] });
     }
     draw();
     toast(`Added ${picked.length} role(s) — press Save classes.`);
@@ -2229,7 +2244,7 @@ async function renderClasses(card, projectList = [], projectKey = store.get("gb.
     importIcons(fromRoles, emptyOnes.length ? emptyOnes : withIcon);
   });
   const save = h("button", { class: "btn" }, "💾 Save classes");
-  const classesBody = () => rows.map(r => ({ roleId: r.roleId, icon: r.icon || "" }));
+  const classesBody = () => rows.map(r => ({ roleId: r.roleId, icon: r.icon || "", slots: [...r.slots].sort() }));
   const tracker = track("Classes", classesBody, async () => await act(save, () => gApi("PUT", `/lfg/classes${q}`, { classes: classesBody() }),
     "Classes saved. New signups use the icons; existing posts update when someone changes their class.") !== undefined);
   save.addEventListener("click", tracker.save);
@@ -2243,7 +2258,7 @@ async function renderClasses(card, projectList = [], projectKey = store.get("gb.
     copy.addEventListener("click", async () => {
       const common = await act(copy, () => gApi("GET", "/lfg/classes"));
       if (!common) return;
-      rows = common.classes.map(c => ({ roleId: c.role.id, role: c.role, icon: c.icon }));
+      rows = common.classes.map(c => ({ roleId: c.role.id, role: c.role, icon: c.icon, slots: c.slots || [] }));
       draw();
       toast(rows.length ? "Copied — edit and press Save classes." : "The common list is empty.", rows.length ? "ok" : "warn");
     });
@@ -2252,7 +2267,8 @@ async function renderClasses(card, projectList = [], projectKey = store.get("gb.
     projectKey && !rows.length ? h("div", { class: "chip", style: "margin-bottom:8px" }, "Now uses the common list (⚙️ General → Common classes)") : null,
     h("p", { class: "muted small" }, "Roles that count as classes and their icon shown next to the player's name. If the list is not empty, players pick any of these as their class (they don't need the role); if empty — only roles they have. ",
       projectKey ? "This project's own classes — if empty, the common list is used." : "Common classes — used by every project that has no classes of its own. ",
-      "Use a unicode emoji, a server emoji, or 🎨 Use role icons — the roles' own icons from Discord (image icons are uploaded as the bot's emojis, no server emoji slots used)."),
+      "Use a unicode emoji, a server emoji, or 🎨 Use role icons — the roles' own icons from Discord (image icons are uploaded as the bot's emojis, no server emoji slots used). ",
+      "⚔️ DD / 🛡️ Tank / 💚 Sup — which group roles the class plays (several allowed): signing up as DD shows only characters whose class plays DD. None ticked — any role."),
     list, h("div", { class: "row", style: "margin-top:8px" }, addSel, copy, fromRoles, save)].filter(Boolean));
   tracker.attach(card);
 }
@@ -3669,7 +3685,6 @@ async function pageBotTexts(main) {
       h("label", { class: "toggle-line" }, onlyCustom, h("span", {}, "Only changed")), resetAll)),
     ...cards.map(c => c.card));
   tracker.attach(holder);
-  if (cards[0]) cards[0].card.classList.add("open");
 }
 
 /** Sample values for {placeholders} in previews of bot texts. */

@@ -400,8 +400,9 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
             return;
         }
 
-        var saved = profile.PickerList(group, Context.User.Id);
-        if (saved.Count == 0)
+        // Персонажи, чей класс может играть эту роль; нет ни одного персонажа вообще — сразу окно нового
+        var saved = profile.PickerList(group, Context.User.Id, slotRole);
+        if (saved.Count == 0 && profile.PickerList(group, Context.User.Id).Count == 0)
         {
             await RespondWithModalAsync(LfgRenderer.CharacterModal(group.GuildId, $"lfg:charnew:{groupId}:{role}"));
             return;
