@@ -1039,7 +1039,7 @@ const allTabs = [
   ["chars", "user-round", "My characters", "member", "Member"],
   ["schedule", "calendar-clock", "Calendar", "member", "Member"],
   ["lfg", "swords", "LFG", "lfg", "Community modules"],
-  ["guild", "calendar", "Guild", "lfg", "Community modules"],
+  ["guild", "calendar", "Guild", "guild", "Community modules"],
   ["tickets", "ticket", "Tickets", "tickets", "Community modules"],
   ["voice", "headphones", "Temp Voice", "voice", "Community modules"],
   ["welcome", "door-open", "Welcome", "welcome", "Community modules"],
@@ -1063,8 +1063,8 @@ const can = perm => {
 };
 const MEMBER_TABS = ["home", "play", "chars"];
 const visibleTabs = () => allTabs.filter(t => can(t[3]));
-const PERM_LABELS = { lfg: "LFG", tickets: "Tickets", voice: "Temp Voice", welcome: "Welcome", roles: "Role panels", texts: "Panel texts", posts: "Posts", announce: "Announcements", log: "Log", settings: "Settings" };
-const PERM_ICONS = { lfg: "swords", tickets: "ticket", voice: "headphones", welcome: "door-open", roles: "user-plus", texts: "file-pen-line", posts: "pin", announce: "megaphone", log: "scroll-text", settings: "settings" };
+const PERM_LABELS = { lfg: "LFG", guild: "Guild", tickets: "Tickets", voice: "Temp Voice", welcome: "Welcome", roles: "Role panels", texts: "Panel texts", posts: "Posts", announce: "Announcements", log: "Log", settings: "Settings" };
+const PERM_ICONS = { lfg: "swords", guild: "calendar", tickets: "ticket", voice: "headphones", welcome: "door-open", roles: "user-plus", texts: "file-pen-line", posts: "pin", announce: "megaphone", log: "scroll-text", settings: "settings" };
 
 function renderLogin(message) {
   const params = new URLSearchParams(location.search);
@@ -5329,7 +5329,7 @@ function googleCalendarUrl(ev) {
   return `https://calendar.google.com/calendar/render?${q}`;
 }
 
-async function guildCalendar(holder, path = "/lfg/calendar", forMember = false) {
+async function guildCalendar(holder, path = "/guild/calendar", forMember = false) {
   const data = await gApi("GET", path);
   const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + i); return d; });
   const sameDay = (ms, d) => { const x = new Date(ms); return x.getFullYear() === d.getFullYear() && x.getMonth() === d.getMonth() && x.getDate() === d.getDate(); };
@@ -5398,7 +5398,7 @@ async function guildAttendance(holder) {
   const load = async () => {
     store.set("gb.attDays", period.value); store.set("gb.attProject", project.value);
     body.replaceChildren(skeletonLines(4));
-    const d = await gApi("GET", `/lfg/attendance?days=${period.value}${project.value ? `&project=${encodeURIComponent(project.value)}` : ""}`);
+    const d = await gApi("GET", `/guild/attendance?days=${period.value}${project.value ? `&project=${encodeURIComponent(project.value)}` : ""}`);
     const rate = r => r.came + r.noShow ? Math.round(100 * r.came / (r.came + r.noShow)) : null;
     body.replaceChildren(
       h("p", { class: "muted small" }, `${d.groups} closed group(s), attendance marked in ${d.marked}. `,
@@ -5422,7 +5422,7 @@ async function guildAttendance(holder) {
 }
 
 async function guildRoster(holder) {
-  const d = await gApi("GET", "/lfg/roster");
+  const d = await gApi("GET", "/guild/roster");
   const project = h("select", {}, h("option", { value: "" }, "All projects"), d.projects.map(p => h("option", { value: p.key }, p.name)));
   project.value = store.get("gb.rosterProject") || (d.projects.find(p => p.isDefault) || {}).key || "";
   const role = h("select", {}, h("option", { value: "" }, "Any group role"), Object.entries(SLOT_ROLE_CHIP).map(([k, l]) => h("option", { value: k }, l)));
@@ -5480,7 +5480,7 @@ async function guildInactive(holder) {
   const body = h("div", {}, skeletonLines(4));
   const load = async () => {
     store.set("gb.inactiveDays", days.value); store.set("gb.inactiveRole", role.value);
-    const d = await gApi("GET", `/lfg/inactive?days=${Number(days.value) || 14}${role.value ? `&roleId=${role.value}` : ""}`);
+    const d = await gApi("GET", `/guild/inactive?days=${Number(days.value) || 14}${role.value ? `&roleId=${role.value}` : ""}`);
     const since = new Date(d.trackingSince);
     const tooEarly = Date.now() - d.trackingSince < (Number(days.value) || 14) * 86400000;
     body.replaceChildren(

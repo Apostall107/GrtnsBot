@@ -94,6 +94,7 @@ public static partial class PanelApi
         MapMemberRoles(guild.MapGroup("/member-roles").AddEndpointFilter(Require(PanelPermissions.Settings)));
         MapLfgExtra(guild.MapGroup("/lfg").AddEndpointFilter(Require(PanelPermissions.Lfg)));
         MapGuildTools(guild.MapGroup("/lfg").AddEndpointFilter(Require(PanelPermissions.Lfg)),
+            guild.MapGroup("/guild").AddEndpointFilter(Require(PanelPermissions.Guild)),
             guild.MapGroup("/dm-prefs").AddEndpointFilter(Require(PanelPermissions.Settings)));
         MapLog(guild.MapGroup("/log").AddEndpointFilter(Require(PanelPermissions.Log)));
         MapSettings(api.MapGroup("/settings").AddEndpointFilter(Require(PanelPermissions.Settings)));
