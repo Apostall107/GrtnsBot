@@ -407,6 +407,12 @@ function armoryPickDialog(name, servers, race, serverId, initialHits = null) {
   });
 }
 
+/** Combat power like on the official site: 149159 → 149.2K. */
+function fmtCp(v) {
+  if (v == null) return "";
+  return v >= 1e6 ? `${+(v / 1e6).toFixed(2)}M` : v >= 1e4 ? `${+(v / 1e3).toFixed(1)}K` : String(v);
+}
+
 /** Roster cell: combat power from the official armory (link to the profile) and the legion. */
 function armoryCell(r) {
   const a = r.armory;
@@ -2672,7 +2678,7 @@ function groupCard(g) {
           h("span", { class: "slot-num" }, i + 1), rolePill(s.role || s.slotRole),
           h("span", { class: "slot-who" }, member(s.member), classMark(s), note(s.comment),
             s.ready && s.attended == null ? h("span", { title: "Pressed ✅ Ready in the reminder" }, " 🟢") : null),
-          h("span", { class: "slot-char" }, s.character || "", s.gs ? h("span", { class: "gs" }, `GS ${s.gs}`) : null),
+          h("span", { class: "slot-char" }, s.character || "", s.gs ? h("span", { class: "gs" }, `GS ${s.gs}`) : null, s.cp ? h("span", { class: "gs cp" }, `CP ${fmtCp(s.cp)}`) : null),
           g.started ? attendanceButton(s, `/lfg/groups/${gid}/attendance`) : null,
           tool("pencil", "Change character", rename(s.member, s.character)),
           s.member.id !== g.owner.id ? tool("arrow-right", "Move to reserve", () => roster("toReserve", s.member, "Moved to the reserve.")) : null,
@@ -4682,7 +4688,7 @@ function playCard(g) {
         h("span", { class: "slot-num" }, i + 1), rolePill(s.role || s.slotRole),
         h("span", { class: "slot-who" }, member(s.member), classMark(s),
           s.ready && s.attended == null ? h("span", { title: "Ready" }, " 🟢") : null),
-        h("span", { class: "slot-char" }, s.character || "", s.gs ? h("span", { class: "gs" }, `GS ${s.gs}`) : null),
+        h("span", { class: "slot-char" }, s.character || "", s.gs ? h("span", { class: "gs" }, `GS ${s.gs}`) : null, s.cp ? h("span", { class: "gs cp" }, `CP ${fmtCp(s.cp)}`) : null),
         org && g.started ? attendanceButton(s, `/me/groups/${gid}/attendance`) : null,
         org && s.member.id !== g.owner.id ? tool("arrow-right", "Move to reserve", () => roster$("toReserve", s.member, "Moved to the reserve.")) : null)
     : h("div", { class: "slot open" },
@@ -4692,7 +4698,7 @@ function playCard(g) {
     h("summary", {}, icon("clock", 14), `Reserve · ${g.reserve.length}`),
     h("div", { class: "roster" }, g.reserve.map(r => h("div", { class: "slot taken reserve-row" },
       rolePill(r.role || "All"), h("span", { class: "slot-who" }, member(r.member), classMark(r)),
-      h("span", { class: "slot-char" }, r.character || "", r.gs ? h("span", { class: "gs" }, `GS ${r.gs}`) : null),
+      h("span", { class: "slot-char" }, r.character || "", r.gs ? h("span", { class: "gs" }, `GS ${r.gs}`) : null, r.cp ? h("span", { class: "gs cp" }, `CP ${fmtCp(r.cp)}`) : null),
       org ? tool("arrow-left", "Move into the group (sends a DM)", () => roster$("promote", r.member, "Moved into the group, DM sent.")) : null,
       org ? tool("x", "Remove from the reserve", async () => {
         if (await confirmDialog(`Remove ${r.member.name} from the reserve?`, "They are taken out of this group.", "Remove")) roster$("removeReserve", r.member, "Removed from the reserve.");
@@ -4937,7 +4943,9 @@ async function pageChars(main) {
     return tracker.attach(h("div", { class: "card char-edit" },
       h("div", { class: "char-edit-head" }, badge,
         h("div", { class: "grow" }, h("div", { class: "row", style: "gap:4px;flex-wrap:nowrap" }, h("b", { class: "char-name" }, c.name), rename), clsName),
-        c.gs ? h("span", { class: "gs big" }, `GS ${c.gs}`) : null),
+        h("div", { class: "row", style: "gap:4px;flex-direction:column;align-items:flex-end" },
+          c.gs ? h("span", { class: "gs big" }, `GS ${c.gs}`) : null,
+          c.armory && c.armory.combatPower != null ? h("span", { class: "gs big cp" }, `CP ${fmtCp(c.armory.combatPower)}`) : null)),
       c.gsLocked ? null : gsAge(c, data.gsStaleDays, pq),
       ap ? armoryBox(c, pq, data.armoryGs, servers, realm) : null,
       h("div", { class: "char-fields" },
@@ -5656,6 +5664,7 @@ async function guildRoster(holder) {
   const role = h("select", {}, h("option", { value: "" }, "Any group role"), Object.entries(SLOT_ROLE_CHIP).map(([k, l]) => h("option", { value: k }, l)));
   const cls = h("select", {}, h("option", { value: "" }, "Any class"));
   const minGs = h("input", { type: "number", min: "0", placeholder: "min GS", style: "width:110px" });
+  const minCp = h("input", { type: "number", min: "0", placeholder: "min CP", style: "width:120px" });
   const search = h("input", { type: "search", placeholder: "Search member or character…", style: "flex:1;min-width:180px" });
   const onlyHere = h("input", { type: "checkbox", checked: true });
   const body = h("div", {});
@@ -5675,6 +5684,7 @@ async function guildRoster(holder) {
       (!role.value || c.slotRoles.includes(role.value)) &&
       (!cls.value || (c.classRole && c.classRole.id === cls.value)) &&
       (minGs.value === "" || (c.gs ?? -1) >= Number(minGs.value)) &&
+      (minCp.value === "" || ((c.armory && c.armory.combatPower) ?? -1) >= Number(minCp.value)) &&
       (!onlyHere.checked || c.onServer) &&
       (!q || c.character.toLowerCase().includes(q) || c.member.name.toLowerCase().includes(q) || (c.armory && (c.armory.legion || "").toLowerCase().includes(q))));
     const players = new Set(rows.map(r => r.member.id)).size;
@@ -5682,7 +5692,9 @@ async function guildRoster(holder) {
       "Group roles come from the class (LFG → Classes: DD / Tank / Sup). GS older than 14 days is marked ⏳."),
       rows.length ? sortTable(rows, [
         ["Member", r => r.member.name, r => member(r.member)],
-        ["Character", r => r.character, r => h("b", {}, r.character)],
+        ["Character", r => r.character, r => r.armory && r.armory.url
+          ? h("a", { href: r.armory.url, target: "_blank", rel: "noopener", class: "armory-name", title: "Official profile on aion2.plaync.com" }, h("b", {}, r.character), icon("external-link", 12))
+          : h("b", {}, r.character)],
         ["Class", r => r.classRole ? r.classRole.name : "", r => r.classRole ? h("span", { class: "row", style: "gap:4px" }, classMark(r) || null, r.classRole.name) : h("span", { class: "muted" }, "—")],
         ["Roles", r => r.slotRoles.join(), r => r.slotRoles.length ? r.slotRoles.map(x => h("span", { class: "chip" }, SLOT_ROLE_CHIP[x] || x)) : h("span", { class: "muted small" }, "any")],
         ["GS", r => r.gs, r => r.gs == null ? h("span", { class: "muted" }, "—") :
@@ -5694,10 +5706,10 @@ async function guildRoster(holder) {
   };
   project.addEventListener("change", () => { fillClasses(); draw(); });
   for (const el of [role, cls, onlyHere]) el.addEventListener("change", draw);
-  for (const el of [minGs, search]) el.addEventListener("input", draw);
+  for (const el of [minGs, minCp, search]) el.addEventListener("input", draw);
   fillClasses();
   holder.replaceChildren(h("div", { class: "card" },
-    h("div", { class: "row", style: "margin-bottom:10px;flex-wrap:wrap" }, d.projects.length ? project : null, role, cls, minGs, search,
+    h("div", { class: "row", style: "margin-bottom:10px;flex-wrap:wrap" }, d.projects.length ? project : null, role, cls, minGs, minCp, search,
       h("label", { class: "toggle-line" }, onlyHere, h("span", {}, "Only members on the server"))), body));
   draw();
 }
@@ -5796,6 +5808,7 @@ function memberRoster(holder, guild) {
   const role = h("select", {}, h("option", { value: "" }, "Any group role"), Object.entries(SLOT_ROLE_CHIP).map(([k, l]) => h("option", { value: k }, l)));
   const cls = h("select", {}, h("option", { value: "" }, "Any class"));
   const minGs = h("input", { type: "number", min: "0", placeholder: "min GS", style: "width:110px" });
+  const minCp = h("input", { type: "number", min: "0", placeholder: "min CP", style: "width:120px" });
   const search = h("input", { type: "search", placeholder: "Search member or character…", style: "flex:1;min-width:180px" });
   const body = h("div", {});
   // Classes of the chosen project (the ones characters have)
@@ -5812,11 +5825,14 @@ function memberRoster(holder, guild) {
     const rows = list.filter(c => (!project.value || c.project === project.value) && (!role.value || c.slotRoles.includes(role.value)) &&
       (!cls.value || (c.classRole && c.classRole.id === cls.value)) &&
       (minGs.value === "" || (c.gs ?? -1) >= Number(minGs.value)) &&
+      (minCp.value === "" || ((c.armory && c.armory.combatPower) ?? -1) >= Number(minCp.value)) &&
       (!q || c.character.toLowerCase().includes(q) || c.member.name.toLowerCase().includes(q)));
     body.replaceChildren(h("p", { class: "muted small" }, `${rows.length} character(s). Find a tank or a healer for your group.`),
       rows.length ? sortTable(rows, [
         ["Member", r => r.member.name, r => member(r.member)],
-        ["Character", r => r.character, r => h("b", {}, r.character)],
+        ["Character", r => r.character, r => r.armory && r.armory.url
+          ? h("a", { href: r.armory.url, target: "_blank", rel: "noopener", class: "armory-name", title: "Official profile on aion2.plaync.com" }, h("b", {}, r.character), icon("external-link", 12))
+          : h("b", {}, r.character)],
         ["Class", r => r.classRole ? r.classRole.name : "", r => r.classRole ? h("span", { class: "row", style: "gap:4px" }, classMark(r) || null, r.classRole.name) : h("span", { class: "muted" }, "—")],
         ["Roles", r => r.slotRoles.join(), r => r.slotRoles.length ? r.slotRoles.map(x => h("span", { class: "chip" }, SLOT_ROLE_CHIP[x] || x)) : h("span", { class: "muted small" }, "any")],
         ["GS", r => r.gs, r => r.gs == null ? h("span", { class: "muted" }, "—") : String(r.gs)],
@@ -5826,11 +5842,11 @@ function memberRoster(holder, guild) {
   project.addEventListener("change", () => { fillClasses(); draw(); });
   role.addEventListener("change", draw);
   cls.addEventListener("change", draw);
-  for (const el of [minGs, search]) el.addEventListener("input", draw);
+  for (const el of [minGs, minCp, search]) el.addEventListener("input", draw);
   fillClasses();
   drawTabs();
   holder.replaceChildren(h("div", { class: "card" }, tabsBox,
-    h("div", { class: "row", style: "margin-bottom:10px;flex-wrap:wrap" }, role, cls, minGs, search), body,
+    h("div", { class: "row", style: "margin-bottom:10px;flex-wrap:wrap" }, role, cls, minGs, minCp, search), body,
     h("p", { class: "muted small", style: "margin-top:8px" }, "Only projects you have access to are shown.")));
   draw();
 }

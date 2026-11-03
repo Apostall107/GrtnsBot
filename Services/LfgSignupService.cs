@@ -70,10 +70,12 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
         var project = projects.Effective(group.GuildId, group.ProjectKey);
         var armoryPrefs = prefs.ArmoryFor(group.GuildId, project?.Key, project?.Name);
         group.HomeServer = armoryPrefs.Enabled ? OfficialArmory.Tag(armoryPrefs.ServerId) : null;
+        var cp = armoryPrefs.Enabled ? info?.Armory is { Error: null } a ? a.CombatPower : null : null;
         if (!armoryPrefs.Enabled) server = null;
         if (slot is not null)
         {
             slot.Server = server;
+            slot.Cp = cp;
             slot.ClassRoleId = role?.Id;
             slot.ClassIcon = icon;
             slot.Comment = info?.Comment;
@@ -82,6 +84,7 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
         else if (entry is not null)
         {
             entry.Server = server;
+            entry.Cp = cp;
             entry.ClassRoleId = role?.Id;
             entry.ClassIcon = icon;
             entry.Comment = info?.Comment;
@@ -100,8 +103,8 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
             await group.Gate.WaitAsync();
             try
             {
-                string Snapshot() => string.Join("|", group.Slots.Select(x => $"{x.UserId}:{x.ClassRoleId}:{x.ClassIcon}:{x.Gs}:{x.Server}")
-                    .Concat(group.Reserve.Select(x => $"{x.UserId}:{x.ClassRoleId}:{x.ClassIcon}:{x.Gs}:{x.Server}")));
+                string Snapshot() => string.Join("|", group.Slots.Select(x => $"{x.UserId}:{x.ClassRoleId}:{x.ClassIcon}:{x.Gs}:{x.Server}:{x.Cp}")
+                    .Concat(group.Reserve.Select(x => $"{x.UserId}:{x.ClassRoleId}:{x.ClassIcon}:{x.Gs}:{x.Server}:{x.Cp}")));
                 var before = Snapshot();
                 var users = group.Slots.Where(x => x.UserId is not null).Select(x => x.UserId!.Value)
                     .Concat(group.Reserve.Select(x => x.UserId)).Distinct().ToList();

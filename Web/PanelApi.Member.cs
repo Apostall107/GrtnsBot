@@ -120,6 +120,7 @@ public static partial class PanelApi
                             classRole = s.ClassRoleId is { } cr ? Role(guild, cr) : null,
                             classIcon = s.ClassIcon,
                             gs = s.Gs,
+                            cp = s.Cp,
                             attended = s.Attended,
                             ready = s.Ready,
                             requiredRole = SlotRequiredRole(guild, s),
@@ -134,7 +135,8 @@ public static partial class PanelApi
                             character = r.CharacterName,
                             classRole = r.ClassRoleId is { } rr ? Role(guild, rr) : null,
                             classIcon = r.ClassIcon,
-                            gs = r.Gs
+                            gs = r.Gs,
+                            cp = r.Cp
                         })
                     };
                 })
