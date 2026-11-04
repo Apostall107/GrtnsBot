@@ -90,8 +90,8 @@ public sealed class TempVoiceService(
     {
         var guild = creatorChannel.Guild;
 
-        // Уже есть своя комната — просто переносим туда
-        if (store.FindRoomByOwner(guild.Id, user.Id) is { } own && guild.GetVoiceChannel(own.ChannelId) is { } existing)
+        // Уже есть своя комната от ЭТОГО создателя — переносим туда (комнаты разных создателей независимы)
+        if (store.FindRoomByOwner(guild.Id, user.Id, creatorChannel.Id) is { } own && guild.GetVoiceChannel(own.ChannelId) is { } existing)
         {
             await MoveAsync(user, existing.Id);
             return;
