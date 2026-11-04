@@ -74,9 +74,11 @@ public sealed class TempVoiceStore
         lock (_lock) return _data.Rooms.Find(r => r.ChannelId == channelId);
     }
 
-    public TempVoiceRoom? FindRoomByOwner(ulong guildId, ulong ownerId)
+    /// <summary>Комната владельца; с creatorChannelId — только созданная через этот канал-создатель.</summary>
+    public TempVoiceRoom? FindRoomByOwner(ulong guildId, ulong ownerId, ulong? creatorChannelId = null)
     {
-        lock (_lock) return _data.Rooms.Find(r => r.GuildId == guildId && r.OwnerId == ownerId);
+        lock (_lock) return _data.Rooms.Find(r => r.GuildId == guildId && r.OwnerId == ownerId &&
+                                                  (creatorChannelId is null || r.CreatorChannelId == creatorChannelId));
     }
 
     public IReadOnlyList<TempVoiceRoom> GetRooms(ulong guildId)
