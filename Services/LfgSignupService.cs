@@ -360,8 +360,12 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
         {
             await channel.ModifyMessageAsync(group.MessageId, m =>
             {
+                // Текст-пинг над постом (с датой) тоже обновляем — чтобы при смене времени дата подтянулась;
+                // AllowedMentions.None, чтобы правка не пинговала роль заново
+                if (LfgRenderer.PingContent(group) is { } ping) m.Content = ping;
                 m.Embeds = new[] { s.Embed! };
                 m.Components = s.Components;
+                m.AllowedMentions = AllowedMentions.None;
             });
             // Копии поста в других каналах
             foreach (var mirror in group.Mirrors.ToList())
