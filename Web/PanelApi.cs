@@ -107,6 +107,7 @@ public static partial class PanelApi
         MapAccess(api.MapGroup("/access").AddEndpointFilter(Require(PanelPermissions.Access)));
         // Только владелец бота (право Access не выдаётся другим)
         MapVoiceNow(guild.MapGroup("/voice-now").AddEndpointFilter(Require(PanelPermissions.Access)));
+        MapCharacterTransfer(guild.MapGroup("/characters-transfer").AddEndpointFilter(Require(PanelPermissions.Access)));
     }
 
     // ================= Общее: сводка, роли, каналы, участники =================

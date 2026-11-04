@@ -4515,6 +4515,35 @@ async function pageSettings(main) {
       h("p", { class: "muted small" }, "All bot data (data/*.json): activities, groups, characters, tickets, archive, settings, access… Site login keys are not included."),
       h("div", { class: "row", style: "margin-bottom:10px" }, download),
       h("div", { class: "row" }, file, restore)));
+
+    // Characters: export (JSON for another instance, CSV for spreadsheets) and import of such JSON
+    const base = `/api/guilds/${state.guildId}/characters-transfer`;
+    const jsonBtn = h("a", { class: "btn", href: `${base}?format=json`, download: "" }, "⬇️ Export JSON");
+    const csvBtn = h("a", { class: "btn", href: `${base}?format=csv`, download: "" }, "⬇️ Export CSV");
+    const cfile = h("input", { type: "file", accept: ".json,application/json" });
+    const over = toggle(false, "Overwrite existing profiles (class, GS, server, armory link)");
+    const imp = h("button", { class: "btn" }, "⬆️ Import");
+    imp.addEventListener("click", async () => {
+      const f = cfile.files && cfile.files[0];
+      if (!f) return toast("Choose a characters .json first.", "warn");
+      if (!await confirmDialog("Import characters from this file?",
+        over.cb.checked ? "Missing characters are added; existing profiles are replaced with the file's data."
+          : "Missing characters are added; existing ones keep their data.", "Import")) return;
+      imp.disabled = true;
+      try {
+        const res = await fetch(`${base}/import?overwrite=${over.cb.checked}`, { method: "POST", headers: { "X-Panel": "1", "Content-Type": "application/json" }, body: f, credentials: "same-origin" });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(d.error || `Import failed (${res.status})`);
+        toast(`Characters: ${d.added} added, ${d.updated} updated, ${d.skipped} unchanged` +
+          (d.full ? `, ${d.full} skipped (member has 24 already)` : "") + (d.bad ? `, ${d.bad} invalid` : "") + ".");
+      } catch (e) { toast(e.message, "error"); }
+      finally { imp.disabled = false; }
+    });
+    holder.append(h("div", { class: "card" }, h("h2", {}, "👥 Characters export"),
+      h("p", { class: "muted small" }, "All characters of this server: owner, project, class, GS, server, comment, armory link. ",
+        "JSON — to move them to another bot instance (Import below on that instance); CSV — for spreadsheets."),
+      h("div", { class: "row", style: "margin-bottom:10px" }, jsonBtn, csvBtn),
+      h("div", { class: "row", style: "margin-bottom:6px" }, cfile, imp), over.el));
   }
 
   // Bot DMs: all off by default
