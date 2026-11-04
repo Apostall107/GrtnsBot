@@ -5307,8 +5307,30 @@ async function pageBirthdays(main) {
 
   const setCard = h("div", { class: "card" }, skeletonLines(5));
   const addCard = h("div", { class: "card" });
+  const ioCard = h("div", { class: "card" });
   const listCard = h("div", { class: "card" }, skeletonLines(4));
-  main.append(setCard, addCard, listCard);
+  main.append(setCard, addCard, ioCard, listCard);
+
+  // Bulk import (one CSV/JSON file) and export of the current list
+  const base = `/api/guilds/${state.guildId}/birthdays`;
+  const csvBtn = h("a", { class: "btn", href: `${base}/export`, download: "" }, icon("download", 14), "Export CSV");
+  const impFile = h("input", { type: "file", accept: ".csv,.json,text/csv,application/json" });
+  const impBtn = h("button", { class: "btn" }, icon("upload", 14), "Import file");
+  impBtn.addEventListener("click", () => act(impBtn, async () => {
+    const f = impFile.files && impFile.files[0];
+    if (!f) return toast("Choose a CSV or JSON file first.", "warn");
+    const isJson = /\.json$/i.test(f.name);
+    const res = await fetch(`${base}/import`, { method: "POST", headers: { "X-Panel": "1", "Content-Type": isJson ? "application/json" : "text/csv" }, body: f, credentials: "same-origin" });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.error || `Import failed (${res.status})`);
+    impFile.value = "";
+    toast(`Birthdays: ${d.added} added, ${d.updated} updated` + (d.full ? `, ${d.full} skipped (list full)` : "") + ` of ${d.total}.`);
+    load();
+  }));
+  ioCard.replaceChildren(
+    sectionLabel("Bulk import / export"),
+    h("p", { class: "muted small" }, "Upload one file with many birthdays. CSV columns: user_id, day, month, year (year optional) — or user_id, date (DD.MM.YYYY). JSON: a list of {userId, day, month, year}. Export gives a ready template of the current list."),
+    h("div", { class: "row", style: "gap:8px;flex-wrap:wrap;align-items:center" }, csvBtn, impFile, impBtn));
 
   const fmt = p => `${pad2(p.day)}.${pad2(p.month)}${p.year ? "." + p.year : ""}`;
 

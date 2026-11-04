@@ -1,4 +1,7 @@
+using System.Text;
+using System.Text.Json;
 using Discord.WebSocket;
+using LfgBot.Modules;
 using LfgBot.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -84,5 +87,110 @@ public static partial class PanelApi
             await service.ReconcileAsync(guildId);
             return Results.Ok(new { ok = true });
         });
+
+        // Выгрузка текущего списка в CSV (он же шаблон для импорта)
+        g.MapGet("/export", async (ulong guildId, DiscordSocketClient client, [FromServices] BirthdayStore store) =>
+        {
+            var data = store.Get(guildId);
+            if (client.GetGuild(guildId) is { } guild) await WarmMembersAsync(client, guild, data.People.Keys);
+            static string Q(object? v) => v is null ? "" : $"\"{v.ToString()!.Replace("\"", "\"\"")}\"";
+            string Name(ulong uid) => client.Guilds.Select(x => x.GetUser(uid)).FirstOrDefault(u => u is not null)?.Username ?? "";
+            var sb = new StringBuilder("﻿user_id,day,month,year,name\r\n");
+            foreach (var (userId, b) in data.People)
+                sb.AppendJoin(',', Q(userId), b.Day, b.Month, b.Year?.ToString() ?? "", Q(Name(userId))).Append("\r\n");
+            return Results.File(Encoding.UTF8.GetBytes(sb.ToString()), "text/csv; charset=utf-8",
+                $"birthdays-{DateTime.UtcNow:yyyyMMdd-HHmm}.csv");
+        });
+
+        // Массовый импорт одним файлом: CSV (user_id,day,month,year | user_id,date) или JSON [{userId,day,month,year}|{userId,date}].
+        g.MapPost("/import", async (ulong guildId, HttpRequest request, [FromServices] BirthdayStore store,
+            [FromServices] BirthdayService service) =>
+        {
+            using var reader = new StreamReader(request.Body);
+            var text = (await reader.ReadToEndAsync()).TrimStart('﻿').Trim();
+            if (text.Length == 0) return Error("The file is empty.");
+
+            List<(ulong UserId, Birthday Bday)> rows;
+            try { rows = text.StartsWith('[') || text.StartsWith('{') ? ParseBirthdayJson(text) : ParseBirthdayCsv(text); }
+            catch (JsonException) { return Error("This file isn't valid JSON."); }
+            if (rows.Count == 0) return Error("No birthdays found in the file. Expected columns: user_id, day, month, year.");
+
+            int added = 0, updated = 0, full = 0;
+            foreach (var (userId, bday) in rows)
+            {
+                var existed = store.Of(guildId, userId) is not null;
+                if (!store.Set(guildId, userId, bday)) { full++; continue; }
+                if (existed) updated++; else added++;
+            }
+            await service.ReconcileAsync(guildId);
+            return Results.Ok(new { total = rows.Count, added, updated, full });
+        });
+    }
+
+    /// <summary>Разбирает JSON-массив объектов с userId/user_id/id и либо date, либо day/month/year.</summary>
+    private static List<(ulong, Birthday)> ParseBirthdayJson(string text)
+    {
+        var result = new List<(ulong, Birthday)>();
+        using var doc = JsonDocument.Parse(text);
+        var arr = doc.RootElement.ValueKind == JsonValueKind.Array ? doc.RootElement.EnumerateArray() : default;
+        foreach (var el in arr)
+        {
+            if (el.ValueKind != JsonValueKind.Object) continue;
+            var id = Str(el, "userId") ?? Str(el, "user_id") ?? Str(el, "id");
+            if (ParseId(id) is not { } userId) continue;
+            Birthday? bday = null;
+            if (Str(el, "date") is { } ds && BirthdayModule.TryParse(ds, out var parsed)) bday = parsed;
+            else if (Int(el, "day") is { } d && Int(el, "month") is { } m)
+                bday = new Birthday { Day = d, Month = m, Year = Int(el, "year") };
+            if (bday is { IsValid: true }) result.Add((userId, bday));
+        }
+        return result;
+
+        static string? Str(JsonElement e, string n) => e.TryGetProperty(n, out var v)
+            ? v.ValueKind == JsonValueKind.String ? v.GetString() : v.ToString() : null;
+        static int? Int(JsonElement e, string n) => e.TryGetProperty(n, out var v) &&
+            (v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var i) || int.TryParse(v.ToString(), out i)) ? i : null;
+    }
+
+    /// <summary>Разбирает CSV: колонки user_id и либо date (ДД.ММ[.ГГГГ]), либо day/month/year. Заголовок необязателен.</summary>
+    private static List<(ulong, Birthday)> ParseBirthdayCsv(string text)
+    {
+        var result = new List<(ulong, Birthday)>();
+        var lines = text.Replace("\r\n", "\n").Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        var start = 0;
+        string[]? header = null;
+        if (lines.Length > 0 && lines[0].ToLowerInvariant() is var h0 && (h0.Contains("user") || h0.Contains("day") || h0.Contains("date")))
+        {
+            header = Cells(lines[0]).Select(c => c.ToLowerInvariant()).ToArray();
+            start = 1;
+        }
+        int Col(string name, int fallback) => header is null ? fallback : Array.IndexOf(header, name);
+
+        for (var i = start; i < lines.Length; i++)
+        {
+            var c = Cells(lines[i]);
+            if (c.Length == 0) continue;
+            var idCol = Col("user_id", 0);
+            if (idCol < 0 || idCol >= c.Length || ParseId(c[idCol]) is not { } userId) continue;
+
+            Birthday? bday = null;
+            var dateCol = Col("date", -1);
+            if (dateCol >= 0 && dateCol < c.Length && BirthdayModule.TryParse(c[dateCol], out var parsed)) bday = parsed;
+            else
+            {
+                var dayCol = Col("day", 1); var monthCol = Col("month", 2); var yearCol = Col("year", 3);
+                if (dayCol >= 0 && dayCol < c.Length && monthCol >= 0 && monthCol < c.Length &&
+                    int.TryParse(c[dayCol].Trim(), out var day) && int.TryParse(c[monthCol].Trim(), out var month))
+                {
+                    int? year = yearCol >= 0 && yearCol < c.Length && int.TryParse(c[yearCol].Trim(), out var y) ? y : null;
+                    bday = new Birthday { Day = day, Month = month, Year = year };
+                }
+            }
+            if (bday is { IsValid: true }) result.Add((userId, bday));
+        }
+        return result;
+
+        static string[] Cells(string line) => line.Split(line.Contains(';') && !line.Contains(',') ? ';' : ',')
+            .Select(x => x.Trim().Trim('"')).ToArray();
     }
 }

@@ -926,6 +926,7 @@ public static partial class PanelApi
         ("PUT", "/birthdays/settings", "birthdays", "Changed birthday settings"),
         ("POST", "/birthdays/people", "birthdays", "Set a member's birthday"),
         ("DELETE", "/birthdays/people/{userId}", "birthdays", "Removed a member's birthday"),
+        ("POST", "/birthdays/import", "birthdays", "Imported birthdays from a file"),
         ("PUT", "/member-roles/", "settings", "Set member roles"),
         ("POST", "/me/groups/{groupId}/join", "lfg", "Signed up (site)"),
         ("POST", "/me/groups/{groupId}/leave", "lfg", "Left group (site)"),
