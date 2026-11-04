@@ -431,6 +431,17 @@ public static class BotTextCatalog
         C("color.welcome", "Stripe color: welcome card", 0x9D7BFF);
 
         // ================= General =================
+        Group("Birthdays — /birthday");
+        T("birthday.title", "Birthday window title", "Your birthday", null, ModalTitle);
+        T("birthday.label", "Birthday field label", "Date — DD.MM or DD.MM.YYYY", null, ModalTitle);
+        T("birthday.saved", "Saved", "🎂 Saved your birthday: {date}. On that day you'll get the birthday role (if you're a member).", "{date}", 500);
+        T("birthday.cleared", "Cleared", "Your birthday was removed.", null, 300);
+        T("birthday.current", "Shows the saved date", "🎂 Your birthday: {date}. Use /birthday again to change it, or the Remove button.", "{date}", 500);
+        T("birthday.none", "No date yet", "You haven't set a birthday yet. Enter it below.", null, 300);
+        T("birthday.badDate", "Invalid date", "Enter the date as DD.MM or DD.MM.YYYY, e.g. 07.03 or 07.03.1998.", null, 300);
+        T("birthday.remove", "Remove button", "Remove my birthday", null, Button);
+        T("birthday.announce", "Birthday greeting in the channel", "🎂 Happy birthday, {user}! 🎉", "{user}", 1000);
+
         Group("General");
         T("bot.error", "Something went wrong", "Something went wrong. Please try again.", null, 500);
         T("bot.accessDenied", "No access to a command", "Access denied: {reason}", "{reason}", 500);

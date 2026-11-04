@@ -107,7 +107,8 @@ const ICONS = {
   "timer": '<line x1="10" x2="14" y1="2" y2="2"/> <line x1="12" x2="15" y1="14" y2="11"/> <circle cx="12" cy="14" r="8"/>',
   "chevron-up": '<path d="m18 15-6-6-6 6"/>',
   "chevrons-up-down": '<path d="m7 15 5 5 5-5"/> <path d="m7 9 5-5 5 5"/>',
-  "minus": '<path d="M5 12h14"/>'
+  "minus": '<path d="M5 12h14"/>',
+  "cake": '<path d="M20 21v-8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8"/> <path d="M4 16s.5-1 2-1 2.5 1 4 1 2.5-1 4-1 2.5 1 4 1 2-1 2-1"/> <path d="M2 21h20"/> <path d="M7 8v3"/> <path d="M12 8v3"/> <path d="M17 8v3"/> <path d="M7 4h.01"/> <path d="M12 4h.01"/> <path d="M17 4h.01"/>'
 };
 
 /** SVG icon by name (Lucide, 24×24 stroke icons). */

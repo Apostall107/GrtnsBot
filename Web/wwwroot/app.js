@@ -1149,6 +1149,7 @@ const allTabs = [
   ["voice", "headphones", "Temp Voice", "voice", "Community modules"],
   ["welcome", "door-open", "Welcome", "welcome", "Community modules"],
   ["roles", "user-plus", "Role panels", "roles", "Community modules"],
+  ["birthdays", "cake", "Birthdays", "birthdays", "Community modules"],
   ["content", "layout-template", "Panels & posts", "content", "Community modules"],
   ["announce", "megaphone", "Announcements", "announce", "Community modules"],
   ["overview", "layout-dashboard", "Dashboard", "admin", "Administration"],
@@ -1170,8 +1171,8 @@ const can = perm => {
 };
 const MEMBER_TABS = ["home", "play", "chars"];
 const visibleTabs = () => allTabs.filter(t => can(t[3]));
-const PERM_LABELS = { lfg: "LFG", guild: "Guild", tickets: "Tickets", voice: "Temp Voice", welcome: "Welcome", roles: "Role panels", texts: "Panel texts", posts: "Posts", announce: "Announcements", log: "Log", settings: "Settings" };
-const PERM_ICONS = { lfg: "swords", guild: "calendar", tickets: "ticket", voice: "headphones", welcome: "door-open", roles: "user-plus", texts: "file-pen-line", posts: "pin", announce: "megaphone", log: "scroll-text", settings: "settings" };
+const PERM_LABELS = { lfg: "LFG", guild: "Guild", tickets: "Tickets", voice: "Temp Voice", welcome: "Welcome", roles: "Role panels", texts: "Panel texts", posts: "Posts", announce: "Announcements", birthdays: "Birthdays", log: "Log", settings: "Settings" };
+const PERM_ICONS = { lfg: "swords", guild: "calendar", tickets: "ticket", voice: "headphones", welcome: "door-open", roles: "user-plus", texts: "file-pen-line", posts: "pin", announce: "megaphone", birthdays: "cake", log: "scroll-text", settings: "settings" };
 
 function renderLogin(message) {
   const params = new URLSearchParams(location.search);
@@ -1254,7 +1255,7 @@ function renderShell() {
   // ----- Sidebar: sections, Lucide icons, active route; collapses to icons on desktop, drawer on mobile
   const layout = h("div", { class: `layout${collapsed ? " collapsed" : ""}` });
   const closeDrawer = () => layout.classList.remove("drawer-open");
-  const NAV_TONES = { voicenow: "teal", captcha: "amber", home: "violet", play: "violet", chars: "cyan", schedule: "teal", roster: "green", lfg: "violet", guild: "teal", tickets: "amber", voice: "teal", welcome: "pink", roles: "green", content: "blue",
+  const NAV_TONES = { voicenow: "teal", captcha: "amber", birthdays: "pink", home: "violet", play: "violet", chars: "cyan", schedule: "teal", roster: "green", lfg: "violet", guild: "teal", tickets: "amber", voice: "teal", welcome: "pink", roles: "green", content: "blue",
     announce: "pink", overview: "green", log: "blue", settings: "cyan", access: "amber" };
   const navButton = ([key, ic, label]) => h("button", {
     // Tooltip only when the menu is collapsed to icons (labels are visible otherwise)
@@ -1314,7 +1315,7 @@ function renderShell() {
 
   if (!state.guildId) { main.append(empty("No servers available for your account.")); return; }
   if (!visibleTabs().length) { main.append(empty("You have no sections on this server. Ask an admin for the member role.")); return; }
-  const page = { home: pageHome, content: pageContent, play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, guild: pageGuild, schedule: pageSchedule, roster: pageMemberRoster, tickets: pageTickets, voice: pageVoice, welcome: pageWelcome, roles: pageRoles, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess, voicenow: pageVoiceNow, captcha: pageCaptcha }[state.tab];
+  const page = { home: pageHome, content: pageContent, play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, guild: pageGuild, schedule: pageSchedule, roster: pageMemberRoster, tickets: pageTickets, voice: pageVoice, welcome: pageWelcome, roles: pageRoles, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess, voicenow: pageVoiceNow, captcha: pageCaptcha, birthdays: pageBirthdays }[state.tab];
   page(main);
   addGuideButton(main, state.tab);
   decorateHeading(main);
@@ -5293,6 +5294,94 @@ async function pageVoiceNow(main) {
   await load();
   const tick = async () => { if (await load() !== false) setTimeout(() => { if (auto.checked) tick(); else setTimeout(tick, 10000); }, 10000); };
   setTimeout(tick, 10000);
+}
+
+// ================= Birthdays =================
+
+/** Member birthdays: on someone's day the bot gives a role (if they have the member role) and removes it next day. */
+async function pageBirthdays(main) {
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "🎂 Birthdays"),
+    h("button", { class: "btn btn-refresh", title: "Reload now", onclick: hardRefresh }, "🔄 Refresh")));
+  main.append(h("p", { class: "muted small" },
+    "Members set their birthday with /birthday in Discord (you can also add dates here). On someone's birthday — in the server time zone — the bot gives them the chosen role if they have the member role, and removes it the next day."));
+
+  const setCard = h("div", { class: "card" }, skeletonLines(5));
+  const addCard = h("div", { class: "card" });
+  const listCard = h("div", { class: "card" }, skeletonLines(4));
+  main.append(setCard, addCard, listCard);
+
+  const fmt = p => `${pad2(p.day)}.${pad2(p.month)}${p.year ? "." + p.year : ""}`;
+
+  function renderSettings(d) {
+    const enabled = toggle(d.enabled, "Give the birthday role automatically");
+    const memberRole = roleSelect("Anyone with a saved date");
+    memberRole.value = d.memberRoleId || "";
+    const bdayRole = roleSelect("Choose the birthday role…");
+    bdayRole.value = d.birthdayRoleId || "";
+    const channel = channelSelect("text", "Don't post a greeting");
+    channel.value = d.announceChannelId || "";
+    const save = h("button", { class: "btn primary" }, icon("check", 14), "Save settings");
+    save.addEventListener("click", () => act(save, async () => {
+      const r = await gApi("PUT", "/birthdays/settings", {
+        enabled: enabled.cb.checked, memberRoleId: memberRole.value || null,
+        birthdayRoleId: bdayRole.value || null, announceChannelId: channel.value || null
+      });
+      toast(`Settings saved.${r.granted || r.removed ? ` Applied now: +${r.granted} / −${r.removed}.` : ""}`);
+      load();
+    }));
+    setCard.replaceChildren(
+      sectionLabel("Settings"),
+      enabled.el,
+      h("div", { class: "field" }, h("label", {}, "Member role (\"Участник\") — only its holders get the birthday role"), memberRole),
+      h("div", { class: "field" }, h("label", {}, "Birthday role — given on the day, removed next day"), bdayRole),
+      h("div", { class: "field" }, h("label", {}, "Greeting channel (optional)"), channel),
+      h("div", { class: "row", style: "margin-top:6px" }, save),
+      h("p", { class: "muted small" }, "The bot's own role must be ABOVE the birthday role in the server's role list, or it can't assign it."));
+  }
+
+  function renderAdd() {
+    const uid = h("input", { class: "input", placeholder: "Discord user ID", style: "width:180px" });
+    const day = h("input", { type: "number", min: "1", max: "31", placeholder: "DD", style: "width:70px" });
+    const month = h("input", { type: "number", min: "1", max: "12", placeholder: "MM", style: "width:70px" });
+    const year = h("input", { type: "number", min: "1900", max: "2100", placeholder: "YYYY (optional)", style: "width:150px" });
+    const add = h("button", { class: "btn" }, icon("user-plus", 14), "Add / update");
+    add.addEventListener("click", () => act(add, async () => {
+      if (!uid.value.trim()) return toast("Enter a user ID.", "warn");
+      if (!day.value || !month.value) return toast("Enter day and month.", "warn");
+      await gApi("POST", "/birthdays/people", { userId: uid.value.trim(), day: +day.value, month: +month.value, year: year.value ? +year.value : null });
+      uid.value = day.value = month.value = year.value = "";
+      toast("Birthday saved."); load();
+    }));
+    addCard.replaceChildren(
+      sectionLabel("Add a birthday"),
+      h("p", { class: "muted small" }, "In Discord: enable Developer Mode, right-click a user → Copy User ID."),
+      h("div", { class: "row", style: "gap:8px;flex-wrap:wrap;align-items:center" }, uid, day, h("span", { class: "muted" }, "."), month, year, add));
+  }
+
+  const removePerson = (id, name) => act(null, async () => {
+    if (!await confirmDialog("Remove this birthday?", `${name}'s date will be deleted.`, "Remove")) return;
+    await gApi("DELETE", `/birthdays/people/${id}`);
+    toast(`${name}'s birthday removed.`); load();
+  });
+
+  function renderList(d) {
+    if (!d.people.length) { listCard.replaceChildren(emptyState("cake", "No birthdays yet", "Members add theirs with /birthday, or add them above.")); return; }
+    listCard.replaceChildren(
+      sectionLabel(`Birthdays · ${d.count}`),
+      h("div", { class: "list" }, d.people.map(p => h("div", { class: "list-row", style: "gap:8px;align-items:center" },
+        h("div", { class: "grow" }, member(p.member)),
+        h("span", { class: "chip" }, fmt(p)),
+        p.inDays === 0 ? h("span", { class: "chip ok", title: "Birthday today" }, "🎂 today")
+          : h("span", { class: "muted small" }, p.inDays === 1 ? "tomorrow" : `in ${p.inDays} d`),
+        h("button", { class: "btn sm ghost icon-only", title: "Remove", onclick: () => removePerson(p.member.id, p.member.name) }, icon("trash-2", 14))))));
+  }
+
+  async function load() {
+    let d;
+    try { d = await gApi("GET", "/birthdays"); } catch (e) { setCard.replaceChildren(empty(e.message)); return; }
+    renderSettings(d); renderAdd(); renderList(d);
+  }
+  await load();
 }
 
 // ================= Captcha (bot owner only) =================

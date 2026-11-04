@@ -109,6 +109,7 @@ public static partial class PanelApi
         MapVoiceNow(guild.MapGroup("/voice-now").AddEndpointFilter(Require(PanelPermissions.Access)));
         MapCharacterTransfer(guild.MapGroup("/characters-transfer").AddEndpointFilter(Require(PanelPermissions.Access)));
         MapCaptcha(api.MapGroup("/captcha").AddEndpointFilter(Require(PanelPermissions.Access)));
+        MapBirthdays(guild.MapGroup("/birthdays").AddEndpointFilter(Require(PanelPermissions.Birthdays)));
     }
 
     // ================= Общее: сводка, роли, каналы, участники =================
