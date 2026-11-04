@@ -105,6 +105,8 @@ public static partial class PanelApi
         MapAnnounce(guild.MapGroup("/announce").AddEndpointFilter(Require(PanelPermissions.Announce)));
         MapBackup(api.MapGroup("/backup").AddEndpointFilter(Require(PanelPermissions.Access)));
         MapAccess(api.MapGroup("/access").AddEndpointFilter(Require(PanelPermissions.Access)));
+        // Только владелец бота (право Access не выдаётся другим)
+        MapVoiceNow(guild.MapGroup("/voice-now").AddEndpointFilter(Require(PanelPermissions.Access)));
     }
 
     // ================= Общее: сводка, роли, каналы, участники =================

@@ -1153,6 +1153,7 @@ const allTabs = [
   ["overview", "layout-dashboard", "Dashboard", "admin", "Administration"],
   ["log", "scroll-text", "Log", "log", "Administration"],
   ["settings", "settings", "Settings", "settings", "Administration"],
+  ["voicenow", "headphones", "Voice now", "access", "Administration"],
   ["access", "key-round", "Access", "access", "Administration"]
 ];
 const currentGuild = () => state.guilds.find(g => g.id === state.guildId);
@@ -1251,7 +1252,7 @@ function renderShell() {
   // ----- Sidebar: sections, Lucide icons, active route; collapses to icons on desktop, drawer on mobile
   const layout = h("div", { class: `layout${collapsed ? " collapsed" : ""}` });
   const closeDrawer = () => layout.classList.remove("drawer-open");
-  const NAV_TONES = { home: "violet", play: "violet", chars: "cyan", schedule: "teal", roster: "green", lfg: "violet", guild: "teal", tickets: "amber", voice: "teal", welcome: "pink", roles: "green", content: "blue",
+  const NAV_TONES = { voicenow: "teal", home: "violet", play: "violet", chars: "cyan", schedule: "teal", roster: "green", lfg: "violet", guild: "teal", tickets: "amber", voice: "teal", welcome: "pink", roles: "green", content: "blue",
     announce: "pink", overview: "green", log: "blue", settings: "cyan", access: "amber" };
   const navButton = ([key, ic, label]) => h("button", {
     // Tooltip only when the menu is collapsed to icons (labels are visible otherwise)
@@ -1311,7 +1312,7 @@ function renderShell() {
 
   if (!state.guildId) { main.append(empty("No servers available for your account.")); return; }
   if (!visibleTabs().length) { main.append(empty("You have no sections on this server. Ask an admin for the member role.")); return; }
-  const page = { home: pageHome, content: pageContent, play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, guild: pageGuild, schedule: pageSchedule, roster: pageMemberRoster, tickets: pageTickets, voice: pageVoice, welcome: pageWelcome, roles: pageRoles, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess }[state.tab];
+  const page = { home: pageHome, content: pageContent, play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, guild: pageGuild, schedule: pageSchedule, roster: pageMemberRoster, tickets: pageTickets, voice: pageVoice, welcome: pageWelcome, roles: pageRoles, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess, voicenow: pageVoiceNow }[state.tab];
   page(main);
   addGuideButton(main, state.tab);
   decorateHeading(main);
@@ -5216,6 +5217,52 @@ async function pageChars(main) {
 }
 
 // ================= Access (owner only) =================
+
+// ================= Voice now (bot owner only) =================
+
+/** Who is in which voice channel right now — every channel the bot knows, hidden ones too. Refreshes itself. */
+async function pageVoiceNow(main) {
+  const body = h("div", {}, h("div", { class: "card" }, skeletonLines(4)));
+  const stamp = h("span", { class: "muted small" });
+  const auto = h("input", { type: "checkbox", class: "switch", checked: store.get("gb.voiceNowAuto") !== "0", "aria-label": "Auto-refresh" });
+  auto.addEventListener("change", () => store.set("gb.voiceNowAuto", auto.checked ? "1" : "0"));
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "🎧 Voice now"),
+    h("div", { class: "row", style: "gap:8px" }, stamp, h("label", { class: "row", style: "gap:6px" }, auto, "every 10 s"),
+      h("button", { class: "btn btn-refresh", title: "Reload now", onclick: () => load() }, "🔄 Refresh"))),
+    h("p", { class: "muted small" }, "Only you (the bot owner) see this page. All voice channels of the server, including the ones hidden from members — as the bot sees them."),
+    body);
+  const flags = u => [
+    u.serverMuted ? h("span", { class: "vn-flag warn", title: "Muted by the server" }, icon("mic-off", 13)) : u.muted ? h("span", { class: "vn-flag", title: "Muted" }, icon("mic-off", 13)) : null,
+    u.deafened ? h("span", { class: "vn-flag", title: "Deafened" }, icon("headphone-off", 13)) : null,
+    u.streaming ? h("span", { class: "vn-flag live", title: "Streaming" }, icon("monitor", 13), "LIVE") : null,
+    u.video ? h("span", { class: "vn-flag", title: "Camera on" }, icon("video", 13)) : null,
+    u.bot ? h("span", { class: "chip" }, "bot") : null
+  ].filter(Boolean);
+  const load = async () => {
+    if (state.tab !== "voicenow" || !document.body.contains(body)) return false;
+    let d;
+    try { d = await gApi("GET", "/voice-now"); } catch (e) { body.replaceChildren(empty(e.message)); return true; }
+    stamp.textContent = `${d.total} in voice · ${new Date().toLocaleTimeString()}`;
+    if (!d.channels.length) { body.replaceChildren(emptyState("headphones", "Nobody in voice", "The page updates by itself.")); return true; }
+    const byCat = new Map();
+    for (const c of d.channels) { const k = c.category || "No category"; if (!byCat.has(k)) byCat.set(k, []); byCat.get(k).push(c); }
+    body.replaceChildren(...[...byCat].map(([cat, list]) => h("div", { style: "margin-bottom:14px" },
+      sectionLabel(cat),
+      h("div", { class: "grid2" }, list.map(c => h("div", { class: "card vn-card", style: "margin:0" },
+        h("div", { class: "row", style: "gap:6px;margin-bottom:8px" },
+          icon(c.stage ? "mic" : "volume-2", 16), h("b", { class: "grow" }, c.name),
+          c.hidden ? h("span", { class: "badge lock", title: "Hidden from @everyone" }, icon("eye-off", 12), "hidden") : null,
+          c.tempRoom ? h("span", { class: "chip" }, "temp room") : null,
+          h("span", { class: "chip" }, c.limit ? `${c.users.length}/${c.limit}` : String(c.users.length)),
+          h("a", { class: "btn ghost icon-only sm", href: c.jumpUrl, target: "_blank", rel: "noopener", title: "Open in Discord" }, icon("external-link", 14))),
+        h("div", { class: "list" }, c.users.map(u => h("div", { class: "list-row", style: "padding:4px 0" },
+          h("div", { class: "grow" }, member(u.member)), ...flags(u))))))))));
+    return true;
+  };
+  await load();
+  const tick = async () => { if (await load() !== false) setTimeout(() => { if (auto.checked) tick(); else setTimeout(tick, 10000); }, 10000); };
+  setTimeout(tick, 10000);
+}
 
 async function pageAccess(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "🔑 Access"),
