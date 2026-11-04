@@ -25,11 +25,14 @@ public static class PanelPermissions
     public const string Log = "log";
     /// <summary>Настройки бота (часовой пояс, автоудаление, напоминание).</summary>
     public const string Settings = "settings";
+    /// <summary>Дни рождения участников и автоматическая роль.</summary>
+    public const string Birthdays = "birthdays";
+
     /// <summary>Управление доступом — только владелец, выдать нельзя.</summary>
     public const string Access = "access";
 
     /// <summary>Права, которые владелец может выдавать.</summary>
-    public static readonly string[] Grantable = [Lfg, Guild, Tickets, Voice, Welcome, Roles, Texts, Posts, Announce, Log, Settings];
+    public static readonly string[] Grantable = [Lfg, Guild, Tickets, Voice, Welcome, Roles, Texts, Posts, Announce, Birthdays, Log, Settings];
 }
 
 public sealed class WebGrant
