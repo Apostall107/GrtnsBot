@@ -5297,39 +5297,59 @@ async function pageVoiceNow(main) {
 
 // ================= Captcha (bot owner only) =================
 
-/** Who the bot asks a captcha, their current state, and granting a pass when someone is stuck in the chat. */
+/** Full captcha control (same as /super-panel): list + grant pass, add/remove users, settings, preview, reset. */
 async function pageCaptcha(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "🛡️ Captcha"),
     h("button", { class: "btn btn-refresh", title: "Reload now", onclick: hardRefresh }, "🔄 Refresh")));
   main.append(h("p", { class: "muted small" },
-    "Only you (the bot owner) see this page. These users must solve a picture captcha before using the bot. ",
-    "If someone is stuck on the captcha in the chat, grant them a pass here — it clears any block and marks them as verified. ",
-    "The full captcha list and settings are in Discord via /super-panel."));
+    "Only you (the bot owner) see this page. Listed users must solve a picture captcha before using the bot. ",
+    "Everything from the Discord /super-panel is here too: the list, settings and a preview. ",
+    "If someone is stuck on the captcha in the chat, grant them a pass — it clears any block and marks them as verified."));
 
   const durOpts = [["", "For the default time"], ["60", "For 1 hour"], ["240", "For 4 hours"], ["1440", "For 24 hours"], ["0", "For one action only"]];
   const dur = h("select", { class: "input", style: "max-width:220px" },
     ...durOpts.map(([v, t]) => h("option", { value: v }, t)));
 
-  const holder = h("div", {}, h("div", { class: "card" }, skeletonLines(4)));
-  main.append(h("div", { class: "card" }, sectionLabel("Grant a pass"),
-    h("p", { class: "muted small" }, "Duration applies to every pass you grant below."),
-    h("div", { class: "row", style: "gap:8px;flex-wrap:wrap;align-items:center" },
-      h("span", { class: "muted small" }, "Pass is valid:"), dur)),
-    holder);
+  const listCard = h("div", { class: "card" }, skeletonLines(4));
+  const setCard = h("div", { class: "card" }, skeletonLines(5));
 
-  const grant = async (id, name) => {
+  // --- Add users ---
+  const addIn = h("input", { class: "input", placeholder: "Discord user IDs, separated by space or comma", style: "flex:1;min-width:220px" });
+  const addBtn = h("button", { class: "btn" }, icon("user-plus", 14), "Add to list");
+  addBtn.addEventListener("click", () => act(addBtn, async () => {
+    const ids = addIn.value.split(/[\s,]+/).filter(Boolean);
+    if (!ids.length) return toast("Enter at least one user ID.", "warn");
+    const d = await gApi("POST", "/captcha/users", { userIds: ids });
+    addIn.value = "";
+    toast(`Added ${d.added}.` + (d.skippedBotsOrOwner ? ` ${d.skippedBotsOrOwner} skipped (bots or you).` : ""));
+    load();
+  }));
+
+  main.append(
+    h("div", { class: "card" }, sectionLabel("Grant a pass"),
+      h("p", { class: "muted small" }, "Duration applies to every pass you grant in the list below."),
+      h("div", { class: "row", style: "gap:8px;flex-wrap:wrap;align-items:center" },
+        h("span", { class: "muted small" }, "Pass is valid:"), dur)),
+    h("div", { class: "card" }, sectionLabel("Add users to the captcha list"),
+      h("p", { class: "muted small" }, "In Discord: enable Developer Mode, right-click a user → Copy User ID. Bots and you are never checked."),
+      h("div", { class: "row", style: "gap:8px;flex-wrap:wrap" }, addIn, addBtn)),
+    listCard, setCard);
+
+  const grant = (id, name) => act(null, async () => {
     const minutes = dur.value === "" ? undefined : Number(dur.value);
-    try {
-      const d = await gApi("POST", "/captcha/grant", { userId: id, minutes });
-      toast(d.until ? `${name} can use the bot without a captcha until ${new Date(d.until).toLocaleString()}.`
-                    : `${name} may run one action without a captcha.`);
-      load();
-    } catch (e) { toast(e.message, "error"); }
-  };
-  const requireAgain = async (id, name) => {
-    try { await gApi("POST", "/captcha/require", { userId: id }); toast(`${name} will solve the captcha again on their next action.`); load(); }
-    catch (e) { toast(e.message, "error"); }
-  };
+    const d = await gApi("POST", "/captcha/grant", { userId: id, minutes });
+    toast(d.until ? `${name} is verified until ${new Date(d.until).toLocaleString()}.` : `${name} may run one action without a captcha.`);
+    load();
+  });
+  const requireAgain = (id, name) => act(null, async () => {
+    await gApi("POST", "/captcha/require", { userId: id });
+    toast(`${name} will solve the captcha again on their next action.`); load();
+  });
+  const removeUser = (id, name) => act(null, async () => {
+    if (!await confirmDialog("Remove from the captcha list?", `${name} will no longer be asked for a captcha.`, "Remove")) return;
+    await gApi("POST", "/captcha/users/remove", { userIds: [id] });
+    toast(`${name} removed from the list.`); load();
+  });
 
   const badge = u => {
     if (u.status === "blocked") return h("span", { class: "badge lock", title: "Blocked after failing" }, icon("clock", 12), u.until ? "blocked · " + fmtRelative(u.until) : "blocked");
@@ -5338,19 +5358,82 @@ async function pageCaptcha(main) {
     return h("span", { class: "chip muted" }, "waiting");
   };
 
-  async function load() {
-    let d;
-    try { d = await gApi("GET", "/captcha"); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
-    if (!d.users.length) { holder.replaceChildren(emptyState("shield-check", "The captcha list is empty", "Add users via /super-panel in Discord.")); return; }
-    holder.replaceChildren(h("div", { class: "card" },
-      sectionLabel(`On the captcha list · ${d.settings.count}/${d.settings.max}`),
+  function renderList(d) {
+    if (!d.users.length) { listCard.replaceChildren(emptyState("shield-check", "The captcha list is empty", "Add users above or via /super-panel in Discord.")); return; }
+    listCard.replaceChildren(
+      sectionLabel(`On the captcha list · ${d.count}/${d.max}`),
       h("div", { class: "list" }, d.users.map(u => h("div", { class: "list-row", style: "gap:8px;align-items:center" },
         h("div", { class: "grow" }, member(u.member)),
         badge(u),
         h("button", { class: "btn sm", title: "Mark as verified (clears any block)", onclick: () => grant(u.member.id, u.member.name) }, icon("user-check", 14), "Grant pass"),
         u.status === "verified" || u.status === "blocked"
           ? h("button", { class: "btn sm ghost", title: "Require the captcha again", onclick: () => requireAgain(u.member.id, u.member.name) }, "Require again")
-          : null)))));
+          : null,
+        h("button", { class: "btn sm ghost icon-only", title: "Remove from the list", onclick: () => removeUser(u.member.id, u.member.name) }, icon("trash-2", 14))))));
+  }
+
+  function renderSettings(s) {
+    const num = (val, min, max, w = 90) => h("input", { type: "number", min: String(min), max: String(max), value: String(val), style: `width:${w}px` });
+    const validity = num(s.validityMinutes, 0, 10080);
+    const attempts = num(s.maxAttempts, 1, 10, 70);
+    const block = num(s.blockMinutes, 1, 1440);
+    const length = num(s.codeLength, s.minLength, s.maxLength, 70);
+    const distortion = num(s.distortionPercent, 0, 100, 70);
+    const timeLimit = num(s.timeLimitSeconds, 0, 3600);
+    const mirror = toggle(s.mirror, "Mirror each character");
+    const timeoutOnFail = toggle(s.timeoutOnFail, "Also Discord-timeout and disconnect from voice on failure");
+    const field = (label, input, hint) => h("div", { class: "field", style: "margin:0 16px 10px 0;display:inline-block;vertical-align:top" },
+      h("div", { class: "muted small", style: "margin-bottom:4px" }, label), input, hint ? h("div", { class: "muted small" }, hint) : null);
+
+    const save = h("button", { class: "btn primary" }, icon("check", 14), "Save settings");
+    save.addEventListener("click", () => act(save, async () => {
+      const s2 = await gApi("PUT", "/captcha/settings", {
+        validityMinutes: +validity.value, maxAttempts: +attempts.value, blockMinutes: +block.value,
+        codeLength: +length.value, distortionPercent: +distortion.value, timeLimitSeconds: +timeLimit.value,
+        mirror: mirror.cb.checked, timeoutOnFail: timeoutOnFail.cb.checked
+      });
+      toast("Captcha settings saved.");
+      renderSettings(s2);
+    }));
+
+    const preview = h("button", { class: "btn" }, icon("eye", 14), "Preview");
+    preview.addEventListener("click", () => act(preview, async () => {
+      const p = await gApi("GET", "/captcha/preview");
+      const d = dialog();
+      d.replaceChildren(
+        h("h2", {}, "🔍 Captcha preview"),
+        h("p", { class: "muted small" }, `This is what listed users see. ${p.howto}`),
+        h("img", { src: p.image, alt: "captcha", style: "max-width:100%;border-radius:8px;background:#fff;padding:6px" }),
+        h("p", { class: "muted small", style: "margin-top:8px" }, "Code: " + p.code),
+        h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Close")));
+      d.showModal();
+    }));
+
+    const reset = h("button", { class: "btn ghost" }, icon("refresh-cw", 14), "Reset verifications");
+    reset.addEventListener("click", () => act(reset, async () => {
+      if (!await confirmDialog("Reset all verifications?", "Everyone on the list must solve the captcha again and all blocks are lifted.", "Reset")) return;
+      await gApi("POST", "/captcha/reset", {});
+      toast("All verifications reset; blocks lifted."); load();
+    }));
+
+    setCard.replaceChildren(
+      sectionLabel("Captcha settings"),
+      h("div", { style: "margin-bottom:6px" },
+        field("Valid after solving, min", validity, "0 = every command"),
+        field("Attempts", attempts),
+        field("Block on fail, min", block),
+        field("Code length", length, `${s.minLength}–${s.maxLength}`),
+        field("Distortion, %", distortion, "0–100"),
+        field("Seconds per picture", timeLimit, "0 = no limit")),
+      mirror.el, timeoutOnFail.el,
+      h("div", { class: "row", style: "gap:8px;flex-wrap:wrap;margin-top:6px" }, save, preview, reset));
+  }
+
+  async function load() {
+    let d;
+    try { d = await gApi("GET", "/captcha"); } catch (e) { listCard.replaceChildren(empty(e.message)); return; }
+    renderList(d);
+    renderSettings(d.settings);
   }
   await load();
 }
