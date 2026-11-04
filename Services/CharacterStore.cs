@@ -272,6 +272,38 @@ public sealed class CharacterStore
         }
     }
 
+    /// <summary>
+    /// Импорт персонажа (перенос с другого инстанса): добавляет в конец списка, профиль — если его нет
+    /// (или поверх, когда overwrite). Возвращает "added", "updated", "skipped" или "full".
+    /// </summary>
+    public string Import(ulong guildId, ulong userId, string? scope, string name, CharacterInfo? info, bool overwrite)
+    {
+        name = name.Replace("`", "").Trim();
+        if (name.Length == 0) return "skipped";
+        if (name.Length > MaxNameLength) name = name[..MaxNameLength];
+        lock (_lock)
+        {
+            var key = Key(guildId, userId, scope);
+            if (!_data.TryGetValue(key, out var list)) _data[key] = list = [];
+            var exists = list.Any(n => n.Equals(name, StringComparison.OrdinalIgnoreCase));
+            if (!exists)
+            {
+                if (list.Count >= MaxPerUser) return "full";
+                list.Add(name);
+                Save();
+            }
+            var infoKey = InfoKey(guildId, userId, name, scope);
+            var hasInfo = _info.ContainsKey(infoKey);
+            if (info is { IsEmpty: false } && (!hasInfo || overwrite))
+            {
+                _info[infoKey] = info.Copy();
+                SaveInfo();
+                return exists ? "updated" : "added";
+            }
+            return exists ? "skipped" : "added";
+        }
+    }
+
     private void SaveInfo()
     {
         var dir = Path.GetDirectoryName(Path.GetFullPath(_infoPath));
