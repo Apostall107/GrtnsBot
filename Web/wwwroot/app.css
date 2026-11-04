@@ -1529,3 +1529,6 @@ th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
 .icon-actions .btn.danger-text, .btn.ghost.danger-text { color: #f87171; }
 .btn.danger-text:hover { background: rgba(248, 113, 113, .12); }
 .btn.ghost.danger-text .icon { color: #f87171; }
+.vn-flag { display: inline-flex; align-items: center; gap: 3px; color: var(--text-secondary); font-size: 11px; margin-left: 6px; }
+.vn-flag.warn { color: #f87171; }
+.vn-flag.live { color: #fff; background: #ed4245; border-radius: 4px; padding: 0 5px; font-weight: 700; }
