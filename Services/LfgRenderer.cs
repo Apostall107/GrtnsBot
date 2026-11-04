@@ -274,6 +274,14 @@ public static class LfgRenderer
         return $"<t:{unix}:F> (<t:{unix}:R>)";
     }
 
+    /// <summary>Текст-пинг над постом (роль + активность + дата). null — у сбора нет роли для пинга.</summary>
+    public static string? PingContent(LfgGroup g)
+    {
+        if (g.PingRoleId is not { } roleId) return null;
+        var when = g.StartsAt is { } t ? $" — <t:{t.ToUnixTimeSeconds()}:f>" : "";
+        return Tx.Get(g.GuildId, "lfg.post.ping", ("role", $"<@&{roleId}>"), ("activity", g.ActivityName), ("when", when));
+    }
+
     // ---------- Опубликованный сбор ----------
     public static Screen Group(LfgGroup g)
     {
