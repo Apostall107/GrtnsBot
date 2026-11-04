@@ -15,7 +15,7 @@ public sealed class BirthdayModule(BirthdayStore store, BirthdayService service,
     : InteractionModuleBase<SocketInteractionContext>
 {
     private ulong Gid => Context.Guild.Id;
-    private string T(string key, params (string, object)[] args) => Tx.Get(Gid, key, args);
+    private string T(string key, params (string, object?)[] args) => Tx.Get(Gid, key, args);
 
     [SlashCommand("birthday", "Set your birthday to get the birthday role on your day")]
     public async Task BirthdayCommand()
