@@ -1155,6 +1155,7 @@ const allTabs = [
   ["log", "scroll-text", "Log", "log", "Administration"],
   ["settings", "settings", "Settings", "settings", "Administration"],
   ["voicenow", "headphones", "Voice now", "access", "Administration"],
+  ["captcha", "shield-check", "Captcha", "access", "Administration"],
   ["access", "key-round", "Access", "access", "Administration"]
 ];
 const currentGuild = () => state.guilds.find(g => g.id === state.guildId);
@@ -1253,7 +1254,7 @@ function renderShell() {
   // ----- Sidebar: sections, Lucide icons, active route; collapses to icons on desktop, drawer on mobile
   const layout = h("div", { class: `layout${collapsed ? " collapsed" : ""}` });
   const closeDrawer = () => layout.classList.remove("drawer-open");
-  const NAV_TONES = { voicenow: "teal", home: "violet", play: "violet", chars: "cyan", schedule: "teal", roster: "green", lfg: "violet", guild: "teal", tickets: "amber", voice: "teal", welcome: "pink", roles: "green", content: "blue",
+  const NAV_TONES = { voicenow: "teal", captcha: "amber", home: "violet", play: "violet", chars: "cyan", schedule: "teal", roster: "green", lfg: "violet", guild: "teal", tickets: "amber", voice: "teal", welcome: "pink", roles: "green", content: "blue",
     announce: "pink", overview: "green", log: "blue", settings: "cyan", access: "amber" };
   const navButton = ([key, ic, label]) => h("button", {
     // Tooltip only when the menu is collapsed to icons (labels are visible otherwise)
@@ -1313,7 +1314,7 @@ function renderShell() {
 
   if (!state.guildId) { main.append(empty("No servers available for your account.")); return; }
   if (!visibleTabs().length) { main.append(empty("You have no sections on this server. Ask an admin for the member role.")); return; }
-  const page = { home: pageHome, content: pageContent, play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, guild: pageGuild, schedule: pageSchedule, roster: pageMemberRoster, tickets: pageTickets, voice: pageVoice, welcome: pageWelcome, roles: pageRoles, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess, voicenow: pageVoiceNow }[state.tab];
+  const page = { home: pageHome, content: pageContent, play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, guild: pageGuild, schedule: pageSchedule, roster: pageMemberRoster, tickets: pageTickets, voice: pageVoice, welcome: pageWelcome, roles: pageRoles, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess, voicenow: pageVoiceNow, captcha: pageCaptcha }[state.tab];
   page(main);
   addGuideButton(main, state.tab);
   decorateHeading(main);
@@ -5292,6 +5293,66 @@ async function pageVoiceNow(main) {
   await load();
   const tick = async () => { if (await load() !== false) setTimeout(() => { if (auto.checked) tick(); else setTimeout(tick, 10000); }, 10000); };
   setTimeout(tick, 10000);
+}
+
+// ================= Captcha (bot owner only) =================
+
+/** Who the bot asks a captcha, their current state, and granting a pass when someone is stuck in the chat. */
+async function pageCaptcha(main) {
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "🛡️ Captcha"),
+    h("button", { class: "btn btn-refresh", title: "Reload now", onclick: hardRefresh }, "🔄 Refresh")));
+  main.append(h("p", { class: "muted small" },
+    "Only you (the bot owner) see this page. These users must solve a picture captcha before using the bot. ",
+    "If someone is stuck on the captcha in the chat, grant them a pass here — it clears any block and marks them as verified. ",
+    "The full captcha list and settings are in Discord via /super-panel."));
+
+  const durOpts = [["", "For the default time"], ["60", "For 1 hour"], ["240", "For 4 hours"], ["1440", "For 24 hours"], ["0", "For one action only"]];
+  const dur = h("select", { class: "input", style: "max-width:220px" },
+    ...durOpts.map(([v, t]) => h("option", { value: v }, t)));
+
+  const holder = h("div", {}, h("div", { class: "card" }, skeletonLines(4)));
+  main.append(h("div", { class: "card" }, sectionLabel("Grant a pass"),
+    h("p", { class: "muted small" }, "Duration applies to every pass you grant below."),
+    h("div", { class: "row", style: "gap:8px;flex-wrap:wrap;align-items:center" },
+      h("span", { class: "muted small" }, "Pass is valid:"), dur)),
+    holder);
+
+  const grant = async (id, name) => {
+    const minutes = dur.value === "" ? undefined : Number(dur.value);
+    try {
+      const d = await gApi("POST", "/captcha/grant", { userId: id, minutes });
+      toast(d.until ? `${name} can use the bot without a captcha until ${new Date(d.until).toLocaleString()}.`
+                    : `${name} may run one action without a captcha.`);
+      load();
+    } catch (e) { toast(e.message, "error"); }
+  };
+  const requireAgain = async (id, name) => {
+    try { await gApi("POST", "/captcha/require", { userId: id }); toast(`${name} will solve the captcha again on their next action.`); load(); }
+    catch (e) { toast(e.message, "error"); }
+  };
+
+  const badge = u => {
+    if (u.status === "blocked") return h("span", { class: "badge lock", title: "Blocked after failing" }, icon("clock", 12), u.until ? "blocked · " + fmtRelative(u.until) : "blocked");
+    if (u.status === "verified") return h("span", { class: "chip ok", title: "Passed the captcha" }, icon("user-check", 12), u.until ? "ok · " + fmtRelative(u.until) : "ok");
+    if (u.status === "pending") return h("span", { class: "chip", title: "A captcha is open in the chat" }, "solving…");
+    return h("span", { class: "chip muted" }, "waiting");
+  };
+
+  async function load() {
+    let d;
+    try { d = await gApi("GET", "/captcha"); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
+    if (!d.users.length) { holder.replaceChildren(emptyState("shield-check", "The captcha list is empty", "Add users via /super-panel in Discord.")); return; }
+    holder.replaceChildren(h("div", { class: "card" },
+      sectionLabel(`On the captcha list · ${d.settings.count}/${d.settings.max}`),
+      h("div", { class: "list" }, d.users.map(u => h("div", { class: "list-row", style: "gap:8px;align-items:center" },
+        h("div", { class: "grow" }, member(u.member)),
+        badge(u),
+        h("button", { class: "btn sm", title: "Mark as verified (clears any block)", onclick: () => grant(u.member.id, u.member.name) }, icon("user-check", 14), "Grant pass"),
+        u.status === "verified" || u.status === "blocked"
+          ? h("button", { class: "btn sm ghost", title: "Require the captcha again", onclick: () => requireAgain(u.member.id, u.member.name) }, "Require again")
+          : null)))));
+  }
+  await load();
 }
 
 async function pageAccess(main) {

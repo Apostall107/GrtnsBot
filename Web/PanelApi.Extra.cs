@@ -917,6 +917,8 @@ public static partial class PanelApi
         ("PUT", "/lfg/settings/", "lfg", "Changed LFG settings (time zone, auto-delete, reminder)"),
         ("POST", "/backup/restore", "settings", "Uploaded a data backup"),
         ("POST", "/characters-transfer/import", "settings", "Imported characters from a file"),
+        ("POST", "/captcha/grant", "access", "Granted a captcha pass"),
+        ("POST", "/captcha/require", "access", "Required captcha again"),
         ("PUT", "/member-roles/", "settings", "Set member roles"),
         ("POST", "/me/groups/{groupId}/join", "lfg", "Signed up (site)"),
         ("POST", "/me/groups/{groupId}/leave", "lfg", "Left group (site)"),
