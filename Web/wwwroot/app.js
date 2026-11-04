@@ -508,7 +508,7 @@ function trendRow(t) {
     if (delta === null || delta === undefined) return h("span", { class: "trend flat", title: `${title}: no snapshot yet` }, h("span", { class: "trend-num" }, "—"), per);
     const cls = delta > 0 ? "up" : delta < 0 ? "down" : "flat";
     const arrow = delta > 0 ? "▲" : delta < 0 ? "▼" : "•";
-    return h("span", { class: `trend ${cls}`, title }, h("span", { class: "trend-num" }, `${arrow} ${delta > 0 ? "+" : delta < 0 ? "−" : ""}${Math.abs(delta)}`), per);
+    return h("span", { class: `trend ${cls}`, title }, h("span", { class: "trend-num" }, delta === 0 ? "0" : `${Math.abs(delta)}${arrow}`), per);
   };
   return h("div", { class: "trend-row" },
     chip(t.day, "24h", "Change since yesterday's daily snapshot"),
