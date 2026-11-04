@@ -14,8 +14,9 @@ public sealed record RoomRef(SocketVoiceChannel Channel, TempVoiceRoom Room);
 public sealed class TempRoomManager(TempVoiceStore store, DiscordSocketClient client, BotOwner botOwner, ILogger<TempRoomManager> logger)
 {
     /// <summary>
-    /// Порядок голосовых каналов в категории: сначала создатели, под ними временные комнаты (старые выше),
-    /// затем остальные голосовые каналы в прежнем порядке. Меняются только позиции, ничего больше.
+    /// Порядок голосовых каналов в категории: свои каналы остаются, как их расставил админ; временные комнаты —
+    /// по настройке своего создателя: под ним, над ним, в начале или в конце категории (старые комнаты выше).
+    /// Меняются только позиции, ничего больше.
     /// </summary>
     /// <param name="newChannelIds">Только что созданные каналы этой категории, которых ещё может не быть в кэше.</param>
     public async Task ReorderCategoryAsync(SocketGuild guild, ulong? categoryId, params ulong[] newChannelIds)
@@ -32,10 +33,44 @@ public sealed class TempRoomManager(TempVoiceStore store, DiscordSocketClient cl
             if (current.Count < 2) return;
 
             var ordered = current.OrderBy(c => c.Position).ThenBy(c => c.Id).Select(c => c.Id).ToList();
-            var creators = ordered.Where(id => store.GetCreator(id) is not null);
-            var rooms = ordered.Where(id => store.GetRoom(id) is not null).OrderBy(id => id);
-            var others = ordered.Where(id => store.GetCreator(id) is null && store.GetRoom(id) is null);
-            var desired = creators.Concat(rooms).Concat(others).ToList();
+            var fixedChannels = ordered.Where(id => store.GetRoom(id) is null).ToList();
+            var rooms = ordered.Where(id => store.GetRoom(id) is not null).OrderBy(id => id).ToList();
+
+            // Куда идёт комната: создатель в этой же категории — над/под ним, иначе в начало/конец
+            var top = new List<ulong>();
+            var bottom = new List<ulong>();
+            var above = new Dictionary<ulong, List<ulong>>();
+            var below = new Dictionary<ulong, List<ulong>>();
+            foreach (var roomId in rooms)
+            {
+                var creatorId = store.GetRoom(roomId)!.CreatorChannelId;
+                var placement = store.GetCreator(creatorId)?.Placement ?? TempRoomPlacement.Below;
+                var nearCreator = fixedChannels.Contains(creatorId);
+                switch (placement)
+                {
+                    case TempRoomPlacement.Above when nearCreator:
+                        (above.TryGetValue(creatorId, out var a) ? a : above[creatorId] = []).Add(roomId);
+                        break;
+                    case TempRoomPlacement.Below when nearCreator:
+                        (below.TryGetValue(creatorId, out var b) ? b : below[creatorId] = []).Add(roomId);
+                        break;
+                    case TempRoomPlacement.Top or TempRoomPlacement.Above:
+                        top.Add(roomId);
+                        break;
+                    default:
+                        bottom.Add(roomId);
+                        break;
+                }
+            }
+
+            var desired = new List<ulong>(top);
+            foreach (var id in fixedChannels)
+            {
+                if (above.TryGetValue(id, out var up)) desired.AddRange(up);
+                desired.Add(id);
+                if (below.TryGetValue(id, out var down)) desired.AddRange(down);
+            }
+            desired.AddRange(bottom);
 
             var basePosition = current.Where(c => c.Position != int.MaxValue).Select(c => c.Position).DefaultIfEmpty(0).Min();
             var needed = desired

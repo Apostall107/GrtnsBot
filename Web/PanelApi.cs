@@ -594,9 +594,52 @@ public static partial class PanelApi
                     category = channel?.Category?.Name,
                     exists = channel is not null,
                     template = c.NameTemplate,
-                    limit = c.UserLimit
+                    limit = c.UserLimit,
+                    placement = c.Placement,
+                    roomCategoryId = c.RoomCategoryId?.ToString(),
+                    roomCategory = c.RoomCategoryId is { } rc ? guild.GetCategoryChannel(rc)?.Name : null,
+                    bitrateKbps = c.BitrateKbps,
+                    creatorBitrateKbps = channel is null ? (int?)null : channel.Bitrate / 1000,
+                    maxBitrateKbps = guild.MaxBitrate / 1000,
+                    deleteDelay = c.DeleteDelaySeconds,
+                    startLocked = c.StartLocked,
+                    allowMemberPrefs = c.AllowMemberPrefs,
+                    postPanel = c.PostPanel,
+                    maxRooms = c.MaxRooms,
+                    rooms = voice.GetRooms(guildId).Count(r => r.CreatorChannelId == c.ChannelId)
                 };
             }));
+        });
+
+        // Настройки создателя: где появляются комнаты, категория, битрейт, задержка удаления, …
+        g.MapPut("/creators/{channelId}/settings", async (ulong guildId, ulong channelId, CreatorSettingsBody body, DiscordSocketClient client,
+            TempVoiceStore voice, TempRoomManager rooms) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            if (voice.GetCreator(channelId) is not { } creator || creator.GuildId != guildId) return Error("That channel is not a 'join to create' channel.");
+            if (body.Placement is not null && !TempRoomPlacement.All.Contains(body.Placement)) return Error("Unknown placement.");
+            ulong? category = ParseId(body.RoomCategoryId) is { } c ? c : null;
+            if (category is { } cat && guild.GetCategoryChannel(cat) is null) return Error("Category not found.");
+            if (body.BitrateKbps is { } kb && (kb < 8 || kb > guild.MaxBitrate / 1000)) return Error($"Bitrate: 8–{guild.MaxBitrate / 1000} kbps on this server.");
+            if (body.DeleteDelay is < 0 or > 3600) return Error("Delete delay: 0–3600 seconds.");
+            if (body.MaxRooms is < 0 or > 100) return Error("Room limit: 0–100 (0 = no limit).");
+            var oldCategory = creator.RoomCategoryId ?? guild.GetVoiceChannel(channelId)?.CategoryId;
+            voice.UpdateCreator(channelId, x =>
+            {
+                x.Placement = body.Placement ?? x.Placement;
+                x.RoomCategoryId = category;
+                x.BitrateKbps = body.BitrateKbps;
+                x.DeleteDelaySeconds = body.DeleteDelay ?? x.DeleteDelaySeconds;
+                x.StartLocked = body.StartLocked;
+                x.AllowMemberPrefs = body.AllowMemberPrefs;
+                x.PostPanel = body.PostPanel;
+                x.MaxRooms = body.MaxRooms ?? x.MaxRooms;
+            });
+            // Сразу расставить уже открытые комнаты по новой настройке
+            var newCategory = category ?? guild.GetVoiceChannel(channelId)?.CategoryId;
+            await rooms.ReorderCategoryAsync(guild, newCategory);
+            if (oldCategory != newCategory) await rooms.ReorderCategoryAsync(guild, oldCategory);
+            return Results.Ok();
         });
 
         // Новый канал-создатель
@@ -1327,6 +1370,8 @@ public sealed record ChannelBody(string? ChannelId);
 public sealed record UserBody(string? UserId);
 public sealed record NewCreatorBody(string? Name, string? CategoryId, string? Template, int? Limit);
 public sealed record CreatorBody(string? Template, int? Limit);
+public sealed record CreatorSettingsBody(string? Placement, string? RoomCategoryId, int? BitrateKbps, int? DeleteDelay, bool StartLocked,
+    bool AllowMemberPrefs = true, bool PostPanel = true, int? MaxRooms = null);
 public sealed record PanelTextBody(string? Title, string? Description, Dictionary<string, string>? Labels, string? Color = null);
 
 public sealed record BotTextsBody(Dictionary<string, string?>? Values);
