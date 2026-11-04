@@ -504,10 +504,11 @@ function statCard(ic, label, value, sub, onClick, trend) {
 /** Change vs yesterday / 7 days ago (▲ ▼) + a sparkline of the daily snapshots. */
 function trendRow(t) {
   const chip = (delta, period, title) => {
-    if (delta === null || delta === undefined) return h("span", { class: "trend flat", title: `${title}: no snapshot yet` }, `— ${period}`);
+    const per = h("span", { class: "trend-period" }, period);
+    if (delta === null || delta === undefined) return h("span", { class: "trend flat", title: `${title}: no snapshot yet` }, h("span", { class: "trend-num" }, "—"), per);
     const cls = delta > 0 ? "up" : delta < 0 ? "down" : "flat";
     const arrow = delta > 0 ? "▲" : delta < 0 ? "▼" : "•";
-    return h("span", { class: `trend ${cls}`, title }, `${arrow} ${delta > 0 ? "+" : delta < 0 ? "−" : ""}${Math.abs(delta)} ${period}`);
+    return h("span", { class: `trend ${cls}`, title }, h("span", { class: "trend-num" }, `${arrow} ${delta > 0 ? "+" : delta < 0 ? "−" : ""}${Math.abs(delta)}`), per);
   };
   return h("div", { class: "trend-row" },
     chip(t.day, "24h", "Change since yesterday's daily snapshot"),
