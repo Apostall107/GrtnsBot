@@ -171,6 +171,27 @@ public sealed class CaptchaService(CaptchaStore store, BotOwner owner, IServiceP
         return until;
     }
 
+    /// <summary>
+    /// Выдать пройденную капчу из веб-панели: снять блокировку и текущее задание и отметить как пройденную.
+    /// minutes: null — на срок из настроек (ValidityMinutes); 0 — разовый проход (на одно действие);
+    /// &gt;0 — на столько минут. Возвращает, до какого времени действует (null — разовый).
+    /// </summary>
+    public DateTimeOffset? GrantPass(ulong userId, int? minutes = null)
+    {
+        _blockedUntil.TryRemove(userId, out _);
+        _challenges.TryRemove(userId, out _);
+        var m = minutes ?? store.Get().ValidityMinutes;
+        if (m <= 0)
+        {
+            _oneShot[userId] = 1;
+            return null;
+        }
+        var until = DateTimeOffset.UtcNow.AddMinutes(Math.Min(m, 10080));
+        _oneShot.TryRemove(userId, out _);
+        _verifiedUntil[userId] = until;
+        return until;
+    }
+
     /// <summary>Сбросить состояние пользователя (при удалении из списка).</summary>
     public void Forget(ulong userId)
     {
