@@ -3165,7 +3165,7 @@ async function pageVoice(main) {
   try {
     const creators = await gApi("GET", "/voice/creators");
     creatorsBody.replaceChildren(creators.length ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
-      h("thead", {}, h("tr", {}, h("th", {}, "Channel"), h("th", {}, "Room name"), h("th", {}, "Limit"), h("th", {}))),
+      h("thead", {}, h("tr", {}, h("th", {}, "Channel"), h("th", {}, "Room name"), h("th", {}, "Limit"), h("th", {}, "Rooms appear"), h("th", {}))),
       h("tbody", {}, creators.map(creatorRow)))) : empty("None yet."));
   } catch (e) { creatorsBody.replaceChildren(empty(e.message)); }
 
@@ -3175,6 +3175,55 @@ async function pageVoice(main) {
       h("thead", {}, h("tr", {}, h("th", {}, "Room"), h("th", {}, "Owner"), h("th", {}, "Inside"), h("th", {}))),
       h("tbody", {}, rooms.map(roomRow)))) : empty("No active rooms."));
   } catch (e) { roomsBody.replaceChildren(empty(e.message)); }
+}
+
+const ROOM_PLACEMENTS = [
+  ["below", "⬇ Under the creator", "Right below the 'join to create' channel (older rooms higher)"],
+  ["above", "⬆ Above the creator", "Right above the 'join to create' channel"],
+  ["top", "⏫ Top of the category", "First in the category"],
+  ["bottom", "⏬ Bottom of the category", "Last in the category"]
+];
+const DELETE_DELAYS = [[0, "Right away"], [15, "15 seconds"], [30, "30 seconds"], [60, "1 minute"], [120, "2 minutes"], [300, "5 minutes"], [600, "10 minutes"]];
+
+/** ⚙ Settings of a 'join to create' channel: where rooms appear, their category, bitrate, delete delay, … */
+function creatorSettingsDialog(c) {
+  const d = dialog();
+  const place = h("div", { class: "seg", style: "flex-wrap:wrap" });
+  let placement = c.placement || "below";
+  const drawPlace = () => place.replaceChildren(...ROOM_PLACEMENTS.map(([v, label, hint]) =>
+    h("button", { type: "button", class: `seg-btn${placement === v ? " active" : ""}`, title: hint, onclick: () => { placement = v; drawPlace(); } }, label)));
+  drawPlace();
+  const cat = channelSelect("categories", "Same category as the creator");
+  cat.value = c.roomCategoryId || "";
+  const bitrate = h("input", { type: "number", min: "8", max: String(c.maxBitrateKbps || 96), value: c.bitrateKbps ?? "",
+    placeholder: c.creatorBitrateKbps ? `${c.creatorBitrateKbps} (as the creator)` : "as the creator", style: "width:170px" });
+  const delay = h("select", {}, DELETE_DELAYS.map(([v, l]) => h("option", { value: String(v) }, l)));
+  delay.value = String(DELETE_DELAYS.some(([v]) => v === c.deleteDelay) ? c.deleteDelay : 0);
+  const maxRooms = h("input", { type: "number", min: "0", max: "100", value: c.maxRooms || "", placeholder: "no limit", style: "width:120px" });
+  const locked = toggle(!!c.startLocked, "🔒 Rooms start locked — only invited members can join");
+  const memberPrefs = toggle(c.allowMemberPrefs !== false, "👤 Members' own settings win (name, limit, lock)");
+  const panel = toggle(c.postPanel !== false, "🎛️ Post the control panel in the room's chat");
+  const save = h("button", { class: "btn" }, "💾 Save");
+  save.addEventListener("click", async () => {
+    const body = { placement, roomCategoryId: cat.value || null, bitrateKbps: bitrate.value === "" ? null : Number(bitrate.value),
+      deleteDelay: Number(delay.value), startLocked: locked.cb.checked, allowMemberPrefs: memberPrefs.cb.checked, postPanel: panel.cb.checked,
+      maxRooms: maxRooms.value === "" ? 0 : Number(maxRooms.value) };
+    if (await act(save, () => gApi("PUT", `/voice/creators/${c.channelId}/settings`, body), "Settings saved. Open rooms are moved right away.") !== undefined) { d.close(); refresh(); }
+  });
+  d.replaceChildren(h("h2", {}, `⚙ ${c.name || "Join to create"}`),
+    h("div", { class: "field" }, h("label", {}, "Where new rooms appear"), place,
+      h("span", { class: "muted small" }, "Your own channels stay where you put them in Discord; only the temporary rooms are placed.")),
+    h("div", { class: "field" }, h("label", {}, "Category for the rooms"), cat,
+      h("span", { class: "muted small" }, "Another category: rooms go to its top (⬆ / ⏫) or bottom (⬇ / ⏬). Permissions still come from the creator channel.")),
+    h("div", { class: "grid2" },
+      h("div", { class: "field" }, h("label", {}, `Bitrate, kbps (up to ${c.maxBitrateKbps || 96} on this server)`), bitrate),
+      h("div", { class: "field" }, h("label", {}, "Delete an empty room"), delay,
+        h("span", { class: "muted small" }, "Someone comes back in time — the room stays."))),
+    h("div", { class: "field" }, h("label", {}, "Rooms at the same time (from this channel)"), maxRooms,
+      h("span", { class: "muted small" }, "When the limit is reached, joining the channel doesn't create a new room.")),
+    locked.el, memberPrefs.el, panel.el,
+    h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), save));
+  d.showModal();
 }
 
 function creatorRow(c) {
@@ -3190,9 +3239,17 @@ function creatorRow(c) {
     if (!await confirmDialog("Stop using this channel?", "The channel itself is not deleted. Existing rooms keep working until they are empty.", "Remove")) return;
     if (await act(rm, () => gApi("DELETE", `/voice/creators/${c.channelId}`), "Removed.") !== undefined) refresh();
   });
+  const settings = h("button", { class: "btn secondary", title: "Where rooms appear, their category, bitrate, delete delay…", onclick: () => creatorSettingsDialog(c) }, icon("settings", 15), "Settings");
+  const where = (ROOM_PLACEMENTS.find(([v]) => v === (c.placement || "below")) || ROOM_PLACEMENTS[0])[1];
+  const extras = [c.roomCategory ? `in ${c.roomCategory}` : null, c.bitrateKbps ? `${c.bitrateKbps} kbps` : null,
+    c.deleteDelay ? `deleted after ${DELETE_DELAYS.find(([v]) => v === c.deleteDelay)?.[1] || c.deleteDelay + " s"}` : null,
+    c.startLocked ? "🔒 locked" : null, c.maxRooms ? `max ${c.maxRooms}` : null].filter(Boolean);
   return tracker.attach(h("tr", {},
-    h("td", {}, c.exists ? `🔊 ${c.name}` : h("span", { class: "chip warn" }, "deleted channel"), c.category ? h("div", { class: "muted small" }, c.category) : null),
-    h("td", {}, tpl), h("td", {}, lim), h("td", { class: "actions" }, save, " ", rm)));
+    h("td", {}, c.exists ? `🔊 ${c.name}` : h("span", { class: "chip warn" }, "deleted channel"), c.category ? h("div", { class: "muted small" }, c.category) : null,
+      c.rooms ? h("div", { class: "muted small" }, `${c.rooms} open room(s)`) : null),
+    h("td", {}, tpl), h("td", {}, lim),
+    h("td", { class: "small" }, where, extras.length ? h("div", { class: "muted small" }, extras.join(" · ")) : null),
+    h("td", { class: "actions" }, save, " ", settings, " ", rm)));
 }
 
 function roomRow(r) {

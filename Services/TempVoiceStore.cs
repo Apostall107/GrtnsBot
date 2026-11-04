@@ -32,13 +32,28 @@ public sealed class TempVoiceStore
         lock (_lock) return _data.Creators.Where(c => c.GuildId == guildId).ToList();
     }
 
+    /// <summary>Сохранить создателя. Уже был — его настройки с сайта (размещение, категория, …) сохраняются.</summary>
     public void SetCreator(TempVoiceCreator creator)
     {
         lock (_lock)
         {
+            if (_data.Creators.Find(c => c.ChannelId == creator.ChannelId) is { } existing && !ReferenceEquals(existing, creator))
+                creator.CopySettingsFrom(existing);
             _data.Creators.RemoveAll(c => c.ChannelId == creator.ChannelId);
             _data.Creators.Add(creator);
             Save();
+        }
+    }
+
+    /// <summary>Изменить настройки создателя.</summary>
+    public bool UpdateCreator(ulong channelId, Action<TempVoiceCreator> update)
+    {
+        lock (_lock)
+        {
+            if (_data.Creators.Find(c => c.ChannelId == channelId) is not { } creator) return false;
+            update(creator);
+            Save();
+            return true;
         }
     }
 

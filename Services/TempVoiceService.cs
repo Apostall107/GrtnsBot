@@ -104,19 +104,29 @@ public sealed class TempVoiceService(
         overwrites.Add(new Overwrite(user.Id, PermissionTarget.User, OwnerPermissions));
         overwrites.Add(new Overwrite(botId, PermissionTarget.User, BotPermissions));
 
-        // Мои настройки комнаты (сайт → Home или /room defaults) важнее настроек канала-создателя
-        var mine = prefs.Get(guild.Id, user.Id);
+        // Лимит комнат от этого создателя
+        if (creator.MaxRooms > 0 && store.GetRooms(guild.Id).Count(r => r.CreatorChannelId == creatorChannel.Id) >= creator.MaxRooms)
+        {
+            logger.LogInformation("Temp voice: {Creator} reached its limit of {Max} rooms", creatorChannel.Name, creator.MaxRooms);
+            return;
+        }
+
+        // Мои настройки комнаты (сайт → Home или /room defaults) важнее настроек канала-создателя — если создатель это разрешает
+        var mine = creator.AllowMemberPrefs ? prefs.Get(guild.Id, user.Id) : null;
         var name = !string.IsNullOrWhiteSpace(mine?.Name)
             ? mine!.Name!.Replace("{user}", user.DisplayName)
             : BuildRoomName(creator.NameTemplate, creatorChannel.Name, user.DisplayName);
         if (name.Length > 100) name = name[..100];
         var userLimit = mine?.Limit is { } myLimit ? (myLimit > 0 ? myLimit : (int?)null) : creator.UserLimit;
 
+        // Категория комнат: своя из настроек (если существует) или категория создателя
+        var categoryId = creator.RoomCategoryId is { } rc && guild.GetCategoryChannel(rc) is not null ? rc : creatorChannel.CategoryId;
+        var bitrate = creator.BitrateKbps is { } kbps ? Math.Clamp(kbps * 1000, 8000, guild.MaxBitrate) : creatorChannel.Bitrate;
         var room = await guild.CreateVoiceChannelAsync(name, p =>
         {
-            p.CategoryId = creatorChannel.CategoryId;
+            p.CategoryId = categoryId;
             p.PermissionOverwrites = new Optional<IEnumerable<Overwrite>>(overwrites);
-            p.Bitrate = creatorChannel.Bitrate;
+            p.Bitrate = bitrate;
             if (userLimit is { } limit) p.UserLimit = limit;
         });
 
@@ -130,11 +140,11 @@ public sealed class TempVoiceService(
         store.AddRoom(stored);
         logger.LogInformation("Temp room {Room} created for {User}", name, user.Username);
 
-        // Создатели вверху категории, комнаты сразу под ними
-        await rooms.ReorderCategoryAsync(guild, creatorChannel.CategoryId, room.Id);
+        // Комната — над/под создателем или в начале/конце категории (Temp Voice → ⚙ Settings)
+        await rooms.ReorderCategoryAsync(guild, categoryId, room.Id);
 
         // Панель управления — в текстовый чат самой комнаты
-        if (room is IMessageChannel roomChat)
+        if (creator.PostPanel && room is IMessageChannel roomChat)
         {
             try
             {
@@ -153,7 +163,7 @@ public sealed class TempVoiceService(
         {
             await MoveAsync(user, room.Id);
             // «Сразу закрыть» — после переноса, чтобы владелец уже был внутри
-            if (mine?.Locked == true && guild.GetVoiceChannel(room.Id) is { } socketRoom)
+            if ((mine?.Locked == true || creator.StartLocked) && guild.GetVoiceChannel(room.Id) is { } socketRoom)
                 await rooms.LockAsync(new RoomRef(socketRoom, stored));
         }
         catch (Discord.Net.HttpException)
@@ -165,12 +175,27 @@ public sealed class TempVoiceService(
     }
 
     /// <summary>Удаляет только комнату, которую создал сам бот (есть в списке комнат), на её сервере и не создатель.</summary>
-    private async Task DeleteIfEmptyAsync(SocketVoiceChannel channel)
+    /// <param name="delayed">Повторная проверка после задержки удаления (не откладывать снова).</param>
+    private async Task DeleteIfEmptyAsync(SocketVoiceChannel channel, bool delayed = false)
     {
         if (store.GetRoom(channel.Id) is not { } room) return;
         if (room.GuildId != channel.Guild.Id) return;
         if (store.GetCreator(channel.Id) is not null) return;
         if (channel.ConnectedUsers.Count > 0) return;
+
+        // Задержка удаления: вернулись за это время — комната остаётся
+        if (!delayed && store.GetCreator(room.CreatorChannelId)?.DeleteDelaySeconds is > 0 and var delay)
+        {
+            var guildId = channel.Guild.Id;
+            var channelId = channel.Id;
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(TimeSpan.FromSeconds(delay));
+                if (client.GetGuild(guildId)?.GetVoiceChannel(channelId) is { } again)
+                    await RunAsync(() => DeleteIfEmptyAsync(again, delayed: true));
+            });
+            return;
+        }
 
         try
         {
@@ -197,10 +222,10 @@ public sealed class TempVoiceService(
             await DeleteIfEmptyAsync(channel);
         }
 
-        // Наводим порядок во всех категориях, где есть создатели
+        // Наводим порядок во всех категориях, где есть создатели или их комнаты
         foreach (var guild in client.Guilds)
         foreach (var categoryId in store.GetCreators(guild.Id)
-                     .Select(c => guild.GetVoiceChannel(c.ChannelId)?.CategoryId)
+                     .SelectMany(c => new[] { guild.GetVoiceChannel(c.ChannelId)?.CategoryId, c.RoomCategoryId ?? guild.GetVoiceChannel(c.ChannelId)?.CategoryId })
                      .Distinct())
             await rooms.ReorderCategoryAsync(guild, categoryId);
     }

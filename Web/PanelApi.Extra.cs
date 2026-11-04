@@ -907,6 +907,7 @@ public static partial class PanelApi
         ("POST", "/texts/discover", "texts", "Searched for posted panels"),
         ("POST", "/posts/panels/{key}/refresh", "posts", "Refreshed panels"),
         ("PUT", "/announce/{id}/sent", "announce", "Edited a sent post"),
+        ("PUT", "/voice/creators/{channelId}/settings", "voice", "Changed 'join to create' settings (placement, category, bitrate…)"),
         ("PUT", "/posts/panels/{key}/{messageId}/sticky", "posts", "Changed sticky panel (keep at the bottom)"),
         ("PUT", "/roles/panels/{id}/sticky", "roles", "Changed sticky role panel (keep at the bottom)"),
         ("POST", "/posts/channels/{channelId}/delete", "posts", "Deleted bot messages"),
