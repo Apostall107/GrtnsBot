@@ -103,7 +103,7 @@ public static partial class PanelApi
         });
 
         // Массовый импорт одним файлом: CSV (user_id,day,month,year | user_id,date) или JSON [{userId,day,month,year}|{userId,date}].
-        g.MapPost("/import", async (ulong guildId, HttpRequest request, [FromServices] BirthdayStore store,
+        g.MapPost("/import", async (ulong guildId, HttpRequest request, DiscordSocketClient client, [FromServices] BirthdayStore store,
             [FromServices] BirthdayService service) =>
         {
             using var reader = new StreamReader(request.Body);
@@ -113,7 +113,18 @@ public static partial class PanelApi
             List<(ulong UserId, Birthday Bday)> rows;
             try { rows = text.StartsWith('[') || text.StartsWith('{') ? ParseBirthdayJson(text) : ParseBirthdayCsv(text); }
             catch (JsonException) { return Error("This file isn't valid JSON."); }
-            if (rows.Count == 0) return Error("No birthdays found in the file. Expected columns: user_id, day, month, year.");
+
+            // Список строк «discord-ник / игровой ник - ДД.ММ» — люди находятся на сервере по имени
+            var notFound = new List<string>();
+            if (rows.Count == 0 && client.GetGuild(guildId) is { } g0)
+            {
+                if (!g0.HasAllMembers) await g0.DownloadUsersAsync();
+                rows = ParseBirthdayNames(text, g0, notFound);
+            }
+            if (rows.Count == 0)
+                return notFound.Count > 0
+                    ? Results.Ok(new { total = 0, added = 0, updated = 0, full = 0, notFound })
+                    : Error("No birthdays found. Use lines like “username / nickname - 05.02”, or CSV columns user_id, day, month, year.");
 
             int added = 0, updated = 0, full = 0;
             foreach (var (userId, bday) in rows)
@@ -123,8 +134,61 @@ public static partial class PanelApi
                 if (existed) updated++; else added++;
             }
             await service.ReconcileAsync(guildId);
-            return Results.Ok(new { total = rows.Count, added, updated, full });
+            return Results.Ok(new { total = rows.Count, added, updated, full, notFound });
         });
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex NameLineRe = new(
+        @"^(?<left>.+?)[\s\-–—:]*(?<d>\d{1,2})[./](?<m>\d{1,2})(?:[./](?<y>\d{2,4}))?\s*$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// Строки «discord-ник / игровой ник - ДД.ММ[.ГГГГ]»: человек ищется по имени пользователя Discord (первое слово),
+    /// если не нашёлся — по нику на сервере / отображаемому имени (часть после «/»). Не найденные — в notFound.
+    /// </summary>
+    private static List<(ulong, Birthday)> ParseBirthdayNames(string text, SocketGuild guild, List<string> notFound)
+    {
+        var result = new List<(ulong, Birthday)>();
+        foreach (var raw in text.Replace("\r\n", "\n").Split('\n'))
+        {
+            var line = raw.Trim();
+            if (line.Length == 0) continue;
+            var m = NameLineRe.Match(line);
+            if (!m.Success) continue; // заголовки и прочий текст без даты
+            int? year = m.Groups["y"].Success ? int.Parse(m.Groups["y"].Value) : null;
+            if (year is < 100) year += year > 30 ? 1900 : 2000;
+            var bday = new Birthday { Day = int.Parse(m.Groups["d"].Value), Month = int.Parse(m.Groups["m"].Value), Year = year };
+            if (!bday.IsValid) { notFound.Add($"{line} — bad date"); continue; }
+
+            var left = m.Groups["left"].Value.Trim().TrimEnd('-', '–', '—', ' ');
+            // «user * заметка / ник»: делитель — « / » с пробелами (в нике бывает «/» без пробелов, в заметке — «She/her»)
+            string userPart, nick;
+            if (left.Contains(" / "))
+            {
+                userPart = left[..left.IndexOf(" / ", StringComparison.Ordinal)].Trim();
+                nick = left[(left.LastIndexOf(" / ", StringComparison.Ordinal) + 3)..].Trim();
+            }
+            else
+            {
+                var slash = left.IndexOf('/');
+                userPart = (slash >= 0 ? left[..slash] : left).Trim();
+                nick = slash >= 0 ? left[(slash + 1)..].Trim() : "";
+            }
+            var username = userPart.Split(new[] { ' ', '*', '\t' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
+
+            var byUser = guild.Users.Where(u => !u.IsBot && u.Username.Equals(username, StringComparison.OrdinalIgnoreCase)).ToList();
+            var found = byUser.Count == 1 ? byUser[0] : null;
+            if (found is null && nick.Length > 0)
+            {
+                var byNick = guild.Users.Where(u => !u.IsBot && (
+                    (u.Nickname?.Equals(nick, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (u.GlobalName?.Equals(nick, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    u.DisplayName.Equals(nick, StringComparison.OrdinalIgnoreCase))).ToList();
+                if (byNick.Count == 1) found = byNick[0];
+            }
+            if (found is null) { notFound.Add(line); continue; }
+            result.Add((found.Id, bday));
+        }
+        return result;
     }
 
     /// <summary>Разбирает JSON-массив объектов с userId/user_id/id и либо date, либо day/month/year.</summary>

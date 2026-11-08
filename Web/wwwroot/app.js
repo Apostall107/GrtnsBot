@@ -5752,7 +5752,7 @@ async function pageBirthdays(main) {
   // Bulk import (one CSV/JSON file) and export of the current list
   const base = `/api/guilds/${state.guildId}/birthdays`;
   const csvBtn = h("a", { class: "btn", href: `${base}/export`, download: "" }, icon("download", 14), "Export CSV");
-  const impFile = h("input", { type: "file", accept: ".csv,.json,text/csv,application/json" });
+  const impFile = h("input", { type: "file", accept: ".csv,.json,.txt,text/csv,text/plain,application/json" });
   const impBtn = h("button", { class: "btn" }, icon("upload", 14), "Import file");
   impBtn.addEventListener("click", () => act(impBtn, async () => {
     const f = impFile.files && impFile.files[0];
@@ -5762,13 +5762,35 @@ async function pageBirthdays(main) {
     const d = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(d.error || `Import failed (${res.status})`);
     impFile.value = "";
-    toast(`Birthdays: ${d.added} added, ${d.updated} updated` + (d.full ? `, ${d.full} skipped (list full)` : "") + ` of ${d.total}.`);
-    load();
+    showImport(d);
   }));
+  // Вставить список текстом: «discord-ник / игровой ник - ДД.ММ» по строке
+  const paste = h("textarea", { rows: "6", style: "width:100%", placeholder: "sionpol69 / Sivantar - 12.05\nsashali._. / FearlessFairy - 06.09\n… one person per line: Discord username / nickname - DD.MM (year optional)" });
+  const pasteBtn = h("button", { class: "btn" }, icon("upload", 14), "Import list");
+  pasteBtn.addEventListener("click", () => act(pasteBtn, async () => {
+    if (!paste.value.trim()) return toast("Paste the list first.", "warn");
+    const res = await fetch(`${base}/import`, { method: "POST", headers: { "X-Panel": "1", "Content-Type": "text/plain" }, body: paste.value, credentials: "same-origin" });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.error || `Import failed (${res.status})`);
+    showImport(d);
+  }));
+  const result = h("div", {});
+  function showImport(d) {
+    toast(`Birthdays: ${d.added} added, ${d.updated} updated` + (d.full ? `, ${d.full} skipped (list full)` : "") + ` of ${d.total}.`);
+    const nf = d.notFound || [];
+    result.replaceChildren(nf.length ? h("div", { class: "card", style: "margin-top:10px;border-color:var(--warn,#c90)" },
+      h("b", {}, `Not found on the server (${nf.length}) — check the Discord username or add them by ID:`),
+      h("pre", { class: "small", style: "white-space:pre-wrap;margin:6px 0 0" }, nf.join("\n"))) : null);
+    if (nf.length) paste.value = nf.filter(l => !/ — bad date$/.test(l)).join("\n");
+    load();
+  }
   ioCard.replaceChildren(
     sectionLabel("Bulk import / export"),
-    h("p", { class: "muted small" }, "Upload one file with many birthdays. CSV columns: user_id, day, month, year (year optional) — or user_id, date (DD.MM.YYYY). JSON: a list of {userId, day, month, year}. Export gives a ready template of the current list."),
-    h("div", { class: "row", style: "gap:8px;flex-wrap:wrap;align-items:center" }, csvBtn, impFile, impBtn));
+    h("p", { class: "muted small" }, "Paste a list — one person per line “Discord username / nickname - DD.MM” (the bot finds them on the server by username, then by nickname; lines without a date are skipped). ",
+      "Or upload a file: CSV columns user_id, day, month, year (year optional) — or user_id, date (DD.MM.YYYY); JSON: a list of {userId, day, month, year}; a .txt with the same lines as above works too."),
+    paste, h("div", { class: "row", style: "gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px" }, pasteBtn),
+    result,
+    h("div", { class: "row", style: "gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px" }, csvBtn, impFile, impBtn));
 
   const fmt = p => `${pad2(p.day)}.${pad2(p.month)}${p.year ? "." + p.year : ""}`;
 

@@ -91,8 +91,8 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
             return;
         }
 
-        // Все роли, которые выдаёт Approve, уже есть — тикет не нужен (владельцу бота можно — для проверки)
-        if (!botOwner.Is(Context.User.Id) && TicketService.AlreadyHasRoles(project, (IGuildUser)Context.User) is { } hasRoles)
+        // Все роли, которые выдаёт Approve, уже есть — тикет не нужен (для всех, включая владельца бота)
+        if (TicketService.AlreadyHasRoles(project, (IGuildUser)Context.User) is { } hasRoles)
         {
             await RespondAsync(hasRoles, ephemeral: true, allowedMentions: AllowedMentions.None);
             return;

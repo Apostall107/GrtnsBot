@@ -596,7 +596,7 @@ public static partial class PanelApi
                     key = p.Key,
                     name = p.Name,
                     group = (p.ParentKey is { } parentKey ? tickets.FindProject(guildId, parentKey)?.Name : null) ?? group?.Name,
-                    hasRoles = member is not null && !owner.Is(me) && TicketService.AlreadyHasRoles(p, member) is not null,
+                    hasRoles = member is not null && TicketService.AlreadyHasRoles(p, member) is not null,
                     openTicketUrl = open is not null && guild.GetTextChannel(open.TextChannelId) is not null
                         ? $"https://discord.com/channels/{guildId}/{open.TextChannelId}" : null,
                     questions = p.FormEnabled
@@ -619,7 +619,7 @@ public static partial class PanelApi
             if (!owner.Is(member.Id) && !TicketService.CanOpen(project, member, lfgProjects.Find(guildId, project.GroupProjectKey),
                     project.ParentKey is { } pk ? tickets.FindProject(guildId, pk) : null))
                 return Error($"You don't have the role required to open {project.Name} tickets.");
-            if (!owner.Is(member.Id) && TicketService.AlreadyHasRoles(project, member) is not null)
+            if (TicketService.AlreadyHasRoles(project, member) is not null)
                 return Error($"You already have all the roles of {project.Name} — no need to open a ticket.");
 
             var answers = project.FormEnabled
