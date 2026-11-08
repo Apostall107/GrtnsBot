@@ -537,12 +537,11 @@ public sealed class CommunityService(
                     || binding.RoleIds.Select(guild.GetRole).Any(r => !CanManage(guild, r));
                 logger.LogInformation("Reaction role {Emoji} by {User} on panel {Panel}: {Result}", reaction.Emote.Name, member.Username, panel.Title, result);
 
-                // Реакцией ответить нельзя — при отказе снять реакцию и написать в ЛС, почему
+                // Отказ (нет роли-допуска, бот не может выдать роль) — снять реакцию, причина в логе
                 if (added && failed)
                 {
                     if (reaction.Channel is ITextChannel ch && await ch.GetMessageAsync(messageId) is IUserMessage m)
                         try { await m.RemoveReactionAsync(reaction.Emote, reaction.UserId); } catch (Discord.Net.HttpException) { }
-                    try { await member.SendMessageAsync($"**{guild.Name}** — {panel.Title}: {result}"); } catch (Discord.Net.HttpException) { }
                 }
 
                 // Unique: убрать остальные реакции этого человека на панели (нужно Manage Messages)
