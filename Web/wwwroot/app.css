@@ -740,6 +740,13 @@ input:focus, select:focus, textarea:focus { box-shadow: 0 0 0 3px var(--primary-
 .att-came { color: var(--success) !important; }
 .att-miss { color: var(--danger) !important; }
 
+/* Attendance: highlight the whole seated row */
+.slot.taken.att-ok { border-color: color-mix(in srgb, var(--success) 55%, var(--glass-border)); background: color-mix(in srgb, var(--success) 12%, transparent); border-left-width: 3px; }
+.slot.taken.att-no { border-color: color-mix(in srgb, var(--danger) 55%, var(--glass-border)); background: color-mix(in srgb, var(--danger) 12%, transparent); border-left-width: 3px; }
+.att-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+.att-badge.ok { color: var(--success); background: color-mix(in srgb, var(--success) 16%, transparent); }
+.att-badge.no { color: var(--danger); background: color-mix(in srgb, var(--danger) 16%, transparent); }
+
 /* =====================================================================
    My characters
    ===================================================================== */

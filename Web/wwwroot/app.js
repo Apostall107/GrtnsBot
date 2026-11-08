@@ -2730,6 +2730,31 @@ function groupNoteLine(g) {
   return g.note ? h("div", { class: "muted small group-note", style: "white-space:pre-wrap" }, icon("file-pen-line", 14), g.note) : null;
 }
 
+/** After marking attendance in place, update the row's highlight and the Came/No-show badge. */
+function syncSlotAttendance(node, s) {
+  const slot = node.closest(".slot");
+  if (!slot) return;
+  slot.classList.toggle("att-ok", s.attended === true);
+  slot.classList.toggle("att-no", s.attended === false);
+  slot.querySelector(".att-badge")?.remove();
+  const badge = attBadge(s);
+  if (badge) slot.querySelector(".slot-who")?.append(badge);
+  // the "ready" green dot shows only while unmarked
+  if (s.attended != null) [...slot.querySelectorAll(".slot-who span[title='Ready'], .slot-who span[title=\"Pressed ✅ Ready in the reminder\"]")].forEach(x => x.remove());
+}
+
+/** Slot highlight class by attendance: came → att-ok, no-show → att-no, else none. */
+function attClass(s) {
+  return s.attended === true ? " att-ok" : s.attended === false ? " att-no" : "";
+}
+
+/** Small explicit badge of attendance (Came / No-show); null when not marked. */
+function attBadge(s) {
+  if (s.attended === true) return h("span", { class: "att-badge ok", title: "Marked as came" }, icon("circle-check", 12), "Came");
+  if (s.attended === false) return h("span", { class: "att-badge no", title: "Marked as no-show" }, icon("circle-x", 12), "No-show");
+  return null;
+}
+
 /** Attendance toggle for a seated member: not marked → came → no-show → not marked.
  *  Updates itself in place (no full page re-render) so the page doesn't jump to the top. */
 function attendanceButton(s, url) {
@@ -2740,7 +2765,7 @@ function attendanceButton(s, url) {
     const title = s.attended === true ? "Came — click: no-show" : s.attended === false ? "No-show — click: clear" : "Not marked — click: came";
     const btn = h("button", { class: `btn ghost icon-only sm${cls}`, title, "aria-label": title,
       onclick: () => act(btn, () => gApi("POST", url, { userId: s.member.id, attended: next }))
-        .then(r => { if (r !== undefined) { s.attended = next; btn.replaceWith(build()); } }) }, icon(ic, 16));
+        .then(r => { if (r !== undefined) { s.attended = next; const nb = build(); btn.replaceWith(nb); syncSlotAttendance(nb, s); } }) }, icon(ic, 16));
     return btn;
   };
   return build();
@@ -2805,9 +2830,9 @@ function groupCard(g) {
         g.requirements.minGs ? h("span", { class: "chip" }, `GS ${g.requirements.minGs}+`) : null) : null),
     groupNoteLine(g),
     h("div", { class: "roster" }, g.slots.map((s, i) => s.member
-      ? h("div", { class: "slot taken" },
+      ? h("div", { class: `slot taken${attClass(s)}` },
           h("span", { class: "slot-num" }, i + 1), rolePill(s.role || s.slotRole),
-          h("span", { class: "slot-who" }, member(s.member), classMark(s), note(s.comment),
+          h("span", { class: "slot-who" }, member(s.member), classMark(s), note(s.comment), attBadge(s),
             s.ready && s.attended == null ? h("span", { title: "Pressed ✅ Ready in the reminder" }, " 🟢") : null),
           h("span", { class: "slot-char" }, s.character || "", s.gs ? h("span", { class: "gs" }, `GS ${s.gs}`) : null, s.cp ? h("span", { class: "gs cp" }, `CP ${fmtCp(s.cp)}`) : null),
           g.started ? attendanceButton(s, `/lfg/groups/${gid}/attendance`) : null,
@@ -4916,9 +4941,9 @@ function playCard(g) {
 
   // Roster: taken slots and open slots look different (not only by color)
   const roster = h("div", { class: "roster" }, g.slots.map((s, i) => s.member
-    ? h("div", { class: `slot taken${s.member.id === meId ? " me" : ""}` },
+    ? h("div", { class: `slot taken${s.member.id === meId ? " me" : ""}${attClass(s)}` },
         h("span", { class: "slot-num" }, i + 1), rolePill(s.role || s.slotRole),
-        h("span", { class: "slot-who" }, member(s.member), classMark(s),
+        h("span", { class: "slot-who" }, member(s.member), classMark(s), attBadge(s),
           s.ready && s.attended == null ? h("span", { title: "Ready" }, " 🟢") : null),
         h("span", { class: "slot-char" }, s.character || "", s.gs ? h("span", { class: "gs" }, `GS ${s.gs}`) : null, s.cp ? h("span", { class: "gs cp" }, `CP ${fmtCp(s.cp)}`) : null),
         org && g.started ? attendanceButton(s, `/me/groups/${gid}/attendance`) : null,
