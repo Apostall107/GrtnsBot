@@ -3391,7 +3391,9 @@ function questionEditor(p) {
       bd.addEventListener("change", () => {
         q.birthday = bd.checked;
         if (bd.checked && !hint.value) { hint.value = q.placeholder = "DD.MM, e.g. 05.02"; }
-        if (bd.checked && !label.value) { label.value = q.label = "Your birthday (DD.MM)"; }
+        if (bd.checked && !label.value) { label.value = q.label = "Your birthday (DD.MM, optional)"; }
+        // ДР по умолчанию необязателен — человек может пропустить (галочка «required» включает обязательность)
+        if (bd.checked) { req.checked = false; q.required = false; }
         syncBd();
       });
       syncBd();
@@ -3412,7 +3414,7 @@ function questionEditor(p) {
       h("label", {}, "Application form"),
       h("label", { class: "row", style: "margin-bottom:6px" }, enabled, "Ask these questions before the ticket is created (Discord form, up to 5)"),
       list, h("div", { class: "row", style: "margin-top:6px" }, add,
-        h("span", { class: "muted small" }, "Answers appear in the ticket, on the site and in the archive. Tick 🎂 birthday on a question to save the answer straight to Birthdays."))),
+        h("span", { class: "muted small" }, "Answers appear in the ticket, on the site and in the archive. Tick 🎂 birthday on a question to save the answer straight to Birthdays — it's optional unless you tick “required”."))),
     enabled: () => enabled.checked,
     value: () => qs.filter(q => (q.label || "").trim()).map(q => ({
       id: q.id || null, label: q.label.trim(), placeholder: q.placeholder || null, long: !!q.long, required: q.required !== false, maxLength: q.maxLength || null,
