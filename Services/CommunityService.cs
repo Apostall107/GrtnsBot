@@ -16,6 +16,7 @@ public sealed class CommunityService(
     CommunityStore store,
     PanelTextStore panels,
     AuditLog audit,
+    AnnouncementService announce,
     ILogger<CommunityService> logger) : IHostedService
 {
     public Task StartAsync(CancellationToken cancellationToken)
@@ -189,6 +190,18 @@ public sealed class CommunityService(
     public string BindingLabel(RolePanel p, RoleBinding b) =>
         !string.IsNullOrWhiteSpace(b.Label) ? b.Label! : b.RoleIds.Count > 0 ? RoleName(p.GuildId, b.RoleIds[0]) : "Role";
 
+    /// <summary>Рендер с подстановкой :имя: → эмодзи сервера/бота в заголовке и тексте (как в постах).</summary>
+    private async Task<(Embed Embed, MessageComponent? Components)> RenderResolvedAsync(RolePanel p)
+    {
+        var copy = JsonClone(p);
+        if (!string.IsNullOrWhiteSpace(copy.Text)) copy.Text = await announce.ResolveEmotesAsync(p.GuildId, copy.Text!);
+        if (!string.IsNullOrWhiteSpace(copy.Title)) copy.Title = await announce.ResolveEmotesAsync(p.GuildId, copy.Title!);
+        return Render(copy);
+    }
+
+    private static RolePanel JsonClone(RolePanel p) =>
+        System.Text.Json.JsonSerializer.Deserialize<RolePanel>(System.Text.Json.JsonSerializer.Serialize(p))!;
+
     public (Embed Embed, MessageComponent? Components) Render(RolePanel p)
     {
         var gid = p.GuildId;
@@ -295,7 +308,7 @@ public sealed class CommunityService(
         if (client.GetGuild(panel.GuildId)?.GetTextChannel(channelId) is not { } channel) return "Channel not found.";
         if (panel.Bindings.Count == 0) return "Add at least one button, reaction or list item first.";
 
-        var (embed, comps) = Render(panel);
+        var (embed, comps) = await RenderResolvedAsync(panel);
         IUserMessage message;
         try
         {
@@ -325,7 +338,7 @@ public sealed class CommunityService(
             return "The posted message was deleted — post the panel again.";
         }
 
-        var (embed, comps) = Render(panel);
+        var (embed, comps) = await RenderResolvedAsync(panel);
         try
         {
             await message.ModifyAsync(m =>

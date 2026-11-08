@@ -3519,6 +3519,30 @@ function resolveEmojiShortcodes(text, map) {
   return text.replace(/(?<![<\w]):([A-Za-z0-9_]{2,32}):(?!\d)/g, (m, name) => map.get(name.toLowerCase()) || m);
 }
 
+/** name → code of server/bot emojis (from the /…/emojis lists), for previews of :name:. */
+function emojiMapOf(list) {
+  const m = new Map();
+  for (const e of list || []) m.set(e.name.toLowerCase(), e.code);
+  return m;
+}
+
+/** "😀 Insert emoji…" list with images; inserts :name: at the cursor of the field. null when there are no emojis. */
+function emojiInsertPicker(field, emojis, onInsert) {
+  if (!emojis || !emojis.length) return null;
+  const pick = h("select", { style: "width:200px", title: "Insert a server / bot emoji" }, h("option", { value: "" }, "😀 Insert emoji…"),
+    emojis.map(e => h("option", { value: e.name, "data-icon": e.code }, `:${e.name}:${e.app ? " (bot)" : ""}`)));
+  pick.addEventListener("change", () => {
+    if (!pick.value) return;
+    const ins = `:${pick.value}:`, st = field.selectionStart ?? field.value.length, en = field.selectionEnd ?? field.value.length;
+    field.value = field.value.slice(0, st) + ins + field.value.slice(en);
+    field.focus(); field.selectionStart = field.selectionEnd = st + ins.length;
+    pick.value = "";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    if (onInsert) onInsert();
+  });
+  return pick;
+}
+
 function emojiEl(code, size = 18) {
   if (!code) return null;
   const m = /^<(a?):([^:]+):(\d+)>$/.exec(code);
@@ -3822,7 +3846,8 @@ async function pageRoles(main) {
   if (emptyAdd) emptyAdd.addEventListener("click", () => rolePanelEditor(null, emojis));
 }
 
-function panelPreview(p) {
+function panelPreview(p, emojis) {
+  const emap = emojiMapOf(emojis);
   const options = p.bindings.filter(b => b.trigger === "Option");
   const buttons = p.bindings.filter(b => b.trigger === "Button");
   const reactions = p.bindings.filter(b => b.trigger === "Reaction");
@@ -3832,7 +3857,7 @@ function panelPreview(p) {
   if (options.length) rows.push([h("span", { class: "dc-select" }, h("span", {}, p.placeholder || "Choose your roles"), icon("chevron-down", 14))]);
   for (let i = 0; i < buttons.length; i += 5) rows.push(buttons.slice(i, i + 5).map(b => dcButton(b.shownLabel || b.label, b.emoji, b.color)));
   return dcMessage({
-    embed: { title: p.title, description: [p.text, list, hint].filter(Boolean).join("\n\n"), color: p.color || "#5865f2", image: p.imageUrl, thumbnail: p.thumbnailUrl, footer: p.footer },
+    embed: { title: resolveEmojiShortcodes(p.title, emap), description: [resolveEmojiShortcodes(p.text, emap), list, hint].filter(Boolean).join("\n\n"), color: p.color || "#5865f2", image: p.imageUrl, thumbnail: p.thumbnailUrl, footer: p.footer },
     rows, reactions: reactions.map(r => r.emoji)
   });
 }
@@ -3860,7 +3885,7 @@ function rolePanelCard(p, emojis) {
       h("span", { class: "chip" }, mode[1]),
       p.jumpUrl ? h("a", { class: "chip ok", href: p.jumpUrl, target: "_blank", rel: "noopener" }, icon("external-link", 12), `#${p.channel || "posted"}`)
         : h("span", { class: "chip warn" }, "not posted")),
-    h("div", { class: "dc-frame compact" }, panelPreview(p)),
+    h("div", { class: "dc-frame compact" }, panelPreview(p, emojis)),
     h("div", { class: "binding-summary" }, p.bindings.map(b => h("div", { class: "row", style: "gap:6px" },
       h("span", { class: "chip" }, (TRIGGERS.find(t => t[0] === b.trigger) || TRIGGERS[0])[1]), emojiEl(b.emoji),
       h("b", {}, b.shownLabel), icon("arrow-right", 13), b.roles.map(r => roleChip(r))))),
@@ -3894,7 +3919,7 @@ function rolePanelEditor(p, emojis) {
     const s = state_();
     preview.replaceChildren(panelPreview({ ...s,
       bindings: rows.map(r => ({ trigger: r.trigger, emoji: r.emoji, description: r.description, color: r.color, label: r.label,
-        shownLabel: r.label || (r.roles.roles()[0] || { name: "Role" }).name, roles: r.roles.roles() })) }));
+        shownLabel: r.label || (r.roles.roles()[0] || { name: "Role" }).name, roles: r.roles.roles() })) }, emojis));
     listOnly.forEach(el => { el.style.display = rows.some(r => r.trigger === "Option") ? "" : "none"; });
   };
 
@@ -3981,7 +4006,7 @@ function rolePanelEditor(p, emojis) {
       h("div", { class: "editor-form" },
         sectionCard("file-text", "1. Message", "The card members see.",
           h("div", { class: "field" }, h("label", {}, "Title"), title),
-          h("div", { class: "field" }, h("label", {}, "Text"), text),
+          h("div", { class: "field" }, h("label", {}, "Text"), text, emojiInsertPicker(text, emojis, () => update())),
           h("div", { class: "grid2" }, h("div", { class: "field" }, h("label", {}, "Stripe color"), color.el),
             h("div", { class: "field" }, h("label", {}, "Footer"), footer)),
           h("div", { class: "grid2" }, h("div", { class: "field" }, h("label", {}, "Big image"), image),
