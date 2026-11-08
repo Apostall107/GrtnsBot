@@ -18,13 +18,17 @@ public static partial class PanelApi
     {
         MapAnnounceTemplates(g);
 
+        // Эмодзи сервера и бота — для подсказок и для превью (:name: → картинка)
+        g.MapGet("/emojis", (ulong guildId, DiscordSocketClient client) => EmojisAsync(guildId, client));
+
         // Как текст разобьётся на сообщения Discord
-        g.MapPost("/preview", (AnnounceBody body) =>
+        g.MapPost("/preview", async (ulong guildId, AnnounceBody body, [Microsoft.AspNetCore.Mvc.FromServices] AnnouncementService sender) =>
         {
             var text = (body.Content ?? "").Trim();
             if (text.Length == 0) return Error("Write the text of the post.");
             if (text.Length > PostSplitter.MaxTotalLength) return Error($"The post is limited to {PostSplitter.MaxTotalLength} characters.");
-            var blocks = PostSplitter.Split(AnnouncementText.Compose(text, ParseIds(body.PingRoleIds), ParseIds(body.PingUserIds), Everyone(body.PingEveryone)));
+            var composed = AnnouncementText.Compose(text, ParseIds(body.PingRoleIds), ParseIds(body.PingUserIds), Everyone(body.PingEveryone));
+            var blocks = PostSplitter.Split(await sender.ResolveEmotesAsync(guildId, composed));
             return Results.Ok(new { blocks, count = blocks.Count, length = text.Length });
         });
 

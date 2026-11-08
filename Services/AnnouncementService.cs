@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Discord;
 using Discord.WebSocket;
 using LfgBot.Models;
@@ -55,6 +56,16 @@ public static class AnnouncementText
         parts.AddRange(roleIds.Select(id => $"<@&{id}>"));
         parts.AddRange(userIds.Select(id => $"<@{id}>"));
         return parts.Count == 0 ? content.Trim() : string.Join(" ", parts) + "\n" + content.Trim();
+    }
+
+    // :shortcode: → <:name:id>, не трогая уже готовые коды <:name:id> и время вида 21:00
+    private static readonly Regex Shortcode = new(@"(?<![<\w]):([A-Za-z0-9_]{2,32}):(?!\d)", RegexOptions.Compiled);
+
+    /// <summary>Заменяет :имя: на код эмодзи из карты (имя без учёта регистра). Нет совпадения — оставляет как есть.</summary>
+    public static string ResolveEmotes(string text, IReadOnlyDictionary<string, string> byName)
+    {
+        if (string.IsNullOrEmpty(text) || byName.Count == 0 || !text.Contains(':')) return text;
+        return Shortcode.Replace(text, m => byName.TryGetValue(m.Groups[1].Value, out var code) ? code : m.Value);
     }
 }
 
@@ -317,6 +328,42 @@ public sealed class AnnouncementService(
     AuditLog audit,
     ILogger<AnnouncementService> logger) : BackgroundService
 {
+    private (DateTimeOffset At, Dictionary<string, string> Map)? _appEmotes;
+    private readonly SemaphoreSlim _appGate = new(1, 1);
+
+    /// <summary>:имя: → &lt;:name:id&gt; по эмодзи сервера и эмодзи бота. Нераспознанные :имя: остаются как есть.</summary>
+    public async Task<string> ResolveEmotesAsync(ulong guildId, string text)
+    {
+        if (string.IsNullOrEmpty(text) || !text.Contains(':')) return text;
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (client.GetGuild(guildId) is { } guild)
+            foreach (var e in guild.Emotes)
+                map[e.Name] = $"<{(e.Animated ? "a" : "")}:{e.Name}:{e.Id}>";
+        foreach (var (name, code) in await AppEmotesAsync())
+            map.TryAdd(name, code); // эмодзи сервера приоритетнее эмодзи бота
+        return AnnouncementText.ResolveEmotes(text, map);
+    }
+
+    private async Task<Dictionary<string, string>> AppEmotesAsync()
+    {
+        if (_appEmotes is { } c && DateTimeOffset.UtcNow - c.At < TimeSpan.FromMinutes(5)) return c.Map;
+        await _appGate.WaitAsync();
+        try
+        {
+            if (_appEmotes is { } c2 && DateTimeOffset.UtcNow - c2.At < TimeSpan.FromMinutes(5)) return c2.Map;
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                foreach (var e in await client.GetApplicationEmotesAsync())
+                    map[e.Name] = $"<{(e.Animated ? "a" : "")}:{e.Name}:{e.Id}>";
+            }
+            catch (Exception ex) { logger.LogDebug(ex, "Could not load application emotes"); }
+            _appEmotes = (DateTimeOffset.UtcNow, map);
+            return map;
+        }
+        finally { _appGate.Release(); }
+    }
+
     /// <summary>Отправить пост, который уже лежит в хранилище со статусом scheduled.</summary>
     public async Task<Announcement?> SendAsync(string id)
     {
@@ -331,7 +378,8 @@ public sealed class AnnouncementService(
             var mentions = post.Mentions();
             try
             {
-                foreach (var block in PostSplitter.Split(post.FullText()))
+                var fullText = await ResolveEmotesAsync(post.GuildId, post.FullText());
+                foreach (var block in PostSplitter.Split(fullText))
                 {
                     var message = await channel.SendMessageAsync(block, allowedMentions: mentions);
                     sent.Add(message.Id);
@@ -371,7 +419,7 @@ public sealed class AnnouncementService(
         {
             Content = content, PingRoleIds = roleIds, PingUserIds = userIds, PingEveryone = everyone, AllowMentions = allowMentions
         };
-        var blocks = PostSplitter.Split(updated.FullText());
+        var blocks = PostSplitter.Split(await ResolveEmotesAsync(post.GuildId, updated.FullText()));
         var ids = post.MessageIds.ToList();
         var mentions = updated.Mentions();
         var added = 0;

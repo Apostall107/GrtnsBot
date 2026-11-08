@@ -1360,6 +1360,10 @@ async function pageAnnounce(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "✍️ Announcements"),
     h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
 
+  // Server / bot emoji, so the preview shows :name: as the real emoji (the post resolves them too when sent)
+  const emojiMap = new Map();
+  gApi("GET", "/announce/emojis").then(list => { for (const e of list) emojiMap.set(e.name.toLowerCase(), e.code); if (text.value) queueAnn(); }).catch(() => {});
+
   let editing = null; // scheduled post being edited
   let editingSent = null; // sent post being edited (messages are edited in Discord)
   const channel = h("select", {}, h("option", { value: "" }, "Channel…"),
@@ -1527,7 +1531,7 @@ async function pageAnnounce(main) {
   const drawAnn = () => {
     const line = [ping.everyone ? `@${ping.everyone.replace(/^@/, "")}` : "", ...ping.roles.map(r => `<@&${r.id}>`), ...ping.users.map(u => `<@${u.id}>`)].filter(Boolean).join(" ");
     for (const u of ping.users) knownUsers.set(u.id, u.name);
-    const full = [line, text.value].filter(x => x.trim()).join("\n");
+    const full = resolveEmojiShortcodes([line, text.value].filter(x => x.trim()).join("\n"), emojiMap);
     annFrame.replaceChildren(full.trim() ? dcMessage({ content: full.slice(0, 2000) }) : h("div", { class: "muted small" }, "Write the text to see the post."));
     annNote.textContent = full.length > 2000 ? `First message shown — the bot splits the rest into ~${Math.ceil(full.length / 1900)} messages (see Preview & send).` : "How the post will look in Discord.";
   };
@@ -3378,6 +3382,12 @@ function mdPreview(text, mentions = {}) {
     wrap.append(el);
   }
   return wrap;
+}
+
+/** Replace :name: shortcodes with the server/bot emoji code <:name:id>, leaving existing codes and times (21:00) alone. */
+function resolveEmojiShortcodes(text, map) {
+  if (!text || !map || !map.size || !text.includes(":")) return text;
+  return text.replace(/(?<![<\w]):([A-Za-z0-9_]{2,32}):(?!\d)/g, (m, name) => map.get(name.toLowerCase()) || m);
 }
 
 function emojiEl(code, size = 18) {
