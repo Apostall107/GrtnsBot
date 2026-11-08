@@ -2985,8 +2985,35 @@ function ticketPanelEditor(p, d, reload) {
       return h("div", { class: "row", style: "gap:6px" }, h("label", { class: "row grow", style: "gap:6px" }, cb, t.name),
         on ? h("button", { class: "btn ghost sm", type: "button", title: "Up", onclick: () => move(-1) }, icon("chevron-up", 14)) : null,
         on ? h("button", { class: "btn ghost sm", type: "button", title: "Down", onclick: () => move(1) }, icon("chevron-down", 14)) : null);
-    }) : [h("p", { class: "muted small" }, "No ticket types for this project yet — create one (➕ New project) and choose this project in its settings.")]));
+    }) : [h("p", { class: "muted small" }, v.projectKey ? "No ticket types in this project yet — create one with the button below." : "No ticket types yet — create one with the button below.")]));
   };
+  // Новый тип тикета прямо отсюда: сразу в проекте панели и сразу отмечен
+  const newType = h("button", { class: "btn secondary sm", type: "button" }, icon("plus", 14), "New ticket type");
+  newType.addEventListener("click", () => {
+    const nd = dialog();
+    const nm = h("input", { maxlength: "40", placeholder: "e.g. GvG application", style: "width:100%" });
+    const role = roleSelect("Role given on Approve…");
+    const pj = d.groups.find(g => g.key === v.projectKey);
+    const ok = h("button", { class: "btn" }, icon("check", 15), "Create");
+    ok.addEventListener("click", async () => {
+      if (!nm.value.trim()) return toast("Write a name.", "warn");
+      if (!role.value) return toast("Pick the role given on Approve.", "warn");
+      const r = await act(ok, () => gApi("POST", "/tickets/projects", { name: nm.value.trim(), memberRoleId: role.value, groupProjectKey: v.projectKey || null }), "Ticket type created.");
+      if (r === undefined) return;
+      nd.close();
+      try { const fresh = await gApi("GET", "/tickets/panels"); d.types = fresh.types; } catch { /* list stays */ }
+      if (r && r.key && v.ticketKeys.length < 25) v.ticketKeys.push(r.key);
+      draw(); update();
+    });
+    nd.replaceChildren(h("h2", {}, "New ticket type"),
+      h("div", { class: "field" }, h("label", {}, "Name (the button text)"), nm),
+      h("div", { class: "field" }, h("label", {}, "Role given on Approve"), role),
+      h("p", { class: "muted small" }, pj ? `It belongs to ${pj.name} and gets a button on this panel. ` : "",
+        "Who can open it, the staff roles, questions and texts — set them later in its own tab on the Tickets page (until then: the project's members / everyone)."),
+      h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => nd.close() }, "Cancel"), ok));
+    nd.showModal();
+    nm.focus();
+  });
   proj.addEventListener("change", () => { v.projectKey = proj.value; draw(); });
   draw(); update();
   const save = h("button", { class: "btn" }, icon("check", 15), "Save");
@@ -3001,7 +3028,9 @@ function ticketPanelEditor(p, d, reload) {
         h("div", { class: "field" }, h("label", {}, "Text"), text),
         h("div", { class: "field" }, h("label", {}, "Color"), color.el),
         h("div", { class: "field" }, h("label", {}, "Project"), proj),
-        h("div", { class: "field" }, h("label", {}, "Ticket types — one button each, up to 25"), list)),
+        h("div", { class: "field" }, h("label", {}, "Ticket types — one button each, up to 25"), list,
+          h("div", { class: "row", style: "gap:8px;margin-top:8px;flex-wrap:wrap" }, newType,
+            h("span", { class: "muted small" }, "A ticket type is a kind of application (e.g. GvG application, POV review). Ones from the main panel (like “Where Winds Meet” for joining) are not meant here.")))),
       h("div", { class: "editor-preview" }, h("h3", {}, "Preview"), preview,
         h("p", { class: "muted small" }, "Access is checked when a member clicks: each ticket type's “Who can open”, or its project's roles."))),
     h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => dlg.close() }, "Cancel"), save));

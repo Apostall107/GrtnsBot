@@ -386,8 +386,11 @@ public static partial class PanelApi
             if (ParseId(body.MemberRoleId) is not { } roleId || guild.GetRole(roleId) is null)
                 return Error("Pick the role given on Approve.");
 
-            var error = tickets.AddProject(guildId, name, roleId);
-            return error is null ? Results.Ok() : Error(error);
+            var group = string.IsNullOrWhiteSpace(body.GroupProjectKey) ? null : body.GroupProjectKey;
+            var error = tickets.AddProject(guildId, name, roleId, group);
+            if (error is not null) return Error(error);
+            var created = tickets.GetProjects(guildId).FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            return Results.Ok(new { key = created?.Key });
         });
 
         g.MapPut("/projects/{key}", async (ulong guildId, string key, ProjectUpdateBody body, DiscordSocketClient client,
@@ -1403,7 +1406,7 @@ public static partial class PanelApi
 
 public sealed record StickyBody(bool Sticky);
 public sealed record ActivityBody(string? Name, string? RoleId, string? ProjectKey = null, int? MinGs = null);
-public sealed record ProjectBody(string? Name, string? MemberRoleId);
+public sealed record ProjectBody(string? Name, string? MemberRoleId, string? GroupProjectKey = null);
 public sealed record ProjectUpdateBody(List<string>? StaffRoleIds, List<string>? MemberRoleIds, string? CategoryId, string? CustomText,
     bool? FormEnabled = null, List<QuestionBody>? Questions = null, int? AutoCloseDays = null, string? Name = null,
     List<string>? OpenRoleIds = null, bool? OpenRequireAll = null, string? GroupProjectKey = null);
