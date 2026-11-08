@@ -32,6 +32,9 @@ public static partial class PanelApi
 
     private static void MapPages(RouteGroupBuilder g)
     {
+        // Эмодзи сервера и бота — для выбора в текстовых блоках и превью (:name: → картинка)
+        g.MapGet("/emojis", (ulong guildId, DiscordSocketClient client) => EmojisAsync(guildId, client));
+
         // Список страниц + готовые панели ролей и доступные панели модулей — для редактора
         g.MapGet("/", (ulong guildId, DiscordSocketClient client, [FromServices] ChannelPageStore store,
             [FromServices] CommunityStore community) =>

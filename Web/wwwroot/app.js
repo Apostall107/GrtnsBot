@@ -5656,7 +5656,11 @@ function channelPageEditor(pageId, rolePanels, moduleKeys, reload) {
   d.replaceChildren(h("div", { class: "muted" }, "Loading…"));
   d.showModal();
 
-  gApi("GET", `/pages/${pageId}`).then(data => {
+  const emojiMap = new Map();
+  let emojiList = [];
+  const emojisReady = gApi("GET", "/pages/emojis").then(list => { emojiList = list; for (const e of list) emojiMap.set(e.name.toLowerCase(), e.code); }).catch(() => {});
+
+  Promise.all([gApi("GET", `/pages/${pageId}`), emojisReady]).then(([data]) => {
     const page = data.page;
     rolePanels = data.rolePanels || rolePanels;
     const name = h("input", { maxlength: "80", value: page.name, style: "width:100%" });
@@ -5678,10 +5682,23 @@ function channelPageEditor(pageId, rolePanels, moduleKeys, reload) {
         if (b.type === "text") {
           const ta = h("textarea", { rows: "4", maxlength: "20000", placeholder: "Text — formatting, :emoji: and mentions like <@&id> work", value: b.text, style: "width:100%" });
           const prev = h("div", { class: "dc-frame compact" });
-          const redraw = () => prev.replaceChildren(ta.value.trim() ? dcMessage({ content: ta.value.slice(0, 2000) }) : h("div", { class: "muted small" }, "Empty text block."));
+          const redraw = () => prev.replaceChildren(ta.value.trim()
+            ? dcMessage({ content: resolveEmojiShortcodes(ta.value, emojiMap).slice(0, 2000) })
+            : h("div", { class: "muted small" }, "Empty text block."));
           ta.addEventListener("input", () => { b.text = ta.value; redraw(); });
+          // Вставить эмодзи сервера/бота как :name: в позицию курсора (картинки в списке)
+          const pick = emojiList.length ? h("select", { style: "width:200px", title: "Insert a server / bot emoji" }, h("option", { value: "" }, "😀 Insert emoji…"),
+            emojiList.map(e => h("option", { value: e.name, "data-icon": e.code }, `:${e.name}:${e.app ? " (bot)" : ""}`))) : null;
+          if (pick) pick.addEventListener("change", () => {
+            if (!pick.value) return;
+            const ins = `:${pick.value}:`, st = ta.selectionStart ?? ta.value.length, en = ta.selectionEnd ?? ta.value.length;
+            ta.value = ta.value.slice(0, st) + ins + ta.value.slice(en);
+            b.text = ta.value; ta.focus(); ta.selectionStart = ta.selectionEnd = st + ins.length;
+            pick.value = ""; redraw();
+          });
           redraw();
-          body = h("div", {}, ta, prev);
+          body = h("div", {}, ta, pick ? h("div", { class: "row", style: "margin:6px 0" }, pick,
+            h("span", { class: "muted small" }, "Emoji not in the list? Upload it to the server or as the bot's emoji first.")) : null, prev);
         } else if (b.type === "rolepanel") {
           const sel = h("select", {}, h("option", { value: "" }, "Choose a role panel…"),
             rolePanels.map(r => h("option", { value: r.id }, r.title)));
