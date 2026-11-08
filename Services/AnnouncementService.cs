@@ -364,6 +364,22 @@ public sealed class AnnouncementService(
         finally { _appGate.Release(); }
     }
 
+    /// <summary>
+    /// Отправить произвольный текст в канал как один или несколько сообщений (резолв :эмодзи:, разбивка по 2000).
+    /// Для сборщика страниц канала. Возвращает ID отправленных сообщений.
+    /// </summary>
+    public async Task<List<ulong>> PostTextAsync(ulong guildId, IMessageChannel channel, string text)
+    {
+        var ids = new List<ulong>();
+        var resolved = await ResolveEmotesAsync(guildId, text);
+        foreach (var block in PostSplitter.Split(resolved))
+        {
+            var message = await channel.SendMessageAsync(block, allowedMentions: AllowedMentions.None);
+            ids.Add(message.Id);
+        }
+        return ids;
+    }
+
     /// <summary>Отправить пост, который уже лежит в хранилище со статусом scheduled.</summary>
     public async Task<Announcement?> SendAsync(string id)
     {

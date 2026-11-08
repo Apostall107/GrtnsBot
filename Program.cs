@@ -83,6 +83,8 @@ builder.Services.AddHostedService<GroupCleanupService>();
 builder.Services.AddHostedService<MemberActivityTracker>();
 builder.Services.AddSingleton<GsReminderService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<GsReminderService>());
+builder.Services.AddSingleton<ChannelPageStore>();
+builder.Services.AddSingleton<ChannelPageService>();
 builder.Services.AddSingleton<BirthdayStore>();
 builder.Services.AddSingleton<BirthdayService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<BirthdayService>());

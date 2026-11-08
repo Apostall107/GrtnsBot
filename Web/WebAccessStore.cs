@@ -25,6 +25,9 @@ public static class PanelPermissions
     public const string Log = "log";
     /// <summary>Настройки бота (часовой пояс, автоудаление, напоминание).</summary>
     public const string Settings = "settings";
+    /// <summary>Страницы каналов: сборка поста из нескольких сообщений и панелей.</summary>
+    public const string Pages = "pages";
+
     /// <summary>Дни рождения участников и автоматическая роль.</summary>
     public const string Birthdays = "birthdays";
 
@@ -32,7 +35,7 @@ public static class PanelPermissions
     public const string Access = "access";
 
     /// <summary>Права, которые владелец может выдавать.</summary>
-    public static readonly string[] Grantable = [Lfg, Guild, Tickets, Voice, Welcome, Roles, Texts, Posts, Announce, Birthdays, Log, Settings];
+    public static readonly string[] Grantable = [Lfg, Guild, Tickets, Voice, Welcome, Roles, Texts, Posts, Announce, Pages, Birthdays, Log, Settings];
 }
 
 public sealed class WebGrant

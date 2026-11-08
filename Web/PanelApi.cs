@@ -110,6 +110,7 @@ public static partial class PanelApi
         MapCharacterTransfer(guild.MapGroup("/characters-transfer").AddEndpointFilter(Require(PanelPermissions.Access)));
         MapCaptcha(api.MapGroup("/captcha").AddEndpointFilter(Require(PanelPermissions.Access)));
         MapBirthdays(guild.MapGroup("/birthdays").AddEndpointFilter(Require(PanelPermissions.Birthdays)));
+        MapPages(guild.MapGroup("/pages").AddEndpointFilter(Require(PanelPermissions.Pages)));
     }
 
     // ================= Общее: сводка, роли, каналы, участники =================

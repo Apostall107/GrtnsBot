@@ -1164,6 +1164,7 @@ const allTabs = [
   ["birthdays", "cake", "Birthdays", "birthdays", "Community modules"],
   ["content", "layout-template", "Panels & posts", "content", "Community modules"],
   ["announce", "megaphone", "Announcements", "announce", "Community modules"],
+  ["pages", "layers", "Channel pages", "pages", "Community modules"],
   ["overview", "layout-dashboard", "Dashboard", "admin", "Administration"],
   ["log", "scroll-text", "Log", "log", "Administration"],
   ["settings", "settings", "Settings", "settings", "Administration"],
@@ -1183,8 +1184,8 @@ const can = perm => {
 };
 const MEMBER_TABS = ["home", "play", "chars"];
 const visibleTabs = () => allTabs.filter(t => can(t[3]));
-const PERM_LABELS = { lfg: "LFG", guild: "Guild", tickets: "Tickets", voice: "Temp Voice", welcome: "Welcome", roles: "Role panels", texts: "Panel texts", posts: "Posts", announce: "Announcements", birthdays: "Birthdays", log: "Log", settings: "Settings" };
-const PERM_ICONS = { lfg: "swords", guild: "calendar", tickets: "ticket", voice: "headphones", welcome: "door-open", roles: "user-plus", texts: "file-pen-line", posts: "pin", announce: "megaphone", birthdays: "cake", log: "scroll-text", settings: "settings" };
+const PERM_LABELS = { lfg: "LFG", guild: "Guild", tickets: "Tickets", voice: "Temp Voice", welcome: "Welcome", roles: "Role panels", texts: "Panel texts", posts: "Posts", announce: "Announcements", pages: "Channel pages", birthdays: "Birthdays", log: "Log", settings: "Settings" };
+const PERM_ICONS = { lfg: "swords", guild: "calendar", tickets: "ticket", voice: "headphones", welcome: "door-open", roles: "user-plus", texts: "file-pen-line", posts: "pin", announce: "megaphone", pages: "layers", birthdays: "cake", log: "scroll-text", settings: "settings" };
 
 function renderLogin(message) {
   const params = new URLSearchParams(location.search);
@@ -1267,7 +1268,7 @@ function renderShell() {
   // ----- Sidebar: sections, Lucide icons, active route; collapses to icons on desktop, drawer on mobile
   const layout = h("div", { class: `layout${collapsed ? " collapsed" : ""}` });
   const closeDrawer = () => layout.classList.remove("drawer-open");
-  const NAV_TONES = { voicenow: "teal", captcha: "amber", birthdays: "pink", home: "violet", play: "violet", chars: "cyan", schedule: "teal", roster: "green", lfg: "violet", guild: "teal", tickets: "amber", voice: "teal", welcome: "pink", roles: "green", content: "blue",
+  const NAV_TONES = { voicenow: "teal", captcha: "amber", birthdays: "pink", pages: "blue", home: "violet", play: "violet", chars: "cyan", schedule: "teal", roster: "green", lfg: "violet", guild: "teal", tickets: "amber", voice: "teal", welcome: "pink", roles: "green", content: "blue",
     announce: "pink", overview: "green", log: "blue", settings: "cyan", access: "amber" };
   const navButton = ([key, ic, label]) => h("button", {
     // Tooltip only when the menu is collapsed to icons (labels are visible otherwise)
@@ -1327,7 +1328,7 @@ function renderShell() {
 
   if (!state.guildId) { main.append(empty("No servers available for your account.")); return; }
   if (!visibleTabs().length) { main.append(empty("You have no sections on this server. Ask an admin for the member role.")); return; }
-  const page = { home: pageHome, content: pageContent, play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, guild: pageGuild, schedule: pageSchedule, roster: pageMemberRoster, tickets: pageTickets, voice: pageVoice, welcome: pageWelcome, roles: pageRoles, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess, voicenow: pageVoiceNow, captcha: pageCaptcha, birthdays: pageBirthdays }[state.tab];
+  const page = { home: pageHome, content: pageContent, play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, guild: pageGuild, schedule: pageSchedule, roster: pageMemberRoster, tickets: pageTickets, voice: pageVoice, welcome: pageWelcome, roles: pageRoles, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess, voicenow: pageVoiceNow, captcha: pageCaptcha, birthdays: pageBirthdays, pages: pageChannelPages }[state.tab];
   page(main);
   addGuideButton(main, state.tab);
   decorateHeading(main);
@@ -5457,6 +5458,136 @@ async function pageBirthdays(main) {
     renderSettings(d); renderAdd(); renderList(d);
   }
   await load();
+}
+
+// ================= Channel pages =================
+
+const MODULE_PANEL_LABELS = { lfg: "LFG panel", tickets: "Tickets panel", rooms: "Temp Voice panel" };
+
+/** Build a channel from several bot messages + existing panels, published in order as one unit. */
+async function pageChannelPages(main) {
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "🧱 Channel pages"),
+    h("button", { class: "btn btn-refresh", title: "Reload", onclick: hardRefresh }, "🔄 Refresh")));
+  main.append(h("p", { class: "muted small" },
+    "Assemble a whole channel from several bot messages and panels — text blocks (with formatting and :emoji:), role panels and module panels — in one order. ",
+    "Publishing posts them all into one channel as one unit; re-publishing re-posts the page. Create the role panels in the Role panels tab, then drop them in here by reference."));
+
+  const holder = h("div", {}, h("div", { class: "card" }, skeletonLines(4)));
+  main.append(holder);
+
+  async function load() {
+    let d;
+    try { d = await gApi("GET", "/pages"); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
+    const add = h("button", { class: "btn" }, icon("plus", 15), "New page");
+    add.addEventListener("click", async () => {
+      const name = await promptDialog("New channel page", "Channel page");
+      if (!name) return;
+      const p = await act(add, () => gApi("POST", "/pages", { name }));
+      if (p) channelPageEditor(p.id, d.rolePanels, d.moduleKeys, load);
+    });
+    holder.replaceChildren(h("div", { class: "card" },
+      h("div", { class: "card-head" }, h("h2", {}, "Pages"), add),
+      d.pages.length ? h("div", { class: "list" }, d.pages.map(p => {
+        const chSel = channelSelect("text", "Channel…");
+        const publish = h("button", { class: "btn secondary sm" }, icon("pin", 14), p.published ? "Re-publish" : "Publish");
+        publish.addEventListener("click", () => act(publish, async () => {
+          if (!chSel.value) return toast("Choose a channel.", "warn");
+          if (p.published && !await confirmDialog("Re-publish this page?", "Its old messages are deleted and the page is posted again in the chosen channel.", "Re-publish", false)) return;
+          await gApi("POST", `/pages/${p.id}/publish`, { channelId: chSel.value });
+          toast("Page published."); load();
+        }));
+        return h("div", { class: "list-row", style: "gap:8px;align-items:center;flex-wrap:wrap" },
+          h("div", { class: "grow", style: "min-width:160px" }, h("b", {}, p.name),
+            p.published ? h("span", { class: "chip ok", style: "margin-left:8px" }, icon("check", 12), `#${p.channel || "posted"}`)
+              : h("span", { class: "chip warn", style: "margin-left:8px" }, "not published"),
+            h("span", { class: "muted small", style: "margin-left:8px" }, `${p.blockCount} block${p.blockCount === 1 ? "" : "s"}`)),
+          chSel, publish,
+          h("button", { class: "btn ghost sm", onclick: () => channelPageEditor(p.id, d.rolePanels, d.moduleKeys, load) }, icon("pencil", 14), "Edit"),
+          p.published ? h("button", { class: "btn ghost sm", title: "Delete the posted messages", onclick: () => act(null, async () => {
+            if (!await confirmDialog("Unpublish this page?", "Its messages in the channel are deleted. The page itself stays.", "Unpublish")) return;
+            await gApi("POST", `/pages/${p.id}/unpublish`); toast("Unpublished."); load();
+          }) }, "Unpublish") : null,
+          h("button", { class: "btn ghost sm icon-only", title: "Delete the page", onclick: () => act(null, async () => {
+            if (!await confirmDialog(`Delete “${p.name}”?`, "The page and its posted messages are deleted.", "Delete")) return;
+            await gApi("DELETE", `/pages/${p.id}`); toast("Page deleted."); load();
+          }) }, icon("trash-2", 14)));
+      })) : emptyState("layers", "No channel pages yet", "Create one to assemble a channel from several messages and panels.")));
+  }
+  await load();
+}
+
+function channelPageEditor(pageId, rolePanels, moduleKeys, reload) {
+  const d = dialog();
+  d.classList.add("xwide");
+  d.onclose = () => d.classList.remove("xwide");
+  d.replaceChildren(h("div", { class: "muted" }, "Loading…"));
+  d.showModal();
+
+  gApi("GET", `/pages/${pageId}`).then(data => {
+    const page = data.page;
+    rolePanels = data.rolePanels || rolePanels;
+    const name = h("input", { maxlength: "80", value: page.name, style: "width:100%" });
+    const blocks = (page.blocks || []).map(b => ({ type: b.type, text: b.text || "", rolePanelId: b.rolePanelId || "", moduleKey: b.moduleKey || "" }));
+    const list = h("div", {});
+
+    const panelTitle = id => (rolePanels.find(r => r.id === id) || {}).title;
+
+    const draw = () => {
+      list.replaceChildren(...blocks.map((b, i) => {
+        const head = h("div", { class: "row binding-head", style: "gap:6px" },
+          h("span", { class: "binding-num" }, `#${i + 1}`),
+          h("span", { class: "chip" }, b.type === "text" ? "📝 Text" : b.type === "rolepanel" ? "🎭 Role panel" : "🧩 Module panel"),
+          h("span", { class: "spacer" }),
+          h("button", { class: "btn ghost sm", type: "button", title: "Up", onclick: () => { if (i > 0) { [blocks[i - 1], blocks[i]] = [blocks[i], blocks[i - 1]]; draw(); } } }, icon("chevron-up", 14)),
+          h("button", { class: "btn ghost sm", type: "button", title: "Down", onclick: () => { if (i < blocks.length - 1) { [blocks[i + 1], blocks[i]] = [blocks[i], blocks[i + 1]]; draw(); } } }, icon("chevron-down", 14)),
+          h("button", { class: "btn ghost sm", type: "button", title: "Remove", onclick: () => { blocks.splice(i, 1); draw(); } }, icon("trash-2", 14)));
+        let body;
+        if (b.type === "text") {
+          const ta = h("textarea", { rows: "4", maxlength: "20000", placeholder: "Text — formatting, :emoji: and mentions like <@&id> work", value: b.text, style: "width:100%" });
+          const prev = h("div", { class: "dc-frame compact" });
+          const redraw = () => prev.replaceChildren(ta.value.trim() ? dcMessage({ content: ta.value.slice(0, 2000) }) : h("div", { class: "muted small" }, "Empty text block."));
+          ta.addEventListener("input", () => { b.text = ta.value; redraw(); });
+          redraw();
+          body = h("div", {}, ta, prev);
+        } else if (b.type === "rolepanel") {
+          const sel = h("select", {}, h("option", { value: "" }, "Choose a role panel…"),
+            rolePanels.map(r => h("option", { value: r.id }, r.title)));
+          sel.value = b.rolePanelId;
+          sel.addEventListener("change", () => { b.rolePanelId = sel.value; });
+          body = h("div", { class: "field" },
+            rolePanels.length ? sel : h("p", { class: "muted small" }, "No role panels yet — create one in the Role panels tab first."));
+        } else {
+          const sel = h("select", {}, h("option", { value: "" }, "Choose a module panel…"),
+            moduleKeys.map(k => h("option", { value: k }, MODULE_PANEL_LABELS[k] || k)));
+          sel.value = b.moduleKey;
+          sel.addEventListener("change", () => { b.moduleKey = sel.value; });
+          body = h("div", { class: "field" }, sel);
+        }
+        return h("div", { class: "binding-card" }, head, body);
+      }));
+    };
+    draw();
+
+    const addBtn = (label, type) => h("button", { class: "btn secondary sm", type: "button",
+      onclick: () => { blocks.push({ type, text: "", rolePanelId: "", moduleKey: "" }); draw(); itemsWrap.scrollTop = itemsWrap.scrollHeight; } }, label);
+
+    const itemsWrap = h("div", { style: "max-height:46vh;overflow:auto" }, list);
+    const save = h("button", { class: "btn" }, icon("check", 15), "Save");
+    const saveBody = () => ({ name: name.value, blocks: blocks.map(b => ({ type: b.type, text: b.text, rolePanelId: b.rolePanelId, moduleKey: b.moduleKey })) });
+    save.addEventListener("click", async () => {
+      if (await act(save, () => gApi("PUT", `/pages/${pageId}`, saveBody()), "Page saved.") !== undefined) { d.close(); reload(); }
+    });
+
+    d.replaceChildren(
+      h("h2", {}, "Channel page"),
+      h("div", { class: "field" }, h("label", {}, "Name"), name),
+      h("div", { class: "field" }, h("label", {}, "Blocks (posted top to bottom)"), itemsWrap),
+      h("div", { class: "row", style: "gap:8px;flex-wrap:wrap;margin-bottom:6px" },
+        addBtn("➕ Text", "text"), addBtn("➕ Role panel", "rolepanel"), addBtn("➕ Module panel", "modulepanel")),
+      h("p", { class: "muted small" }, "Discord keeps messages in post order, so re-ordering blocks re-posts the page when you publish."),
+      h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), save));
+  }).catch(e => d.replaceChildren(h("h2", {}, "Channel page"), empty(e.message),
+    h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Close"))));
 }
 
 // ================= Captcha (bot owner only) =================
