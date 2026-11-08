@@ -537,23 +537,15 @@ public sealed class CommunityService(
                     || binding.RoleIds.Select(guild.GetRole).Any(r => !CanManage(guild, r));
                 logger.LogInformation("Reaction role {Emoji} by {User} on panel {Panel}: {Result}", reaction.Emote.Name, member.Username, panel.Title, result);
 
-                // Отказ (нет роли-допуска, бот не может выдать роль): снять реакцию и коротко ответить в канале.
-                // Скрытые (ephemeral) ответы Discord разрешает только на кнопки/меню, не на реакции —
-                // поэтому сообщение с упоминанием человека, которое само удаляется через 15 секунд.
-                if (added && failed && reaction.Channel is ITextChannel ch)
+                // Отказ (нет роли-допуска, бот не может выдать роль): снять реакцию и написать причину в ЛС.
+                // В ЛС упоминания ролей сервера показываются как «Неизвестная роль» — заменяем их на названия.
+                if (added && failed)
                 {
-                    if (await ch.GetMessageAsync(messageId) is IUserMessage m)
+                    if (reaction.Channel is ITextChannel ch && await ch.GetMessageAsync(messageId) is IUserMessage m)
                         try { await m.RemoveReactionAsync(reaction.Emote, reaction.UserId); } catch (Discord.Net.HttpException) { }
-                    try
-                    {
-                        var note = await ch.SendMessageAsync($"{member.Mention} {result}",
-                            allowedMentions: new AllowedMentions { UserIds = [member.Id] });
-                        _ = Task.Delay(TimeSpan.FromSeconds(15)).ContinueWith(async _ =>
-                        {
-                            try { await note.DeleteAsync(); } catch (Discord.Net.HttpException) { }
-                        });
-                    }
-                    catch (Discord.Net.HttpException) { }
+                    var text = System.Text.RegularExpressions.Regex.Replace(result, @"<@&(\d+)>",
+                        x => guild.GetRole(ulong.Parse(x.Groups[1].Value)) is { } r ? $"**@{r.Name}**" : "**@deleted role**");
+                    try { await member.SendMessageAsync($"**{guild.Name}** — {panel.Title}: {text}"); } catch (Discord.Net.HttpException) { }
                 }
 
                 // Unique: убрать остальные реакции этого человека на панели (нужно Manage Messages)
