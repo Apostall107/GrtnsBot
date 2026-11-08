@@ -9,6 +9,12 @@ public sealed class TicketProject
     public List<ulong> MemberRoleIds { get; set; } = [];
     /// <summary>Роли руководства: видят тикеты проекта и могут нажимать Approve.</summary>
     public List<ulong> StaffRoleIds { get; set; } = [];
+    /// <summary>Проект бота (LfgProjectStore), к которому относится эта тикет-система. null — «Общее».</summary>
+    public string? GroupProjectKey { get; set; }
+    /// <summary>Кто может открыть тикет этого проекта (пусто — все или роли проекта GroupProjectKey). См. OpenRequireAll.</summary>
+    public List<ulong> OpenRoleIds { get; set; } = [];
+    /// <summary>true — нужны ВСЕ роли из OpenRoleIds; false — достаточно одной.</summary>
+    public bool OpenRequireAll { get; set; }
     /// <summary>Категория для каналов тикетов. null — общая категория «Tickets».</summary>
     public ulong? CategoryId { get; set; }
     /// <summary>Свой текст в сообщении тикета: под системной информацией, над кнопками. null — нет блока.</summary>

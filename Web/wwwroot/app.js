@@ -2873,9 +2873,11 @@ async function pageTickets(main) {
   // A tab per ticket project; ⚙️ General — ticket panel, all open tickets, archive
   let projects = [];
   try { projects = await gApi("GET", "/tickets/projects"); } catch (e) { main.append(empty(e.message)); return; }
+  const ticketGroups = await gApi("GET", "/tickets/groups").catch(() => []);
+  const groupName = k => (ticketGroups.find(g => g.key === k) || {}).name;
   let tab = store.get("gb.ticketTab") || (projects[0] ? projects[0].key : "new");
   if (!["new", "general"].includes(tab) && !projects.some(p => p.key === tab)) tab = projects[0] ? projects[0].key : "new";
-  main.append(tabsRow([...projects.map(p => [p.key, `📁 ${p.name}${p.open ? ` (${p.open})` : ""}`]), ["new", "➕ New project"], ["general", "⚙️ General"]],
+  main.append(tabsRow([...projects.map(p => [p.key, `📁 ${groupName(p.groupProjectKey) ? groupName(p.groupProjectKey) + " · " : ""}${p.name}${p.open ? ` (${p.open})` : ""}`]), ["new", "➕ New project"], ["general", "⚙️ General"]],
     tab, "gb.ticketTab"));
 
   if (tab === "new") {
@@ -2898,7 +2900,7 @@ async function pageTickets(main) {
 
   const project = projects.find(p => p.key === tab);
   const openBody = h("div", {}, h("div", { class: "muted" }, "Loading…"));
-  if (project) main.append(projectCard(project));
+  if (project) main.append(projectCard(project, ticketGroups));
   else main.append(postPanelCard("Ticket panel", "Posts the message with the button to open a ticket (all projects in one panel).", "/tickets/panel"));
   main.append(h("div", { class: "card" }, h("div", { class: "card-head" }, h("h2", {}, project ? `Open tickets · ${project.name}` : "Open tickets")), openBody));
   if (!project) main.append(ticketArchiveCard());
@@ -3016,8 +3018,13 @@ function menuButton(items) {
   return wrap;
 }
 
-function projectCard(p) {
+function projectCard(p, groups = []) {
   const nameIn = h("input", { maxlength: "100", value: p.name, style: "font-weight:600;min-width:200px" });
+  // Проект бота, к которому относится эта тикет-система, и кто может её открыть
+  const groupSel = h("select", {}, h("option", { value: "" }, "General (no project)"), groups.map(g => h("option", { value: g.key }, g.name)));
+  groupSel.value = p.groupProjectKey || "";
+  const openRoles = roleListEditor(p.openRoles || [], state.roles);
+  const requireAll = toggle(!!p.openRequireAll, "Require ALL of these roles (off — any one is enough)");
   const staff = roleListEditor(p.staffRoles, state.roles, () => preview.refresh());
   const members = roleListEditor(p.memberRoles, state.roles, () => preview.refresh());
   const cat = channelSelect("categories", "Default category “Tickets”");
@@ -3038,7 +3045,8 @@ function projectCard(p) {
   const body = () => ({
     staffRoleIds: staff.value(), memberRoleIds: members.value(), categoryId: cat.value || null, customText: text.value,
     formEnabled: form.enabled(), questions: form.value(), name: nameIn.value,
-    autoCloseDays: autoClose.value === "" ? null : Number(autoClose.value)
+    autoCloseDays: autoClose.value === "" ? null : Number(autoClose.value),
+    groupProjectKey: groupSel.value, openRoleIds: openRoles.value(), openRequireAll: requireAll.cb.checked
   });
   const tracker = track(`Project ${p.name}`, body, async () => {
     const res = await act(save, () => gApi("PUT", `/tickets/projects/${encodeURIComponent(p.key)}`, body()));
@@ -3059,6 +3067,11 @@ function projectCard(p) {
   const card = h("div", { class: "card", style: "margin:0" },
     h("div", { class: "card-head" }, h("div", { class: "field", style: "margin:0;margin-right:auto" }, h("label", {}, "Project name"), nameIn),
       h("span", { class: "badge wait" }, `${p.open} open`)),
+    h("div", { class: "grid2" },
+      h("div", { class: "field" }, h("label", {}, "Project"), groupSel,
+        h("span", { class: "muted small" }, "Members first pick the project, then the ticket type.")),
+      h("div", { class: "field" }, h("label", {}, "Who can open this ticket"), openRoles.el, requireAll.el,
+        h("span", { class: "muted small" }, "Empty — everyone; with a project chosen — members with one of the project's roles."))),
     h("div", { class: "grid2" },
       h("div", { class: "field" }, h("label", {}, "Leadership (see tickets, can Approve)"), staff.el),
       h("div", { class: "field" }, h("label", {}, "Roles given on Approve"), members.el)),
@@ -4799,10 +4812,15 @@ async function pageHome(main) {
 async function applyDialog() {
   let projects;
   try { projects = await gApi("GET", "/me/tickets/projects"); } catch (e) { return toast(e.message, "error"); }
-  if (!projects.length) return toast("There are no projects to apply to.", "warn");
+  if (!projects.length) return toast("There are no ticket types available to you.", "warn");
 
   const d = dialog();
-  const sel = h("select", {}, projects.map(p => h("option", { value: p.key }, p.openTicketUrl ? `${p.name} (already open)` : p.name)));
+  // Сгруппировано по проектам бота: optgroup «WWM» → типы тикетов
+  const label = p => p.openTicketUrl ? `${p.name} (already open)` : p.name;
+  const groupsOrder = [...new Set(projects.map(p => p.group || ""))].sort((a, b) => (a === "") - (b === "") || a.localeCompare(b));
+  const sel = h("select", {}, groupsOrder.length > 1
+    ? groupsOrder.map(g => h("optgroup", { label: g || "General" }, projects.filter(p => (p.group || "") === g).map(p => h("option", { value: p.key }, label(p)))))
+    : projects.map(p => h("option", { value: p.key }, label(p))));
   const fields = h("div", {});
   let inputs = [];
   const draw = () => {

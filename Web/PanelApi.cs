@@ -344,6 +344,10 @@ public static partial class PanelApi
 
     private static void MapTickets(RouteGroupBuilder g)
     {
+        // Проекты бота — чтобы привязать к ним тикет-системы (группы в выборе типа тикета)
+        g.MapGet("/groups", (ulong guildId, [Microsoft.AspNetCore.Mvc.FromServices] LfgProjectStore lfgProjects) =>
+            Results.Ok(lfgProjects.GetProjects(guildId).Select(p => new { key = p.Key, name = p.Name })));
+
         g.MapGet("/projects", (ulong guildId, DiscordSocketClient client, TicketStore tickets) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
@@ -354,6 +358,9 @@ public static partial class PanelApi
                 name = p.Name,
                 staffRoles = p.StaffRoleIds.Select(id => Role(guild, id)),
                 memberRoles = p.MemberRoleIds.Select(id => Role(guild, id)),
+                openRoles = p.OpenRoleIds.Select(id => Role(guild, id)),
+                openRequireAll = p.OpenRequireAll,
+                groupProjectKey = p.GroupProjectKey,
                 category = p.CategoryId is { } c ? new { id = c.ToString(), name = guild.GetCategoryChannel(c)?.Name } : null,
                 customText = p.CustomText,
                 formEnabled = p.FormEnabled,
@@ -387,6 +394,7 @@ public static partial class PanelApi
 
             var staff = ParseIds(body.StaffRoleIds).Where(id => guild.GetRole(id) is not null).Take(10).ToList();
             var members = ParseIds(body.MemberRoleIds).Where(id => guild.GetRole(id) is not null).Take(10).ToList();
+            var openRoles = ParseIds(body.OpenRoleIds).Where(id => guild.GetRole(id) is not null).Take(10).ToList();
             ulong? category = ParseId(body.CategoryId) is { } c && guild.GetCategoryChannel(c) is not null ? c : null;
             var text = string.IsNullOrWhiteSpace(body.CustomText) ? null : body.CustomText.Trim();
             if (text is { Length: > TicketRenderer.MaxCustomTextLength })
@@ -427,6 +435,9 @@ public static partial class PanelApi
             {
                 p.StaffRoleIds = staff;
                 p.MemberRoleIds = members;
+                p.OpenRoleIds = openRoles;
+                if (body.OpenRequireAll is { } ora) p.OpenRequireAll = ora;
+                if (body.GroupProjectKey is { } gk) p.GroupProjectKey = gk.Length == 0 ? null : gk;
                 p.CategoryId = category;
                 p.CustomText = text;
                 if (body.FormEnabled is { } fe) p.FormEnabled = fe;
@@ -1373,7 +1384,8 @@ public sealed record StickyBody(bool Sticky);
 public sealed record ActivityBody(string? Name, string? RoleId, string? ProjectKey = null, int? MinGs = null);
 public sealed record ProjectBody(string? Name, string? MemberRoleId);
 public sealed record ProjectUpdateBody(List<string>? StaffRoleIds, List<string>? MemberRoleIds, string? CategoryId, string? CustomText,
-    bool? FormEnabled = null, List<QuestionBody>? Questions = null, int? AutoCloseDays = null, string? Name = null);
+    bool? FormEnabled = null, List<QuestionBody>? Questions = null, int? AutoCloseDays = null, string? Name = null,
+    List<string>? OpenRoleIds = null, bool? OpenRequireAll = null, string? GroupProjectKey = null);
 public sealed record QuestionBody(string? Id, string? Label, string? Placeholder, bool Long, bool Required, int? MaxLength);
 public sealed record ChannelBody(string? ChannelId);
 public sealed record UserBody(string? UserId);

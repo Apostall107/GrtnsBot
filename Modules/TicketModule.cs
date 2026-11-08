@@ -8,11 +8,18 @@ using LfgBot.Services;
 namespace LfgBot.Modules;
 
 [RequireContext(ContextType.Guild)]
-public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelService panels, AuditLog audit, TicketService tickets, UserDmStore prefs) : InteractionModuleBase<SocketInteractionContext>
+public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelService panels, AuditLog audit, TicketService tickets, UserDmStore prefs,
+    LfgProjectStore lfgProjects) : InteractionModuleBase<SocketInteractionContext>
 {
     private string NoAccessText => T("lfg.noAccess");
 
     private string T(string key, params (string Name, object? Value)[] args) => Tx.Get(Context.Guild?.Id ?? 0, key, args);
+
+    // Проект бота, к которому привязана тикет-система (null — «Общее» или проект удалён)
+    private LfgProject? GroupOf(TicketProject p) => p.GroupProjectKey is { } k ? lfgProjects.Find(Context.Guild.Id, k) : null;
+    private bool Allowed(TicketProject p) => botOwner.Is(Context.User.Id) || TicketService.CanOpen(p, (IGuildUser)Context.User, GroupOf(p));
+    private static string GeneralKey => "_";
+    private string GroupKey(TicketProject p) => GroupOf(p)?.Key ?? GeneralKey;
 
     private SocketMessageComponent Component => (SocketMessageComponent)Context.Interaction;
 
@@ -35,13 +42,45 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
     [ComponentInteraction("ticket:start")]
     public async Task OnStart()
     {
-        var projects = store.GetProjects(Context.Guild.Id);
-        if (projects.Count == 0)
+        var all = store.GetProjects(Context.Guild.Id);
+        if (all.Count == 0)
         {
             await RespondAsync(T("ticket.noProjects"), ephemeral: true);
             return;
         }
 
+        // Только доступные пользователю тикет-системы (владелец видит все)
+        var projects = all.Where(Allowed).ToList();
+        if (projects.Count == 0)
+        {
+            await RespondAsync(T("ticket.noneForYou"), ephemeral: true);
+            return;
+        }
+
+        // Несколько проектов — сначала выбор проекта, затем типа тикета
+        var groups = projects.GroupBy(GroupKey).ToList();
+        if (groups.Count > 1)
+        {
+            var options = groups.Select(g => (Key: g.Key, Name: g.Key == GeneralKey ? T("ticket.groupGeneral") : GroupOf(g.First())!.Name, Count: g.Count()))
+                .OrderBy(g => g.Key == GeneralKey ? 0 : 1).ThenBy(g => g.Name).ToList();
+            await RespondAsync(T("ticket.pickGroup"), components: TicketRenderer.GroupPicker(Context.Guild.Id, options), ephemeral: true);
+            return;
+        }
+
+        await RespondAsync(T("ticket.pick"),
+            components: TicketRenderer.ProjectPicker(Context.Guild.Id, projects), ephemeral: true);
+    }
+
+    [ComponentInteraction("ticket:group")]
+    public async Task OnGroupSelected(string[] values)
+    {
+        var key = values.FirstOrDefault() ?? GeneralKey;
+        var projects = store.GetProjects(Context.Guild.Id).Where(Allowed).Where(p => GroupKey(p) == key).ToList();
+        if (projects.Count == 0)
+        {
+            await RespondAsync(T("ticket.noneForYou"), ephemeral: true);
+            return;
+        }
         await RespondAsync(T("ticket.pick"),
             components: TicketRenderer.ProjectPicker(Context.Guild.Id, projects), ephemeral: true);
     }
@@ -55,6 +94,12 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
         if (project is null)
         {
             await RespondAsync(T("ticket.projectGone"), ephemeral: true);
+            return;
+        }
+
+        if (!Allowed(project))
+        {
+            await RespondAsync(T("ticket.cantOpen", ("project", project.Name)), ephemeral: true);
             return;
         }
 
@@ -87,6 +132,12 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
         if (project is null)
         {
             await RespondAsync(T("ticket.projectGone"), ephemeral: true);
+            return;
+        }
+
+        if (!Allowed(project))
+        {
+            await RespondAsync(T("ticket.cantOpen", ("project", project.Name)), ephemeral: true);
             return;
         }
 

@@ -42,6 +42,17 @@ public static class TicketRenderer
         return new ComponentBuilder().WithSelectMenu(menu).Build();
     }
 
+    /// <summary>Шаг 1: выбор проекта (группы тикет-систем). Значение — ключ проекта бота или "_" («Общее»).</summary>
+    public static MessageComponent GroupPicker(ulong gid, IReadOnlyList<(string Key, string Name, int Count)> groups)
+    {
+        var menu = new SelectMenuBuilder()
+            .WithCustomId("ticket:group")
+            .WithPlaceholder(Tx.Get(gid, "ticket.pickGroupPlaceholder"));
+        foreach (var g in groups.Take(25))
+            menu.AddOption(Tx.Clip(g.Name, 100), g.Key, Tx.Clip(Tx.Get(gid, "ticket.groupOption", ("count", g.Count)), 100) is { Length: > 0 } d ? d : null);
+        return new ComponentBuilder().WithSelectMenu(menu).Build();
+    }
+
     // ---------- Сообщение внутри тикета ----------
     public const int MaxCustomTextLength = 4000;
 

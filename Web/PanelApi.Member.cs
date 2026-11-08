@@ -577,17 +577,24 @@ public static partial class PanelApi
         });
 
         // Подать заявку с сайта: проекты (с анкетой) и мои открытые заявки
-        g.MapGet("/tickets/projects", (ulong guildId, ClaimsPrincipal user, DiscordSocketClient client, TicketStore tickets) =>
+        g.MapGet("/tickets/projects", (ulong guildId, ClaimsPrincipal user, DiscordSocketClient client, TicketStore tickets,
+            [Microsoft.AspNetCore.Mvc.FromServices] LfgProjectStore lfgProjects, [Microsoft.AspNetCore.Mvc.FromServices] BotOwner owner) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var me = user.UserId()!.Value;
-            return Results.Ok(tickets.GetProjects(guildId).Select(p =>
+            var member = guild.GetUser(me);
+            // Только тикет-системы, которые человек может открыть (свои роли доступа или роли проекта)
+            return Results.Ok(tickets.GetProjects(guildId)
+                .Where(p => owner.Is(me) || (member is not null && TicketService.CanOpen(p, member, lfgProjects.Find(guildId, p.GroupProjectKey))))
+                .Select(p =>
             {
                 var open = tickets.FindOpenTicket(guildId, me, p.Key);
+                var group = lfgProjects.Find(guildId, p.GroupProjectKey);
                 return new
                 {
                     key = p.Key,
                     name = p.Name,
+                    group = group?.Name,
                     openTicketUrl = open is not null && guild.GetTextChannel(open.TextChannelId) is not null
                         ? $"https://discord.com/channels/{guildId}/{open.TextChannelId}" : null,
                     questions = p.FormEnabled
@@ -601,11 +608,14 @@ public static partial class PanelApi
         });
 
         g.MapPost("/tickets", async (ulong guildId, ApplyBody body, ClaimsPrincipal user, DiscordSocketClient client,
-            TicketStore tickets, TicketService service) =>
+            TicketStore tickets, TicketService service, [Microsoft.AspNetCore.Mvc.FromServices] LfgProjectStore lfgProjects,
+            [Microsoft.AspNetCore.Mvc.FromServices] BotOwner owner) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             if (guild.GetUser(user.UserId()!.Value) is not { } member) return Error("You are not on this server.");
             if (tickets.FindProject(guildId, body.ProjectKey ?? "") is not { } project) return Error("This project no longer exists.");
+            if (!owner.Is(member.Id) && !TicketService.CanOpen(project, member, lfgProjects.Find(guildId, project.GroupProjectKey)))
+                return Error($"You don't have the role required to open {project.Name} tickets.");
 
             var answers = project.FormEnabled
                 ? project.Questions.Take(TicketQuestion.MaxQuestions).Select(q => new TicketAnswer

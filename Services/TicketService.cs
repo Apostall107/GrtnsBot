@@ -98,6 +98,20 @@ public sealed class TicketService(
         return null;
     }
 
+    /// <summary>
+    /// Может ли пользователь открыть тикет этого типа: свои роли доступа, а если их нет и тип привязан
+    /// к проекту бота — роли проекта (любая из них; у проекта без ролей — все).
+    /// </summary>
+    public static bool CanOpen(TicketProject project, IGuildUser user, LfgProject? group = null)
+    {
+        if (project.OpenRoleIds.Count == 0)
+            return group is null || group.RoleIds.Count == 0 || group.RoleIds.Any(user.RoleIds.Contains);
+        var userRoles = user.RoleIds;
+        return project.OpenRequireAll
+            ? project.OpenRoleIds.All(userRoles.Contains)
+            : project.OpenRoleIds.Any(userRoles.Contains);
+    }
+
     /// <summary>Создаёт тикет: приватные текстовый и голосовой каналы, сообщение с анкетой и кнопками.</summary>
     public async Task<(Ticket? Ticket, string? Error)> CreateAsync(SocketGuild guild, IGuildUser user, TicketProject project,
         IReadOnlyList<TicketAnswer> answers, string source)
