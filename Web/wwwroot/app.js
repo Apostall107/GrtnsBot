@@ -5622,6 +5622,35 @@ async function pageBirthdays(main) {
 
 const MODULE_PANEL_LABELS = { lfg: "LFG panel", tickets: "Tickets panel", rooms: "Temp Voice panel" };
 
+/** Shows what an update of a published page will do; resolves true to go on. */
+async function confirmPagePlan(p, channelId) {
+  const plan = await gApi("GET", `/pages/${p.id}/plan?channelId=${encodeURIComponent(channelId)}`);
+  const label = id => (plan.blocks.find(b => b.id === id) || {}).label || id;
+  const panelsReposted = plan.repost.filter(id => (plan.blocks.find(b => b.id === id) || {}).type === "rolepanel");
+  if (plan.full) return confirmDialog("Publish to another channel?",
+    "The page is posted in full in the chosen channel and removed from the old one. Reactions on role panels start from zero (members keep their roles).", "Publish", false);
+  if (!plan.edit.length && !plan.repost.length && !plan.removed) { toast("Nothing changed — the page is up to date."); return false; }
+  return new Promise(resolve => {
+    const d = dialog();
+    const line = (ic, title, ids, cls) => ids.length ? h("div", { style: "margin-bottom:10px" },
+      h("div", { class: `row ${cls || ""}`, style: "gap:6px;font-weight:600" }, icon(ic, 15), `${title} (${ids.length})`),
+      h("ul", { class: "small", style: "margin:4px 0 0 22px" }, ids.map(id => h("li", {}, label(id))))) : null;
+    let ok = false;
+    const go = h("button", { class: "btn" }, "Update");
+    go.addEventListener("click", () => { ok = true; d.close(); });
+    d.replaceChildren(...[h("h2", {}, `Update “${p.name}”`),
+      line("check", "Not touched", plan.keep, "muted"),
+      line("pencil", "Edited in place", plan.edit),
+      line("refresh-cw", "Re-posted (order changed or new)", plan.repost, panelsReposted.length ? "error-text" : ""),
+      plan.removed ? h("p", { class: "small" }, `🗑️ ${plan.removed} message(s) of removed blocks are deleted.`) : null,
+      panelsReposted.length ? h("p", { class: "error-text small" },
+        "Role panels in the re-posted part lose their reactions (members keep their roles). To avoid it, add new blocks at the end instead of in the middle.") : null,
+      h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), go)].filter(Boolean));
+    d.onclose = () => resolve(ok);
+    d.showModal();
+  });
+}
+
 /** Build a channel from several bot messages + existing panels, published in order as one unit. */
 async function pageChannelPages(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "🧱 Channel pages"),
@@ -5647,19 +5676,28 @@ async function pageChannelPages(main) {
       h("div", { class: "card-head" }, h("h2", {}, "Pages"), add),
       d.pages.length ? h("div", { class: "list" }, d.pages.map(p => {
         const chSel = channelSelect("text", "Channel…");
-        const publish = h("button", { class: "btn secondary sm" }, icon("pin", 14), p.published ? "Re-publish" : "Publish");
+        if (p.channelId) chSel.value = p.channelId;
+        const publish = h("button", { class: "btn secondary sm", title: p.published ? "Update the posted page: only changed blocks are touched" : "Post the page" },
+          icon(p.published ? "refresh-cw" : "pin", 14), p.published ? "Update" : "Publish");
         publish.addEventListener("click", () => act(publish, async () => {
           if (!chSel.value) return toast("Choose a channel.", "warn");
-          if (p.published && !await confirmDialog("Re-publish this page?", "Its old messages are deleted and the page is posted again in the chosen channel.", "Re-publish", false)) return;
+          if (p.published && !await confirmPagePlan(p, chSel.value)) return;
           await gApi("POST", `/pages/${p.id}/publish`, { channelId: chSel.value });
-          toast("Page published."); load();
+          toast(p.published ? "Page updated." : "Page published."); load();
+        }));
+        const repostAll = p.published ? h("button", { class: "btn ghost sm", title: "Delete every message of the page and post it again" }, "Re-post all") : null;
+        if (repostAll) repostAll.addEventListener("click", () => act(repostAll, async () => {
+          if (!chSel.value) return toast("Choose a channel.", "warn");
+          if (!await confirmDialog("Re-post the whole page?", "All its messages are deleted and posted again. Reactions on role panels start from zero (members keep their roles).", "Re-post all")) return;
+          await gApi("POST", `/pages/${p.id}/publish`, { channelId: chSel.value, full: true });
+          toast("Page re-posted."); load();
         }));
         return h("div", { class: "list-row", style: "gap:8px;align-items:center;flex-wrap:wrap" },
           h("div", { class: "grow", style: "min-width:160px" }, h("b", {}, p.name),
             p.published ? h("span", { class: "chip ok", style: "margin-left:8px" }, icon("check", 12), `#${p.channel || "posted"}`)
               : h("span", { class: "chip warn", style: "margin-left:8px" }, "not published"),
             h("span", { class: "muted small", style: "margin-left:8px" }, `${p.blockCount} block${p.blockCount === 1 ? "" : "s"}`)),
-          chSel, publish,
+          chSel, publish, repostAll,
           h("button", { class: "btn ghost sm", onclick: () => channelPageEditor(p.id, d.rolePanels, d.moduleKeys, load) }, icon("pencil", 14), "Edit"),
           p.published ? h("button", { class: "btn ghost sm", title: "Delete the posted messages", onclick: () => act(null, async () => {
             if (!await confirmDialog("Unpublish this page?", "Its messages in the channel are deleted. The page itself stays.", "Unpublish")) return;
@@ -5689,7 +5727,7 @@ function channelPageEditor(pageId, rolePanels, moduleKeys, reload) {
     const page = data.page;
     rolePanels = data.rolePanels || rolePanels;
     const name = h("input", { maxlength: "80", value: page.name, style: "width:100%" });
-    const blocks = (page.blocks || []).map(b => ({ type: b.type, text: b.text || "", rolePanelId: b.rolePanelId || "", moduleKey: b.moduleKey || "" }));
+    const blocks = (page.blocks || []).map(b => ({ id: b.id, posted: b.messages > 0, type: b.type, text: b.text || "", rolePanelId: b.rolePanelId || "", moduleKey: b.moduleKey || "" }));
     const list = h("div", {});
 
     const panelTitle = id => (rolePanels.find(r => r.id === id) || {}).title;
@@ -5699,6 +5737,7 @@ function channelPageEditor(pageId, rolePanels, moduleKeys, reload) {
         const head = h("div", { class: "row binding-head", style: "gap:6px" },
           h("span", { class: "binding-num" }, `#${i + 1}`),
           h("span", { class: "chip" }, b.type === "text" ? "📝 Text" : b.type === "rolepanel" ? "🎭 Role panel" : "🧩 Module panel"),
+          b.posted ? h("span", { class: "chip ok", title: "Posted — on Update it is kept or edited in place" }, "posted") : h("span", { class: "chip warn", title: "Not posted yet" }, "new"),
           h("span", { class: "spacer" }),
           h("button", { class: "btn ghost sm", type: "button", title: "Up", onclick: () => { if (i > 0) { [blocks[i - 1], blocks[i]] = [blocks[i], blocks[i - 1]]; draw(); } } }, icon("chevron-up", 14)),
           h("button", { class: "btn ghost sm", type: "button", title: "Down", onclick: () => { if (i < blocks.length - 1) { [blocks[i + 1], blocks[i]] = [blocks[i], blocks[i + 1]]; draw(); } } }, icon("chevron-down", 14)),
@@ -5748,7 +5787,7 @@ function channelPageEditor(pageId, rolePanels, moduleKeys, reload) {
 
     const itemsWrap = h("div", { style: "max-height:46vh;overflow:auto" }, list);
     const save = h("button", { class: "btn" }, icon("check", 15), "Save");
-    const saveBody = () => ({ name: name.value, blocks: blocks.map(b => ({ type: b.type, text: b.text, rolePanelId: b.rolePanelId, moduleKey: b.moduleKey })) });
+    const saveBody = () => ({ name: name.value, blocks: blocks.map(b => ({ id: b.id || null, type: b.type, text: b.text, rolePanelId: b.rolePanelId, moduleKey: b.moduleKey })) });
     save.addEventListener("click", async () => {
       if (await act(save, () => gApi("PUT", `/pages/${pageId}`, saveBody()), "Page saved.") !== undefined) { d.close(); reload(); }
     });
@@ -5759,7 +5798,7 @@ function channelPageEditor(pageId, rolePanels, moduleKeys, reload) {
       h("div", { class: "field" }, h("label", {}, "Blocks (posted top to bottom)"), itemsWrap),
       h("div", { class: "row", style: "gap:8px;flex-wrap:wrap;margin-bottom:6px" },
         addBtn("➕ Text", "text"), addBtn("➕ Role panel", "rolepanel"), addBtn("➕ Module panel", "modulepanel")),
-      h("p", { class: "muted small" }, "Discord keeps messages in post order, so re-ordering blocks re-posts the page when you publish."),
+      h("p", { class: "muted small" }, "Update keeps unchanged blocks as they are (role panel reactions stay) and edits changed text in place. Discord keeps messages in post order, so moving blocks or inserting one in the middle re-posts the blocks from that point on — add new blocks at the end."),
       h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), save));
   }).catch(e => d.replaceChildren(h("h2", {}, "Channel page"), empty(e.message),
     h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Close"))));

@@ -15,6 +15,8 @@ public sealed class PageBlock
     public string? ModuleKey { get; set; }     // type=modulepanel: lfg|tickets|rooms
     /// <summary>ID сообщений этого блока в канале (с последней публикации).</summary>
     public List<ulong> MessageIds { get; set; } = [];
+    /// <summary>Что было опубликовано: текст (text), id панели (rolepanel) или ключ модуля (modulepanel). Для обновления на месте.</summary>
+    public string? PostedKey { get; set; }
 }
 
 /// <summary>Страница канала: упорядоченный набор блоков, публикуемый в один канал как единое целое.</summary>

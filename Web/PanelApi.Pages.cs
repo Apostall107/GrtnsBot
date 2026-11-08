@@ -1,4 +1,5 @@
 using Discord.WebSocket;
+using LfgBot.Models;
 using LfgBot.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -13,9 +14,9 @@ namespace LfgBot.Web;
 /// </summary>
 public static partial class PanelApi
 {
-    public sealed record PageBlockBody(string Type, string? Text, string? RolePanelId, string? ModuleKey);
+    public sealed record PageBlockBody(string? Id, string Type, string? Text, string? RolePanelId, string? ModuleKey);
     public sealed record PageBody(string? Name, List<PageBlockBody>? Blocks);
-    public sealed record PagePublishBody(string? ChannelId);
+    public sealed record PagePublishBody(string? ChannelId, bool? Full);
 
     private static object BlockDto(PageBlock b) => new
     {
@@ -45,6 +46,7 @@ public static partial class PanelApi
             var pages = store.Get(guildId).Select(p => new
             {
                 id = p.Id, name = p.Name, published = p.ChannelId is not null,
+                channelId = p.ChannelId?.ToString(),
                 channel = p.ChannelId is { } c ? guild?.GetTextChannel(c)?.Name : null,
                 blockCount = p.Blocks.Count
             });
@@ -71,14 +73,22 @@ public static partial class PanelApi
         {
             if (store.Find(id) is not { } page || page.GuildId != guildId) return GuildNotFound();
             page.Name = Clean(body.Name) ?? page.Name;
-            // перенести ID сообщений по id блока, чтобы правка текста не теряла привязку до переиздания
-            var old = page.Blocks.ToDictionary(b => b.Id, b => b.MessageIds);
-            page.Blocks = (body.Blocks ?? []).Select(b => new PageBlock
+            // Блоки с прежним id сохраняют свои сообщения в канале — следующая публикация обновит их на месте
+            var old = page.Blocks.ToDictionary(b => b.Id);
+            page.Blocks = (body.Blocks ?? []).Select(b =>
             {
-                Type = b.Type is "text" or "rolepanel" or "modulepanel" ? b.Type : "text",
-                Text = b.Type == "text" ? b.Text : null,
-                RolePanelId = b.Type == "rolepanel" ? b.RolePanelId : null,
-                ModuleKey = b.Type == "modulepanel" && ChannelPageService.ModuleKeys.Contains(b.ModuleKey) ? b.ModuleKey : null
+                var type = b.Type is "text" or "rolepanel" or "modulepanel" ? b.Type : "text";
+                var prev = b.Id is { } bid && old.TryGetValue(bid, out var o) && o.Type == type ? o : null;
+                return new PageBlock
+                {
+                    Id = prev?.Id ?? IdGen.New(),
+                    Type = type,
+                    Text = type == "text" ? b.Text : null,
+                    RolePanelId = type == "rolepanel" ? b.RolePanelId : null,
+                    ModuleKey = type == "modulepanel" && ChannelPageService.ModuleKeys.Contains(b.ModuleKey) ? b.ModuleKey : null,
+                    MessageIds = prev?.MessageIds ?? [],
+                    PostedKey = prev?.PostedKey
+                };
             }).ToList();
             if (store.Save(page) is { } error) return Error(error);
             return Results.Ok(PageDto(page));
@@ -98,8 +108,27 @@ public static partial class PanelApi
         {
             if (store.Find(id) is not { } page || page.GuildId != guildId) return GuildNotFound();
             if (ParseId(body.ChannelId) is not { } channelId) return Error("Choose a channel to publish to.");
-            if (await service.PublishAsync(id, channelId) is { } error) return Error(error);
+            if (await service.PublishAsync(id, channelId, body.Full == true) is { } error) return Error(error);
             return Results.Ok(new { ok = true });
+        });
+
+        // Что произойдёт при публикации: какие блоки останутся, поправятся на месте или перепостятся
+        g.MapGet("/{id}/plan", async (ulong guildId, string id, string? channelId, [FromServices] ChannelPageStore store,
+            [FromServices] ChannelPageService service, [FromServices] CommunityStore community) =>
+        {
+            if (store.Find(id) is not { } page || page.GuildId != guildId) return GuildNotFound();
+            if (ParseId(channelId) is not { } cid) return Error("Choose a channel.");
+            var plan = await service.PlanAsync(page, cid);
+            var panelsById = community.GetPanels(guildId).ToDictionary(p => p.Id);
+            string Label(PageBlock b, int i) => $"#{i + 1} " + (b.Type switch
+            {
+                "text" => "Text: " + Tx.Clip((b.Text ?? "").ReplaceLineEndings(" ").Trim(), 40),
+                "rolepanel" => "Role panel: " + (b.RolePanelId is { } rp && panelsById.TryGetValue(rp, out var panel) && !string.IsNullOrWhiteSpace(panel.Title)
+                    ? panel.Title : "(no title)"),
+                _ => "Module panel: " + b.ModuleKey
+            });
+            var labels = page.Blocks.Select((b, i) => new { id = b.Id, label = Label(b, i), type = b.Type }).ToList();
+            return Results.Ok(new { full = plan.Full, keep = plan.Keep, edit = plan.Edit, repost = plan.Repost, removed = plan.Removed, blocks = labels });
         });
 
         g.MapPost("/{id}/unpublish", async (ulong guildId, string id, [FromServices] ChannelPageStore store,
