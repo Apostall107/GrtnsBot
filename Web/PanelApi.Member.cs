@@ -585,7 +585,8 @@ public static partial class PanelApi
             var member = guild.GetUser(me);
             // Только тикет-системы, которые человек может открыть (свои роли доступа или роли проекта)
             return Results.Ok(tickets.GetProjects(guildId)
-                .Where(p => owner.Is(me) || (member is not null && TicketService.CanOpen(p, member, lfgProjects.Find(guildId, p.GroupProjectKey))))
+                .Where(p => owner.Is(me) || (member is not null && TicketService.CanOpen(p, member, lfgProjects.Find(guildId, p.GroupProjectKey),
+                    p.ParentKey is { } pk ? tickets.FindProject(guildId, pk) : null)))
                 .Select(p =>
             {
                 var open = tickets.FindOpenTicket(guildId, me, p.Key);
@@ -594,7 +595,7 @@ public static partial class PanelApi
                 {
                     key = p.Key,
                     name = p.Name,
-                    group = group?.Name,
+                    group = (p.ParentKey is { } parentKey ? tickets.FindProject(guildId, parentKey)?.Name : null) ?? group?.Name,
                     openTicketUrl = open is not null && guild.GetTextChannel(open.TextChannelId) is not null
                         ? $"https://discord.com/channels/{guildId}/{open.TextChannelId}" : null,
                     questions = p.FormEnabled
@@ -614,7 +615,8 @@ public static partial class PanelApi
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             if (guild.GetUser(user.UserId()!.Value) is not { } member) return Error("You are not on this server.");
             if (tickets.FindProject(guildId, body.ProjectKey ?? "") is not { } project) return Error("This project no longer exists.");
-            if (!owner.Is(member.Id) && !TicketService.CanOpen(project, member, lfgProjects.Find(guildId, project.GroupProjectKey)))
+            if (!owner.Is(member.Id) && !TicketService.CanOpen(project, member, lfgProjects.Find(guildId, project.GroupProjectKey),
+                    project.ParentKey is { } pk ? tickets.FindProject(guildId, pk) : null))
                 return Error($"You don't have the role required to open {project.Name} tickets.");
 
             var answers = project.FormEnabled

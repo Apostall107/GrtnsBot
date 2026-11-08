@@ -102,10 +102,16 @@ public sealed class TicketService(
     /// Может ли пользователь открыть тикет этого типа: свои роли доступа, а если их нет и тип привязан
     /// к проекту бота — роли проекта (любая из них; у проекта без ролей — все).
     /// </summary>
-    public static bool CanOpen(TicketProject project, IGuildUser user, LfgProject? group = null)
+    public static bool CanOpen(TicketProject project, IGuildUser user, LfgProject? group = null, TicketProject? parent = null)
     {
         if (project.OpenRoleIds.Count == 0)
+        {
+            // Подпроект: участники основного проекта (его роли Approve) и его руководство
+            if (parent is not null)
+                return parent.MemberRoleIds.Count == 0 ||
+                       parent.MemberRoleIds.Concat(parent.StaffRoleIds).Any(user.RoleIds.Contains);
             return group is null || group.RoleIds.Count == 0 || group.RoleIds.Any(user.RoleIds.Contains);
+        }
         var userRoles = user.RoleIds;
         return project.OpenRequireAll
             ? project.OpenRoleIds.All(userRoles.Contains)

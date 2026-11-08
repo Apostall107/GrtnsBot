@@ -30,8 +30,9 @@ public static partial class PanelApi
             return Results.Ok(new
             {
                 panels = panels.Get(guildId).Select(p => TicketPanelDto(guild, p)),
-                types = tickets.GetProjects(guildId).Select(p => new { key = p.Key, name = p.Name, groupProjectKey = p.GroupProjectKey }),
-                groups = lfgProjects.GetProjects(guildId).Select(p => new { key = p.Key, name = p.Name })
+                types = tickets.GetProjects(guildId).Select(p => new { key = p.Key, name = p.Name, groupProjectKey = p.GroupProjectKey, parentKey = p.ParentKey }),
+                // Основные тикет-проекты — панель подпроектов собирается для одного из них
+                groups = tickets.GetProjects(guildId).Where(p => p.ParentKey is null).Select(p => new { key = p.Key, name = p.Name })
             });
         });
 

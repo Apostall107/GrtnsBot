@@ -1588,3 +1588,4 @@ dialog.xwide.page-dialog { width: min(1640px, calc(100vw - 32px)); }
 .dc-attach.missing { padding: 10px 14px; background: rgba(255,80,80,.12); color: #f99; font-size: 12px; border-radius: 8px; }
 .page-tabs { margin-bottom: 12px; }
 .tab-count { margin-left: 6px; opacity: .65; font-size: 12px; }
+.sub-tabs { margin: -4px 0 14px; padding-left: 14px; border-left: 2px solid rgba(124,92,255,.45); }

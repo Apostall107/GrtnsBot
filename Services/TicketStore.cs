@@ -36,7 +36,7 @@ public sealed class TicketStore
             return _data.Projects.TryGetValue(guildId, out var list) ? list.Find(p => p.Key == key) : null;
     }
 
-    public string? AddProject(ulong guildId, string name, ulong memberRoleId, string? groupProjectKey = null)
+    public string? AddProject(ulong guildId, string name, ulong memberRoleId, string? groupProjectKey = null, string? parentKey = null)
     {
         lock (_lock)
         {
@@ -47,7 +47,7 @@ public sealed class TicketStore
             if (list.Any(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
                 return $"Project \"{name}\" already exists.";
 
-            list.Add(new TicketProject { Name = name, MemberRoleIds = [memberRoleId], GroupProjectKey = groupProjectKey });
+            list.Add(new TicketProject { Name = name, MemberRoleIds = [memberRoleId], GroupProjectKey = groupProjectKey, ParentKey = parentKey });
             Save();
             return null;
         }
@@ -61,6 +61,8 @@ public sealed class TicketStore
             var project = list.Find(p => p.Key == key);
             if (project is null) return null;
             list.Remove(project);
+            // Подпроекты удалённого проекта становятся обычными (появятся в основной панели)
+            foreach (var child in list.Where(p => p.ParentKey == key)) child.ParentKey = null;
             Save();
             return project;
         }

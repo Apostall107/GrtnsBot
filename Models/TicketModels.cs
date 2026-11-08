@@ -11,6 +11,12 @@ public sealed class TicketProject
     public List<ulong> StaffRoleIds { get; set; } = [];
     /// <summary>Проект бота (LfgProjectStore), к которому относится эта тикет-система. null — «Общее».</summary>
     public string? GroupProjectKey { get; set; }
+    /// <summary>
+    /// Подпроект: ключ основного тикет-проекта (вкладка внутри него, напр. WWM → «Заявка на ГВГ»). Подпроект не виден
+    /// в основной панели тикетов — только в панелях подпроектов. Открыть его по умолчанию могут участники основного
+    /// проекта (роли, выдаваемые его Approve) и его руководство.
+    /// </summary>
+    public string? ParentKey { get; set; }
     /// <summary>Кто может открыть тикет этого проекта (пусто — все или роли проекта GroupProjectKey). См. OpenRequireAll.</summary>
     public List<ulong> OpenRoleIds { get; set; } = [];
     /// <summary>true — нужны ВСЕ роли из OpenRoleIds; false — достаточно одной.</summary>

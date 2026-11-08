@@ -366,6 +366,7 @@ public static partial class PanelApi
                 openRoles = p.OpenRoleIds.Select(id => Role(guild, id)),
                 openRequireAll = p.OpenRequireAll,
                 groupProjectKey = p.GroupProjectKey,
+                parentKey = p.ParentKey,
                 category = p.CategoryId is { } c ? new { id = c.ToString(), name = guild.GetCategoryChannel(c)?.Name } : null,
                 customText = p.CustomText,
                 formEnabled = p.FormEnabled,
@@ -387,7 +388,10 @@ public static partial class PanelApi
                 return Error("Pick the role given on Approve.");
 
             var group = string.IsNullOrWhiteSpace(body.GroupProjectKey) ? null : body.GroupProjectKey;
-            var error = tickets.AddProject(guildId, name, roleId, group);
+            var parent = string.IsNullOrWhiteSpace(body.ParentKey) ? null : body.ParentKey;
+            if (parent is not null && tickets.FindProject(guildId, parent) is not { ParentKey: null })
+                return Error("The main project must be a main (top-level) project.");
+            var error = tickets.AddProject(guildId, name, roleId, group, parent);
             if (error is not null) return Error(error);
             var created = tickets.GetProjects(guildId).FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
             return Results.Ok(new { key = created?.Key });
@@ -403,6 +407,16 @@ public static partial class PanelApi
             var staff = ParseIds(body.StaffRoleIds).Where(id => guild.GetRole(id) is not null).Take(10).ToList();
             var members = ParseIds(body.MemberRoleIds).Where(id => guild.GetRole(id) is not null).Take(10).ToList();
             var openRoles = ParseIds(body.OpenRoleIds).Where(id => guild.GetRole(id) is not null).Take(10).ToList();
+            // Подпроект: основной проект должен существовать, быть верхнего уровня; у самого проекта не должно быть подпроектов
+            var parentChange = body.ParentKey;
+            if (parentChange is { Length: > 0 } newParent)
+            {
+                if (newParent == key) return Error("A project can't be a sub-project of itself.");
+                if (tickets.FindProject(guildId, newParent) is not { ParentKey: null })
+                    return Error("The main project must be a main (top-level) project.");
+                if (tickets.GetProjects(guildId).Any(x => x.ParentKey == key))
+                    return Error("This project has sub-projects itself — it can't become a sub-project.");
+            }
             ulong? category = ParseId(body.CategoryId) is { } c && guild.GetCategoryChannel(c) is not null ? c : null;
             var text = string.IsNullOrWhiteSpace(body.CustomText) ? null : body.CustomText.Trim();
             if (text is { Length: > TicketRenderer.MaxCustomTextLength })
@@ -446,6 +460,7 @@ public static partial class PanelApi
                 p.OpenRoleIds = openRoles;
                 if (body.OpenRequireAll is { } ora) p.OpenRequireAll = ora;
                 if (body.GroupProjectKey is { } gk) p.GroupProjectKey = gk.Length == 0 ? null : gk;
+                if (parentChange is { } pc) p.ParentKey = pc.Length == 0 ? null : pc;
                 p.CategoryId = category;
                 p.CustomText = text;
                 if (body.FormEnabled is { } fe) p.FormEnabled = fe;
@@ -1406,10 +1421,10 @@ public static partial class PanelApi
 
 public sealed record StickyBody(bool Sticky);
 public sealed record ActivityBody(string? Name, string? RoleId, string? ProjectKey = null, int? MinGs = null);
-public sealed record ProjectBody(string? Name, string? MemberRoleId, string? GroupProjectKey = null);
+public sealed record ProjectBody(string? Name, string? MemberRoleId, string? GroupProjectKey = null, string? ParentKey = null);
 public sealed record ProjectUpdateBody(List<string>? StaffRoleIds, List<string>? MemberRoleIds, string? CategoryId, string? CustomText,
     bool? FormEnabled = null, List<QuestionBody>? Questions = null, int? AutoCloseDays = null, string? Name = null,
-    List<string>? OpenRoleIds = null, bool? OpenRequireAll = null, string? GroupProjectKey = null);
+    List<string>? OpenRoleIds = null, bool? OpenRequireAll = null, string? GroupProjectKey = null, string? ParentKey = null);
 public sealed record QuestionBody(string? Id, string? Label, string? Placeholder, bool Long, bool Required, int? MaxLength);
 public sealed record ChannelBody(string? ChannelId);
 public sealed record UserBody(string? UserId);

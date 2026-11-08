@@ -17,7 +17,8 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
 
     // Проект бота, к которому привязана тикет-система (null — «Общее» или проект удалён)
     private LfgProject? GroupOf(TicketProject p) => p.GroupProjectKey is { } k ? lfgProjects.Find(Context.Guild.Id, k) : null;
-    private bool Allowed(TicketProject p) => botOwner.Is(Context.User.Id) || TicketService.CanOpen(p, (IGuildUser)Context.User, GroupOf(p));
+    private TicketProject? ParentOf(TicketProject p) => p.ParentKey is { } k ? store.FindProject(Context.Guild.Id, k) : null;
+    private bool Allowed(TicketProject p) => botOwner.Is(Context.User.Id) || TicketService.CanOpen(p, (IGuildUser)Context.User, GroupOf(p), ParentOf(p));
 
     private SocketMessageComponent Component => (SocketMessageComponent)Context.Interaction;
 
@@ -41,7 +42,7 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
     public async Task OnStart()
     {
         // Основная панель — как раньше: один шаг, только тикет-системы без проекта (подпроекты — в своих панелях)
-        var all = store.GetProjects(Context.Guild.Id).Where(p => GroupOf(p) is null).ToList();
+        var all = store.GetProjects(Context.Guild.Id).Where(p => GroupOf(p) is null && ParentOf(p) is null).ToList();
         if (all.Count == 0)
         {
             await RespondAsync(T("ticket.noProjects"), ephemeral: true);
