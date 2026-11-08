@@ -5156,7 +5156,7 @@ async function applyDialog() {
 
   const d = dialog();
   // Сгруппировано по проектам бота: optgroup «WWM» → типы тикетов
-  const label = p => p.openTicketUrl ? `${p.name} (already open)` : p.name;
+  const label = p => p.openTicketUrl ? `${p.name} (already open)` : p.hasRoles ? `${p.name} (you already have the roles)` : p.name;
   const groupsOrder = [...new Set(projects.map(p => p.group || ""))].sort((a, b) => (a === "") - (b === "") || a.localeCompare(b));
   const sel = h("select", {}, groupsOrder.length > 1
     ? groupsOrder.map(g => h("optgroup", { label: g || "General" }, projects.filter(p => (p.group || "") === g).map(p => h("option", { value: p.key }, label(p)))))
@@ -5166,6 +5166,11 @@ async function applyDialog() {
   const draw = () => {
     const p = projects.find(x => x.key === sel.value);
     inputs = [];
+    send.disabled = !!p.hasRoles;
+    if (p.hasRoles) {
+      fields.replaceChildren(h("p", {}, "You already have all the roles this ticket gives — no need to apply."));
+      return;
+    }
     if (p.openTicketUrl) {
       fields.replaceChildren(h("p", {}, "You already have an open ticket for this project. ",
         h("a", { href: p.openTicketUrl, target: "_blank", rel: "noopener" }, "Open it in Discord")));
@@ -5179,10 +5184,10 @@ async function applyDialog() {
       return h("div", { class: "field" }, h("label", {}, q.label + (q.required ? " *" : "")), input);
     }), p.questions ? null : h("p", { class: "muted small" }, "No form for this project — the ticket opens right away.")));
   };
+  const send = h("button", { class: "btn" }, "📨 Send application");
   sel.addEventListener("change", draw);
   draw();
 
-  const send = h("button", { class: "btn" }, "📨 Send application");
   send.addEventListener("click", async () => {
     const answers = {};
     for (const { q, input } of inputs) {

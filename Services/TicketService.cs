@@ -121,6 +121,19 @@ public sealed class TicketService(
             : project.OpenRoleIds.Any(userRoles.Contains);
     }
 
+    /// <summary>
+    /// У человека уже есть ВСЕ роли, которые выдаёт Approve этого проекта, — заявка не нужна (текст отказа или null).
+    /// Тикеты без ролей (разбор POV и т.п.) так не проверяются.
+    /// </summary>
+    public static string? AlreadyHasRoles(TicketProject project, IGuildUser user)
+    {
+        var guild = user.Guild;
+        var roles = project.MemberRoleIds.Where(id => guild.GetRole(id) is not null).ToList();
+        if (roles.Count == 0 || !roles.All(user.RoleIds.Contains)) return null;
+        return Tx.Get(guild.Id, "ticket.alreadyHasRoles", ("project", project.Name),
+            ("roles", string.Join(", ", roles.Select(id => $"<@&{id}>"))));
+    }
+
     /// <summary>Создаёт тикет: приватные текстовый и голосовой каналы, сообщение с анкетой и кнопками.</summary>
     public async Task<(Ticket? Ticket, string? Error)> CreateAsync(SocketGuild guild, IGuildUser user, TicketProject project,
         IReadOnlyList<TicketAnswer> answers, string source)

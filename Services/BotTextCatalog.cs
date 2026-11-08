@@ -292,6 +292,7 @@ public static class BotTextCatalog
         T("ticket.form.required", "Form: required answer missing", "Answer the question: {question}", "{question}", 500);
         T("ticket.form.tooLong", "Form: answer too long", "«{question}» — up to {max} characters.", "{question}, {max}", 500);
         T("ticket.created", "Ticket created", "✅ Ticket created: {channel}", "{channel}", 500);
+        T("ticket.alreadyHasRoles", "Already has all roles of the project", "You already have {roles} — no need to open a **{project}** ticket.", "{project}, {roles}", 500);
         T("ticket.alreadyOpen", "Already has an open ticket", "You already have an open {project} ticket: {channel}", "{project}, {channel}", 500);
         T("ticket.creating", "Already being created", "Your ticket is already being created…", null, 500);
         T("ticket.createFailed", "Channels not created", "I couldn't create the ticket channels. The bot needs Manage Channels and Manage Roles (Discord error: {error}).", "{error}", 500);

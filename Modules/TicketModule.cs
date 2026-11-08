@@ -91,6 +91,13 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
             return;
         }
 
+        // Все роли, которые выдаёт Approve, уже есть — тикет не нужен (владельцу бота можно — для проверки)
+        if (!botOwner.Is(Context.User.Id) && TicketService.AlreadyHasRoles(project, (IGuildUser)Context.User) is { } hasRoles)
+        {
+            await RespondAsync(hasRoles, ephemeral: true, allowedMentions: AllowedMentions.None);
+            return;
+        }
+
         // Анкета включена — сначала окно с вопросами, тикет создаётся после отправки
         if (project.FormEnabled && project.Questions.Count > 0)
         {
