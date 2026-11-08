@@ -55,8 +55,9 @@ public static class TicketRenderer
         var sb = new StringBuilder();
         sb.AppendText(Tx.Get(gid, "ticket.msg.applicant", ("user", $"<@{t.UserId}>")));
         sb.AppendText(Tx.Get(gid, "ticket.msg.voice", ("channel", $"<#{t.VoiceChannelId}>")));
-        if (p is { StaffRoleIds.Count: > 0 })
-            sb.AppendText(Tx.Get(gid, "ticket.msg.leadership", ("roles", string.Join(", ", p.StaffRoleIds.Select(r => $"<@&{r}>")))));
+        if (p is not null && p.StaffRoleIds.Count + p.StaffUserIds.Count > 0)
+            sb.AppendText(Tx.Get(gid, "ticket.msg.leadership", ("roles", string.Join(", ",
+                p.StaffRoleIds.Select(r => $"<@&{r}>").Concat(p.StaffUserIds.Select(u => $"<@{u}>"))))));
         if (p is { MemberRoleIds.Count: > 0 })
             sb.AppendText(Tx.Get(gid, "ticket.msg.roles", ("roles", string.Join(", ", p.MemberRoleIds.Select(r => $"<@&{r}>")))));
         var status = t.ApprovedBy is { } by

@@ -9,6 +9,10 @@ public sealed class TicketProject
     public List<ulong> MemberRoleIds { get; set; } = [];
     /// <summary>Роли руководства: видят тикеты проекта и могут нажимать Approve.</summary>
     public List<ulong> StaffRoleIds { get; set; } = [];
+    /// <summary>Отдельные люди в руководстве (помимо ролей): видят тикеты, могут Approve / Done.</summary>
+    public List<ulong> StaffUserIds { get; set; } = [];
+    /// <summary>Отдельные люди, которым можно открыть тикет (помимо ролей OpenRoleIds).</summary>
+    public List<ulong> OpenUserIds { get; set; } = [];
     /// <summary>Проект бота (LfgProjectStore), к которому относится эта тикет-система. null — «Общее».</summary>
     public string? GroupProjectKey { get; set; }
     /// <summary>

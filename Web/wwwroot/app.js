@@ -479,6 +479,22 @@ function pickMemberDialog(title) {
   });
 }
 
+/** Список отдельных людей (кнопка «Add person…» с поиском) → { el, value() } (ID). */
+function userListEditor(initial = [], onChange = null, addLabel = "Add person…") {
+  let list = initial.filter(Boolean).map(m => ({ ...m }));
+  const el = h("div", {});
+  const draw = () => el.replaceChildren(
+    list.length ? h("div", { class: "row", style: "gap:6px;flex-wrap:wrap;margin-bottom:6px" }, list.map(m =>
+      h("span", { class: "chip" }, member(m), h("button", { type: "button", title: "Remove",
+        onclick: () => { list = list.filter(x => x.id !== m.id); draw(); if (onChange) onChange(); } }, "×")))) : null,
+    h("button", { class: "btn secondary", type: "button", onclick: async () => {
+      const m = await pickMemberDialog("Add a person");
+      if (m && !list.some(x => x.id === m.id)) { list.push(m); draw(); if (onChange) onChange(); }
+    } }, icon("user-plus", 15), addLabel));
+  draw();
+  return { el, value: () => list.map(m => m.id) };
+}
+
 // ================= Shared UI pieces =================
 
 /** Tone (color) of an icon's module: sections are told apart by color, not only by text. */
@@ -3232,6 +3248,8 @@ function projectCard(p, mains = [], hasChildren = false) {
   if (hasChildren) parentSel.disabled = true;
   // «Нужны ВСЕ роли» имеет смысл только при 2+ ролях (напр. разбор POV — только у кого есть и WWM, и GW)
   const openRoles = roleListEditor(p.openRoles || [], state.roles, () => syncRequireAll());
+  const openUsers = userListEditor(p.openUsers || []);
+  const staffUsers = userListEditor(p.staffUsers || [], () => preview.refresh());
   const requireAll = toggle(!!p.openRequireAll, "Require ALL of these roles (off — any one of them is enough)");
   const syncRequireAll = () => { requireAll.el.style.display = openRoles.value().length >= 2 ? "" : "none"; };
   syncRequireAll();
@@ -3256,7 +3274,8 @@ function projectCard(p, mains = [], hasChildren = false) {
     staffRoleIds: staff.value(), memberRoleIds: members.value(), categoryId: cat.value || null, customText: text.value,
     formEnabled: form.enabled(), questions: form.value(), name: nameIn.value,
     autoCloseDays: autoClose.value === "" ? null : Number(autoClose.value),
-    parentKey: parentSel.value, openRoleIds: openRoles.value(), openRequireAll: requireAll.cb.checked
+    parentKey: parentSel.value, openRoleIds: openRoles.value(), openRequireAll: requireAll.cb.checked,
+    openUserIds: openUsers.value(), staffUserIds: staffUsers.value()
   });
   const tracker = track(`Project ${p.name}`, body, async () => {
     const res = await act(save, () => gApi("PUT", `/tickets/projects/${encodeURIComponent(p.key)}`, body()));
@@ -3286,9 +3305,13 @@ function projectCard(p, mains = [], hasChildren = false) {
         h("span", { class: "muted small" }, hasChildren ? "It has sub-projects, so it stays a main project."
           : "A sub-project is a tab inside its main project; it leaves the main ticket panel — post it with a 🧩 sub-project panel.")),
       h("div", { class: "field" }, h("label", {}, "Who can open this ticket"), openRoles.el, requireAll.el,
-        h("span", { class: "muted small" }, p.parentKey ? "Empty — members of the main project (its Approve roles) and its leadership." : "Empty — everyone."))),
+        h("div", { style: "margin-top:6px" }, openUsers.el),
+        h("span", { class: "muted small" }, (p.parentKey ? "Empty — members of the main project (its Approve roles) and its leadership." : "Empty — everyone.") +
+          " Only people, no roles — only those people. The one who opened a ticket always sees it."))),
     h("div", { class: "grid2" },
-      h("div", { class: "field" }, h("label", {}, "Leadership (see tickets, can Approve)"), staff.el),
+      h("div", { class: "field" }, h("label", {}, "Leadership (see tickets, can Approve)"), staff.el,
+        h("div", { style: "margin-top:6px" }, staffUsers.el),
+        h("span", { class: "muted small" }, "Roles and/or separate people (e.g. a mentor). Changes apply to new tickets.")),
       h("div", { class: "field" }, h("label", {}, "Roles given on Approve"), members.el,
         h("span", { class: "muted small" }, "Empty — the ticket isn't about a role (e.g. a mentor reviews your POV): it gets ✅ Done instead of Approve / Deny."))),
     h("div", { class: "field" }, h("label", {}, "Category for ticket channels"), cat),

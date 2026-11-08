@@ -362,6 +362,8 @@ public static partial class PanelApi
                 key = p.Key,
                 name = p.Name,
                 staffRoles = p.StaffRoleIds.Select(id => Role(guild, id)),
+                staffUsers = p.StaffUserIds.Select(id => Member(guild, id)),
+                openUsers = p.OpenUserIds.Select(id => Member(guild, id)),
                 memberRoles = p.MemberRoleIds.Select(id => Role(guild, id)),
                 openRoles = p.OpenRoleIds.Select(id => Role(guild, id)),
                 openRequireAll = p.OpenRequireAll,
@@ -406,6 +408,8 @@ public static partial class PanelApi
             if (existing is null) return Error("This project no longer exists.");
 
             var staff = ParseIds(body.StaffRoleIds).Where(id => guild.GetRole(id) is not null).Take(10).ToList();
+            var staffUsers = body.StaffUserIds is null ? null : ParseIds(body.StaffUserIds).Distinct().Take(25).ToList();
+            var openUsers = body.OpenUserIds is null ? null : ParseIds(body.OpenUserIds).Distinct().Take(50).ToList();
             var members = ParseIds(body.MemberRoleIds).Where(id => guild.GetRole(id) is not null).Take(10).ToList();
             var openRoles = ParseIds(body.OpenRoleIds).Where(id => guild.GetRole(id) is not null).Take(10).ToList();
             // Подпроект: основной проект должен существовать, быть верхнего уровня; у самого проекта не должно быть подпроектов
@@ -457,6 +461,8 @@ public static partial class PanelApi
             tickets.UpdateProject(guildId, key, p =>
             {
                 p.StaffRoleIds = staff;
+                if (staffUsers is not null) p.StaffUserIds = staffUsers;
+                if (openUsers is not null) p.OpenUserIds = openUsers;
                 p.MemberRoleIds = members;
                 p.OpenRoleIds = openRoles;
                 if (body.OpenRequireAll is { } ora) p.OpenRequireAll = ora;
@@ -1440,7 +1446,8 @@ public sealed record ActivityBody(string? Name, string? RoleId, string? ProjectK
 public sealed record ProjectBody(string? Name, string? MemberRoleId, string? GroupProjectKey = null, string? ParentKey = null);
 public sealed record ProjectUpdateBody(List<string>? StaffRoleIds, List<string>? MemberRoleIds, string? CategoryId, string? CustomText,
     bool? FormEnabled = null, List<QuestionBody>? Questions = null, int? AutoCloseDays = null, string? Name = null,
-    List<string>? OpenRoleIds = null, bool? OpenRequireAll = null, string? GroupProjectKey = null, string? ParentKey = null);
+    List<string>? OpenRoleIds = null, bool? OpenRequireAll = null, string? GroupProjectKey = null, string? ParentKey = null,
+    List<string>? StaffUserIds = null, List<string>? OpenUserIds = null);
 public sealed record QuestionBody(string? Id, string? Label, string? Placeholder, bool Long, bool Required, int? MaxLength);
 public sealed record ChannelBody(string? ChannelId);
 public sealed record UserBody(string? UserId);

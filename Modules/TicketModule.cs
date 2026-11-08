@@ -387,7 +387,7 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
     private bool IsStaff(TicketProject project) =>
         botOwner.Is(Context.User.Id) ||
         (Context.User is IGuildUser user &&
-         (user.GuildPermissions.Administrator || user.RoleIds.Any(id => project.StaffRoleIds.Contains(id))));
+         (user.GuildPermissions.Administrator || user.RoleIds.Any(id => project.StaffRoleIds.Contains(id)) || project.StaffUserIds.Contains(user.Id)));
 
     /// <summary>
     /// Тикет этого сервера, и кнопка нажата внутри его текстового канала.

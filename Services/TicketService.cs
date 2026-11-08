@@ -104,12 +104,15 @@ public sealed class TicketService(
     /// </summary>
     public static bool CanOpen(TicketProject project, IGuildUser user, LfgProject? group = null, TicketProject? parent = null)
     {
+        if (project.OpenUserIds.Contains(user.Id)) return true;
+        // Указаны только люди — открыть могут только они
+        if (project.OpenRoleIds.Count == 0 && project.OpenUserIds.Count > 0) return false;
         if (project.OpenRoleIds.Count == 0)
         {
             // Подпроект: участники основного проекта (его роли Approve) и его руководство
             if (parent is not null)
                 return parent.MemberRoleIds.Count == 0 ||
-                       parent.MemberRoleIds.Concat(parent.StaffRoleIds).Any(user.RoleIds.Contains);
+                       parent.MemberRoleIds.Concat(parent.StaffRoleIds).Any(user.RoleIds.Contains) || parent.StaffUserIds.Contains(user.Id);
             return group is null || group.RoleIds.Count == 0 || group.RoleIds.Any(user.RoleIds.Contains);
         }
         var userRoles = user.RoleIds;
@@ -170,10 +173,10 @@ public sealed class TicketService(
 
             var (embeds, comps) = TicketRenderer.TicketMessage(ticket, project);
             string? pings = Tx.Get(guild.Id, "ticket.msg.pings", ("applicant", $"<@{user.Id}>"),
-                ("leadership", string.Join(" ", project.StaffRoleIds.Select(r => $"<@&{r}>"))));
+                ("leadership", string.Join(" ", project.StaffRoleIds.Select(r => $"<@&{r}>").Concat(project.StaffUserIds.Select(u => $"<@{u}>")))));
             if (string.IsNullOrWhiteSpace(pings)) pings = null;
             var message = await text.SendMessageAsync(pings, embeds: embeds, components: comps,
-                allowedMentions: new AllowedMentions { UserIds = [user.Id], RoleIds = project.StaffRoleIds.ToList() });
+                allowedMentions: new AllowedMentions { UserIds = [user.Id, .. project.StaffUserIds], RoleIds = project.StaffRoleIds.ToList() });
             store.UpdateTicket(ticket.Id, t => t.MessageId = message.Id);
             return (ticket, null);
         }
@@ -338,6 +341,9 @@ public sealed class TicketService(
             new(applicantId, PermissionTarget.User, member)
         };
         overwrites.AddRange(project.StaffRoleIds.Select(roleId => new Overwrite(roleId, PermissionTarget.Role, member)));
+        // Отдельные люди руководства (заявителю доступ есть всегда — выше)
+        overwrites.AddRange(project.StaffUserIds.Where(id => id != applicantId).Distinct()
+            .Select(id => new Overwrite(id, PermissionTarget.User, member)));
         return overwrites;
     }
 }
