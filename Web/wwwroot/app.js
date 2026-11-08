@@ -3908,6 +3908,7 @@ function rolePanelCard(p, emojis) {
       h("span", { class: "chip" }, (TRIGGERS.find(t => t[0] === b.trigger) || TRIGGERS[0])[1]), emojiEl(b.emoji),
       h("b", {}, b.shownLabel), icon("arrow-right", 13), b.roles.map(r => roleChip(r))))),
     problems.length ? h("p", { class: "error-text small" }, `The bot can't give: ${[...new Set(problems.map(r => "@" + r.name))].join(", ")}`) : null,
+    (p.requiredRoles || []).some(r => !r.exists) ? h("p", { class: "error-text small" }, "“Only for” has a deleted role — it is ignored; remove it in the editor.") : null,
     p.jumpUrl ? (() => {
       const sticky = h("input", { type: "checkbox", class: "switch", checked: !!p.sticky, "aria-label": "Keep at the bottom" });
       sticky.addEventListener("change", () => act(null, () => gApi("PUT", `/roles/panels/${p.id}/sticky`, { sticky: sticky.checked }),

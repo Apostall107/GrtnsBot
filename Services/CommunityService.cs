@@ -389,8 +389,10 @@ public sealed class CommunityService(
     /// <summary>Нет одной из ролей-допусков панели — текст отказа.</summary>
     private string? Gate(RolePanel panel, SocketGuildUser member)
     {
-        if (panel.RequiredRoleIds.Count == 0 || member.Roles.Any(r => panel.RequiredRoleIds.Contains(r.Id))) return null;
-        return Tx.Get(panel.GuildId, "roles.needRole", ("roles", string.Join(" / ", panel.RequiredRoleIds.Select(id => $"<@&{id}>"))));
+        // Удалённые с сервера роли-допуски не учитываются (иначе панель закрыта для всех)
+        var required = panel.RequiredRoleIds.Where(id => member.Guild.GetRole(id) is not null).ToList();
+        if (required.Count == 0 || member.Roles.Any(r => required.Contains(r.Id))) return null;
+        return Tx.Get(panel.GuildId, "roles.needRole", ("roles", string.Join(" / ", required.Select(id => $"<@&{id}>"))));
     }
 
     /// <summary>
