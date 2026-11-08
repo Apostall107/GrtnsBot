@@ -3385,12 +3385,23 @@ function questionEditor(p) {
       req.addEventListener("change", () => { q.required = req.checked; });
       const max = h("input", { type: "number", min: "1", max: "4000", value: q.maxLength ?? (q.long ? 1000 : 200), style: "width:80px", title: "Max length" });
       max.addEventListener("input", () => { q.maxLength = Number(max.value || 0) || null; });
+      // 🎂 Вопрос о дне рождения: ответ ДД.ММ проверяется и сразу сохраняется в «Дни рождения»
+      const bd = h("input", { type: "checkbox", checked: !!q.birthday });
+      const syncBd = () => { long.disabled = max.disabled = bd.checked; if (bd.checked) { long.checked = q.long = false; } };
+      bd.addEventListener("change", () => {
+        q.birthday = bd.checked;
+        if (bd.checked && !hint.value) { hint.value = q.placeholder = "DD.MM, e.g. 05.02"; }
+        if (bd.checked && !label.value) { label.value = q.label = "Your birthday (DD.MM)"; }
+        syncBd();
+      });
+      syncBd();
       const up = h("button", { class: "btn ghost", type: "button", title: "Up", disabled: i === 0, onclick: () => { [qs[i - 1], qs[i]] = [qs[i], qs[i - 1]]; draw(); } }, "↑");
       const del = h("button", { class: "btn ghost", type: "button", title: "Remove", onclick: async () => {
         if (await confirmDialog("Remove this question?", "Saved when you press Save.", "Remove")) { qs.splice(i, 1); draw(); }
       } }, "✖");
       return h("div", { class: "row question-row" }, h("span", { class: "muted" }, `${i + 1}.`), label, hint,
-        h("label", { class: "row small" }, long, "long"), h("label", { class: "row small" }, req, "required"), max, up, del);
+        h("label", { class: "row small" }, long, "long"), h("label", { class: "row small" }, req, "required"),
+        h("label", { class: "row small", title: "Birthday question: the answer must be a date (DD.MM) and is saved to Birthdays right away" }, bd, "🎂 birthday"), max, up, del);
     }));
     add.disabled = qs.length >= 5;
   };
@@ -3401,10 +3412,11 @@ function questionEditor(p) {
       h("label", {}, "Application form"),
       h("label", { class: "row", style: "margin-bottom:6px" }, enabled, "Ask these questions before the ticket is created (Discord form, up to 5)"),
       list, h("div", { class: "row", style: "margin-top:6px" }, add,
-        h("span", { class: "muted small" }, "Answers appear in the ticket, on the site and in the archive."))),
+        h("span", { class: "muted small" }, "Answers appear in the ticket, on the site and in the archive. Tick 🎂 birthday on a question to save the answer straight to Birthdays."))),
     enabled: () => enabled.checked,
     value: () => qs.filter(q => (q.label || "").trim()).map(q => ({
-      id: q.id || null, label: q.label.trim(), placeholder: q.placeholder || null, long: !!q.long, required: q.required !== false, maxLength: q.maxLength || null
+      id: q.id || null, label: q.label.trim(), placeholder: q.placeholder || null, long: !!q.long, required: q.required !== false, maxLength: q.maxLength || null,
+      birthday: !!q.birthday
     }))
   };
 }

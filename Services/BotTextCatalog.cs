@@ -291,6 +291,7 @@ public static class BotTextCatalog
         T("ticket.cantOpen", "Can't open this project", "You don't have the role required to open **{project}** tickets.", "{project}", 1000);
         T("ticket.formTitle", "Form window: title", "Application — {project}", "{project}", ModalTitle);
         T("ticket.form.required", "Form: required answer missing", "Answer the question: {question}", "{question}", 500);
+        T("ticket.form.badBirthday", "Form: birthday answer not a date", "«{question}» — write the date as DD.MM, e.g. 05.02 (or 05.02.1998).", "{question}", 500);
         T("ticket.form.tooLong", "Form: answer too long", "«{question}» — up to {max} characters.", "{question}, {max}", 500);
         T("ticket.created", "Ticket created", "✅ Ticket created: {channel}", "{channel}", 500);
         T("ticket.alreadyHasRoles", "Already has all roles of the project", "You already have {roles} — no need to open a **{project}** ticket.", "{project}, {roles}", 500);

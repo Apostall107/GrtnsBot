@@ -81,6 +81,7 @@ public sealed class TicketService(
     TicketArchiveStore archive,
     AuditLog audit,
     UserDmStore prefs,
+    BirthdayStore birthdays,
     ILogger<TicketService> logger)
 {
     // Защита от двойного клика: пока создаётся тикет, второй не создаём
@@ -106,6 +107,8 @@ public sealed class TicketService(
             var a = answers.FirstOrDefault(x => x.Question == q.Label)?.Answer?.Trim() ?? "";
             if (q.Required && a.Length == 0) return Tx.Get(gid, "ticket.form.required", ("question", q.Label));
             if (a.Length > q.MaxLength) return Tx.Get(gid, "ticket.form.tooLong", ("question", q.Label), ("max", q.MaxLength));
+            if (q.Birthday && a.Length > 0 && !LfgBot.Modules.BirthdayModule.TryParse(a, out _))
+                return Tx.Get(gid, "ticket.form.badBirthday", ("question", q.Label));
         }
         return null;
     }
@@ -153,6 +156,13 @@ public sealed class TicketService(
         if (OpenTicket(guild, user.Id, project) is { } open)
             return (null, Tx.Get(guild.Id, "ticket.alreadyOpen", ("project", project.Name), ("channel", $"<#{open.TextChannelId}>")));
         if (Validate(project, answers, guild.Id) is { } invalid) return (null, invalid);
+
+        // Вопрос о дне рождения: дата сразу в модуль «Дни рождения» (перезапишет прежнюю)
+        if (project.FormEnabled)
+            foreach (var q in project.Questions.Where(q => q.Birthday))
+                if (answers.FirstOrDefault(x => x.Question == q.Label)?.Answer?.Trim() is { Length: > 0 } ans &&
+                    LfgBot.Modules.BirthdayModule.TryParse(ans, out var bday))
+                    birthdays.Set(guild.Id, user.Id, bday);
 
         var lockKey = $"{guild.Id}:{user.Id}:{project.Key}";
         if (!_creating.TryAdd(lockKey, 0)) return (null, Tx.Get(guild.Id, "ticket.creating"));

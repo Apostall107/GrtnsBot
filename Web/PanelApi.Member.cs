@@ -602,7 +602,7 @@ public static partial class PanelApi
                     questions = p.FormEnabled
                         ? p.Questions.Take(TicketQuestion.MaxQuestions).Select(q => new
                         {
-                            id = q.Id, label = q.Label, placeholder = q.Placeholder, @long = q.Long, required = q.Required, maxLength = q.MaxLength
+                            id = q.Id, label = q.Label, placeholder = q.Placeholder, @long = q.Long, required = q.Required, maxLength = q.MaxLength, birthday = q.Birthday
                         })
                         : null
                 };

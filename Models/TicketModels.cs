@@ -51,6 +51,8 @@ public sealed class TicketQuestion
     public bool Long { get; set; }
     public bool Required { get; set; } = true;
     public int MaxLength { get; set; } = 200;
+    /// <summary>Вопрос о дне рождения (ДД.ММ или ДД.ММ.ГГГГ): ответ проверяется и сразу сохраняется в модуль «Дни рождения».</summary>
+    public bool Birthday { get; set; }
 }
 
 public sealed class TicketAnswer

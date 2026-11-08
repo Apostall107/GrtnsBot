@@ -374,7 +374,7 @@ public static partial class PanelApi
                 formEnabled = p.FormEnabled,
                 questions = p.Questions.Select(q => new
                 {
-                    id = q.Id, label = q.Label, placeholder = q.Placeholder, @long = q.Long, required = q.Required, maxLength = q.MaxLength
+                    id = q.Id, label = q.Label, placeholder = q.Placeholder, @long = q.Long, required = q.Required, maxLength = q.MaxLength, birthday = q.Birthday
                 }),
                 autoCloseDays = p.AutoCloseDays,
                 open = open.Count(t => t.ProjectKey == p.Key)
@@ -444,9 +444,10 @@ public static partial class PanelApi
                         Id = string.IsNullOrWhiteSpace(q.Id) ? IdGen.New() : q.Id,
                         Label = label,
                         Placeholder = placeholder,
-                        Long = q.Long,
                         Required = q.Required,
-                        MaxLength = Math.Clamp(q.MaxLength ?? (q.Long ? 1000 : 200), 1, 4000)
+                        Birthday = q.Birthday,
+                        Long = !q.Birthday && q.Long,
+                        MaxLength = q.Birthday ? 10 : Math.Clamp(q.MaxLength ?? (q.Long ? 1000 : 200), 1, 4000)
                     });
                 }
             }
@@ -1459,7 +1460,7 @@ public sealed record ProjectUpdateBody(List<string>? StaffRoleIds, List<string>?
     bool? FormEnabled = null, List<QuestionBody>? Questions = null, int? AutoCloseDays = null, string? Name = null,
     List<string>? OpenRoleIds = null, bool? OpenRequireAll = null, string? GroupProjectKey = null, string? ParentKey = null,
     List<string>? StaffUserIds = null, List<string>? OpenUserIds = null);
-public sealed record QuestionBody(string? Id, string? Label, string? Placeholder, bool Long, bool Required, int? MaxLength);
+public sealed record QuestionBody(string? Id, string? Label, string? Placeholder, bool Long, bool Required, int? MaxLength, bool Birthday = false);
 public sealed record ChannelBody(string? ChannelId);
 public sealed record UserBody(string? UserId);
 public sealed record NewCreatorBody(string? Name, string? CategoryId, string? Template, int? Limit);
