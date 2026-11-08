@@ -178,13 +178,23 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
         }
 
         var roleIds = project.MemberRoleIds.ToList();
+        await DeferAsync();
+
+        // Тикет без ролей (разбор с ментором и т.п.): «Готово» — отметить, сообщить, закрыть
         if (roleIds.Count == 0)
         {
-            await RespondAsync(T("ticket.noRoles"), ephemeral: true);
+            var done = store.UpdateTicket(ticketId, t => t.ApprovedBy = Context.User.Id) ?? ticket;
+            audit.FromDiscord(Context.Guild.Id, Context.User, "tickets", "Marked ticket done",
+                $"{project.Name} · applicant {(Context.Guild.GetUser(ticket.UserId)?.DisplayName ?? ticket.UserId.ToString())}");
+            var (dEmbeds, dComps) = TicketRenderer.TicketMessage(done, project);
+            await Component.ModifyOriginalResponseAsync(m => { m.Embeds = dEmbeds; m.Components = dComps; });
+            await FollowupAsync(T("ticket.doneMsg", ("applicant", $"<@{ticket.UserId}>"), ("by", $"<@{Context.User.Id}>")) + "\n" +
+                T("ticket.closingIn", ("seconds", (int)ApproveCloseDelay.TotalSeconds)),
+                allowedMentions: new AllowedMentions { UserIds = [ticket.UserId] });
+            if (await Context.Client.Rest.GetUserAsync(ticket.UserId) is { } u) await NotifyApprovedAsync(u, project, []);
+            _ = CloseAfterDelayAsync(done, Context.User, "approved", null);
             return;
         }
-
-        await DeferAsync();
 
         var applicant = await Context.Client.Rest.GetGuildUserAsync(ticket.GuildId, ticket.UserId);
         if (applicant is null)
@@ -247,11 +257,14 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
     private async Task NotifyApprovedAsync(IUser applicant, TicketProject project, IEnumerable<ulong> roleIds)
     {
         if (!prefs.Allowed(Context.Guild.Id, applicant.Id, "ticketResult")) return;
-        var roles = string.Join(", ", roleIds.Select(id => Context.Guild.GetRole(id)?.Name ?? "role").Select(Format.Sanitize));
+        var list = roleIds.ToList();
+        var roles = string.Join(", ", list.Select(id => Context.Guild.GetRole(id)?.Name ?? "role").Select(Format.Sanitize));
         try
         {
-            await applicant.SendMessageAsync(T("ticket.dm.approved", ("project", Format.Sanitize(project.Name)),
-                ("server", Format.Sanitize(Context.Guild.Name)), ("roles", roles)));
+            await applicant.SendMessageAsync(list.Count == 0
+                ? T("ticket.dm.done", ("project", Format.Sanitize(project.Name)), ("server", Format.Sanitize(Context.Guild.Name)))
+                : T("ticket.dm.approved", ("project", Format.Sanitize(project.Name)),
+                    ("server", Format.Sanitize(Context.Guild.Name)), ("roles", roles)));
         }
         catch (Discord.Net.HttpException)
         {

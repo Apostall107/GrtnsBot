@@ -384,8 +384,9 @@ public static partial class PanelApi
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var name = (body.Name ?? "").Trim();
             if (name.Length is 0 or > MaxNameLength) return Error($"The name must be 1–{MaxNameLength} characters.");
-            if (ParseId(body.MemberRoleId) is not { } roleId || guild.GetRole(roleId) is null)
-                return Error("Pick the role given on Approve.");
+            // Роль на Approve необязательна: тикет без ролей (разбор POV с ментором) закрывается кнопкой «Готово»
+            ulong? roleId = ParseId(body.MemberRoleId) is { } rid && guild.GetRole(rid) is not null ? rid : null;
+            if (!string.IsNullOrWhiteSpace(body.MemberRoleId) && roleId is null) return Error("That role no longer exists.");
 
             var group = string.IsNullOrWhiteSpace(body.GroupProjectKey) ? null : body.GroupProjectKey;
             var parent = string.IsNullOrWhiteSpace(body.ParentKey) ? null : body.ParentKey;
@@ -477,7 +478,7 @@ public static partial class PanelApi
 
             return Results.Ok(new
             {
-                warning = members.Count == 0 ? "No roles to give on Approve — Approve won't work until you add one." : null,
+                warning = (string?)null,
                 ticketsUpdated = refreshed.Updated,
                 ticketsTotal = refreshed.Total
             });
@@ -553,7 +554,22 @@ public static partial class PanelApi
             var project = tickets.FindProject(guildId, t.ProjectKey);
             if (project is null) return Error("This project was deleted.");
             var roleIds = project.MemberRoleIds.Where(id => guild.GetRole(id) is not null).ToList();
-            if (roleIds.Count == 0) return Error("This project has no roles to give on Approve.");
+            if (roleIds.Count == 0 && project.MemberRoleIds.Count > 0) return Error("The roles of this project were deleted — set them again.");
+            if (roleIds.Count == 0)
+            {
+                // Тикет без ролей — «Готово»
+                var me0 = user.UserId()!.Value;
+                var by0 = (IUser?)client.GetUser(me0) ?? await client.Rest.GetUserAsync(me0);
+                var done = tickets.UpdateTicket(ticketId, x => x.ApprovedBy = me0) ?? t;
+                try { await messages.RefreshAsync(done, project); } catch (Exception) { /* сообщение тикета могли удалить */ }
+                if (guild.GetTextChannel(t.TextChannelId) is { } ch0)
+                    await ch0.SendMessageAsync(Tx.Get(guildId, "ticket.doneMsg", ("applicant", $"<@{t.UserId}>"), ("by", $"<@{me0}>" + Tx.Get(guildId, "ticket.viaWebsite"))) + "\n" +
+                        Tx.Get(guildId, "ticket.closingIn", ("seconds", (int)TicketService.CloseDelay.TotalSeconds)),
+                        allowedMentions: new AllowedMentions { UserIds = [t.UserId] });
+                await service.NotifyApprovedAsync(done, project, []);
+                service.CloseLater(done, by0, "approved", null);
+                return Results.Ok(new { closed = true });
+            }
 
             IGuildUser? applicant = guild.GetUser(t.UserId);
             applicant ??= await client.Rest.GetGuildUserAsync(guildId, t.UserId);

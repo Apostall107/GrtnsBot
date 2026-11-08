@@ -2993,12 +2993,11 @@ function ticketPanelEditor(p, d, reload) {
   newType.addEventListener("click", () => {
     const nd = dialog();
     const nm = h("input", { maxlength: "40", placeholder: "e.g. GvG application", style: "width:100%" });
-    const role = roleSelect("Role given on Approve…");
+    const role = roleSelect("Role on Approve — none (e.g. a review)");
     const pj = d.groups.find(g => g.key === v.projectKey);
     const ok = h("button", { class: "btn" }, icon("check", 15), "Create");
     ok.addEventListener("click", async () => {
       if (!nm.value.trim()) return toast("Write a name.", "warn");
-      if (!role.value) return toast("Pick the role given on Approve.", "warn");
       const r = await act(ok, () => gApi("POST", "/tickets/projects", { name: nm.value.trim(), memberRoleId: role.value, parentKey: v.projectKey || null }), "Ticket type created.");
       if (r === undefined) return;
       nd.close();
@@ -3008,7 +3007,8 @@ function ticketPanelEditor(p, d, reload) {
     });
     nd.replaceChildren(h("h2", {}, pj ? `New sub-project of ${pj.name}` : "New ticket type"),
       h("div", { class: "field" }, h("label", {}, "Name (the button text)"), nm),
-      h("div", { class: "field" }, h("label", {}, "Role given on Approve"), role),
+      h("div", { class: "field" }, h("label", {}, "Role given on Approve (optional)"), role,
+        h("span", { class: "muted small" }, "None — the ticket isn't about a role (e.g. a POV review): it gets ✅ Done instead of Approve / Deny.")),
       h("p", { class: "muted small" }, pj ? `It becomes a tab inside ${pj.name} and gets a button on this panel. ` : "",
         "Who can open it, leadership, questions and texts — set them later in its tab on the Tickets page (by default: members of the main project)."),
       h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => nd.close() }, "Cancel"), ok));
@@ -3061,7 +3061,7 @@ async function pageTickets(main) {
 
   if (tab === "new") {
     const nameIn = h("input", { placeholder: "Project name, e.g. Aion 2", maxlength: "100" });
-    const roleIn = roleSelect("Role given on Approve…");
+    const roleIn = roleSelect("Role on Approve (optional)…");
     const addBtn = h("button", { class: "btn" }, "➕ Add project");
     addBtn.addEventListener("click", async () => {
       if (await act(addBtn, () => gApi("POST", "/tickets/projects", { name: nameIn.value, memberRoleId: roleIn.value }),
@@ -3089,7 +3089,7 @@ async function pageTickets(main) {
   }
   if (mainProject && sub === "+sub") {
     const nameIn = h("input", { placeholder: "e.g. GvG application", maxlength: "100" });
-    const roleIn = roleSelect("Role given on Approve…");
+    const roleIn = roleSelect("Role on Approve — none (e.g. a review)");
     const addBtn = h("button", { class: "btn" }, "➕ Add sub-project");
     addBtn.addEventListener("click", async () => {
       const r = await act(addBtn, () => gApi("POST", "/tickets/projects", { name: nameIn.value, memberRoleId: roleIn.value, parentKey: mainProject.key }),
@@ -3099,7 +3099,7 @@ async function pageTickets(main) {
       refresh();
     });
     main.append(h("div", { class: "card" }, h("h3", {}, `New sub-project of ${mainProject.name}`),
-      h("p", { class: "muted small" }, `A separate kind of application inside ${mainProject.name} — e.g. GvG application or POV review. It isn't shown in the main ticket panel: members open it from a 🧩 sub-project panel. By default only members of ${mainProject.name} (its Approve roles) and its leadership can open it.`),
+      h("p", { class: "muted small" }, `A separate kind of application inside ${mainProject.name} — e.g. GvG application or POV review. It isn't shown in the main ticket panel: members open it from a 🧩 sub-project panel. By default only members of ${mainProject.name} (its Approve roles) and its leadership can open it. Without a role on Approve (e.g. a mentor reviewing your POV) the ticket gets a ✅ Done button instead of Approve / Deny.`),
       h("div", { class: "row" }, h("div", { class: "grow" }, nameIn), roleIn, addBtn)));
     return;
   }
@@ -3289,7 +3289,8 @@ function projectCard(p, mains = [], hasChildren = false) {
         h("span", { class: "muted small" }, p.parentKey ? "Empty — members of the main project (its Approve roles) and its leadership." : "Empty — everyone."))),
     h("div", { class: "grid2" },
       h("div", { class: "field" }, h("label", {}, "Leadership (see tickets, can Approve)"), staff.el),
-      h("div", { class: "field" }, h("label", {}, "Roles given on Approve"), members.el)),
+      h("div", { class: "field" }, h("label", {}, "Roles given on Approve"), members.el,
+        h("span", { class: "muted small" }, "Empty — the ticket isn't about a role (e.g. a mentor reviews your POV): it gets ✅ Done instead of Approve / Deny."))),
     h("div", { class: "field" }, h("label", {}, "Category for ticket channels"), cat),
     h("div", { class: "field" }, h("label", {}, "Ticket text (under the system info, above the buttons)"), text, counter),
     form.el,

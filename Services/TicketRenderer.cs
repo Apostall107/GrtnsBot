@@ -90,11 +90,19 @@ public static class TicketRenderer
                 .WithColor(Tx.Color(gid, "color.ticket.custom"))
                 .Build());
 
-        var comps = new ComponentBuilder()
-            .WithButton(PanelDefs.Label(t.GuildId, PanelDefs.TicketMessage, "approve"), $"ticket:approve:{t.Id}", ButtonStyle.Success, new Emoji("✅"),
-                disabled: t.ApprovedBy is not null)
-            .WithButton(PanelDefs.Label(t.GuildId, PanelDefs.TicketMessage, "deny"), $"ticket:deny:{t.Id}", ButtonStyle.Secondary, new Emoji("❌"),
-                disabled: t.ApprovedBy is not null)
+        // Без ролей на Approve (разбор POV с ментором и т.п.) — «✅ Готово» вместо Approve/Deny
+        var withRoles = p is null || p.MemberRoleIds.Count > 0;
+        var builder = new ComponentBuilder();
+        if (withRoles)
+            builder
+                .WithButton(PanelDefs.Label(t.GuildId, PanelDefs.TicketMessage, "approve"), $"ticket:approve:{t.Id}", ButtonStyle.Success, new Emoji("✅"),
+                    disabled: t.ApprovedBy is not null)
+                .WithButton(PanelDefs.Label(t.GuildId, PanelDefs.TicketMessage, "deny"), $"ticket:deny:{t.Id}", ButtonStyle.Secondary, new Emoji("❌"),
+                    disabled: t.ApprovedBy is not null);
+        else
+            builder.WithButton(Tx.Get(gid, "ticket.doneButton"), $"ticket:approve:{t.Id}", ButtonStyle.Success, new Emoji("✅"),
+                disabled: t.ApprovedBy is not null);
+        var comps = builder
             .WithButton(PanelDefs.Label(t.GuildId, PanelDefs.TicketMessage, "close"), $"ticket:close:{t.Id}", ButtonStyle.Danger, new Emoji("🔒"))
             .Build();
 

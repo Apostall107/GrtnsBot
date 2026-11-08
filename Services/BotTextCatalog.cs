@@ -302,6 +302,9 @@ public static class BotTextCatalog
         // ================= Tickets: approve, deny, close =================
         Group("Tickets — approve, deny, close");
         T("ticket.approvedMsg", "Approved (in the ticket)", "🎉 {applicant} approved by {by} — {roles} granted.", "{applicant}, {by}, {roles}", 1500);
+        T("ticket.doneMsg", "Done (ticket without roles, in the ticket)", "✅ {applicant}'s ticket was marked done by {by}.", "{applicant}, {by}", 1500);
+        T("ticket.dm.done", "DM: done (ticket without roles)", "✅ Your **{project}** ticket on **{server}** is done.", "{project}, {server}", 1500);
+        T("ticket.doneButton", "Button: Done (ticket types without roles)", "Done", null, 80);
         T("ticket.deniedMsg", "Denied (in the ticket)", "❌ {applicant}'s application was denied by {by}.", "{applicant}, {by}", 1500);
         T("ticket.reason", "Reason line", "**Reason:** {reason}", "{reason}", 700);
         T("ticket.viaWebsite", "Mark after the name for website actions", " (website)", null, 50, optional: true);

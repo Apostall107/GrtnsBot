@@ -246,9 +246,13 @@ public sealed class TicketService(
             var guild = client.GetGuild(ticket.GuildId);
             var user = client.GetUser(ticket.UserId) as IUser ?? await client.Rest.GetUserAsync(ticket.UserId);
             if (user is null) return;
-            var roles = string.Join(", ", roleIds.Select(id => guild?.GetRole(id)?.Name ?? "role").Select(Format.Sanitize));
-            await user.SendMessageAsync(Tx.Get(ticket.GuildId, "ticket.dm.approved", ("project", Format.Sanitize(project.Name)),
-                ("server", Format.Sanitize(guild?.Name ?? "the server")), ("roles", roles)));
+            var list = roleIds.ToList();
+            var roles = string.Join(", ", list.Select(id => guild?.GetRole(id)?.Name ?? "role").Select(Format.Sanitize));
+            // Тикет без ролей (разбор POV с ментором и т.п.) — «готово», а не «принят»
+            await user.SendMessageAsync(list.Count == 0
+                ? Tx.Get(ticket.GuildId, "ticket.dm.done", ("project", Format.Sanitize(project.Name)), ("server", Format.Sanitize(guild?.Name ?? "the server")))
+                : Tx.Get(ticket.GuildId, "ticket.dm.approved", ("project", Format.Sanitize(project.Name)),
+                    ("server", Format.Sanitize(guild?.Name ?? "the server")), ("roles", roles)));
         }
         catch (Discord.Net.HttpException)
         {

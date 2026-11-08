@@ -36,7 +36,7 @@ public sealed class TicketStore
             return _data.Projects.TryGetValue(guildId, out var list) ? list.Find(p => p.Key == key) : null;
     }
 
-    public string? AddProject(ulong guildId, string name, ulong memberRoleId, string? groupProjectKey = null, string? parentKey = null)
+    public string? AddProject(ulong guildId, string name, ulong? memberRoleId, string? groupProjectKey = null, string? parentKey = null)
     {
         lock (_lock)
         {
@@ -47,7 +47,7 @@ public sealed class TicketStore
             if (list.Any(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
                 return $"Project \"{name}\" already exists.";
 
-            list.Add(new TicketProject { Name = name, MemberRoleIds = [memberRoleId], GroupProjectKey = groupProjectKey, ParentKey = parentKey });
+            list.Add(new TicketProject { Name = name, MemberRoleIds = memberRoleId is { } mr ? [mr] : [], GroupProjectKey = groupProjectKey, ParentKey = parentKey });
             Save();
             return null;
         }
