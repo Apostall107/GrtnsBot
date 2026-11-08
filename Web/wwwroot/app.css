@@ -1569,3 +1569,20 @@ dialog.xwide.page-dialog { width: min(1640px, calc(100vw - 32px)); }
 .page-preview { gap: 4px; }
 .page-preview > .dc-msg + .dc-msg .dc-head { display: none; }
 .page-preview > .dc-msg + .dc-msg .dc-avatar { visibility: hidden; height: 0; }
+
+/* Media library */
+.media-drop { border: 2px dashed var(--border, #3a3f55); border-radius: 12px; padding: 18px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 6px; transition: .15s; }
+.media-drop.over { border-color: var(--accent, #7c5cff); background: rgba(124, 92, 255, .08); }
+.media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; max-height: 50vh; overflow: auto; }
+.media-grid.big { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); max-height: none; }
+.media-tile { display: flex; flex-direction: column; gap: 4px; padding: 6px; border-radius: 10px; border: 1px solid var(--border, #2a2f45); background: rgba(255,255,255,.03); cursor: pointer; color: inherit; font: inherit; text-align: left; }
+.media-tile:hover { border-color: var(--accent, #7c5cff); }
+.media-tile img, .media-card img { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; background: rgba(0,0,0,.25); border-radius: 8px; display: block; }
+.media-tile span { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.media-tile em { color: var(--muted, #9aa); font-style: normal; }
+.media-card { border: 1px solid var(--border, #2a2f45); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 6px; background: rgba(255,255,255,.02); }
+.media-meta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.media-card code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1 1 auto; }
+.dc-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.dc-attach { max-width: min(400px, 100%); max-height: 300px; border-radius: 8px; object-fit: contain; }
+.dc-attach.missing { padding: 10px 14px; background: rgba(255,80,80,.12); color: #f99; font-size: 12px; border-radius: 8px; }

@@ -111,6 +111,9 @@ public static partial class PanelApi
         MapCaptcha(api.MapGroup("/captcha").AddEndpointFilter(Require(PanelPermissions.Access)));
         MapBirthdays(guild.MapGroup("/birthdays").AddEndpointFilter(Require(PanelPermissions.Birthdays)));
         MapPages(guild.MapGroup("/pages").AddEndpointFilter(Require(PanelPermissions.Pages)));
+        // Медиатека нужна всем, кто пишет посты: объявления, страницы, панели ролей, приветствие
+        MapMedia(guild.MapGroup("/media").AddEndpointFilter(RequireAny(PanelPermissions.Media, PanelPermissions.Announce,
+            PanelPermissions.Pages, PanelPermissions.Roles, PanelPermissions.Welcome, PanelPermissions.Posts)));
     }
 
     // ================= Общее: сводка, роли, каналы, участники =================
@@ -1246,6 +1249,16 @@ public static partial class PanelApi
         {
             var access = ctx.HttpContext.RequestServices.GetRequiredService<PanelAccess>();
             if (!access.Has(ctx.HttpContext.User.UserId(), permission))
+                return Results.Json(new { error = "You don't have access to this section." }, statusCode: StatusCodes.Status403Forbidden);
+            return await next(ctx);
+        };
+
+    private static Func<EndpointFilterInvocationContext, EndpointFilterDelegate, ValueTask<object?>> RequireAny(params string[] permissions) =>
+        async (ctx, next) =>
+        {
+            var access = ctx.HttpContext.RequestServices.GetRequiredService<PanelAccess>();
+            var id = ctx.HttpContext.User.UserId();
+            if (!permissions.Any(p => access.Has(id, p)))
                 return Results.Json(new { error = "You don't have access to this section." }, statusCode: StatusCodes.Status403Forbidden);
             return await next(ctx);
         };

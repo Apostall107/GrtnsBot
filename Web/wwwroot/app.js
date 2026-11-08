@@ -1165,6 +1165,7 @@ const allTabs = [
   ["pages", "layers", "Channel pages", "pages", "Posts & channels"],
   ["announce", "megaphone", "Announcements", "announce", "Posts & channels"],
   ["content", "layout-template", "Panels & posts", "content", "Posts & channels"],
+  ["media", "image", "Media library", "media", "Posts & channels"],
   ["overview", "layout-dashboard", "Dashboard", "admin", "Administration"],
   ["log", "scroll-text", "Log", "log", "Administration"],
   ["settings", "settings", "Settings", "settings", "Administration"],
@@ -1184,7 +1185,7 @@ const can = perm => {
 };
 const MEMBER_TABS = ["home", "play", "chars"];
 const visibleTabs = () => allTabs.filter(t => can(t[3]));
-const PERM_LABELS = { lfg: "LFG", guild: "Guild", tickets: "Tickets", voice: "Temp Voice", welcome: "Welcome", roles: "Role panels", texts: "Panel texts", posts: "Posts", announce: "Announcements", pages: "Channel pages", birthdays: "Birthdays", log: "Log", settings: "Settings" };
+const PERM_LABELS = { lfg: "LFG", guild: "Guild", tickets: "Tickets", voice: "Temp Voice", welcome: "Welcome", roles: "Role panels", texts: "Panel texts", posts: "Posts", announce: "Announcements", pages: "Channel pages", media: "Media library", birthdays: "Birthdays", log: "Log", settings: "Settings" };
 const PERM_ICONS = { lfg: "swords", guild: "calendar", tickets: "ticket", voice: "headphones", welcome: "door-open", roles: "user-plus", texts: "file-pen-line", posts: "pin", announce: "megaphone", pages: "layers", birthdays: "cake", log: "scroll-text", settings: "settings" };
 
 function renderLogin(message) {
@@ -1254,6 +1255,8 @@ async function selectGuild(id) {
       state.channels = channels;
     } catch (e) { toast(e.message, "error"); }
   }
+  mediaLib.items = []; mediaLib.map = new Map(); mediaLib.loaded = null;
+  if (id && MEDIA_PERMS.some(can)) loadMedia().catch(() => {});
   renderShell();
 }
 
@@ -1346,7 +1349,7 @@ function renderShell() {
 
   if (!state.guildId) { main.append(empty("No servers available for your account.")); return; }
   if (!visibleTabs().length) { main.append(empty("You have no sections on this server. Ask an admin for the member role.")); return; }
-  const page = { home: pageHome, content: pageContent, play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, guild: pageGuild, schedule: pageSchedule, roster: pageMemberRoster, tickets: pageTickets, voice: pageVoice, welcome: pageWelcome, roles: pageRoles, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess, voicenow: pageVoiceNow, captcha: pageCaptcha, birthdays: pageBirthdays, pages: pageChannelPages }[state.tab];
+  const page = { home: pageHome, content: pageContent, play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, guild: pageGuild, schedule: pageSchedule, roster: pageMemberRoster, tickets: pageTickets, voice: pageVoice, welcome: pageWelcome, roles: pageRoles, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess, voicenow: pageVoiceNow, captcha: pageCaptcha, birthdays: pageBirthdays, pages: pageChannelPages, media: pageMedia }[state.tab];
   page(main);
   addGuideButton(main, state.tab);
   decorateHeading(main);
@@ -1561,7 +1564,9 @@ async function pageAnnounce(main) {
     h("p", { class: "muted small" }, "The bot posts your text in a channel (or a voice channel's chat). Longer than 2000 characters — split into several messages automatically. You see the preview and confirm before anything is sent."),
     h("div", { class: "row", style: "margin-bottom:12px" }, h("div", { class: "grow" }, tplSel), saveTpl),
     h("div", { class: "field" }, h("label", {}, "Channel"), channel),
-    h("div", { class: "field" }, h("label", {}, "Text — type @ or # for suggestions"), textBox, counter, inText),
+    h("div", { class: "field" }, h("label", {}, "Text — type @ or # for suggestions"), textBox,
+      h("div", { class: "row", style: "gap:8px;margin-top:6px;flex-wrap:wrap" }, mediaTextButton(text),
+        h("span", { class: "muted small" }, "Images and GIFs go under the message (paste / drop a picture into the text works too).")), counter, inText),
     h("div", { class: "field" }, h("label", {}, "🔔 Ping (a line with mentions at the top of the post)"), pingChips,
       h("div", { class: "row" }, everyoneSel, addRoles, addUser)),
     h("label", { class: "row", style: "margin-bottom:10px" }, pings, "Ping mentions written in the text (@ suggestions turn this on) — off: they are shown but nobody is notified"),
@@ -3577,9 +3582,9 @@ function dcEmbed(e, mentions = {}) {
       e.description ? mdPreview(e.description, mentions) : null,
       fields.length ? h("div", { class: "dc-fields" }, fields.map(f => h("div", { class: `dc-field${f.inline ? " inline" : ""}` },
         h("div", { class: "dc-field-name" }, mdPreview(f.name, mentions)), mdPreview(f.value, mentions)))) : null,
-      e.image ? h("img", { class: "dc-embed-image", src: e.image, alt: "" }) : null,
+      mediaUrl(e.image) ? h("img", { class: "dc-embed-image", src: mediaUrl(e.image), alt: "" }) : null,
       e.footer || e.timestamp ? h("div", { class: "dc-embed-footer" }, [e.footer, e.timestamp ? new Date(e.timestamp).toLocaleString() : null].filter(Boolean).join(" • ")) : null),
-    e.thumbnail ? h("img", { class: "dc-embed-thumb", src: e.thumbnail, alt: "" }) : e.avatar ? h("span", { class: "dc-embed-thumb dc-avatar-ph" }) : null);
+    mediaUrl(e.thumbnail) ? h("img", { class: "dc-embed-thumb", src: mediaUrl(e.thumbnail), alt: "" }) : e.avatar ? h("span", { class: "dc-embed-thumb dc-avatar-ph" }) : null);
 }
 
 /** A Discord message mock: bot header, text, embeds, component rows, reactions. */
@@ -3596,8 +3601,13 @@ function plainWithEmoji(text) {
   return out;
 }
 
-function dcMessage({ content, embed, embeds, rows = [], reactions = [], mentions = {} }) {
+function dcMessage({ content, embed, embeds, rows = [], reactions = [], mentions = {}, images = [] }) {
   const bot = state.bot || { name: "Greatness Bot" };
+  // [img:имя] в тексте → вложения под текстом (как бот их отправит)
+  if (content && MEDIA_TOKEN.test(content)) {
+    images = [...images, ...[...content.matchAll(new RegExp(MEDIA_TOKEN.source, "g"))].map(m => mediaUrl(m[0]) || null)];
+    content = content.replace(new RegExp(MEDIA_TOKEN.source + "[ \\t]*\\n?", "g"), "").trim();
+  }
   const list = embeds || (embed ? [embed] : []);
   return h("div", { class: "dc-msg" },
     h("div", { class: "dc-avatar" }, bot.avatarUrl ? h("img", { src: bot.avatarUrl, alt: "" }) : null),
@@ -3605,6 +3615,8 @@ function dcMessage({ content, embed, embeds, rows = [], reactions = [], mentions
       h("div", { class: "dc-head" }, h("b", {}, bot.name), h("span", { class: "dc-bot" }, "APP"), h("span", { class: "dc-time" }, "Today at 21:00")),
       content ? mdPreview(content, mentions) : null,
       list.map(e => dcEmbed(e, mentions)),
+      images.length ? h("div", { class: "dc-attachments" }, images.map(u => u ? h("img", { class: "dc-attach", src: u, alt: "" })
+        : h("div", { class: "dc-attach missing" }, "image not found in the media library"))) : null,
       rows.map(r => h("div", { class: "dc-row" }, r)),
       reactions.length ? h("div", { class: "dc-reactions" }, reactions.map(e => h("span", { class: "dc-reaction" }, emojiEl(e, 16), " 1"))) : null));
 }
@@ -3627,7 +3639,7 @@ function dcFromPreview(p, opts = {}) {
   };
   const rows = (p.rows || []).map(row => row.map(c => c.type === "select" ? select(c)
     : h("span", { class: c.disabled ? "dc-disabled" : "" }, dcButton(c.label, c.emoji, styleColor[c.style] || "Grey", !!c.url))));
-  return dcMessage({ content: p.content, embeds: p.embeds || [], rows, mentions: p.mentions || {}, reactions: opts.reactions || [] });
+  return dcMessage({ content: p.content, embeds: p.embeds || [], rows, mentions: p.mentions || {}, reactions: opts.reactions || [], images: opts.images || [] });
 }
 
 /** Live preview box: load() → preview DTO; refresh() is debounced. */
@@ -3734,14 +3746,14 @@ async function pageWelcome(main) {
     const descr = h("textarea", { maxlength: "4000", style: "min-height:110px", placeholder: "Card text (Markdown works)", value: m.description || "" });
     const color = embedColorField(m.color, update);
     const avatar = toggle(m.showAvatar, "Member's avatar in the corner", update);
-    const image = h("input", { placeholder: "https://… big image under the text (optional)", value: m.imageUrl || "" });
+    const image = h("input", { placeholder: "https://… or 🖼 from the media library (optional)", value: m.imageUrl || "" });
     const footer = h("input", { maxlength: "2048", placeholder: "Small text at the bottom (optional)", value: m.footer || "" });
     for (const f of [content, title, descr, image, footer]) f.addEventListener("input", update);
     const cardBox = h("div", { class: "subcard" },
       h("div", { class: "field" }, h("label", {}, "Title"), title, withPlaceholders(title, WELCOME_PH)),
       h("div", { class: "field" }, h("label", {}, "Text"), descr, withPlaceholders(descr, WELCOME_PH)),
       h("div", { class: "grid2" }, h("div", { class: "field" }, h("label", {}, "Stripe color"), color.el), h("div", { class: "field" }, h("label", {}, " "), avatar.el)),
-      h("div", { class: "field" }, h("label", {}, "Image"), image),
+      h("div", { class: "field" }, h("label", {}, "Image"), withMediaButton(image)),
       h("div", { class: "field" }, h("label", {}, "Footer"), footer, withPlaceholders(footer, WELCOME_PH)));
     cardBox.style.display = m.useEmbed ? "" : "none";
     const reset = h("button", { class: "btn ghost sm", type: "button", title: "Put back the default texts" }, "↩ Default texts");
@@ -3960,8 +3972,8 @@ function rolePanelEditor(p, emojis) {
   const title = h("input", { maxlength: "256", placeholder: "Title", value: v.title || "" });
   const text = h("textarea", { maxlength: "3000", style: "min-height:100px", placeholder: "Text above the roles — Markdown: **bold**, *italic*, # heading, -# small", value: v.text || "" });
   const color = embedColorField(v.color, () => update());
-  const image = h("input", { placeholder: "https://… big image (optional)", value: v.imageUrl || "" });
-  const thumb = h("input", { placeholder: "https://… small image in the corner (optional)", value: v.thumbnailUrl || "" });
+  const image = h("input", { placeholder: "https://… or 🖼 media library (optional)", value: v.imageUrl || "" });
+  const thumb = h("input", { placeholder: "small, in the corner (optional)", value: v.thumbnailUrl || "" });
   const footer = h("input", { maxlength: "2048", placeholder: "Small text at the bottom (optional)", value: v.footer || "" });
   const showList = toggle(v.showList, "Add the list “emoji — roles — description” to the text", () => update());
   const showHint = toggle(v.showHint, "Small hint about how the panel works", () => update());
@@ -4042,8 +4054,8 @@ function rolePanelEditor(p, emojis) {
           h("div", { class: "field" }, h("label", {}, "Text"), text, emojiInsertPicker(text, emojis, () => update())),
           h("div", { class: "grid2" }, h("div", { class: "field" }, h("label", {}, "Stripe color"), color.el),
             h("div", { class: "field" }, h("label", {}, "Footer"), footer)),
-          h("div", { class: "grid2" }, h("div", { class: "field" }, h("label", {}, "Big image"), image),
-            h("div", { class: "field" }, h("label", {}, "Thumbnail"), thumb)),
+          h("div", { class: "grid2" }, h("div", { class: "field" }, h("label", {}, "Big image"), withMediaButton(image)),
+            h("div", { class: "field" }, h("label", {}, "Thumbnail"), withMediaButton(thumb))),
           showList.el, showHint.el),
         sectionCard("list-checks", "2. Buttons, reactions & list items", "Each item gives one or more roles. Mix types freely: up to 25 buttons (20 with a list), 25 list items, 20 reactions.",
           itemsBox, addBar),
@@ -5809,8 +5821,8 @@ function channelPageEditor(pageId, rolePanels, moduleKeys, reload, groups = []) 
             pick.value = ""; redraw(); queuePreview();
           });
           redraw();
-          body = h("div", {}, ta, pick ? h("div", { class: "row", style: "margin:6px 0" }, pick,
-            h("span", { class: "muted small" }, "Emoji not in the list? Upload it to the server or as the bot's emoji first.")) : null);
+          body = h("div", {}, ta, h("div", { class: "row", style: "margin:6px 0;gap:8px;flex-wrap:wrap" }, pick, mediaTextButton(ta),
+            h("span", { class: "muted small" }, "Images: 🖼 Image, or paste / drop a picture into the text.")));
         } else if (b.type === "rolepanel") {
           const sel = h("select", {}, h("option", { value: "" }, "Choose a role panel…"),
             rolePanels.map(r => h("option", { value: r.id }, r.title)));
@@ -5873,6 +5885,227 @@ function channelPageEditor(pageId, rolePanels, moduleKeys, reload, groups = []) 
       h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), save));
   }).catch(e => d.replaceChildren(h("h2", {}, "Channel page"), empty(e.message),
     h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Close"))));
+}
+
+// ================= Media library =================
+
+/** Картинки/гифки для постов: лежат вложениями в служебном канале Discord; в текстах и полях — метка [img:имя]. */
+const MEDIA_PERMS = ["media", "announce", "pages", "roles", "welcome", "posts"];
+const MEDIA_TOKEN = /\[img:([A-Za-z0-9_\-]{1,40})\]/;
+const mediaLib = { items: [], map: new Map(), channelId: null, channel: null, maxMb: 10, loaded: null };
+
+function loadMedia(fresh = false) {
+  if (!fresh && mediaLib.loaded) return mediaLib.loaded;
+  mediaLib.loaded = gApi("GET", "/media" + (fresh ? "?fresh=true" : "")).then(d => {
+    mediaLib.items = d.items || [];
+    mediaLib.channelId = d.channelId; mediaLib.channel = d.channel; mediaLib.maxMb = d.maxMb || 10;
+    mediaLib.map = new Map(mediaLib.items.map(i => [i.name.toLowerCase(), i.url]));
+    return mediaLib;
+  }).catch(e => { mediaLib.loaded = null; throw e; });
+  return mediaLib.loaded;
+}
+
+/** Ссылка для превью: [img:имя] → картинка медиатеки, обычная ссылка — как есть. */
+function mediaUrl(v) {
+  if (!v) return null;
+  const m = MEDIA_TOKEN.exec(String(v));
+  return m ? mediaLib.map.get(m[1].toLowerCase()) || null : v;
+}
+
+async function uploadMediaFile(file, name = "") {
+  if (file.size > mediaLib.maxMb * 1024 * 1024) throw new Error(`The file is larger than ${mediaLib.maxMb} MB.`);
+  const res = await fetch(`/api/guilds/${state.guildId}/media/upload`, {
+    method: "POST", credentials: "same-origin", body: file,
+    headers: { "X-Panel": "1", "Content-Type": "application/octet-stream", "X-File-Name": encodeURIComponent(file.name || "image.png"), "X-Media-Name": encodeURIComponent(name) }
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`);
+  await loadMedia(true);
+  return data;
+}
+
+const imageFiles = list => [...(list || [])].filter(f => /^image\/(png|jpe?g|gif|webp)$/i.test(f.type));
+
+/** Окно медиатеки: выбрать картинку, загрузить файл (кнопка, перетаскивание, Ctrl+V) или добавить по ссылке. → item | null */
+function pickMedia(title = "Choose an image") {
+  return new Promise(resolve => {
+    const d = dialog();
+    d.classList.add("wide");
+    let done = false;
+    const finish = item => { if (done) return; done = true; d.close(); resolve(item); };
+    d.onclose = () => { d.classList.remove("wide"); document.removeEventListener("paste", onPaste); if (!done) { done = true; resolve(null); } };
+    const grid = h("div", { class: "media-grid" });
+    const status = h("p", { class: "muted small" });
+    const upload = async files => {
+      for (const f of imageFiles(files)) {
+        status.textContent = `Uploading ${f.name || "image"}…`;
+        try { const item = await uploadMediaFile(f); status.textContent = ""; if (item && item.name) return finish(item); }
+        catch (e) { status.textContent = ""; toast(e.message, "error"); }
+      }
+    };
+    const onPaste = e => { const files = imageFiles(e.clipboardData && e.clipboardData.files); if (files.length) { e.preventDefault(); upload(files); } };
+    document.addEventListener("paste", onPaste);
+
+    const fileInput = h("input", { type: "file", accept: "image/png,image/jpeg,image/gif,image/webp", style: "display:none" });
+    fileInput.addEventListener("change", () => upload(fileInput.files));
+    const drop = h("div", { class: "media-drop" }, icon("upload", 22),
+      h("div", {}, h("b", {}, "Drop an image here"), " · paste it with Ctrl+V · or ",
+        h("a", { href: "#", onclick: e => { e.preventDefault(); fileInput.click(); } }, "choose a file")),
+      h("div", { class: "muted small" }, `PNG, JPG, GIF, WebP up to ${mediaLib.maxMb} MB`), fileInput);
+    drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("over"); });
+    drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+    drop.addEventListener("drop", e => { e.preventDefault(); drop.classList.remove("over"); upload(e.dataTransfer.files); });
+
+    const url = h("input", { placeholder: "…or paste a link: image, Tenor or Giphy", style: "flex:1" });
+    const addUrl = h("button", { class: "btn secondary", type: "button" }, icon("link", 15), "Add");
+    addUrl.addEventListener("click", async () => {
+      if (!url.value.trim()) return;
+      const item = await act(addUrl, () => gApi("POST", "/media/url", { url: url.value.trim() }));
+      if (item && item.name) { await loadMedia(true); finish(item); }
+    });
+
+    const draw = () => grid.replaceChildren(...(mediaLib.items.length ? mediaLib.items.map(i =>
+      h("button", { class: "media-tile", type: "button", title: `${i.name} — click to use`, onclick: () => finish(i) },
+        h("img", { src: i.url, alt: "", loading: "lazy" }), h("span", {}, i.name, i.gif ? h("em", {}, " GIF") : null)))
+      : [h("p", { class: "muted small" }, "The library is empty — upload the first image above.")]));
+
+    const body = () => mediaLib.channelId
+      ? [drop, h("div", { class: "row", style: "gap:8px;margin:8px 0" }, url, addUrl), status, grid]
+      : [mediaSetup(() => d.replaceChildren(...head(), ...body(), foot()))];
+    const head = () => [h("h2", {}, title)];
+    const foot = () => h("div", { class: "actions" }, h("button", { class: "btn secondary", type: "button", onclick: () => finish(null) }, "Cancel"));
+    d.replaceChildren(...head(), h("div", { class: "muted" }, "Loading…"));
+    d.showModal();
+    loadMedia().then(() => { d.replaceChildren(...head(), ...body(), foot()); draw(); })
+      .catch(e => d.replaceChildren(...head(), empty(e.message), foot()));
+  });
+}
+
+/** Нет служебного канала — выбрать или создать. */
+function mediaSetup(onReady) {
+  const sel = channelSelect("text", "Choose a channel…");
+  const use = h("button", { class: "btn secondary", type: "button" }, "Use this channel");
+  const create = h("button", { class: "btn", type: "button" }, icon("plus", 15), "Create a private #bot-media");
+  const done = async r => { if (r !== undefined) { await loadMedia(true); onReady(); } };
+  use.addEventListener("click", async () => { if (!sel.value) return toast("Choose a channel first.", "warn"); done(await act(use, () => gApi("PUT", "/media/channel", { channelId: sel.value }), "Media channel set.")); });
+  create.addEventListener("click", async () => done(await act(create, () => gApi("PUT", "/media/channel", { create: true }), "Channel created.")));
+  return h("div", { class: "card" },
+    h("p", {}, "Images live as attachments in a private Discord channel — nothing is stored on the bot's server. Pick that channel once:"),
+    h("div", { class: "row", style: "gap:8px;flex-wrap:wrap" }, create, h("span", { class: "muted" }, "or"), sel, use),
+    h("p", { class: "muted small" }, "Members shouldn't see it. Anything an admin uploads there by hand appears in the library too."));
+}
+
+/** Вставить текст в позицию курсора поля. */
+function insertAtCursor(field, text) {
+  const st = field.selectionStart ?? field.value.length, en = field.selectionEnd ?? field.value.length;
+  field.value = field.value.slice(0, st) + text + field.value.slice(en);
+  field.focus(); field.selectionStart = field.selectionEnd = st + text.length;
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+/** Для текстовых полей постов: кнопка «🖼 Image» + вставка картинки из буфера и перетаскивание прямо в поле. */
+function mediaTextButton(field) {
+  const token = item => `${field.value && !/\n$/.test(field.value.slice(0, field.selectionStart ?? field.value.length)) ? "\n" : ""}[img:${item.name}]\n`;
+  const handle = async files => {
+    for (const f of imageFiles(files)) {
+      try { await loadMedia(); if (!mediaLib.channelId) { const it = await pickMedia(); if (it) insertAtCursor(field, token(it)); return; }
+        toast(`Uploading ${f.name || "image"}…`); const it = await uploadMediaFile(f); insertAtCursor(field, token(it)); }
+      catch (e) { toast(e.message, "error"); }
+    }
+  };
+  field.addEventListener("paste", e => { const files = imageFiles(e.clipboardData && e.clipboardData.files); if (files.length) { e.preventDefault(); handle(files); } });
+  field.addEventListener("dragover", e => { if ([...e.dataTransfer.items].some(i => i.kind === "file")) e.preventDefault(); });
+  field.addEventListener("drop", e => { const files = imageFiles(e.dataTransfer.files); if (files.length) { e.preventDefault(); handle(files); } });
+  return h("button", { class: "btn ghost sm", type: "button", title: "Insert an image or GIF from the media library (or paste / drop one into the text)",
+    onclick: async () => { const it = await pickMedia("Insert an image"); if (it) insertAtCursor(field, token(it)); } }, icon("image", 15), "Image");
+}
+
+/** Для полей «картинка/миниатюра» (ссылка): кнопка выбора из медиатеки; поле получает [img:имя]. */
+function mediaFieldButton(input) {
+  const set = v => { input.value = v; input.dispatchEvent(new Event("input", { bubbles: true })); };
+  input.addEventListener("paste", async e => {
+    const files = imageFiles(e.clipboardData && e.clipboardData.files);
+    if (!files.length) return;
+    e.preventDefault();
+    try { await loadMedia(); if (!mediaLib.channelId) { const it = await pickMedia(); if (it) set(`[img:${it.name}]`); return; }
+      toast("Uploading…"); set(`[img:${(await uploadMediaFile(files[0])).name}]`); } catch (err) { toast(err.message, "error"); }
+  });
+  return h("button", { class: "btn ghost sm", type: "button", title: "Choose from the media library or upload",
+    onclick: async () => { const it = await pickMedia(); if (it) set(`[img:${it.name}]`); } }, icon("image", 15));
+}
+
+/** Поле картинки + кнопка медиатеки в одну строку. */
+const withMediaButton = input => h("div", { class: "row", style: "gap:6px;flex-wrap:nowrap" }, input, mediaFieldButton(input));
+
+async function pageMedia(main) {
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "🖼️ Media library"),
+    h("button", { class: "btn btn-refresh", title: "Reload now", onclick: () => { loadMedia(true).then(() => renderShell()); } }, "🔄 Refresh")));
+  main.append(h("p", { class: "muted small" },
+    "Images and GIFs for the bot's posts. They are kept as attachments in a private Discord channel — the bot's server stores nothing. ",
+    "In texts an image is a [img:name] line (the 🖼 Image button inserts it, or paste / drop a picture right into the text); in panels choose it with 🖼 next to the image field. ",
+    "Each post gets its own copy of the file, so removing an image here doesn't break old posts."));
+  try { await loadMedia(); } catch (e) { main.append(empty(e.message)); return; }
+  if (!mediaLib.channelId) { main.append(mediaSetup(() => renderShell())); return; }
+
+  const fileInput = h("input", { type: "file", multiple: true, accept: "image/png,image/jpeg,image/gif,image/webp", style: "display:none" });
+  const grid = h("div", { class: "media-grid big" });
+  const uploadMany = async files => {
+    for (const f of imageFiles(files)) {
+      toast(`Uploading ${f.name || "image"}…`);
+      try { await uploadMediaFile(f); } catch (e) { toast(e.message, "error"); }
+    }
+    draw();
+  };
+  fileInput.addEventListener("change", () => uploadMany(fileInput.files));
+  const drop = h("div", { class: "media-drop" }, icon("upload", 22),
+    h("div", {}, h("b", {}, "Drop images here"), " · paste with Ctrl+V · or ", h("a", { href: "#", onclick: e => { e.preventDefault(); fileInput.click(); } }, "choose files")),
+    h("div", { class: "muted small" }, `PNG, JPG, GIF, WebP up to ${mediaLib.maxMb} MB · stored in #${mediaLib.channel || "?"}`), fileInput);
+  drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", e => { e.preventDefault(); drop.classList.remove("over"); uploadMany(e.dataTransfer.files); });
+  const onPaste = e => { if (state.tab !== "media") return document.removeEventListener("paste", onPaste);
+    const files = imageFiles(e.clipboardData && e.clipboardData.files); if (files.length && !(e.target instanceof HTMLInputElement)) { e.preventDefault(); uploadMany(files); } };
+  document.addEventListener("paste", onPaste);
+
+  const url = h("input", { placeholder: "Link: image, Tenor or Giphy", style: "flex:1" });
+  const name = h("input", { placeholder: "name (optional)", style: "width:180px" });
+  const addUrl = h("button", { class: "btn secondary" }, icon("link", 15), "Add by link");
+  addUrl.addEventListener("click", async () => {
+    if (!url.value.trim()) return;
+    if (await act(addUrl, () => gApi("POST", "/media/url", { url: url.value.trim(), name: name.value.trim() }), "Added.") !== undefined) {
+      url.value = ""; name.value = ""; await loadMedia(true); draw();
+    }
+  });
+
+  const draw = () => grid.replaceChildren(...(mediaLib.items.length ? mediaLib.items.map(i => {
+    const copy = h("button", { class: "btn ghost sm", title: "Copy the text code" }, icon("copy", 14));
+    copy.addEventListener("click", () => navigator.clipboard.writeText(i.token).then(() => toast(`${i.token} copied.`)));
+    const ren = h("button", { class: "btn ghost sm", title: i.byBot ? "Rename" : "Uploaded by hand in Discord — named by its file" }, icon("pencil", 14));
+    ren.disabled = !i.byBot;
+    ren.addEventListener("click", async () => {
+      const v = await promptDialog("Rename image (letters, digits, - and _)", i.name);
+      if (v && await act(ren, () => gApi("PUT", `/media/${i.id}`, { name: v }), "Renamed.") !== undefined) { await loadMedia(true); draw(); }
+    });
+    const del = h("button", { class: "btn ghost sm danger", title: "Delete from the library" }, icon("trash-2", 14));
+    del.addEventListener("click", async () => {
+      if (!await confirmDialog(`Delete “${i.name}”?`, "Posts already sent keep their image. Texts and panels that still use it will be posted without it.", "Delete")) return;
+      if (await act(del, () => gApi("DELETE", `/media/${i.id}`), "Deleted.") !== undefined) { await loadMedia(true); draw(); }
+    });
+    return h("div", { class: "media-card" },
+      h("a", { href: i.url, target: "_blank", rel: "noopener" }, h("img", { src: i.url, alt: "", loading: "lazy" })),
+      h("div", { class: "media-meta" }, h("b", {}, i.name), i.gif ? h("span", { class: "chip" }, "GIF") : null,
+        h("span", { class: "muted small" }, `${i.width && i.height ? `${i.width}×${i.height} · ` : ""}${(i.size / 1024 / 1024).toFixed(1)} MB`)),
+      h("div", { class: "row", style: "gap:4px;flex-wrap:nowrap" }, h("code", { class: "small", title: i.token }, i.token), h("span", { class: "spacer" }), copy, ren, del));
+  }) : [emptyState ? emptyState("image", "No images yet", "Upload the first one above.") : empty("No images yet.")]));
+  draw();
+
+  const change = h("button", { class: "btn ghost sm" }, "Change channel");
+  change.addEventListener("click", async () => {
+    if (await act(change, () => gApi("PUT", "/media/channel", { channelId: null })) !== undefined) { await loadMedia(true); renderShell(); }
+  });
+  main.append(h("div", { class: "card" }, drop, h("div", { class: "row", style: "gap:8px;margin-top:10px;flex-wrap:wrap" }, url, name, addUrl)),
+    sectionLabel(`Images · ${mediaLib.items.length}`), grid,
+    h("div", { class: "row", style: "margin-top:12px" }, h("span", { class: "muted small" }, `Storage channel: #${mediaLib.channel}`), change));
 }
 
 // ================= Captcha (bot owner only) =================

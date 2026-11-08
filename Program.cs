@@ -78,6 +78,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<CommunityService>(
 builder.Services.AddSingleton<RecurringLfgStore>();
 builder.Services.AddSingleton<AnnouncementStore>();
 builder.Services.AddSingleton<AnnouncementTemplateStore>();
+builder.Services.AddSingleton<MediaService>();
 builder.Services.AddSingleton<AnnouncementService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<AnnouncementService>());
 builder.Services.AddHostedService<BotService>();

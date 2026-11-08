@@ -133,7 +133,7 @@ public sealed class ChannelPageService(DiscordSocketClient client, ChannelPageSt
         try
         {
             for (var i = 0; i < parts.Count; i++)
-                if (await channel.GetMessageAsync(b.MessageIds[i]) is not IUserMessage m || m.Content.Trim() != parts[i].Trim()) return false;
+                if (await channel.GetMessageAsync(b.MessageIds[i]) is not IUserMessage m || m.Content.Trim() != MediaService.StripTokens(parts[i]).Trim()) return false;
             return true;
         }
         catch (Discord.Net.HttpException) { return false; }
@@ -174,12 +174,12 @@ public sealed class ChannelPageService(DiscordSocketClient client, ChannelPageSt
                     var parts = PostSplitter.Split(await announce.ResolveEmotesAsync(page.GuildId, b.Text!));
                     for (var i = 0; i < parts.Count; i++)
                     {
-                        var part = parts[i];
-                        await channel.ModifyMessageAsync(b.MessageIds[i], m => { m.Content = part; m.AllowedMentions = AllowedMentions.None; });
+                        if (await channel.GetMessageAsync(b.MessageIds[i]) is not IUserMessage msg) throw new InvalidOperationException("gone");
+                        await announce.EditPartAsync(page.GuildId, msg, parts[i], AllowedMentions.None);
                     }
                     b.PostedKey = b.Text;
                 }
-                catch (Discord.Net.HttpException ex)
+                catch (Exception ex) when (ex is Discord.Net.HttpException or InvalidOperationException)
                 {
                     logger.LogWarning(ex, "Channel page {Page}: in-place edit of block {Block} failed", page.Id, b.Id);
                     return "A message of this page was deleted in Discord — use “Re-post all”.";

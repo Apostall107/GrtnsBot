@@ -30,12 +30,13 @@ public static class PanelPermissions
 
     /// <summary>Дни рождения участников и автоматическая роль.</summary>
     public const string Birthdays = "birthdays";
+    public const string Media = "media";
 
     /// <summary>Управление доступом — только владелец, выдать нельзя.</summary>
     public const string Access = "access";
 
     /// <summary>Права, которые владелец может выдавать.</summary>
-    public static readonly string[] Grantable = [Lfg, Guild, Tickets, Voice, Welcome, Roles, Texts, Posts, Announce, Pages, Birthdays, Log, Settings];
+    public static readonly string[] Grantable = [Lfg, Guild, Tickets, Voice, Welcome, Roles, Texts, Posts, Announce, Pages, Media, Birthdays, Log, Settings];
 }
 
 public sealed class WebGrant

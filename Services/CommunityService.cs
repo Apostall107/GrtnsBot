@@ -17,6 +17,7 @@ public sealed class CommunityService(
     PanelTextStore panels,
     AuditLog audit,
     AnnouncementService announce,
+    MediaService media,
     ILogger<CommunityService> logger) : IHostedService
 {
     public Task StartAsync(CancellationToken cancellationToken)
@@ -76,11 +77,9 @@ public sealed class CommunityService(
 
         if (w.Channel.Enabled && w.ChannelId is { } channelId && guild.GetTextChannel(channelId) is { } channel)
         {
-            var (content, embed) = BuildWelcome(w.Channel, user);
             try
             {
-                await channel.SendMessageAsync(content, embed: embed, components: buttons,
-                    allowedMentions: new AllowedMentions { UserIds = [user.Id] });
+                await SendWelcomeAsync(channel, w.Channel, user, buttons, new AllowedMentions { UserIds = [user.Id] });
             }
             catch (Discord.Net.HttpException ex)
             {
@@ -90,11 +89,10 @@ public sealed class CommunityService(
 
         if (w.Dm.Enabled)
         {
-            var (content, embed) = BuildWelcome(w.Dm, user);
             try
             {
                 var dm = await user.CreateDMChannelAsync();
-                await dm.SendMessageAsync(content, embed: embed, components: buttons, allowedMentions: AllowedMentions.None);
+                await SendWelcomeAsync(dm, w.Dm, user, buttons, AllowedMentions.None);
             }
             catch (Discord.Net.HttpException)
             {
@@ -114,8 +112,7 @@ public sealed class CommunityService(
             var buttons = WelcomeButtons(user.Guild, w);
             foreach (var (label, msg) in new[] { ("Channel message", w.Channel), ("DM", w.Dm) }.Where(x => x.Item2.Enabled))
             {
-                var (content, embed) = BuildWelcome(msg, user);
-                await dm.SendMessageAsync($"-# Test · {label}\n{content}".Trim(), embed: embed, components: buttons, allowedMentions: AllowedMentions.None);
+                await SendWelcomeAsync(dm, msg, user, buttons, AllowedMentions.None, $"-# Test · {label}");
             }
             return null;
         }
@@ -123,6 +120,24 @@ public sealed class CommunityService(
         {
             return "I can't DM you — allow direct messages from server members.";
         }
+    }
+
+    /// <summary>Отправить приветствие; картинка из медиатеки ([img:имя]) — вложением.</summary>
+    private async Task SendWelcomeAsync(IMessageChannel channel, WelcomeMessage m, SocketGuildUser user, MessageComponent? buttons,
+        AllowedMentions mentions, string? prefix = null)
+    {
+        var (url, file) = m.UseEmbed ? await media.PrepareEmbedImageAsync(user.Guild.Id, m.ImageUrl, "image") : (null, null);
+        var copy = new WelcomeMessage
+        {
+            Enabled = m.Enabled, Content = m.Content, UseEmbed = m.UseEmbed, Title = m.Title, Description = m.Description,
+            Color = m.Color, ShowAvatar = m.ShowAvatar, ImageUrl = url, Footer = m.Footer
+        };
+        var (content, embed) = BuildWelcome(copy, user);
+        if (prefix is not null) content = $"{prefix}\n{content}".Trim();
+        if (file is { } f)
+            using (f) await channel.SendFileAsync(f, content, embed: embed, components: buttons, allowedMentions: mentions);
+        else
+            await channel.SendMessageAsync(content, embed: embed, components: buttons, allowedMentions: mentions);
     }
 
     public (string? Content, Embed? Embed) BuildWelcome(WelcomeMessage m, SocketGuildUser user)
@@ -134,7 +149,7 @@ public sealed class CommunityService(
         if (!string.IsNullOrWhiteSpace(m.Title)) e.WithTitle(Cut(Render(m.Title, user), 256));
         if (!string.IsNullOrWhiteSpace(m.Description)) e.WithDescription(Cut(Render(m.Description, user), 4000));
         if (m.ShowAvatar) e.WithThumbnailUrl(user.GetDisplayAvatarUrl(size: 256));
-        if (IsUrl(m.ImageUrl)) e.WithImageUrl(m.ImageUrl);
+        if (IsUrl(m.ImageUrl) || IsAttachment(m.ImageUrl)) e.WithImageUrl(m.ImageUrl);
         if (!string.IsNullOrWhiteSpace(m.Footer)) e.WithFooter(Cut(Render(m.Footer, user), 2048));
         if (e.Title is null && e.Description is null && e.ImageUrl is null) e.WithDescription(Render("👋 {user}", user));
         return (content, e.Build());
@@ -193,10 +208,36 @@ public sealed class CommunityService(
     /// <summary>Рендер с подстановкой :имя: → эмодзи сервера/бота в заголовке и тексте (как в постах).</summary>
     public async Task<(Embed Embed, MessageComponent? Components)> RenderResolvedAsync(RolePanel p)
     {
+        var (embed, comps, files) = await RenderForPostAsync(p, withFiles: false);
+        return (embed, comps);
+    }
+
+    /// <summary>
+    /// Рендер для публикации: эмодзи + картинки медиатеки ([img:имя] в полях картинки/миниатюры) — вложениями.
+    /// withFiles: false — для превью (картинки медиатеки — свежими ссылками Discord).
+    /// </summary>
+    public async Task<(Embed Embed, MessageComponent? Components, List<FileAttachment> Files)> RenderForPostAsync(RolePanel p, bool withFiles = true)
+    {
         var copy = JsonClone(p);
         if (!string.IsNullOrWhiteSpace(copy.Text)) copy.Text = await announce.ResolveEmotesAsync(p.GuildId, copy.Text!);
         if (!string.IsNullOrWhiteSpace(copy.Title)) copy.Title = await announce.ResolveEmotesAsync(p.GuildId, copy.Title!);
-        return Render(copy);
+        var files = new List<FileAttachment>();
+        if (withFiles)
+        {
+            var (img, imgFile) = await media.PrepareEmbedImageAsync(p.GuildId, p.ImageUrl, "image");
+            var (th, thFile) = await media.PrepareEmbedImageAsync(p.GuildId, p.ThumbnailUrl, "thumb");
+            copy.ImageUrl = img;
+            copy.ThumbnailUrl = th;
+            if (imgFile is { } a) files.Add(a);
+            if (thFile is { } b) files.Add(b);
+        }
+        else
+        {
+            copy.ImageUrl = await media.PreviewUrlAsync(p.GuildId, p.ImageUrl);
+            copy.ThumbnailUrl = await media.PreviewUrlAsync(p.GuildId, p.ThumbnailUrl);
+        }
+        var (embed, comps) = Render(copy);
+        return (embed, comps, files);
     }
 
     private static RolePanel JsonClone(RolePanel p) =>
@@ -207,8 +248,8 @@ public sealed class CommunityService(
         var gid = p.GuildId;
         var embed = new EmbedBuilder().WithColor(Tx.ParseColor(p.Color) ?? Tx.Color(gid, "color.roles.panel"));
         if (!string.IsNullOrWhiteSpace(p.Title)) embed.WithTitle(Cut(p.Title!, 256));
-        if (IsUrl(p.ImageUrl)) embed.WithImageUrl(p.ImageUrl);
-        if (IsUrl(p.ThumbnailUrl)) embed.WithThumbnailUrl(p.ThumbnailUrl);
+        if (IsUrl(p.ImageUrl) || IsAttachment(p.ImageUrl)) embed.WithImageUrl(p.ImageUrl);
+        if (IsUrl(p.ThumbnailUrl) || IsAttachment(p.ThumbnailUrl)) embed.WithThumbnailUrl(p.ThumbnailUrl);
         if (!string.IsNullOrWhiteSpace(p.Footer)) embed.WithFooter(Cut(p.Footer!, 2048));
 
         var parts = new List<string>();
@@ -308,16 +349,19 @@ public sealed class CommunityService(
         if (client.GetGuild(panel.GuildId)?.GetTextChannel(channelId) is not { } channel) return "Channel not found.";
         if (panel.Bindings.Count == 0) return "Add at least one button, reaction or list item first.";
 
-        var (embed, comps) = await RenderResolvedAsync(panel);
+        var (embed, comps, files) = await RenderForPostAsync(panel);
         IUserMessage message;
         try
         {
-            message = await channel.SendMessageAsync(embed: embed, components: comps);
+            message = files.Count > 0
+                ? await channel.SendFilesAsync(files, embed: embed, components: comps)
+                : await channel.SendMessageAsync(embed: embed, components: comps);
         }
         catch (Discord.Net.HttpException)
         {
-            return "I can't post there. Give the bot View Channel, Send Messages and Embed Links in that channel.";
+            return "I can't post there. Give the bot View Channel, Send Messages, Embed Links and Attach Files in that channel.";
         }
+        finally { foreach (var f in files) f.Dispose(); }
 
         var oldChannel = panel.ChannelId;
         var oldMessage = panel.MessageId;
@@ -338,13 +382,16 @@ public sealed class CommunityService(
             return "The posted message was deleted — post the panel again.";
         }
 
-        var (embed, comps) = await RenderResolvedAsync(panel);
+        var (embed, comps, files) = await RenderForPostAsync(panel);
         try
         {
+            // Картинки медиатеки перезаливаются вместе с embed (attachment://…); реакции и сообщение остаются
+            var hadFiles = message.Attachments.Count > 0;
             await message.ModifyAsync(m =>
             {
                 m.Embeds = new[] { embed };
                 m.Components = comps ?? new ComponentBuilder().Build();
+                if (files.Count > 0 || hadFiles) m.Attachments = files;
             });
             await SyncReactionsAsync(message, panel);
             return null;
@@ -354,6 +401,7 @@ public sealed class CommunityService(
             logger.LogWarning(ex, "Failed to refresh role panel {Panel}", panel.Id);
             return "I couldn't update the posted message.";
         }
+        finally { foreach (var f in files) f.Dispose(); }
     }
 
     public Task DeletePostedAsync(RolePanel panel) =>
@@ -580,6 +628,8 @@ public sealed class CommunityService(
     private static string Mentions(IEnumerable<SocketRole?> roles) => string.Join(", ", roles.Where(r => r is not null).Select(r => r!.Mention));
     private static string Names(IEnumerable<SocketRole?> roles) => string.Join(", ", roles.Where(r => r is not null).Select(r => "@" + r!.Name));
     private static string Cut(string s, int max) => s.Length <= max ? s : s[..max];
+
+    private static bool IsAttachment(string? url) => url?.StartsWith("attachment://", StringComparison.Ordinal) == true;
 
     public static bool IsUrl(string? url) =>
         !string.IsNullOrWhiteSpace(url) && Uri.TryCreate(url, UriKind.Absolute, out var u) && (u.Scheme == "https" || u.Scheme == "http");

@@ -44,6 +44,9 @@ public sealed class GuildPrefs
 
     /// <summary>Официальная оружейная AION 2 по проектам (ключ проекта): включена, фракция и сервер по умолчанию.</summary>
     public Dictionary<string, ArmoryProjectPrefs>? Armory { get; set; }
+
+    /// <summary>Служебный канал медиатеки: картинки и гифки для постов лежат там вложениями (на сервере бота — ничего).</summary>
+    public ulong? MediaChannelId { get; set; }
 }
 
 /// <summary>Проект на официальной оружейной: включён ли, фракция (1 — Elyos, 2 — Asmodians) и сервер по умолчанию.</summary>

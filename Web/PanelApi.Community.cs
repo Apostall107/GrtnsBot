@@ -129,7 +129,7 @@ public static partial class PanelApi
         if ((b.Description?.Length ?? 0) > 4000) return (null, $"{what}: the card text is limited to 4000 characters.");
         if ((b.Title?.Length ?? 0) > 256) return (null, $"{what}: the title is limited to 256 characters.");
         if (Blank(b.Color) is { } color && Tx.ParseColor(color) is null) return (null, $"{what}: the color must be a #hex code.");
-        if (Blank(b.ImageUrl) is { } img && !CommunityService.IsUrl(img)) return (null, $"{what}: the image must be an https:// link.");
+        if (Blank(b.ImageUrl) is { } img && !CommunityService.IsUrl(img) && !MediaService.IsToken(img)) return (null, $"{what}: the image must be an https:// link or a media library image.");
         var m = new WelcomeMessage
         {
             Enabled = b.Enabled,
@@ -271,8 +271,8 @@ public static partial class PanelApi
         if (!Enum.TryParse<RolePanelMode>(body.Mode, true, out var mode)) return "Choose the panel mode.";
         var color = Blank(body.Color);
         if (color is not null && Tx.ParseColor(color) is null) return "The color must be a #hex code like #5865f2.";
-        if (Blank(body.ImageUrl) is { } img && !CommunityService.IsUrl(img)) return "The image must be an https:// link.";
-        if (Blank(body.ThumbnailUrl) is { } th && !CommunityService.IsUrl(th)) return "The thumbnail must be an https:// link.";
+        if (Blank(body.ImageUrl) is { } img && !CommunityService.IsUrl(img) && !MediaService.IsToken(img)) return "The image must be an https:// link or a media library image.";
+        if (Blank(body.ThumbnailUrl) is { } th && !CommunityService.IsUrl(th) && !MediaService.IsToken(th)) return "The thumbnail must be an https:// link or a media library image.";
         if (body.MaxPick is < 0 or > 25) return "Max picks in the list: 0–25.";
 
         var bindings = new List<RoleBinding>();

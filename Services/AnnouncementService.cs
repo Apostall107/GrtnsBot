@@ -326,6 +326,7 @@ public sealed class AnnouncementService(
     AnnouncementStore store,
     DiscordSocketClient client,
     AuditLog audit,
+    MediaService media,
     ILogger<AnnouncementService> logger) : BackgroundService
 {
     private (DateTimeOffset At, Dictionary<string, string> Map)? _appEmotes;
@@ -374,10 +375,43 @@ public sealed class AnnouncementService(
         var resolved = await ResolveEmotesAsync(guildId, text);
         foreach (var block in PostSplitter.Split(resolved))
         {
-            var message = await channel.SendMessageAsync(block, allowedMentions: AllowedMentions.None);
-            ids.Add(message.Id);
+            if (await SendPartAsync(guildId, channel, block, AllowedMentions.None) is { } message) ids.Add(message.Id);
         }
         return ids;
+    }
+
+    /// <summary>Отправить одно сообщение текста: метки [img:имя] становятся вложениями (картинки из медиатеки).</summary>
+    public async Task<IUserMessage?> SendPartAsync(ulong guildId, IMessageChannel channel, string part, AllowedMentions mentions)
+    {
+        var (text, files) = await media.PrepareTextAsync(guildId, part);
+        if (files.Count > 0)
+            try { return await channel.SendFilesAsync(files, string.IsNullOrWhiteSpace(text) ? null : text, allowedMentions: mentions); }
+            finally { foreach (var f in files) f.Dispose(); }
+        return string.IsNullOrWhiteSpace(text) ? null : await channel.SendMessageAsync(text, allowedMentions: mentions);
+    }
+
+    /// <summary>Поправить сообщение на месте. Вложения перезаливаются, только если набор картинок изменился.</summary>
+    public async Task EditPartAsync(ulong guildId, IUserMessage message, string part, AllowedMentions mentions)
+    {
+        var wanted = await media.FileNamesAsync(guildId, part);
+        var current = message.Attachments.Select(a => a.Filename).ToList();
+        if (wanted.SequenceEqual(current, StringComparer.OrdinalIgnoreCase))
+        {
+            var clean = MediaService.StripTokens(part);
+            await message.ModifyAsync(m => { m.Content = clean; m.AllowedMentions = mentions; });
+            return;
+        }
+        var (text, files) = await media.PrepareTextAsync(guildId, part);
+        try
+        {
+            await message.ModifyAsync(m =>
+            {
+                m.Content = text;
+                m.AllowedMentions = mentions;
+                m.Attachments = files;
+            });
+        }
+        finally { foreach (var f in files) f.Dispose(); }
     }
 
     /// <summary>Отправить пост, который уже лежит в хранилище со статусом scheduled.</summary>
@@ -397,8 +431,7 @@ public sealed class AnnouncementService(
                 var fullText = await ResolveEmotesAsync(post.GuildId, post.FullText());
                 foreach (var block in PostSplitter.Split(fullText))
                 {
-                    var message = await channel.SendMessageAsync(block, allowedMentions: mentions);
-                    sent.Add(message.Id);
+                    if (await SendPartAsync(post.GuildId, channel, block, mentions) is { } message) sent.Add(message.Id);
                 }
             }
             catch (Discord.Net.HttpException ex)
@@ -445,13 +478,12 @@ public sealed class AnnouncementService(
             {
                 if (await channel.GetMessageAsync(ids[i]) is not IUserMessage message || message.Author.Id != client.CurrentUser.Id)
                     return ("A message of this post was deleted in Discord — send it again instead (↩️ Reuse).", 0);
-                var text = blocks[i];
-                await message.ModifyAsync(m => { m.Content = text; m.AllowedMentions = mentions; });
+                await EditPartAsync(post.GuildId, message, blocks[i], mentions);
             }
             // Длиннее — дописать следом; короче — лишние удалить
             for (var i = ids.Count; i < blocks.Count; i++)
             {
-                var message = await channel.SendMessageAsync(blocks[i], allowedMentions: mentions);
+                if (await SendPartAsync(post.GuildId, channel, blocks[i], mentions) is not { } message) continue;
                 ids.Add(message.Id);
                 added++;
             }
