@@ -228,7 +228,7 @@ function member(m) {
 /** A role's own icon on the server: custom image, else unicode emoji, else null. */
 function roleIconEl(r, size = 16) {
   if (!r) return null;
-  if (r.iconUrl) return h("img", { src: r.iconUrl, alt: "", style: `width:${size}px;height:${size}px;border-radius:3px;vertical-align:-3px` });
+  if (r.iconUrl) return h("img", { class: "gm-emo", src: r.iconUrl, alt: "", style: `width:${size}px;height:${size}px;border-radius:3px` });
   if (r.icon) return h("span", { style: `font-size:${size}px;line-height:1` }, r.icon);
   return null;
 }
@@ -592,7 +592,7 @@ function optionView(sel, opt) {
   }
   const ic = opt.dataset.icon;
   const iconUrl = opt.dataset.iconUrl;
-  const iconEl = iconUrl ? h("img", { src: iconUrl, alt: "", style: "width:18px;height:18px;border-radius:3px" })
+  const iconEl = iconUrl ? h("img", { class: "gm-emo", src: iconUrl, alt: "", style: "width:18px;height:18px;border-radius:3px" })
     : ic ? (classMark({ classIcon: ic }) || h("span", {}, ic)) : null;
   return h("span", { class: "opt-view" }, iconEl ? h("span", { class: "opt-icon" }, iconEl) : null, h("span", { class: "opt-text" }, text));
 }
@@ -2533,7 +2533,7 @@ async function renderClasses(card, projectList = [], projectKey = store.get("gb.
   const list = h("div", {});
   const preview = icon => classMark({ classIcon: icon }) || h("span", { class: "muted small" }, "—");
   // The role's own icon (Discord role settings → Role icon)
-  const roleIconEl = ri => ri.url ? h("img", { src: ri.url, alt: "", style: "width:18px;height:18px" }) : h("span", {}, ri.emoji);
+  const roleIconEl = ri => ri.url ? h("img", { class: "gm-emo", src: ri.url, alt: "", style: "width:18px;height:18px" }) : h("span", {}, ri.emoji);
   // Role icon → class icon: an emoji is used as is, an image is uploaded as the bot's emoji
   const importIcons = async (btn, targets) => {
     if (!targets.length) { toast("These roles have no role icon in Discord.", "warn"); return; }
@@ -2795,7 +2795,7 @@ function classMark(e) {
   // Custom server emoji <:name:id> → image; unicode → text
   const m = /^<a?:([^:]+):(\d+)>$/.exec(e.classIcon);
   const title = e.classRole ? `@${e.classRole.name}` : "";
-  return m ? h("img", { src: `https://cdn.discordapp.com/emojis/${m[2]}.webp?size=32`, alt: m[1], title, style: "width:18px;height:18px" })
+  return m ? h("img", { class: "gm-emo", src: `https://cdn.discordapp.com/emojis/${m[2]}.webp?size=32`, alt: "", title, style: "width:18px;height:18px" })
     : h("span", { title }, e.classIcon);
 }
 
@@ -3393,7 +3393,7 @@ function resolveEmojiShortcodes(text, map) {
 function emojiEl(code, size = 18) {
   if (!code) return null;
   const m = /^<(a?):([^:]+):(\d+)>$/.exec(code);
-  return m ? h("img", { src: `https://cdn.discordapp.com/emojis/${m[3]}.${m[1] ? "gif" : "webp"}?size=48`, alt: m[2], style: `width:${size}px;height:${size}px;vertical-align:-3px` })
+  return m ? h("img", { class: "gm-emo", src: `https://cdn.discordapp.com/emojis/${m[3]}.${m[1] ? "gif" : "webp"}?size=48`, alt: "", title: `:${m[2]}:`, style: `width:${size}px;height:${size}px` })
     : h("span", {}, code);
 }
 

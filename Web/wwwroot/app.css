@@ -740,6 +740,9 @@ input:focus, select:focus, textarea:focus { box-shadow: 0 0 0 3px var(--primary-
 .att-came { color: var(--success) !important; }
 .att-miss { color: var(--danger) !important; }
 
+/* Emoji / role-icon images: always a fixed square, never stretched (even wide sources or failed loads) */
+.gm-emo { object-fit: contain; overflow: hidden; flex: none; max-width: 2em; vertical-align: -3px; }
+
 /* Attendance: highlight the whole seated row */
 .slot.taken.att-ok { border-color: color-mix(in srgb, var(--success) 55%, var(--glass-border)); background: color-mix(in srgb, var(--success) 12%, transparent); border-left-width: 3px; }
 .slot.taken.att-no { border-color: color-mix(in srgb, var(--danger) 55%, var(--glass-border)); background: color-mix(in srgb, var(--danger) 12%, transparent); border-left-width: 3px; }
