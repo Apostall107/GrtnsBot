@@ -3572,7 +3572,8 @@ function dcEmbed(e, mentions = {}) {
   const fields = (e.fields || []);
   return h("div", { class: "dc-embed", style: `border-left-color:${e.color || "#1e1f22"}` },
     h("div", { class: "dc-embed-main" },
-      e.title ? h("div", { class: "dc-embed-title" }, mdPreview(e.title, mentions)) : null,
+      // Заголовок embed в Discord — без разметки: **, #, -# и т.п. показываются как есть; работают только эмодзи
+      e.title ? h("div", { class: "dc-embed-title" }, plainWithEmoji(e.title)) : null,
       e.description ? mdPreview(e.description, mentions) : null,
       fields.length ? h("div", { class: "dc-fields" }, fields.map(f => h("div", { class: `dc-field${f.inline ? " inline" : ""}` },
         h("div", { class: "dc-field-name" }, mdPreview(f.name, mentions)), mdPreview(f.value, mentions)))) : null,
@@ -3582,6 +3583,19 @@ function dcEmbed(e, mentions = {}) {
 }
 
 /** A Discord message mock: bot header, text, embeds, component rows, reactions. */
+/** Текст без разметки (заголовки embed): только коды эмодзи <:name:id> становятся картинками. */
+function plainWithEmoji(text) {
+  const out = [];
+  let last = 0;
+  for (const m of String(text).matchAll(/<a?:\w+:\d+>/g)) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    out.push(emojiEl(m[0], 20));
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
+
 function dcMessage({ content, embed, embeds, rows = [], reactions = [], mentions = {} }) {
   const bot = state.bot || { name: "Greatness Bot" };
   const list = embeds || (embed ? [embed] : []);
