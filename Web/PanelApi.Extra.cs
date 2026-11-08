@@ -928,6 +928,7 @@ public static partial class PanelApi
         ("DELETE", "/birthdays/people/{userId}", "birthdays", "Removed a member's birthday"),
         ("POST", "/birthdays/import", "birthdays", "Imported birthdays from a file"),
         ("POST", "/pages", "pages", "Created a channel page"),
+        ("POST", "/roles/panels/{id}/sync", "roles", "Synced role panel reactions"),
         ("PUT", "/media/channel", "media", "Set the media library channel"),
         ("POST", "/media/upload", "media", "Uploaded an image to the media library"),
         ("POST", "/media/url", "media", "Added an image by link to the media library"),

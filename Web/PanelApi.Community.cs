@@ -200,6 +200,16 @@ public static partial class PanelApi
             return store.SavePanel(panel) is { } limit ? Error(limit) : Results.Ok(new { id = panel.Id });
         });
 
+        // Догнать реакции: кто стоит под реакцией, но роли не получил (бот был выключен), — выдать
+        g.MapPost("/panels/{panelId}/sync", async (ulong guildId, string panelId, DiscordSocketClient client,
+            CommunityStore store, CommunityService community) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            if (store.FindPanel(panelId) is not { } panel || panel.GuildId != guildId) return Error("This panel no longer exists.");
+            if (panel.MessageId is null) return Error("Post the panel first.");
+            return Results.Ok(new { given = await community.CatchUpAsync(guild, panel) });
+        });
+
         g.MapPost("/panels/{panelId}/post", async (ulong guildId, string panelId, ChannelBody body, DiscordSocketClient client,
             CommunityStore store, CommunityService community) =>
         {

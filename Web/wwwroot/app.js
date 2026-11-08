@@ -2924,7 +2924,12 @@ async function ticketPanelsSection(main) {
         const post = h("button", { class: "btn secondary" }, icon("pin", 15), p.jumpUrl ? "Repost" : "Post");
         post.addEventListener("click", () => act(post, async () => {
           if (!ch.value) return toast("Choose a channel first.", "warn");
-          if (p.jumpUrl && !await confirmDialog("Post this panel again?", "The old message is deleted and the panel is posted in the chosen channel.", "Post", false)) return;
+          const hasReactions = p.bindings.some(b => b.trigger === "Reaction");
+    if (p.jumpUrl && !await confirmDialog("Post this panel again?",
+      "The old message is deleted and the panel is posted in the chosen channel." +
+      (hasReactions ? " ⚠️ All reactions under it disappear (the bot can't put them back for people)." + REPOST_NOTE +
+        " To change the panel without losing reactions, just Save it — the posted message is updated in place." : ""),
+      hasReactions ? "Re-post anyway" : "Post", hasReactions)) return;
           await gApi("POST", `/tickets/panels/${p.id}/post`, { channelId: ch.value });
           toast("Panel posted."); load();
         }));
@@ -3917,6 +3922,12 @@ function rolePanelCard(p, emojis) {
   });
   const copy = h("button", { class: "btn ghost", title: "Make a copy to edit" }, icon("copy", 15), "Copy");
   copy.addEventListener("click", async () => { if (await act(copy, () => gApi("POST", `/roles/panels/${p.id}/copy`), "Copied.") !== undefined) refresh(); });
+  const sync = p.jumpUrl && p.bindings.some(b => b.trigger === "Reaction")
+    ? h("button", { class: "btn ghost", title: "Give the roles to everyone who has a reaction under the panel but not the role (e.g. reacted while the bot was offline). The bot also does this on every start." }, icon("refresh-cw", 15), "Sync reactions") : null;
+  if (sync) sync.addEventListener("click", async () => {
+    const r = await act(sync, () => gApi("POST", `/roles/panels/${p.id}/sync`));
+    if (r) toast(r.given ? `Roles given: ${r.given}.` : "Everyone with a reaction already has the role.");
+  });
   const del = h("button", { class: "btn ghost" }, icon("trash-2", 15), "Delete");
   del.addEventListener("click", async () => {
     if (!await confirmDialog(`Delete “${p.title || "role panel"}”?`, "The posted message is deleted too. Members keep the roles they already have.", "Delete")) return;
@@ -3943,7 +3954,7 @@ function rolePanelCard(p, emojis) {
         sticky, "📌 Keep at the bottom of the channel");
     })() : null,
     h("div", { class: "row", style: "margin-top:10px" }, post, postBtn, h("span", { class: "spacer" }),
-      h("button", { class: "btn secondary", onclick: () => rolePanelEditor(p, emojis) }, icon("pencil", 15), "Edit"), copy, del));
+      h("button", { class: "btn secondary", onclick: () => rolePanelEditor(p, emojis) }, icon("pencil", 15), "Edit"), copy, sync, del));
 }
 
 function rolePanelEditor(p, emojis) {
@@ -5681,12 +5692,14 @@ function pageGroups(d) {
 }
 
 /** Shows what an update of a published page will do; resolves true to go on. */
+const REPOST_NOTE = " Members keep their roles; someone who has the role and clicks the reaction again gets it removed."
+
 async function confirmPagePlan(p, channelId) {
   const plan = await gApi("GET", `/pages/${p.id}/plan?channelId=${encodeURIComponent(channelId)}`);
   const label = id => (plan.blocks.find(b => b.id === id) || {}).label || id;
   const panelsReposted = plan.repost.filter(id => (plan.blocks.find(b => b.id === id) || {}).type === "rolepanel");
   if (plan.full) return confirmDialog("Publish to another channel?",
-    "The page is posted in full in the chosen channel and removed from the old one. Reactions on role panels start from zero (members keep their roles).", "Publish", false);
+    "The page is posted in full in the chosen channel and removed from the old one. Reactions on role panels start from zero." + REPOST_NOTE, "Publish", false);
   if (!plan.edit.length && !plan.repost.length && !plan.removed) { toast("Nothing changed — the page is up to date."); return false; }
   return new Promise(resolve => {
     const d = dialog();
@@ -5702,7 +5715,7 @@ async function confirmPagePlan(p, channelId) {
       line("refresh-cw", "Re-posted (order changed or new)", plan.repost, panelsReposted.length ? "error-text" : ""),
       plan.removed ? h("p", { class: "small" }, `🗑️ ${plan.removed} message(s) of removed blocks are deleted.`) : null,
       panelsReposted.length ? h("p", { class: "error-text small" },
-        "Role panels in the re-posted part lose their reactions (members keep their roles). To avoid it, add new blocks at the end instead of in the middle.") : null,
+        "Role panels in the re-posted part lose their reactions." + REPOST_NOTE + " To avoid it, add new blocks at the end instead of in the middle.") : null,
       h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), go)].filter(Boolean));
     d.onclose = () => resolve(ok);
     d.showModal();
@@ -5746,7 +5759,7 @@ async function pageChannelPages(main) {
         const repostAll = p.published ? h("button", { class: "btn ghost sm", title: "Delete every message of the page and post it again" }, "Re-post all") : null;
         if (repostAll) repostAll.addEventListener("click", () => act(repostAll, async () => {
           if (!chSel.value) return toast("Choose a channel.", "warn");
-          if (!await confirmDialog("Re-post the whole page?", "All its messages are deleted and posted again. Reactions on role panels start from zero (members keep their roles).", "Re-post all")) return;
+          if (!await confirmDialog("Re-post the whole page?", "All its messages are deleted and posted again. Reactions on role panels start from zero." + REPOST_NOTE, "Re-post all")) return;
           await gApi("POST", `/pages/${p.id}/publish`, { channelId: chSel.value, full: true });
           toast("Page re-posted."); load();
         }));

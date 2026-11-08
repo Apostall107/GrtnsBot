@@ -25,6 +25,7 @@ public sealed class CommunityService(
         client.UserJoined += OnUserJoined;
         client.ReactionAdded += OnReactionAdded;
         client.ReactionRemoved += OnReactionRemoved;
+        client.Ready += OnReady;
         return Task.CompletedTask;
     }
 
@@ -33,6 +34,7 @@ public sealed class CommunityService(
         client.UserJoined -= OnUserJoined;
         client.ReactionAdded -= OnReactionAdded;
         client.ReactionRemoved -= OnReactionRemoved;
+        client.Ready -= OnReady;
         return Task.CompletedTask;
     }
 
@@ -579,6 +581,24 @@ public sealed class CommunityService(
                 }
                 if (member is null || member.IsBot) return;
 
+                // Переключатель: реакцию поставил тот, у кого роль уже есть (например, панель перепостили и его реакция
+                // пропала) — роль снимается, реакция убирается. Так после репоста любой может снять роль одним кликом.
+                var bindingRoles = binding.RoleIds.Select(guild.GetRole).Where(r => r is not null).ToList();
+                if (added && panel.Mode is RolePanelMode.Normal or RolePanelMode.Unique && bindingRoles.Count > 0 &&
+                    bindingRoles.All(r => member.Roles.Any(x => x.Id == r!.Id)) && Gate(panel, member) is null &&
+                    bindingRoles.All(r => CanManage(guild, r)))
+                {
+                    _toggled[(messageId, reaction.UserId)] = DateTimeOffset.UtcNow;
+                    var off = await PickAsync(panel, member, binding.Id, false);
+                    logger.LogInformation("Reaction toggle-off {Emoji} by {User} on panel {Panel}: {Result}", reaction.Emote.Name, member.Username, panel.Title, off);
+                    if (reaction.Channel is ITextChannel tch && await tch.GetMessageAsync(messageId) is IUserMessage tm)
+                        try { await tm.RemoveReactionAsync(reaction.Emote, reaction.UserId); } catch (Discord.Net.HttpException) { }
+                    return;
+                }
+                // Реакцию только что убрал сам бот после переключателя — роль уже снята, ничего не делать
+                if (!added && _toggled.TryRemove((messageId, reaction.UserId), out var at) && DateTimeOffset.UtcNow - at < TimeSpan.FromSeconds(30))
+                    return;
+
                 var result = await PickAsync(panel, member, binding.Id, added);
                 var gid = panel.GuildId;
                 var failed = result == Tx.Get(gid, "roles.gone") || Gate(panel, member) is not null
@@ -611,6 +631,55 @@ public sealed class CommunityService(
             }
         });
         return Task.CompletedTask;
+    }
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<(ulong Message, ulong User), DateTimeOffset> _toggled = new();
+    private DateTimeOffset _lastCatchUp = DateTimeOffset.MinValue;
+
+    // ---------- Догон реакций, поставленных, пока бот был выключен ----------
+
+    private Task OnReady()
+    {
+        if (DateTimeOffset.UtcNow - _lastCatchUp < TimeSpan.FromMinutes(10)) return Task.CompletedTask;
+        _lastCatchUp = DateTimeOffset.UtcNow;
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(20)); // дать догрузиться участникам
+            foreach (var guild in client.Guilds)
+                foreach (var panel in store.GetPanels(guild.Id).Where(p => p.MessageId is not null && p.Reactions.Any()))
+                    try { await CatchUpAsync(guild, panel); }
+                    catch (Exception ex) { logger.LogWarning(ex, "Reaction catch-up failed for panel {Panel}", panel.Id); }
+        });
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Кто стоит под реакцией, но роли не имеет (реакцию поставили, пока бот не работал), — выдать роль.
+    /// Только выдача: снять по «нет реакции» нельзя — после репоста реакций нет ни у кого, а роли законно остались.
+    /// </summary>
+    public async Task<int> CatchUpAsync(SocketGuild guild, RolePanel panel)
+    {
+        if (panel.ChannelId is not { } cid || panel.MessageId is not { } mid || guild.GetTextChannel(cid) is not { } channel) return 0;
+        if (panel.Mode == RolePanelMode.Remove) return 0;
+        if (await channel.GetMessageAsync(mid) is not IUserMessage message) return 0;
+        var given = 0;
+        foreach (var binding in panel.Reactions)
+        {
+            if (LfgProjectStore.ToEmote(binding.Emoji) is not { } emote) continue;
+            var users = await message.GetReactionUsersAsync(emote, 1000).FlattenAsync();
+            foreach (var u in users)
+            {
+                if (u.IsBot || guild.GetUser(u.Id) is not { } member) continue;
+                var roles = binding.RoleIds.Select(guild.GetRole).Where(r => r is not null).ToList();
+                if (roles.Count == 0 || roles.All(r => member.Roles.Any(x => x.Id == r!.Id))) continue;
+                if (Gate(panel, member) is not null || roles.Any(r => !CanManage(guild, r))) continue;
+                await PickAsync(panel, member, binding.Id, true);
+                given++;
+                await Task.Delay(300);
+            }
+        }
+        if (given > 0) logger.LogInformation("Reaction catch-up: panel {Panel} — roles given to {Count}", panel.Title, given);
+        return given;
     }
 
     private static bool SameEmote(IEmote a, IEmote b) => a switch
