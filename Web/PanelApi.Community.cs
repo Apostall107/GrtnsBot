@@ -151,11 +151,13 @@ public static partial class PanelApi
 
     private static void MapRolePanels(RouteGroupBuilder g)
     {
-        g.MapGet("/panels", (ulong guildId, DiscordSocketClient client, CommunityStore store, CommunityService community) =>
+        g.MapGet("/panels", (ulong guildId, DiscordSocketClient client, CommunityStore store, CommunityService community,
+            [Microsoft.AspNetCore.Mvc.FromServices] LfgProjectStore lfgProjects) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             return Results.Ok(new
             {
+                groups = lfgProjects.GetProjects(guildId).Select(p => new { key = p.Key, name = p.Name }),
                 panels = store.GetPanels(guildId).Select(p => PanelDto(guild, p, community)),
                 canManageRoles = guild.CurrentUser.GuildPermissions.ManageRoles,
                 botRole = guild.CurrentUser.Roles.OrderByDescending(r => r.Position).FirstOrDefault() is { } top ? top.Name : null
@@ -325,6 +327,7 @@ public static partial class PanelApi
         panel.Title = title;
         panel.Text = text;
         panel.Color = color;
+        if (body.ProjectKey is not null) panel.ProjectKey = body.ProjectKey.Length == 0 ? null : body.ProjectKey;
         panel.ImageUrl = Blank(body.ImageUrl);
         panel.ThumbnailUrl = Blank(body.ThumbnailUrl);
         panel.Footer = Blank(body.Footer) is { } f ? Cut(f, 2048) : null;
@@ -368,7 +371,8 @@ public static partial class PanelApi
         channel = p.ChannelId is { } c ? guild.GetTextChannel(c)?.Name : null,
         channelId = p.ChannelId?.ToString(),
         jumpUrl = p.ChannelId is { } ch && p.MessageId is { } m ? $"https://discord.com/channels/{guild.Id}/{ch}/{m}" : null,
-        sticky = p.Sticky
+        sticky = p.Sticky,
+        projectKey = p.ProjectKey
     };
 
     private static string? Blank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
@@ -385,4 +389,4 @@ public sealed record RoleBindingBody(string? Id, string? Trigger, string? Label,
     List<string>? RoleIds);
 public sealed record RolePanelBody(string? Title, string? Text, string? Color, string? ImageUrl, string? ThumbnailUrl, string? Footer,
     bool ShowList, bool ShowHint, string? Mode, string? Placeholder, int? MaxPick, List<string>? RequiredRoleIds,
-    List<RoleBindingBody>? Bindings, string? ChannelId = null);
+    List<RoleBindingBody>? Bindings, string? ChannelId = null, string? ProjectKey = null);

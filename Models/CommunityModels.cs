@@ -163,6 +163,9 @@ public sealed class RolePanel
     public string Id { get; set; } = IdGen.New();
     public ulong GuildId { get; set; }
 
+    /// <summary>Проект бота (LfgProjectStore) — для группировки панелей на сайте. null — «General».</summary>
+    public string? ProjectKey { get; set; }
+
     // ---- Карточка ----
     public string? Title { get; set; } = "Pick your roles";
     public string? Text { get; set; } = "";

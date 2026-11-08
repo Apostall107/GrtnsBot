@@ -1589,3 +1589,11 @@ dialog.xwide.page-dialog { width: min(1640px, calc(100vw - 32px)); }
 .page-tabs { margin-bottom: 12px; }
 .tab-count { margin-left: 6px; opacity: .65; font-size: 12px; }
 .sub-tabs { margin: -4px 0 14px; padding-left: 14px; border-left: 2px solid rgba(124,92,255,.45); }
+
+/* Role panel card: compact "item → roles" list */
+details.binding-summary { margin-top: 10px; }
+details.binding-summary > summary { cursor: pointer; color: var(--muted, #9aa3b2); font-size: var(--fs-small); margin-bottom: 6px; }
+.binding-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,.04); }
+.binding-line b { font-weight: 600; }
+.binding-trigger { width: 20px; text-align: center; }
+.binding-roles { display: inline-flex; gap: 4px; flex-wrap: wrap; }

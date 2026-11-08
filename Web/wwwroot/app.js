@@ -2960,12 +2960,7 @@ async function ticketPanelsSection(main) {
         const post = h("button", { class: "btn secondary" }, icon("pin", 15), p.jumpUrl ? "Repost" : "Post");
         post.addEventListener("click", () => act(post, async () => {
           if (!ch.value) return toast("Choose a channel first.", "warn");
-          const hasReactions = p.bindings.some(b => b.trigger === "Reaction");
-    if (p.jumpUrl && !await confirmDialog("Post this panel again?",
-      "The old message is deleted and the panel is posted in the chosen channel." +
-      (hasReactions ? " ⚠️ All reactions under it disappear (the bot can't put them back for people)." + REPOST_NOTE +
-        " To change the panel without losing reactions, just Save it — the posted message is updated in place." : ""),
-      hasReactions ? "Re-post anyway" : "Post", hasReactions)) return;
+          if (p.jumpUrl && !await confirmDialog("Post this panel again?", "The old message is deleted and the panel is posted in the chosen channel.", "Post", false)) return;
           await gApi("POST", `/tickets/panels/${p.id}/post`, { channelId: ch.value });
           toast("Panel posted."); load();
         }));
@@ -3996,7 +3991,19 @@ async function pageRoles(main) {
     try { emojis = await gApi("GET", "/roles/emojis"); } catch { /* unicode only */ }
   } catch (e) { holder.replaceChildren(empty(e.message)); return; }
 
-  const add = h("button", { class: "btn", onclick: () => rolePanelEditor(null, emojis) }, icon("plus", 15), "New role panel");
+  // Вкладки по проектам (как у страниц каналов): All · General · <проект>…; новая панель — в открытом проекте
+  const groups = data.groups || [];
+  const isGeneral = p => !p.projectKey || !groups.some(g => g.key === p.projectKey);
+  const tabs = [["all", "All", data.panels.length], ["", "General", data.panels.filter(isGeneral).length],
+    ...groups.map(g => [g.key, g.name, data.panels.filter(p => p.projectKey === g.key).length])];
+  let tab = store.get("gb.rolesTab") ?? "all";
+  if (!tabs.some(t => t[0] === tab)) tab = "all";
+  const shown = tab === "all" ? data.panels : tab === "" ? data.panels.filter(isGeneral) : data.panels.filter(p => p.projectKey === tab);
+  const newPanel = () => rolePanelEditor(null, emojis, groups, tab === "all" ? "" : tab);
+  const add = h("button", { class: "btn", onclick: newPanel }, icon("plus", 15), "New role panel");
+  const tabBar = groups.length ? h("div", { class: "tabs page-tabs" }, tabs.map(([k, label, n]) =>
+    h("button", { class: `btn secondary sm${k === tab ? " active-tab" : ""}`, onclick: () => { store.set("gb.rolesTab", k); renderShell(); } },
+      label, h("span", { class: "tab-count" }, String(n))))) : null;
   holder.replaceChildren(
     h("div", { class: "card" },
       h("div", { class: "card-head" }, h("h2", {}, "How it works"), add),
@@ -4005,10 +4012,13 @@ async function pageRoles(main) {
         "Mix them freely on one panel."),
       data.canManageRoles ? h("p", { class: "muted small" }, `The bot's role (${data.botRole || "?"}) must be above every role it gives — Server Settings → Roles.`)
         : h("p", { class: "error-text small" }, "The bot has no Manage Roles permission — it can't give roles yet.")),
-    data.panels.length ? h("div", { class: "panel-grid" }, data.panels.map(p => rolePanelCard(p, emojis)))
-      : h("div", { class: "card" }, emptyState("user-plus", "No role panels yet", "Create one — e.g. game roles with buttons or a “I accept the rules” panel.", add.cloneNode(true))));
+    tabBar,
+    shown.length ? h("div", { class: "panel-grid" }, shown.map(p => rolePanelCard(p, emojis, groups)))
+      : h("div", { class: "card" }, data.panels.length
+        ? emptyState("user-plus", "No role panels in this project", "“New role panel” creates one here.")
+        : emptyState("user-plus", "No role panels yet", "Create one — e.g. game roles with buttons or a “I accept the rules” panel.", add.cloneNode(true))));
   const emptyAdd = holder.querySelector(".empty-state .btn");
-  if (emptyAdd) emptyAdd.addEventListener("click", () => rolePanelEditor(null, emojis));
+  if (emptyAdd) emptyAdd.addEventListener("click", newPanel);
 }
 
 function panelPreview(p, emojis) {
@@ -4027,28 +4037,40 @@ function panelPreview(p, emojis) {
   });
 }
 
-function rolePanelCard(p, emojis) {
+function rolePanelCard(p, emojis, groups = []) {
   const post = channelSelect("text", "Channel…");
   if (p.channelId) post.value = p.channelId;
-  const postBtn = h("button", { class: "btn secondary" }, icon("pin", 15), p.jumpUrl ? "Repost" : "Post");
-  postBtn.addEventListener("click", async () => {
+  const hasReactions = p.bindings.some(b => b.trigger === "Reaction");
+  const name = p.title || "role panel";
+  // Ещё не опубликована — Post на виду; опубликована — главное Edit (сохранение правит сообщение на месте), Repost — в «⋯»
+  const postBtn = p.jumpUrl ? null : h("button", { class: "btn" }, icon("pin", 15), "Post");
+  if (postBtn) postBtn.addEventListener("click", async () => {
     if (!post.value) return toast("Choose a channel first.", "warn");
-    if (p.jumpUrl && !await confirmDialog("Post this panel again?", "The old message is deleted and the panel is posted in the chosen channel.", "Post", false)) return;
     if (await act(postBtn, () => gApi("POST", `/roles/panels/${p.id}/post`, { channelId: post.value }), "Panel posted.") !== undefined) refresh();
   });
-  const copy = h("button", { class: "btn ghost", title: "Make a copy to edit" }, icon("copy", 15), "Copy");
-  copy.addEventListener("click", async () => { if (await act(copy, () => gApi("POST", `/roles/panels/${p.id}/copy`), "Copied.") !== undefined) refresh(); });
-  const sync = p.jumpUrl && p.bindings.some(b => b.trigger === "Reaction")
-    ? h("button", { class: "btn ghost", title: "Give the roles to everyone who has a reaction under the panel but not the role (e.g. reacted while the bot was offline). The bot also does this on every start." }, icon("refresh-cw", 15), "Sync reactions") : null;
-  if (sync) sync.addEventListener("click", async () => {
-    const r = await act(sync, () => gApi("POST", `/roles/panels/${p.id}/sync`));
+  const repost = () => act(null, async () => {
+    if (!post.value) return toast("Choose a channel first.", "warn");
+    const text = "The old message is deleted and the panel is posted again in the chosen channel." +
+      (hasReactions ? " ⚠️ All reactions under it disappear — the bot can't put them back." + REPOST_NOTE : "") +
+      " To change the panel, just Edit and Save — the posted message is updated in place.";
+    if (!await (hasReactions ? confirmTyped("Re-post this panel?", text, name, "Re-post") : confirmDialog("Re-post this panel?", text, "Re-post"))) return;
+    await gApi("POST", `/roles/panels/${p.id}/post`, { channelId: post.value });
+    toast("Panel re-posted."); refresh();
+  });
+  const sync = () => act(null, async () => {
+    const r = await gApi("POST", `/roles/panels/${p.id}/sync`);
     if (r) toast(r.given ? `Roles given: ${r.given}.` : "Everyone with a reaction already has the role.");
   });
-  const del = h("button", { class: "btn ghost" }, icon("trash-2", 15), "Delete");
-  del.addEventListener("click", async () => {
-    if (!await confirmDialog(`Delete “${p.title || "role panel"}”?`, "The posted message is deleted too. Members keep the roles they already have.", "Delete")) return;
-    if (await act(del, () => gApi("DELETE", `/roles/panels/${p.id}`), "Panel deleted.") !== undefined) refresh();
-  });
+  const more = menuButton([
+    { icon: "copy", label: "Copy", onclick: () => act(null, async () => { await gApi("POST", `/roles/panels/${p.id}/copy`); toast("Copied."); refresh(); }) },
+    p.jumpUrl && hasReactions ? { icon: "refresh-cw", label: "Sync reactions (give missed roles)", onclick: sync } : null,
+    p.jumpUrl ? { icon: "repeat", label: hasReactions ? "Re-post (reactions reset)" : "Re-post", danger: true, onclick: repost } : null,
+    { icon: "trash-2", label: "Delete panel", danger: true, onclick: () => act(null, async () => {
+      const text = "The posted message is deleted too. Members keep the roles they already have.";
+      if (!await (p.jumpUrl && hasReactions ? confirmTyped(`Delete “${name}”?`, text + " Reactions are lost.", name, "Delete") : confirmDialog(`Delete “${name}”?`, text, "Delete"))) return;
+      await gApi("DELETE", `/roles/panels/${p.id}`); toast("Panel deleted."); refresh();
+    }) }
+  ].filter(Boolean));
   const mode = ROLE_MODES.find(m => m[0] === p.mode) || ROLE_MODES[0];
   const problems = p.bindings.flatMap(b => b.roles).filter(r => !r.manageable);
   return h("div", { class: "card panel-card" },
@@ -4057,9 +4079,11 @@ function rolePanelCard(p, emojis) {
       p.jumpUrl ? h("a", { class: "chip ok", href: p.jumpUrl, target: "_blank", rel: "noopener" }, icon("external-link", 12), `#${p.channel || "posted"}`)
         : h("span", { class: "chip warn" }, "not posted")),
     h("div", { class: "dc-frame compact" }, panelPreview(p, emojis)),
-    h("div", { class: "binding-summary" }, p.bindings.map(b => h("div", { class: "row", style: "gap:6px" },
-      h("span", { class: "chip" }, (TRIGGERS.find(t => t[0] === b.trigger) || TRIGGERS[0])[1]), emojiEl(b.emoji),
-      h("b", {}, b.shownLabel), icon("arrow-right", 13), b.roles.map(r => roleChip(r))))),
+    h("details", { class: "binding-summary" }, h("summary", {}, `${p.bindings.length} item${p.bindings.length === 1 ? "" : "s"} → roles`),
+      p.bindings.map(b => h("div", { class: "binding-line" },
+        h("span", { class: "binding-trigger", title: b.trigger }, (TRIGGERS.find(t => t[0] === b.trigger) || TRIGGERS[0])[1].split(" ")[0]),
+        b.emoji ? emojiEl(b.emoji) : null, h("b", {}, b.shownLabel), icon("arrow-right", 13),
+        h("span", { class: "binding-roles" }, b.roles.map(r => roleChip(r)))))),
     problems.length ? h("p", { class: "error-text small" }, `The bot can't give: ${[...new Set(problems.map(r => "@" + r.name))].join(", ")}`) : null,
     (p.requiredRoles || []).some(r => !r.exists) ? h("p", { class: "error-text small" }, "“Only for” has a deleted role — it is ignored; remove it in the editor.") : null,
     p.jumpUrl ? (() => {
@@ -4069,11 +4093,11 @@ function rolePanelCard(p, emojis) {
       return h("label", { class: "row", style: "gap:6px;margin-top:8px", title: "After new messages in the channel the bot posts the panel again at the bottom (15 s of silence, at most a minute)" },
         sticky, "📌 Keep at the bottom of the channel");
     })() : null,
-    h("div", { class: "row", style: "margin-top:10px" }, post, postBtn, h("span", { class: "spacer" }),
-      h("button", { class: "btn secondary", onclick: () => rolePanelEditor(p, emojis) }, icon("pencil", 15), "Edit"), copy, sync, del));
+    h("div", { class: "row", style: "margin-top:10px;gap:8px" }, post, postBtn, h("span", { class: "spacer" }),
+      h("button", { class: p.jumpUrl ? "btn" : "btn secondary", onclick: () => rolePanelEditor(p, emojis, groups) }, icon("pencil", 15), "Edit"), more));
 }
 
-function rolePanelEditor(p, emojis) {
+function rolePanelEditor(p, emojis, groups = [], defaultProject = "") {
   const d = dialog();
   d.classList.add("xwide");
   d.onclose = () => d.classList.remove("xwide");
@@ -4081,7 +4105,10 @@ function rolePanelEditor(p, emojis) {
     bindings: [{ trigger: "Button", label: "", emoji: "", description: "", color: "Grey", roles: [] }] };
 
   const preview = h("div", { class: "dc-frame" });
+  const projSel = h("select", {}, h("option", { value: "" }, "General (no project)"), groups.map(g => h("option", { value: g.key }, g.name)));
+  projSel.value = p ? (p.projectKey || "") : defaultProject;
   const state_ = () => ({
+    projectKey: projSel.value,
     title: title.value, text: text.value, color: color.value(), imageUrl: image.value, thumbnailUrl: thumb.value, footer: footer.value,
     showList: showList.cb.checked, showHint: showHint.cb.checked, mode: modeValue, placeholder: placeholder.value, maxPick: Number(maxPick.value || 0),
     requiredRoleIds: required.value(),
@@ -4177,6 +4204,7 @@ function rolePanelEditor(p, emojis) {
     h("div", { class: "editor-layout in-dialog" },
       h("div", { class: "editor-form" },
         sectionCard("file-text", "1. Message", "The card members see.",
+          h("div", { class: "field" }, h("label", {}, "Project (groups the panels on this page)"), projSel),
           h("div", { class: "field" }, h("label", {}, "Title"), title),
           h("div", { class: "field" }, h("label", {}, "Text"), text, emojiInsertPicker(text, emojis, () => update())),
           h("div", { class: "grid2" }, h("div", { class: "field" }, h("label", {}, "Stripe color"), color.el),
