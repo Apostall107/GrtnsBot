@@ -18,8 +18,6 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
     // Проект бота, к которому привязана тикет-система (null — «Общее» или проект удалён)
     private LfgProject? GroupOf(TicketProject p) => p.GroupProjectKey is { } k ? lfgProjects.Find(Context.Guild.Id, k) : null;
     private bool Allowed(TicketProject p) => botOwner.Is(Context.User.Id) || TicketService.CanOpen(p, (IGuildUser)Context.User, GroupOf(p));
-    private static string GeneralKey => "_";
-    private string GroupKey(TicketProject p) => GroupOf(p)?.Key ?? GeneralKey;
 
     private SocketMessageComponent Component => (SocketMessageComponent)Context.Interaction;
 
@@ -42,14 +40,14 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
     [ComponentInteraction("ticket:start")]
     public async Task OnStart()
     {
-        var all = store.GetProjects(Context.Guild.Id);
+        // Основная панель — как раньше: один шаг, только тикет-системы без проекта (подпроекты — в своих панелях)
+        var all = store.GetProjects(Context.Guild.Id).Where(p => GroupOf(p) is null).ToList();
         if (all.Count == 0)
         {
             await RespondAsync(T("ticket.noProjects"), ephemeral: true);
             return;
         }
 
-        // Только доступные пользователю тикет-системы (владелец видит все)
         var projects = all.Where(Allowed).ToList();
         if (projects.Count == 0)
         {
@@ -57,40 +55,23 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
             return;
         }
 
-        // Несколько проектов — сначала выбор проекта, затем типа тикета
-        var groups = projects.GroupBy(GroupKey).ToList();
-        if (groups.Count > 1)
-        {
-            var options = groups.Select(g => (Key: g.Key, Name: g.Key == GeneralKey ? T("ticket.groupGeneral") : GroupOf(g.First())!.Name, Count: g.Count()))
-                .OrderBy(g => g.Key == GeneralKey ? 0 : 1).ThenBy(g => g.Name).ToList();
-            await RespondAsync(T("ticket.pickGroup"), components: TicketRenderer.GroupPicker(Context.Guild.Id, options), ephemeral: true);
-            return;
-        }
-
-        await RespondAsync(T("ticket.pick"),
-            components: TicketRenderer.ProjectPicker(Context.Guild.Id, projects), ephemeral: true);
-    }
-
-    [ComponentInteraction("ticket:group")]
-    public async Task OnGroupSelected(string[] values)
-    {
-        var key = values.FirstOrDefault() ?? GeneralKey;
-        var projects = store.GetProjects(Context.Guild.Id).Where(Allowed).Where(p => GroupKey(p) == key).ToList();
-        if (projects.Count == 0)
-        {
-            await RespondAsync(T("ticket.noneForYou"), ephemeral: true);
-            return;
-        }
         await RespondAsync(T("ticket.pick"),
             components: TicketRenderer.ProjectPicker(Context.Guild.Id, projects), ephemeral: true);
     }
 
     // ================= Создание тикета =================
 
+    /// <summary>Выбор в эфемерном меню основной панели.</summary>
     [ComponentInteraction("ticket:project")]
-    public async Task OnProjectSelected(string[] values)
+    public Task OnProjectSelected(string[] values) => OpenAsync(values[0], fromPanel: false);
+
+    /// <summary>Кнопка тикет-системы на панели подпроекта (публичное сообщение — его не трогаем).</summary>
+    [ComponentInteraction("ticket:open:*")]
+    public Task OnPanelButton(string key) => OpenAsync(key, fromPanel: true);
+
+    private async Task OpenAsync(string key, bool fromPanel)
     {
-        var project = store.FindProject(Context.Guild.Id, values[0]);
+        var project = store.FindProject(Context.Guild.Id, key);
         if (project is null)
         {
             await RespondAsync(T("ticket.projectGone"), ephemeral: true);
@@ -113,6 +94,15 @@ public sealed class TicketModule(TicketStore store, BotOwner botOwner, PanelServ
         if (project.FormEnabled && project.Questions.Count > 0)
         {
             await RespondWithModalAsync(TicketRenderer.FormModal(Context.Guild.Id, project));
+            return;
+        }
+
+        if (fromPanel)
+        {
+            // Публичная панель: новый эфемерный ответ, сама панель не меняется
+            await Component.DeferLoadingAsync(ephemeral: true);
+            var (t, err) = await tickets.CreateAsync(Context.Guild, (IGuildUser)Context.User, project, [], "discord");
+            await FollowupAsync(t is not null ? T("ticket.created", ("channel", $"<#{t.TextChannelId}>")) : $"❌ {err}", ephemeral: true);
             return;
         }
 

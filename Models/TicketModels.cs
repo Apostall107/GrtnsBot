@@ -90,3 +90,26 @@ public sealed class TicketData
     public Dictionary<ulong, List<TicketProject>> Projects { get; set; } = new();
     public List<Ticket> Tickets { get; set; } = [];
 }
+
+/// <summary>
+/// Панель подпроекта: отдельное сообщение с кнопками тикет-систем одного проекта (например, «WWM — заявки»).
+/// Публикуется в свой канал; доступ к каждой системе проверяется при нажатии (свои роли или роли проекта).
+/// </summary>
+public sealed class TicketPanel
+{
+    public const int MaxPerGuild = 25;
+    /// <summary>Discord: до 25 кнопок в сообщении (5 рядов по 5).</summary>
+    public const int MaxTypes = 25;
+
+    public string Id { get; set; } = IdGen.New();
+    public ulong GuildId { get; set; }
+    public string Title { get; set; } = "Tickets";
+    public string? Text { get; set; }
+    public string? Color { get; set; }
+    /// <summary>Проект бота (LfgProjectStore) — для группировки и фильтра систем в редакторе.</summary>
+    public string? ProjectKey { get; set; }
+    /// <summary>Ключи тикет-систем (TicketProject.Key) в порядке кнопок.</summary>
+    public List<string> TicketKeys { get; set; } = [];
+    public ulong? ChannelId { get; set; }
+    public ulong? MessageId { get; set; }
+}

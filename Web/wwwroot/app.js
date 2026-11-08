@@ -2867,6 +2867,119 @@ function groupCard(g) {
 
 // ================= Tickets =================
 
+// ----- Sub-project ticket panels: a separate message with a button per ticket type of one project -----
+
+function ticketPanelPreview(panel, types) {
+  const chosen = panel.ticketKeys.map(k => types.find(t => t.key === k)).filter(Boolean);
+  const rows = [];
+  for (let i = 0; i < chosen.length; i += 5) rows.push(chosen.slice(i, i + 5).map(t => dcButton(t.name, "🎫", "Blurple")));
+  return dcMessage({ embeds: [{ title: panel.title || "Tickets", description: panel.text || "", color: panel.color || "#5865f2" }], rows });
+}
+
+async function ticketPanelsSection(main) {
+  const holder = h("div", {}, h("div", { class: "card" }, skeletonLines(4)));
+  main.append(holder);
+  async function load() {
+    let d;
+    try { d = await gApi("GET", "/tickets/panels"); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
+    const gName = k => (d.groups.find(g => g.key === k) || {}).name;
+    const add = h("button", { class: "btn" }, icon("plus", 15), "New panel");
+    add.addEventListener("click", async () => {
+      const title = await promptDialog("New sub-project panel", "Applications");
+      if (!title) return;
+      const p = await act(add, () => gApi("POST", "/tickets/panels", { title }));
+      if (p) ticketPanelEditor(p, d, load);
+    });
+    holder.replaceChildren(
+      h("div", { class: "card" }, h("div", { class: "card-head" }, h("h2", {}, "Sub-project panels"), add),
+        h("p", { class: "muted small" }, "A separate message with a button for each ticket type of one project — e.g. “WWM — applications” with GvG application and POV review. ",
+          "Post it in that project's channel. Discord can't hide buttons per member, so access is checked on click: members without the role get a private refusal. ",
+          "To hide the panel completely, post it in a channel only that role can see.")),
+      d.panels.length ? h("div", { class: "panel-grid" }, d.panels.map(p => {
+        const ch = channelSelect("text", "Channel…");
+        if (p.channelId) ch.value = p.channelId;
+        const post = h("button", { class: "btn secondary" }, icon("pin", 15), p.jumpUrl ? "Repost" : "Post");
+        post.addEventListener("click", () => act(post, async () => {
+          if (!ch.value) return toast("Choose a channel first.", "warn");
+          if (p.jumpUrl && !await confirmDialog("Post this panel again?", "The old message is deleted and the panel is posted in the chosen channel.", "Post", false)) return;
+          await gApi("POST", `/tickets/panels/${p.id}/post`, { channelId: ch.value });
+          toast("Panel posted."); load();
+        }));
+        const del = h("button", { class: "btn ghost" }, icon("trash-2", 15), "Delete");
+        del.addEventListener("click", () => act(del, async () => {
+          if (!await confirmDialog(`Delete “${p.title}”?`, "The posted message is deleted too. Ticket types and open tickets stay.", "Delete")) return;
+          await gApi("DELETE", `/tickets/panels/${p.id}`); toast("Panel deleted."); load();
+        }));
+        return h("div", { class: "card panel-card" },
+          h("div", { class: "card-head" }, h("h3", {}, p.title),
+            p.projectKey ? h("span", { class: "chip" }, gName(p.projectKey) || "project") : null,
+            p.jumpUrl ? h("a", { class: "chip ok", href: p.jumpUrl, target: "_blank", rel: "noopener" }, icon("external-link", 12), `#${p.channel || "posted"}`)
+              : h("span", { class: "chip warn" }, "not posted")),
+          h("div", { class: "dc-frame compact" }, ticketPanelPreview(p, d.types)),
+          p.ticketKeys.length ? null : h("p", { class: "error-text small" }, "No ticket types yet — Edit and pick them."),
+          h("div", { class: "row", style: "margin-top:10px" }, ch, post, h("span", { class: "spacer" }),
+            h("button", { class: "btn secondary", onclick: () => ticketPanelEditor(p, d, load) }, icon("pencil", 15), "Edit"), del));
+      })) : h("div", { class: "card" }, emptyState("layers", "No sub-project panels yet", "Create one, pick the project's ticket types and post it in the project's channel.")));
+  }
+  await load();
+}
+
+function ticketPanelEditor(p, d, reload) {
+  const dlg = dialog();
+  dlg.classList.add("xwide");
+  dlg.onclose = () => dlg.classList.remove("xwide");
+  const v = { title: p.title, text: p.text || "", color: p.color || null, projectKey: p.projectKey || "", ticketKeys: [...(p.ticketKeys || [])] };
+  const preview = h("div", { class: "dc-frame" });
+  const update = () => preview.replaceChildren(ticketPanelPreview({ ...v, color: color.value() }, d.types));
+  const title = h("input", { maxlength: "256", value: v.title, style: "width:100%" });
+  title.addEventListener("input", () => { v.title = title.value; update(); });
+  const text = h("textarea", { maxlength: "4096", rows: "5", placeholder: "Text above the buttons — what each ticket is for, who can apply", style: "width:100%" });
+  text.value = v.text;
+  text.addEventListener("input", () => { v.text = text.value; update(); });
+  const color = embedColorField(v.color, update);
+  const proj = h("select", {}, h("option", { value: "" }, "Any project"), d.groups.map(g => h("option", { value: g.key }, g.name)));
+  proj.value = v.projectKey;
+  const list = h("div", { class: "check-list" });
+  const draw = () => {
+    // выбранные — в порядке кнопок, затем остальные системы этого проекта
+    const pool = d.types.filter(t => !v.projectKey || t.groupProjectKey === v.projectKey || v.ticketKeys.includes(t.key));
+    const ordered = [...v.ticketKeys.map(k => pool.find(t => t.key === k)).filter(Boolean), ...pool.filter(t => !v.ticketKeys.includes(t.key))];
+    list.replaceChildren(...(ordered.length ? ordered.map(t => {
+      const on = v.ticketKeys.includes(t.key);
+      const i = v.ticketKeys.indexOf(t.key);
+      const cb = h("input", { type: "checkbox", checked: on });
+      cb.addEventListener("change", () => {
+        if (cb.checked) { if (v.ticketKeys.length >= 25) { cb.checked = false; return toast("Discord allows 25 buttons per message.", "warn"); } v.ticketKeys.push(t.key); }
+        else v.ticketKeys = v.ticketKeys.filter(k => k !== t.key);
+        draw(); update();
+      });
+      const move = dir => { const j = i + dir; if (j < 0 || j >= v.ticketKeys.length) return; [v.ticketKeys[i], v.ticketKeys[j]] = [v.ticketKeys[j], v.ticketKeys[i]]; draw(); update(); };
+      return h("div", { class: "row", style: "gap:6px" }, h("label", { class: "row grow", style: "gap:6px" }, cb, t.name),
+        on ? h("button", { class: "btn ghost sm", type: "button", title: "Up", onclick: () => move(-1) }, icon("chevron-up", 14)) : null,
+        on ? h("button", { class: "btn ghost sm", type: "button", title: "Down", onclick: () => move(1) }, icon("chevron-down", 14)) : null);
+    }) : [h("p", { class: "muted small" }, "No ticket types for this project yet — create one (➕ New project) and choose this project in its settings.")]));
+  };
+  proj.addEventListener("change", () => { v.projectKey = proj.value; draw(); });
+  draw(); update();
+  const save = h("button", { class: "btn" }, icon("check", 15), "Save");
+  save.addEventListener("click", async () => {
+    if (await act(save, () => gApi("PUT", `/tickets/panels/${p.id}`, { title: title.value, text: text.value, color: color.value(), projectKey: v.projectKey || null, ticketKeys: v.ticketKeys }),
+      p.jumpUrl ? "Saved — the posted panel is updated." : "Saved.") !== undefined) { dlg.close(); reload(); }
+  });
+  dlg.replaceChildren(h("h2", {}, "Sub-project panel"),
+    h("div", { class: "editor-layout" },
+      h("div", {},
+        h("div", { class: "field" }, h("label", {}, "Title"), title),
+        h("div", { class: "field" }, h("label", {}, "Text"), text),
+        h("div", { class: "field" }, h("label", {}, "Color"), color.el),
+        h("div", { class: "field" }, h("label", {}, "Project"), proj),
+        h("div", { class: "field" }, h("label", {}, "Ticket types — one button each, up to 25"), list)),
+      h("div", { class: "editor-preview" }, h("h3", {}, "Preview"), preview,
+        h("p", { class: "muted small" }, "Access is checked when a member clicks: each ticket type's “Who can open”, or its project's roles."))),
+    h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => dlg.close() }, "Cancel"), save));
+  dlg.showModal();
+}
+
 async function pageTickets(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "🎫 Tickets"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
 
@@ -2876,9 +2989,11 @@ async function pageTickets(main) {
   const ticketGroups = await gApi("GET", "/tickets/groups").catch(() => []);
   const groupName = k => (ticketGroups.find(g => g.key === k) || {}).name;
   let tab = store.get("gb.ticketTab") || (projects[0] ? projects[0].key : "new");
-  if (!["new", "general"].includes(tab) && !projects.some(p => p.key === tab)) tab = projects[0] ? projects[0].key : "new";
-  main.append(tabsRow([...projects.map(p => [p.key, `📁 ${groupName(p.groupProjectKey) ? groupName(p.groupProjectKey) + " · " : ""}${p.name}${p.open ? ` (${p.open})` : ""}`]), ["new", "➕ New project"], ["general", "⚙️ General"]],
+  if (!["new", "general", "panels"].includes(tab) && !projects.some(p => p.key === tab)) tab = projects[0] ? projects[0].key : "new";
+  main.append(tabsRow([...projects.map(p => [p.key, `📁 ${groupName(p.groupProjectKey) ? groupName(p.groupProjectKey) + " · " : ""}${p.name}${p.open ? ` (${p.open})` : ""}`]), ["new", "➕ New project"], ["panels", "🧩 Sub-project panels"], ["general", "⚙️ General"]],
     tab, "gb.ticketTab"));
+
+  if (tab === "panels") { await ticketPanelsSection(main); return; }
 
   if (tab === "new") {
     const nameIn = h("input", { placeholder: "Project name, e.g. Aion 2", maxlength: "100" });
@@ -2893,7 +3008,7 @@ async function pageTickets(main) {
       refresh();
     });
     main.append(h("div", { class: "card" }, h("h3", {}, "New project"),
-      h("p", { class: "muted small" }, "Applicants pick the project in the ticket panel."),
+      h("p", { class: "muted small" }, "Applicants pick it in the main ticket panel. To make it a ticket type of a project (e.g. WWM — GvG application), choose the project in its settings and add it to a 🧩 sub-project panel."),
       h("div", { class: "row" }, h("div", { class: "grow" }, nameIn), roleIn, addBtn)));
     return;
   }
@@ -2901,7 +3016,7 @@ async function pageTickets(main) {
   const project = projects.find(p => p.key === tab);
   const openBody = h("div", {}, h("div", { class: "muted" }, "Loading…"));
   if (project) main.append(projectCard(project, ticketGroups));
-  else main.append(postPanelCard("Ticket panel", "Posts the message with the button to open a ticket (all projects in one panel).", "/tickets/panel"));
+  else main.append(postPanelCard("Ticket panel", "Posts the message with the button to open a ticket (ticket types without a project — sub-project types are in their own panels).", "/tickets/panel"));
   main.append(h("div", { class: "card" }, h("div", { class: "card-head" }, h("h2", {}, project ? `Open tickets · ${project.name}` : "Open tickets")), openBody));
   if (!project) main.append(ticketArchiveCard());
 
@@ -3021,7 +3136,7 @@ function menuButton(items) {
 function projectCard(p, groups = []) {
   const nameIn = h("input", { maxlength: "100", value: p.name, style: "font-weight:600;min-width:200px" });
   // Проект бота, к которому относится эта тикет-система, и кто может её открыть
-  const groupSel = h("select", {}, h("option", { value: "" }, "General (no project)"), groups.map(g => h("option", { value: g.key }, g.name)));
+  const groupSel = h("select", {}, h("option", { value: "" }, "None — shown in the main ticket panel"), groups.map(g => h("option", { value: g.key }, g.name)));
   groupSel.value = p.groupProjectKey || "";
   const openRoles = roleListEditor(p.openRoles || [], state.roles);
   const requireAll = toggle(!!p.openRequireAll, "Require ALL of these roles (off — any one is enough)");
@@ -3069,7 +3184,7 @@ function projectCard(p, groups = []) {
       h("span", { class: "badge wait" }, `${p.open} open`)),
     h("div", { class: "grid2" },
       h("div", { class: "field" }, h("label", {}, "Project"), groupSel,
-        h("span", { class: "muted small" }, "Members first pick the project, then the ticket type.")),
+        h("span", { class: "muted small" }, "With a project this ticket type leaves the main panel — add it to a 🧩 sub-project panel.")),
       h("div", { class: "field" }, h("label", {}, "Who can open this ticket"), openRoles.el, requireAll.el,
         h("span", { class: "muted small" }, "Empty — everyone; with a project chosen — members with one of the project's roles."))),
     h("div", { class: "grid2" },

@@ -286,10 +286,6 @@ public static class BotTextCatalog
         T("ticket.pickPlaceholder", "Project menu placeholder", "Choose a project", null, Placeholder);
         T("ticket.pickOption", "Project option description (- = none)", "Apply to {project}", "{project}", Option, optional: true);
         T("ticket.noProjects", "No projects", "No projects yet. A moderator can add them with `/ticket-project add`.", null, 1000);
-        T("ticket.pickGroup", "Project choice (step 1)", "Choose the project:", null, 1000);
-        T("ticket.pickGroupPlaceholder", "Project choice placeholder", "Project…", null, Placeholder);
-        T("ticket.groupOption", "Project option description (- = hide)", "{count} ticket type(s)", "{count}", Option, optional: true);
-        T("ticket.groupGeneral", "Name of the “no project” group", "General", null, Option);
         T("ticket.noneForYou", "No projects you can open", "There are no ticket types available to you right now.", null, 1000);
         T("ticket.cantOpen", "Can't open this project", "You don't have the role required to open **{project}** tickets.", "{project}", 1000);
         T("ticket.formTitle", "Form window: title", "Application — {project}", "{project}", ModalTitle);

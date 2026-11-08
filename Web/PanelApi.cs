@@ -344,9 +344,11 @@ public static partial class PanelApi
 
     private static void MapTickets(RouteGroupBuilder g)
     {
-        // Проекты бота — чтобы привязать к ним тикет-системы (группы в выборе типа тикета)
+        // Проекты бота — чтобы привязать к ним тикет-системы (панели подпроектов)
         g.MapGet("/groups", (ulong guildId, [Microsoft.AspNetCore.Mvc.FromServices] LfgProjectStore lfgProjects) =>
             Results.Ok(lfgProjects.GetProjects(guildId).Select(p => new { key = p.Key, name = p.Name })));
+
+        MapTicketPanels(g);
 
         g.MapGet("/projects", (ulong guildId, DiscordSocketClient client, TicketStore tickets) =>
         {
@@ -386,7 +388,7 @@ public static partial class PanelApi
         });
 
         g.MapPut("/projects/{key}", async (ulong guildId, string key, ProjectUpdateBody body, DiscordSocketClient client,
-            TicketStore tickets, TicketMessageService ticketMessages) =>
+            TicketStore tickets, TicketMessageService ticketMessages, [Microsoft.AspNetCore.Mvc.FromServices] TicketPanelService ticketPanels) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var existing = tickets.FindProject(guildId, key);
@@ -445,6 +447,7 @@ public static partial class PanelApi
                 p.AutoCloseDays = body.AutoCloseDays;
                 p.Name = newName;
             });
+            if (newName != existing.Name) await ticketPanels.RefreshAllAsync(guildId); // подписи кнопок на панелях подпроектов
 
             // Свой текст поменялся — перерисовываем уже открытые тикеты проекта
             var refreshed = textChanged && tickets.GetTickets(guildId).Any(t => t.ProjectKey == key)
@@ -459,8 +462,13 @@ public static partial class PanelApi
             });
         });
 
-        g.MapDelete("/projects/{key}", (ulong guildId, string key, TicketStore tickets) =>
-            tickets.RemoveProject(guildId, key) is null ? Error("Project not found.") : Results.Ok());
+        g.MapDelete("/projects/{key}", async (ulong guildId, string key, TicketStore tickets,
+            [Microsoft.AspNetCore.Mvc.FromServices] TicketPanelService ticketPanels) =>
+        {
+            if (tickets.RemoveProject(guildId, key) is null) return Error("Project not found.");
+            await ticketPanels.RefreshAllAsync(guildId); // убрать кнопку удалённой системы с панелей подпроектов
+            return Results.Ok();
+        });
 
         g.MapGet("/open", (ulong guildId, DiscordSocketClient client, TicketStore tickets) =>
         {
