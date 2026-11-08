@@ -102,8 +102,11 @@ public static class LfgStats
         var map = new Dictionary<ulong, (int groups, int organized, int came, int noshow, int unmarked)>();
         foreach (var e in history)
         {
-            var o = map.GetValueOrDefault(e.OwnerId);
-            map[e.OwnerId] = o with { organized = o.organized + 1 };
+            if (e.OwnerId != 0) // 0 — сбор без организатора
+            {
+                var o = map.GetValueOrDefault(e.OwnerId);
+                map[e.OwnerId] = o with { organized = o.organized + 1 };
+            }
             foreach (var m in e.Members)
             {
                 var x = map.GetValueOrDefault(m.UserId);

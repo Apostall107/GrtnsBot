@@ -62,7 +62,7 @@ public sealed class LfgPublisher(
             Reminded = !time.ReminderNeeded(r.StartsAt)
         };
         // Организатор участвует сам: слот 1 + последний использованный персонаж
-        if (r.SeatOwner)
+        if (r.SeatOwner && r.OwnerId != 0)
         {
             var mine = characters.Get(r.GuildId, r.OwnerId, projects.Scope(r.GuildId, r.ProjectKey));
             group.SeatOwner(mine.FirstOrDefault(n => n.Equals(r.OwnerCharacter, StringComparison.OrdinalIgnoreCase)) ?? mine.FirstOrDefault());

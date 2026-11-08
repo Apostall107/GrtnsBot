@@ -262,7 +262,7 @@ public static partial class PanelApi
                 id = x.Id,
                 projectKey = x.ProjectKey ?? defaultProject,
                 activity = x.ActivityName,
-                owner = Member(guild, x.OwnerId),
+                owner = x.OwnerId == 0 ? null : Member(guild, x.OwnerId),
                 channel = guild.GetTextChannel(x.ChannelId)?.Name,
                 startsAt = x.StartsAt?.ToUnixTimeMilliseconds(),
                 expiresAt = x.ExpiresAt.ToUnixTimeMilliseconds(),

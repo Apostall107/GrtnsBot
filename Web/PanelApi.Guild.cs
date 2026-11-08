@@ -236,7 +236,7 @@ public static partial class PanelApi
     /// <summary>Организаторы сборов календаря (для подгрузки имён).</summary>
     private static IEnumerable<ulong> CalendarOwners(ulong guildId, LfgStore store, RecurringLfgStore recurring) =>
         store.Groups.Values.Where(g => g.GuildId == guildId && !g.IsClosed).Select(g => g.OwnerId)
-            .Concat(recurring.Get(guildId).Select(r => r.OwnerId));
+            .Concat(recurring.Get(guildId).Select(r => r.OwnerId)).Where(id => id != 0);
 
     internal static List<object> CalendarEvents(SocketGuild guild, LfgStore store, RecurringLfgStore recurring, TimeService time,
         LfgProjectStore projects, Func<string?, bool> allowed, ulong? me)
@@ -261,7 +261,7 @@ public static partial class PanelApi
                 filled = g.FilledCount,
                 total = g.Slots.Count,
                 reserve = g.Reserve.Count,
-                organizer = Member(guild, g.OwnerId),
+                organizer = g.OwnerId == 0 ? null : Member(guild, g.OwnerId),
                 note = g.Note,
                 jumpUrl = LfgSignupService.JumpUrl(g),
                 recurring = false,
@@ -289,7 +289,7 @@ public static partial class PanelApi
                     filled = 0,
                     total = r.Slots.Count,
                     reserve = 0,
-                    organizer = Member(guild, r.OwnerId),
+                    organizer = r.OwnerId == 0 ? null : Member(guild, r.OwnerId),
                     note = r.Note,
                     jumpUrl = (string?)null,
                     recurring = true,

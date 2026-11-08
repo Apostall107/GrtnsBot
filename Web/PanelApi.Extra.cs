@@ -419,7 +419,8 @@ public static partial class PanelApi
                     pingRole = r.PingRoleId is { } pr ? Role(guild, pr) : null,
                     channelId = r.ChannelId.ToString(),
                     channel = guild.GetTextChannel(r.ChannelId)?.Name,
-                    owner = Member(guild, r.OwnerId),
+                    owner = r.OwnerId == 0 ? null : Member(guild, r.OwnerId),
+                    noOrganizer = r.OwnerId == 0,
                     slots = r.Slots.Select(x => x.ToString()),
                     days = r.Days.Select(d => (int)d),
                     time = $"{r.Hour:00}:{r.Minute:00}",
@@ -752,7 +753,9 @@ public static partial class PanelApi
             return "Set the start time (HH:mm).";
         if (body.PostHoursBefore is < 0 or > 168) return "Post the group 0–168 hours before the start.";
 
-        var owner = ParseId(body.OwnerId) ?? (item.OwnerId != 0 ? item.OwnerId : currentUser);
+        // "none" — сбор без организатора: публикует бот, управляют админы (сайт), слот 1 свободен
+        var noOrganizer = body.OwnerId == "none";
+        var owner = noOrganizer ? 0UL : ParseId(body.OwnerId) ?? (item.OwnerId != 0 || item.ActivityName.Length > 0 ? item.OwnerId : currentUser);
         if (owner is not { } ownerId) return "Pick the organizer.";
 
         item.ChannelId = channelId;
@@ -764,7 +767,7 @@ public static partial class PanelApi
         item.Minute = t.Minute;
         item.PostHoursBefore = body.PostHoursBefore;
         item.NotifyByDm = body.NotifyByDm;
-        item.SeatOwner = body.SeatOwner;
+        item.SeatOwner = body.SeatOwner && owner != 0;
         item.ProjectKey = string.IsNullOrWhiteSpace(body.ProjectKey) ? null : body.ProjectKey;
         item.RequiredRoleIds = ParseIds(body.RequiredRoleIds).Where(id => guild.GetRole(id) is not null).Take(10).ToList();
         var slotReq = SlotRequirement.Parse(body.SlotRequirements, item.Slots.Count, GuildRoleIds(guild));

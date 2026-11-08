@@ -2273,18 +2273,27 @@ function lfgForm(acts, opts) {
     const time = h("input", { type: "time", value: v.time || "20:00" });
     const before = h("input", { type: "number", min: "0", max: "168", style: "width:90px", value: v.postHoursBefore ?? 24 });
     const enabled = h("input", { type: "checkbox", checked: v.enabled ?? true });
-    let ownerId = v.owner ? v.owner.id : null;
-    const ownerView = h("span", {}, v.owner ? member(v.owner) : "you");
+    // Организатор: человек или «без организатора» — сбор публикует бот, слот 1 свободен, управляют админы на сайте
+    let ownerId = v.noOrganizer ? "none" : v.owner ? v.owner.id : null;
+    const ownerView = h("span", {});
+    const showOwner = m => {
+      ownerView.replaceChildren(ownerId === "none" ? h("span", { class: "chip" }, "🤖 no organizer — the bot posts it") : m ? member(m) : "you");
+      seat.disabled = ownerId === "none";
+      if (ownerId === "none") seat.checked = false;
+    };
     const ownerBtn = h("button", { class: "btn ghost", type: "button" }, "Change");
     ownerBtn.addEventListener("click", async () => {
       const m = await pickMemberDialog("Organizer of the scheduled groups");
-      if (m) { ownerId = m.id; ownerView.replaceChildren(member(m)); }
+      if (m) { ownerId = m.id; showOwner(m); }
     });
+    const noOwnerBtn = h("button", { class: "btn ghost", type: "button", title: "Groups are posted by the bot without an organizer: nobody takes slot 1, members sign up themselves; admins manage the groups on the site" }, "No organizer");
+    noOwnerBtn.addEventListener("click", () => { ownerId = "none"; showOwner(null); });
+    showOwner(v.owner);
     fields.push(
       h("div", { class: "field" }, h("label", {}, "Days"), h("div", {}, days.map(x => x.el))),
       h("div", { class: "row", style: "margin-bottom:12px" },
         h("span", { class: "muted" }, "Starts at"), time, h("span", { class: "muted" }, "· post"), before, h("span", { class: "muted" }, "hours before")),
-      h("div", { class: "row", style: "margin-bottom:12px" }, h("span", { class: "muted" }, "Organizer:"), ownerView, ownerBtn),
+      h("div", { class: "row", style: "margin-bottom:12px" }, h("span", { class: "muted" }, "Organizer:"), ownerView, ownerBtn, noOwnerBtn),
       h("label", { class: "row", style: "margin-bottom:8px" }, enabled, "Enabled"));
     extra = () => ({
       days: days.filter(x => x.cb.checked).map(x => x.d), time: time.value, postHoursBefore: Number(before.value || 0),
@@ -2342,7 +2351,8 @@ async function renderRecurring(card, acts, templates = [], projects = [], projec
         if (await act(rm, () => gApi("DELETE", `/lfg/recurring/${r.id}`), "Schedule deleted.") !== undefined) refresh();
       });
       return h("tr", {},
-        h("td", {}, r.activity, h("div", { class: "muted small" }, r.channel ? `#${r.channel}` : "deleted channel", ` · ${r.slots.length} slots`)),
+        h("td", {}, r.activity, h("div", { class: "muted small" }, r.channel ? `#${r.channel}` : "deleted channel", ` · ${r.slots.length} slots`,
+          r.noOrganizer ? " · 🤖 no organizer" : r.owner ? ` · by ${r.owner.name}` : "")),
         h("td", {}, `${dayNames(r.days)} · ${r.time}`, h("div", { class: "muted small" }, `post ${r.postHoursBefore} h before`)),
         h("td", { class: "small" }, r.enabled && r.nextPost ? fmtDate(r.nextPost) : "—",
           r.nextStart ? h("div", { class: "muted small" }, `start ${fmtDate(r.nextStart)}`) : null),
@@ -2886,7 +2896,7 @@ function groupCard(g) {
           : h("span", { class: "badge recruiting" }, h("span", { class: "pulse" }), "Recruiting"),
         capacity(g.filled, g.size))),
     h("div", { class: "group-meta" },
-      h("div", { class: "meta-item" }, icon("crown", 14), member(g.owner)),
+      h("div", { class: "meta-item" }, icon("crown", 14), g.owner ? member(g.owner) : h("span", { class: "muted" }, "no organizer")),
       h("div", { class: "meta-item" }, icon("calendar-clock", 14), g.startsAt ? fmtDate(g.startsAt) : "No time set"),
       g.channel ? h("div", { class: "meta-item" }, icon("hash", 14), g.channel) : null,
       h("div", { class: "meta-item" }, icon("trash-2", 14), `auto-delete ${fmtRelative(g.expiresAt)}`),
@@ -2901,8 +2911,8 @@ function groupCard(g) {
           h("span", { class: "slot-char" }, s.character || "", s.gs ? h("span", { class: "gs" }, `GS ${s.gs}`) : null, s.cp ? h("span", { class: "gs cp" }, `CP ${fmtCp(s.cp)}`) : null),
           g.started ? attendanceButton(s, `/lfg/groups/${gid}/attendance`) : null,
           tool("pencil", "Change character", rename(s.member, s.character)),
-          s.member.id !== g.owner.id ? tool("arrow-right", "Move to reserve", () => roster("toReserve", s.member, "Moved to the reserve.")) : null,
-          s.member.id !== g.owner.id ? tool("x", "Remove from the group", async () => {
+          (!g.owner || s.member.id !== g.owner.id) ? tool("arrow-right", "Move to reserve", () => roster("toReserve", s.member, "Moved to the reserve.")) : null,
+          (!g.owner || s.member.id !== g.owner.id) ? tool("x", "Remove from the group", async () => {
             if (await confirmDialog(`Remove ${s.member.name}?`, "Their slot becomes free.", "Remove")) roster("remove", s.member, "Removed.");
           }) : null)
       : h("div", { class: "slot open" }, h("span", { class: "slot-num" }, i + 1), rolePill(s.slotRole), slotReqMark(s),
@@ -5342,7 +5352,7 @@ function playCard(g) {
           s.ready && s.attended == null ? h("span", { title: "Ready" }, " 🟢") : null),
         h("span", { class: "slot-char" }, s.character || "", s.gs ? h("span", { class: "gs" }, `GS ${s.gs}`) : null, s.cp ? h("span", { class: "gs cp" }, `CP ${fmtCp(s.cp)}`) : null),
         org && g.started ? attendanceButton(s, `/me/groups/${gid}/attendance`) : null,
-        org && s.member.id !== g.owner.id ? tool("arrow-right", "Move to reserve", () => roster$("toReserve", s.member, "Moved to the reserve.")) : null)
+        org && (!g.owner || s.member.id !== g.owner.id) ? tool("arrow-right", "Move to reserve", () => roster$("toReserve", s.member, "Moved to the reserve.")) : null)
     : h("div", { class: "slot open" },
         h("span", { class: "slot-num" }, i + 1), rolePill(s.slotRole), slotReqMark(s),
         h("span", { class: "slot-open-text" }, icon("circle-plus", 14), "Open slot"))));
@@ -5422,7 +5432,7 @@ function playCard(g) {
         h("h3", {}, g.activity)),
       h("div", { class: "group-state" }, status, capacity(g.filled, g.size))),
     h("div", { class: "group-meta" },
-      h("div", { class: "meta-item" }, icon("crown", 14), member(g.owner)),
+      h("div", { class: "meta-item" }, icon("crown", 14), g.owner ? member(g.owner) : h("span", { class: "muted" }, "no organizer")),
       h("div", { class: "meta-item" }, icon("calendar-clock", 14), g.startsAt ? fmtDate(g.startsAt) : "No time set"),
       g.channel ? h("div", { class: "meta-item" }, icon("hash", 14), g.channel) : null,
       mine, req),

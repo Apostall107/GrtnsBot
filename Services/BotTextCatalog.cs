@@ -226,6 +226,7 @@ public static class BotTextCatalog
         Group("LFG — DMs & reminders");
         T("lfg.dm.title", "New group DM: title", "📣 LFG: {activity}", "{activity}", Title);
         T("lfg.dm.started", "New group DM: first line (- = hide)", "{user} started a group on **{server}**.", "{user}, {server}", 500, optional: true);
+        T("lfg.dm.startedAuto", "New group DM: first line, group without an organizer (- = hide)", "A new group on **{server}**.", "{server}", 500, optional: true);
         T("lfg.dm.openSlots", "New group DM: open slots (- = hide)", "Open slots: {list}", "{list}", 1000, optional: true);
         T("lfg.dm.full", "New group DM: full (- = hide)", "The group is full — you can still join the reserve.", null, 500, optional: true);
         T("lfg.dm.footer", "New group DM: footer", "Sign up right here with the role buttons. Don't want these DMs? Press \"DMs off\" on the LFG panel.", null, Footer);

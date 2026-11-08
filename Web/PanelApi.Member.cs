@@ -90,7 +90,7 @@ public static partial class PanelApi
                         // Напоминание уже было: можно нажать «Готов»
                         readyCheck = readyCheck && x.ReminderMessageId is not null,
                         myReady = mySlot?.Ready ?? false,
-                        owner = Member(guild, x.OwnerId),
+                        owner = x.OwnerId == 0 ? null : Member(guild, x.OwnerId),
                         channel = guild.GetTextChannel(x.ChannelId)?.Name,
                         startsAt = x.StartsAt?.ToUnixTimeMilliseconds(),
                         filled = x.FilledCount,

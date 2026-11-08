@@ -403,7 +403,7 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
             var gid = group.GuildId;
             var role = slot.TakenAs ?? slot.Role;
             var sb = new System.Text.StringBuilder();
-            sb.AppendText(Tx.Get(gid, "lfg.dm.promoted", ("user", $"<@{group.OwnerId}>"),
+            sb.AppendText(Tx.Get(gid, "lfg.dm.promoted", ("user", $"<@{(group.OwnerId != 0 ? group.OwnerId : client.CurrentUser.Id)}>"),
                 ("role", $"{role.Emoji()} **{role.Label()}**"), ("name", Format.Sanitize(slot.CharacterName ?? "-"))));
             if (group.StartsAt is { } startsAt)
                 sb.AppendText(Tx.Get(gid, "lfg.post.starts", ("time", LfgRenderer.FormatTime(startsAt))));
@@ -524,7 +524,7 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
                     speak: PermValue.Deny, stream: PermValue.Deny)),
             new(client.CurrentUser.Id, PermissionTarget.User, speaker.Modify(manageChannel: PermValue.Allow, moveMembers: PermValue.Allow))
         };
-        foreach (var id in group.Slots.Where(s => s.UserId is not null).Select(s => s.UserId!.Value).Append(group.OwnerId).Distinct())
+        foreach (var id in group.Slots.Where(s => s.UserId is not null).Select(s => s.UserId!.Value).Append(group.OwnerId).Where(id => id != 0).Distinct())
             list.Add(new Overwrite(id, PermissionTarget.User, speaker));
         return list;
     }
@@ -536,7 +536,7 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
             guild.GetVoiceChannel(id) is not { } channel) return;
         try
         {
-            var wanted = group.Slots.Where(s => s.UserId is not null).Select(s => s.UserId!.Value).Append(group.OwnerId).ToHashSet();
+            var wanted = group.Slots.Where(s => s.UserId is not null).Select(s => s.UserId!.Value).Append(group.OwnerId).Where(id => id != 0).ToHashSet();
             foreach (var ow in channel.PermissionOverwrites.Where(o => o.TargetType == PermissionTarget.User &&
                                                                      o.TargetId != client.CurrentUser.Id && !wanted.Contains(o.TargetId)))
                 if (guild.GetUser(ow.TargetId) is { } gone) await channel.RemovePermissionOverwriteAsync(gone);

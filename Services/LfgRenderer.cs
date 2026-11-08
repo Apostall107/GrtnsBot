@@ -287,7 +287,8 @@ public static class LfgRenderer
     {
         var gid = g.GuildId;
         var sb = new StringBuilder();
-        sb.AppendText(Tx.Get(gid, "lfg.post.organizer", ("user", $"<@{g.OwnerId}>")));
+        // Сбор без организатора (повторяющийся, публикует бот) — строки организатора нет
+        if (g.OwnerId != 0) sb.AppendText(Tx.Get(gid, "lfg.post.organizer", ("user", $"<@{g.OwnerId}>")));
         if (g.StartsAt is { } startsAt)
             sb.AppendText(Tx.Get(gid, "lfg.post.starts", ("time", FormatTime(startsAt))));
         sb.AppendText(Tx.Get(gid, "lfg.post.roster", ("filled", g.FilledCount), ("total", g.Slots.Count)));
@@ -544,7 +545,9 @@ public static class LfgRenderer
     {
         var gid = g.GuildId;
         var sb = new StringBuilder();
-        sb.AppendText(Tx.Get(gid, "lfg.dm.started", ("user", $"<@{g.OwnerId}>"), ("server", Format.Sanitize(guildName))));
+        sb.AppendText(g.OwnerId == 0
+            ? Tx.Get(gid, "lfg.dm.startedAuto", ("server", Format.Sanitize(guildName)))
+            : Tx.Get(gid, "lfg.dm.started", ("user", $"<@{g.OwnerId}>"), ("server", Format.Sanitize(guildName))));
         if (g.StartsAt is { } startsAt)
             sb.AppendText(Tx.Get(gid, "lfg.post.starts", ("time", FormatTime(startsAt))));
         sb.AppendText(Tx.Get(gid, "lfg.post.roster", ("filled", g.FilledCount), ("total", g.Slots.Count)));
