@@ -54,6 +54,41 @@ public static partial class PanelApi
             return Results.Ok(new { pages, rolePanels, moduleKeys = ChannelPageService.ModuleKeys, groups });
         });
 
+        // Превью всей страницы: каждый блок — как бот его отправит (текст — по сообщениям, панели — настоящий рендер)
+        g.MapPost("/preview", async (ulong guildId, PageBody body, DiscordSocketClient client,
+            [FromServices] AnnouncementService announce, [FromServices] CommunityStore community,
+            [FromServices] CommunityService roles, [FromServices] PanelService panels) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            var items = new List<object>();
+            foreach (var b in (body.Blocks ?? []).Take(50))
+            {
+                try
+                {
+                    switch (b.Type)
+                    {
+                        case "text" when !string.IsNullOrWhiteSpace(b.Text):
+                            foreach (var part in PostSplitter.Split(await announce.ResolveEmotesAsync(guildId, b.Text!)))
+                                items.Add(new { block = b.Id, preview = MessagePreview(guild, part, [], null) });
+                            break;
+                        case "rolepanel" when community.GetPanels(guildId).FirstOrDefault(p => p.Id == b.RolePanelId) is { } rp:
+                            var (embed, comps) = await roles.RenderResolvedAsync(rp);
+                            items.Add(new { block = b.Id, preview = MessagePreview(guild, null, [embed], comps),
+                                reactions = rp.Reactions.Select(x => x.Emoji).Where(x => !string.IsNullOrWhiteSpace(x)) });
+                            break;
+                        case "modulepanel" when ChannelPageService.ModuleKeys.Contains(b.ModuleKey):
+                            items.Add(new { block = b.Id, preview = PanelPreview(guild, panels, b.ModuleKey!) });
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    items.Add(new { block = b.Id, error = ex.Message });
+                }
+            }
+            return Results.Ok(new { items });
+        });
+
         g.MapGet("/{id}", (ulong guildId, string id, DiscordSocketClient client, [FromServices] ChannelPageStore store,
             [FromServices] CommunityStore community) =>
         {

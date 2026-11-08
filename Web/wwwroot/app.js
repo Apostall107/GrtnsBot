@@ -3613,7 +3613,7 @@ function dcFromPreview(p, opts = {}) {
   };
   const rows = (p.rows || []).map(row => row.map(c => c.type === "select" ? select(c)
     : h("span", { class: c.disabled ? "dc-disabled" : "" }, dcButton(c.label, c.emoji, styleColor[c.style] || "Grey", !!c.url))));
-  return dcMessage({ content: p.content, embeds: p.embeds || [], rows, mentions: p.mentions || {} });
+  return dcMessage({ content: p.content, embeds: p.embeds || [], rows, mentions: p.mentions || {}, reactions: opts.reactions || [] });
 }
 
 /** Live preview box: load() → preview DTO; refresh() is debounced. */
@@ -5746,8 +5746,8 @@ async function pageChannelPages(main) {
 
 function channelPageEditor(pageId, rolePanels, moduleKeys, reload, groups = []) {
   const d = dialog();
-  d.classList.add("xwide");
-  d.onclose = () => d.classList.remove("xwide");
+  d.classList.add("xwide", "page-dialog");
+  d.onclose = () => d.classList.remove("xwide", "page-dialog");
   d.replaceChildren(h("div", { class: "muted" }, "Loading…"));
   d.showModal();
 
@@ -5783,7 +5783,7 @@ function channelPageEditor(pageId, rolePanels, moduleKeys, reload, groups = []) 
           const redraw = () => prev.replaceChildren(ta.value.trim()
             ? dcMessage({ content: resolveEmojiShortcodes(ta.value, emojiMap).slice(0, 2000) })
             : h("div", { class: "muted small" }, "Empty text block."));
-          ta.addEventListener("input", () => { b.text = ta.value; redraw(); });
+          ta.addEventListener("input", () => { b.text = ta.value; redraw(); queuePreview(); });
           // Вставить эмодзи сервера/бота как :name: в позицию курсора (картинки в списке)
           const pick = emojiList.length ? h("select", { style: "width:200px", title: "Insert a server / bot emoji" }, h("option", { value: "" }, "😀 Insert emoji…"),
             emojiList.map(e => h("option", { value: e.name, "data-icon": e.code }, `:${e.name}:${e.app ? " (bot)" : ""}`))) : null;
@@ -5792,34 +5792,53 @@ function channelPageEditor(pageId, rolePanels, moduleKeys, reload, groups = []) 
             const ins = `:${pick.value}:`, st = ta.selectionStart ?? ta.value.length, en = ta.selectionEnd ?? ta.value.length;
             ta.value = ta.value.slice(0, st) + ins + ta.value.slice(en);
             b.text = ta.value; ta.focus(); ta.selectionStart = ta.selectionEnd = st + ins.length;
-            pick.value = ""; redraw();
+            pick.value = ""; redraw(); queuePreview();
           });
           redraw();
           body = h("div", {}, ta, pick ? h("div", { class: "row", style: "margin:6px 0" }, pick,
-            h("span", { class: "muted small" }, "Emoji not in the list? Upload it to the server or as the bot's emoji first.")) : null, prev);
+            h("span", { class: "muted small" }, "Emoji not in the list? Upload it to the server or as the bot's emoji first.")) : null);
         } else if (b.type === "rolepanel") {
           const sel = h("select", {}, h("option", { value: "" }, "Choose a role panel…"),
             rolePanels.map(r => h("option", { value: r.id }, r.title)));
           sel.value = b.rolePanelId;
-          sel.addEventListener("change", () => { b.rolePanelId = sel.value; });
+          sel.addEventListener("change", () => { b.rolePanelId = sel.value; queuePreview(); });
           body = h("div", { class: "field" },
             rolePanels.length ? sel : h("p", { class: "muted small" }, "No role panels yet — create one in the Role panels tab first."));
         } else {
           const sel = h("select", {}, h("option", { value: "" }, "Choose a module panel…"),
             moduleKeys.map(k => h("option", { value: k }, MODULE_PANEL_LABELS[k] || k)));
           sel.value = b.moduleKey;
-          sel.addEventListener("change", () => { b.moduleKey = sel.value; });
+          sel.addEventListener("change", () => { b.moduleKey = sel.value; queuePreview(); });
           body = h("div", { class: "field" }, sel);
         }
         return h("div", { class: "binding-card" }, head, body);
       }));
+      queuePreview();
     };
+
+    // Итоговый вид всей страницы в канале — справа, обновляется при любых правках
+    const whole = h("div", { class: "dc-frame page-preview" }, h("div", { class: "muted small" }, "Loading preview…"));
+    let pvTimer = 0, pvSeq = 0;
+    function queuePreview() {
+      clearTimeout(pvTimer);
+      pvTimer = setTimeout(async () => {
+        const my = ++pvSeq;
+        try {
+          const r = await gApi("POST", "/pages/preview", { blocks: blocks.map(b => ({ id: b.id || null, type: b.type, text: b.text, rolePanelId: b.rolePanelId, moduleKey: b.moduleKey })) });
+          if (my !== pvSeq) return;
+          whole.replaceChildren(...(r.items.length ? r.items.map(it => it.error
+            ? h("p", { class: "error-text small" }, it.error)
+            : dcFromPreview(it.preview, { reactions: it.reactions || [] }))
+            : [h("div", { class: "muted small" }, "Nothing to post yet — add blocks.")]));
+        } catch (e) { if (my === pvSeq) whole.replaceChildren(h("p", { class: "error-text small" }, `Preview: ${e.message}`)); }
+      }, 400);
+    }
     draw();
 
     const addBtn = (label, type) => h("button", { class: "btn secondary sm", type: "button",
       onclick: () => { blocks.push({ type, text: "", rolePanelId: "", moduleKey: "" }); draw(); itemsWrap.scrollTop = itemsWrap.scrollHeight; } }, label);
 
-    const itemsWrap = h("div", { style: "max-height:46vh;overflow:auto" }, list);
+    const itemsWrap = h("div", { style: "max-height:56vh;overflow:auto" }, list);
     const save = h("button", { class: "btn" }, icon("check", 15), "Save");
     const saveBody = () => ({ name: name.value, projectKey: proj.value, blocks: blocks.map(b => ({ id: b.id || null, type: b.type, text: b.text, rolePanelId: b.rolePanelId, moduleKey: b.moduleKey })) });
     save.addEventListener("click", async () => {
@@ -5830,10 +5849,13 @@ function channelPageEditor(pageId, rolePanels, moduleKeys, reload, groups = []) 
       h("h2", {}, "Channel page"),
       h("div", { class: "grid2" }, h("div", { class: "field" }, h("label", {}, "Name"), name),
         h("div", { class: "field" }, h("label", {}, "Project (groups the pages)"), proj)),
-      h("div", { class: "field" }, h("label", {}, "Blocks (posted top to bottom)"), itemsWrap),
-      h("div", { class: "row", style: "gap:8px;flex-wrap:wrap;margin-bottom:6px" },
-        addBtn("➕ Text", "text"), addBtn("➕ Role panel", "rolepanel"), addBtn("➕ Module panel", "modulepanel")),
-      h("p", { class: "muted small" }, "Update keeps unchanged blocks as they are (role panel reactions stay) and edits changed text in place. Discord keeps messages in post order, so moving blocks or inserting one in the middle re-posts the blocks from that point on — add new blocks at the end."),
+      h("div", { class: "page-edit-split" },
+        h("div", { class: "page-edit-left" },
+          h("div", { class: "field" }, h("label", {}, "Blocks (posted top to bottom)"), itemsWrap),
+          h("div", { class: "row", style: "gap:8px;flex-wrap:wrap;margin-bottom:6px" },
+            addBtn("➕ Text", "text"), addBtn("➕ Role panel", "rolepanel"), addBtn("➕ Module panel", "modulepanel")),
+          h("p", { class: "muted small" }, "Update keeps unchanged blocks as they are (role panel reactions stay) and edits changed text in place. Discord keeps messages in post order, so moving blocks or inserting one in the middle re-posts the blocks from that point on — add new blocks at the end.")),
+        h("div", { class: "page-edit-right" }, h("label", {}, "How the channel will look"), whole)),
       h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), save));
   }).catch(e => d.replaceChildren(h("h2", {}, "Channel page"), empty(e.message),
     h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Close"))));

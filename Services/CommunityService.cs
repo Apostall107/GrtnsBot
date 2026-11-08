@@ -191,7 +191,7 @@ public sealed class CommunityService(
         !string.IsNullOrWhiteSpace(b.Label) ? b.Label! : b.RoleIds.Count > 0 ? RoleName(p.GuildId, b.RoleIds[0]) : "Role";
 
     /// <summary>Рендер с подстановкой :имя: → эмодзи сервера/бота в заголовке и тексте (как в постах).</summary>
-    private async Task<(Embed Embed, MessageComponent? Components)> RenderResolvedAsync(RolePanel p)
+    public async Task<(Embed Embed, MessageComponent? Components)> RenderResolvedAsync(RolePanel p)
     {
         var copy = JsonClone(p);
         if (!string.IsNullOrWhiteSpace(copy.Text)) copy.Text = await announce.ResolveEmotesAsync(p.GuildId, copy.Text!);
