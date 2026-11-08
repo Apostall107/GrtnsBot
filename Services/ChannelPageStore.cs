@@ -28,6 +28,8 @@ public sealed class ChannelPage
     public string Id { get; set; } = IdGen.New();
     public ulong GuildId { get; set; }
     public string Name { get; set; } = "Channel page";
+    /// <summary>Проект бота (LfgProjectStore) — для группировки страниц. null — общие.</summary>
+    public string? ProjectKey { get; set; }
     /// <summary>Куда опубликована (null — не опубликована).</summary>
     public ulong? ChannelId { get; set; }
     public List<PageBlock> Blocks { get; set; } = [];

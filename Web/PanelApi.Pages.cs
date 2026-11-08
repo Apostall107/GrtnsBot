@@ -15,7 +15,7 @@ namespace LfgBot.Web;
 public static partial class PanelApi
 {
     public sealed record PageBlockBody(string? Id, string Type, string? Text, string? RolePanelId, string? ModuleKey);
-    public sealed record PageBody(string? Name, List<PageBlockBody>? Blocks);
+    public sealed record PageBody(string? Name, List<PageBlockBody>? Blocks, string? ProjectKey = null);
     public sealed record PagePublishBody(string? ChannelId, bool? Full);
 
     private static object BlockDto(PageBlock b) => new
@@ -26,7 +26,7 @@ public static partial class PanelApi
 
     private static object PageDto(ChannelPage p) => new
     {
-        id = p.Id, name = p.Name, channelId = p.ChannelId?.ToString(),
+        id = p.Id, name = p.Name, projectKey = p.ProjectKey, channelId = p.ChannelId?.ToString(),
         published = p.ChannelId is not null, blockCount = p.Blocks.Count,
         blocks = p.Blocks.Select(BlockDto)
     };
@@ -38,19 +38,20 @@ public static partial class PanelApi
 
         // Список страниц + готовые панели ролей и доступные панели модулей — для редактора
         g.MapGet("/", (ulong guildId, DiscordSocketClient client, [FromServices] ChannelPageStore store,
-            [FromServices] CommunityStore community) =>
+            [FromServices] CommunityStore community, [FromServices] LfgProjectStore lfgProjects) =>
         {
             var guild = client.GetGuild(guildId);
             var rolePanels = community.GetPanels(guildId)
                 .Select(rp => new { id = rp.Id, title = string.IsNullOrWhiteSpace(rp.Title) ? "(no title)" : rp.Title });
             var pages = store.Get(guildId).Select(p => new
             {
-                id = p.Id, name = p.Name, published = p.ChannelId is not null,
+                id = p.Id, name = p.Name, published = p.ChannelId is not null, projectKey = p.ProjectKey,
                 channelId = p.ChannelId?.ToString(),
                 channel = p.ChannelId is { } c ? guild?.GetTextChannel(c)?.Name : null,
                 blockCount = p.Blocks.Count
             });
-            return Results.Ok(new { pages, rolePanels, moduleKeys = ChannelPageService.ModuleKeys });
+            var groups = lfgProjects.GetProjects(guildId).Select(p => new { key = p.Key, name = p.Name });
+            return Results.Ok(new { pages, rolePanels, moduleKeys = ChannelPageService.ModuleKeys, groups });
         });
 
         g.MapGet("/{id}", (ulong guildId, string id, DiscordSocketClient client, [FromServices] ChannelPageStore store,
@@ -64,7 +65,8 @@ public static partial class PanelApi
 
         g.MapPost("/", (ulong guildId, PageBody body, [FromServices] ChannelPageStore store) =>
         {
-            var page = new ChannelPage { GuildId = guildId, Name = Clean(body.Name) ?? "Channel page" };
+            var page = new ChannelPage { GuildId = guildId, Name = Clean(body.Name) ?? "Channel page",
+                ProjectKey = string.IsNullOrWhiteSpace(body.ProjectKey) ? null : body.ProjectKey };
             if (store.Save(page) is { } error) return Error(error);
             return Results.Ok(PageDto(page));
         });
@@ -73,6 +75,7 @@ public static partial class PanelApi
         {
             if (store.Find(id) is not { } page || page.GuildId != guildId) return GuildNotFound();
             page.Name = Clean(body.Name) ?? page.Name;
+            if (body.ProjectKey is not null) page.ProjectKey = body.ProjectKey.Length == 0 ? null : body.ProjectKey;
             // Блоки с прежним id сохраняют свои сообщения в канале — следующая публикация обновит их на месте
             var old = page.Blocks.ToDictionary(b => b.Id);
             page.Blocks = (body.Blocks ?? []).Select(b =>

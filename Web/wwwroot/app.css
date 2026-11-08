@@ -179,7 +179,15 @@ h3 { font-size: var(--fs-card); }
   padding: var(--s4) 12px 6px; font-size: 11px; font-weight: 600; letter-spacing: .08em;
   text-transform: uppercase; color: var(--text-secondary); white-space: nowrap; overflow: hidden;
 }
-.nav-section:first-child { padding-top: var(--s1); }
+.nav-section:first-child, .nav-group:first-child > .nav-section { padding-top: var(--s1); }
+/* Sidebar groups: the title folds the group (remembered); in icon-only mode everything is shown */
+button.nav-section { display: flex; align-items: center; justify-content: space-between; width: 100%; background: none; border: 0; cursor: pointer; text-align: left; font-family: inherit; }
+button.nav-section:hover { color: var(--text); }
+.nav-fold { transition: transform .15s; opacity: .7; flex: none; }
+.nav-group.folded .nav-fold { transform: rotate(-90deg); }
+.nav-group.folded > .nav-item { display: none; }
+.layout.collapsed .nav-group.folded > .nav-item { display: flex; }
+.layout.collapsed .nav-fold { display: none; }
 .nav-item {
   position: relative; display: flex; align-items: center; gap: 12px; width: 100%; height: 38px;
   padding: 0 12px; margin-bottom: 2px;
@@ -1544,3 +1552,8 @@ th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
 .vn-flag { display: inline-flex; align-items: center; gap: 3px; color: var(--text-secondary); font-size: 11px; margin-left: 6px; }
 .vn-flag.warn { color: #f87171; }
 .vn-flag.live { color: #fff; background: #ed4245; border-radius: 4px; padding: 0 5px; font-weight: 700; }
+/* Mobile drawer shows labels even when the menu is "collapsed" — keep group folding there */
+@media (max-width: 900px) {
+  .layout.collapsed .nav-group.folded > .nav-item { display: none; }
+  .layout.collapsed .nav-fold { display: inline-block; }
+}

@@ -1155,22 +1155,22 @@ const allTabs = [
   ["chars", "user-round", "My characters", "member", "Member"],
   ["schedule", "calendar-clock", "Calendar", "member", "Member"],
   ["roster", "users", "Guild roster", "member", "Member"],
-  ["lfg", "swords", "LFG", "lfg", "Community modules"],
-  ["guild", "calendar", "Guild", "guild", "Community modules"],
-  ["tickets", "ticket", "Tickets", "tickets", "Community modules"],
-  ["voice", "headphones", "Temp Voice", "voice", "Community modules"],
-  ["welcome", "door-open", "Welcome", "welcome", "Community modules"],
-  ["roles", "user-plus", "Role panels", "roles", "Community modules"],
-  ["birthdays", "cake", "Birthdays", "birthdays", "Community modules"],
-  ["content", "layout-template", "Panels & posts", "content", "Community modules"],
-  ["announce", "megaphone", "Announcements", "announce", "Community modules"],
-  ["pages", "layers", "Channel pages", "pages", "Community modules"],
+  ["lfg", "swords", "LFG", "lfg", "Games"],
+  ["guild", "calendar", "Guild", "guild", "Games"],
+  ["welcome", "door-open", "Welcome", "welcome", "Community"],
+  ["roles", "user-plus", "Role panels", "roles", "Community"],
+  ["tickets", "ticket", "Tickets", "tickets", "Community"],
+  ["voice", "headphones", "Temp Voice", "voice", "Community"],
+  ["birthdays", "cake", "Birthdays", "birthdays", "Community"],
+  ["pages", "layers", "Channel pages", "pages", "Posts & channels"],
+  ["announce", "megaphone", "Announcements", "announce", "Posts & channels"],
+  ["content", "layout-template", "Panels & posts", "content", "Posts & channels"],
   ["overview", "layout-dashboard", "Dashboard", "admin", "Administration"],
   ["log", "scroll-text", "Log", "log", "Administration"],
   ["settings", "settings", "Settings", "settings", "Administration"],
-  ["voicenow", "headphones", "Voice now", "access", "Administration"],
-  ["captcha", "shield-check", "Captcha", "access", "Administration"],
-  ["access", "key-round", "Access", "access", "Administration"]
+  ["access", "key-round", "Access", "access", "Owner tools"],
+  ["captcha", "shield-check", "Captcha", "access", "Owner tools"],
+  ["voicenow", "headphones", "Voice now", "access", "Owner tools"]
 ];
 const currentGuild = () => state.guilds.find(g => g.id === state.guildId);
 const isAdmin = () => !!(state.me && state.me.isAdmin);
@@ -1276,11 +1276,29 @@ function renderShell() {
     "aria-current": state.tab === key ? "page" : null,
     onclick: async () => { if (!await leavePage()) return; state.tab = key; store.set("gb.tab", key); renderShell(); }
   }, icon(ic, 18), h("span", { class: "nav-label" }, label));
+  // Groups fold by a click on their title (remembered); "Owner tools" is folded by default; the active tab's group stays open
+  const folded = (() => { try { return new Set(JSON.parse(store.get("gb.navFold") || '["Owner tools"]')); } catch { return new Set(["Owner tools"]); } })();
   const navItems = [];
-  let section = null;
+  const sections = [];
   for (const t of visibleTabs()) {
-    if (t[4] !== section) { section = t[4]; navItems.push(h("div", { class: "nav-section" }, h("span", { class: "nav-section-text" }, section))); }
-    navItems.push(navButton(t));
+    let sec = sections[sections.length - 1];
+    if (!sec || sec.name !== t[4]) { sec = { name: t[4], tabs: [] }; sections.push(sec); }
+    sec.tabs.push(t);
+  }
+  for (const sec of sections) {
+    const active = sec.tabs.some(t => t[0] === state.tab);
+    const group = h("div", { class: `nav-group${folded.has(sec.name) && !active ? " folded" : ""}` });
+    const head = h("button", { class: "nav-section", type: "button", "aria-expanded": String(!group.classList.contains("folded")),
+      onclick: () => {
+        if (active) return; // the open tab's group can't fold
+        const isFolded = group.classList.toggle("folded");
+        head.setAttribute("aria-expanded", String(!isFolded));
+        if (isFolded) folded.add(sec.name); else folded.delete(sec.name);
+        store.set("gb.navFold", JSON.stringify([...folded]));
+      } },
+      h("span", { class: "nav-section-text" }, sec.name), active ? null : icon("chevron-down", 13, "nav-fold"));
+    group.append(head, ...sec.tabs.map(navButton));
+    navItems.push(group);
   }
   const collapseBtn = h("button", { class: "nav-item nav-collapse", title: collapsed ? "Expand menu" : "Collapse menu",
     onclick: async () => { if (!await leavePage()) return; store.set("gb.navCollapsed", collapsed ? "0" : "1"); renderShell(); } },
@@ -5622,6 +5640,19 @@ async function pageBirthdays(main) {
 
 const MODULE_PANEL_LABELS = { lfg: "LFG panel", tickets: "Tickets panel", rooms: "Temp Voice panel" };
 
+/** Pages grouped by bot project: [[name, pages]], general ones first. */
+function pageGroups(d) {
+  const groups = d.groups || [];
+  const out = [];
+  const general = d.pages.filter(p => !p.projectKey || !groups.some(g => g.key === p.projectKey));
+  if (general.length) out.push([groups.length ? "General" : "Pages", general]);
+  for (const g of groups) {
+    const list = d.pages.filter(p => p.projectKey === g.key);
+    if (list.length) out.push([g.name, list]);
+  }
+  return out;
+}
+
 /** Shows what an update of a published page will do; resolves true to go on. */
 async function confirmPagePlan(p, channelId) {
   const plan = await gApi("GET", `/pages/${p.id}/plan?channelId=${encodeURIComponent(channelId)}`);
@@ -5657,7 +5688,7 @@ async function pageChannelPages(main) {
     h("button", { class: "btn btn-refresh", title: "Reload", onclick: hardRefresh }, "🔄 Refresh")));
   main.append(h("p", { class: "muted small" },
     "Assemble a whole channel from several bot messages and panels — text blocks (with formatting and :emoji:), role panels and module panels — in one order. ",
-    "Publishing posts them all into one channel as one unit; re-publishing re-posts the page. Create the role panels in the Role panels tab, then drop them in here by reference."));
+    "Publishing posts them into one channel as one unit; Update later touches only changed blocks. Create the role panels in the Role panels tab, then drop them in here by reference."));
 
   const holder = h("div", {}, h("div", { class: "card" }, skeletonLines(4)));
   main.append(holder);
@@ -5670,11 +5701,11 @@ async function pageChannelPages(main) {
       const name = await promptDialog("New channel page", "Channel page");
       if (!name) return;
       const p = await act(add, () => gApi("POST", "/pages", { name }));
-      if (p) channelPageEditor(p.id, d.rolePanels, d.moduleKeys, load);
+      if (p) channelPageEditor(p.id, d.rolePanels, d.moduleKeys, load, d.groups);
     });
     holder.replaceChildren(h("div", { class: "card" },
       h("div", { class: "card-head" }, h("h2", {}, "Pages"), add),
-      d.pages.length ? h("div", { class: "list" }, d.pages.map(p => {
+      d.pages.length ? h("div", {}, pageGroups(d).map(([gname, list]) => h("div", { style: "margin-bottom:10px" }, sectionLabel(gname), h("div", { class: "list" }, list.map(p => {
         const chSel = channelSelect("text", "Channel…");
         if (p.channelId) chSel.value = p.channelId;
         const publish = h("button", { class: "btn secondary sm", title: p.published ? "Update the posted page: only changed blocks are touched" : "Post the page" },
@@ -5698,7 +5729,7 @@ async function pageChannelPages(main) {
               : h("span", { class: "chip warn", style: "margin-left:8px" }, "not published"),
             h("span", { class: "muted small", style: "margin-left:8px" }, `${p.blockCount} block${p.blockCount === 1 ? "" : "s"}`)),
           chSel, publish, repostAll,
-          h("button", { class: "btn ghost sm", onclick: () => channelPageEditor(p.id, d.rolePanels, d.moduleKeys, load) }, icon("pencil", 14), "Edit"),
+          h("button", { class: "btn ghost sm", onclick: () => channelPageEditor(p.id, d.rolePanels, d.moduleKeys, load, d.groups) }, icon("pencil", 14), "Edit"),
           p.published ? h("button", { class: "btn ghost sm", title: "Delete the posted messages", onclick: () => act(null, async () => {
             if (!await confirmDialog("Unpublish this page?", "Its messages in the channel are deleted. The page itself stays.", "Unpublish")) return;
             await gApi("POST", `/pages/${p.id}/unpublish`); toast("Unpublished."); load();
@@ -5707,12 +5738,12 @@ async function pageChannelPages(main) {
             if (!await confirmDialog(`Delete “${p.name}”?`, "The page and its posted messages are deleted.", "Delete")) return;
             await gApi("DELETE", `/pages/${p.id}`); toast("Page deleted."); load();
           }) }, icon("trash-2", 14)));
-      })) : emptyState("layers", "No channel pages yet", "Create one to assemble a channel from several messages and panels.")));
+      }))))) : emptyState("layers", "No channel pages yet", "Create one to assemble a channel from several messages and panels.")));
   }
   await load();
 }
 
-function channelPageEditor(pageId, rolePanels, moduleKeys, reload) {
+function channelPageEditor(pageId, rolePanels, moduleKeys, reload, groups = []) {
   const d = dialog();
   d.classList.add("xwide");
   d.onclose = () => d.classList.remove("xwide");
@@ -5727,6 +5758,8 @@ function channelPageEditor(pageId, rolePanels, moduleKeys, reload) {
     const page = data.page;
     rolePanels = data.rolePanels || rolePanels;
     const name = h("input", { maxlength: "80", value: page.name, style: "width:100%" });
+    const proj = h("select", {}, h("option", { value: "" }, "General (no project)"), groups.map(g => h("option", { value: g.key }, g.name)));
+    proj.value = page.projectKey || "";
     const blocks = (page.blocks || []).map(b => ({ id: b.id, posted: b.messages > 0, type: b.type, text: b.text || "", rolePanelId: b.rolePanelId || "", moduleKey: b.moduleKey || "" }));
     const list = h("div", {});
 
@@ -5787,14 +5820,15 @@ function channelPageEditor(pageId, rolePanels, moduleKeys, reload) {
 
     const itemsWrap = h("div", { style: "max-height:46vh;overflow:auto" }, list);
     const save = h("button", { class: "btn" }, icon("check", 15), "Save");
-    const saveBody = () => ({ name: name.value, blocks: blocks.map(b => ({ id: b.id || null, type: b.type, text: b.text, rolePanelId: b.rolePanelId, moduleKey: b.moduleKey })) });
+    const saveBody = () => ({ name: name.value, projectKey: proj.value, blocks: blocks.map(b => ({ id: b.id || null, type: b.type, text: b.text, rolePanelId: b.rolePanelId, moduleKey: b.moduleKey })) });
     save.addEventListener("click", async () => {
       if (await act(save, () => gApi("PUT", `/pages/${pageId}`, saveBody()), "Page saved.") !== undefined) { d.close(); reload(); }
     });
 
     d.replaceChildren(
       h("h2", {}, "Channel page"),
-      h("div", { class: "field" }, h("label", {}, "Name"), name),
+      h("div", { class: "grid2" }, h("div", { class: "field" }, h("label", {}, "Name"), name),
+        h("div", { class: "field" }, h("label", {}, "Project (groups the pages)"), proj)),
       h("div", { class: "field" }, h("label", {}, "Blocks (posted top to bottom)"), itemsWrap),
       h("div", { class: "row", style: "gap:8px;flex-wrap:wrap;margin-bottom:6px" },
         addBtn("➕ Text", "text"), addBtn("➕ Role panel", "rolepanel"), addBtn("➕ Module panel", "modulepanel")),
