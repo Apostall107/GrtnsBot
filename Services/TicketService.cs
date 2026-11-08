@@ -153,7 +153,7 @@ public sealed class TicketService(
             {
                 p.CategoryId = categoryId;
                 p.PermissionOverwrites = overwrites;
-                p.Topic = Tx.Get(guild.Id, "ticket.topic", ("project", project.Name), ("user", user.Username));
+                p.Topic = Tx.Get(guild.Id, "ticket.topic", ("project", TicketRenderer.DisplayName(project)), ("user", user.Username));
             });
 
             IVoiceChannel voice;
@@ -319,6 +319,8 @@ public sealed class TicketService(
     private async Task<ulong?> EnsureCategoryAsync(SocketGuild guild, TicketProject project)
     {
         if (project.CategoryId is { } id && guild.GetCategoryChannel(id) is not null) return id;
+        // Подпроект без своей категории — в категорию основного проекта
+        if (project.ParentKey is { } pk && store.FindProject(guild.Id, pk) is { CategoryId: { } pid } && guild.GetCategoryChannel(pid) is not null) return pid;
 
         var existing = guild.CategoryChannels.FirstOrDefault(c =>
             c.Name.Equals(TicketRenderer.DefaultCategoryName, StringComparison.OrdinalIgnoreCase));

@@ -20,7 +20,17 @@ public sealed class TicketStore
         _data = File.Exists(_path)
             ? JsonSerializer.Deserialize<TicketData>(File.ReadAllText(_path)) ?? new()
             : new();
+        // Имя основного проекта для подпроектов — в названиях каналов и сообщении тикета («Where Winds Meet · PoV»)
+        TicketRenderer.ParentName = key =>
+        {
+            lock (_lock)
+                return _data.Projects.Values.SelectMany(l => l).FirstOrDefault(p => p.Key == key)?.Name;
+        };
     }
+
+    /// <summary>Основной проект подпроекта (или null).</summary>
+    public TicketProject? ParentOf(ulong guildId, TicketProject project) =>
+        project.ParentKey is { } k ? FindProject(guildId, k) : null;
 
     // ---------- Проекты ----------
 

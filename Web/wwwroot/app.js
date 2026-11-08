@@ -2935,50 +2935,63 @@ function ticketPanelPreview(panel, types) {
   return dcMessage({ embeds: [{ title: panel.title || "Tickets", description: panel.text || "", color: panel.color || "#5865f2" }], rows });
 }
 
-async function ticketPanelsSection(main) {
-  const holder = h("div", {}, h("div", { class: "card" }, skeletonLines(4)));
+/**
+ * Панели подпроектов: внутри вкладки основного проекта (scope = его ключ) — только его панели, новая создаётся в нём;
+ * scope = null (General) — панели без проекта (старые), если такие есть.
+ */
+async function ticketPanelsSection(main, scope = null) {
+  const holder = h("div", {}, h("div", { class: "card" }, skeletonLines(3)));
   main.append(holder);
   async function load() {
     let d;
     try { d = await gApi("GET", "/tickets/panels"); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
-    const gName = k => (d.groups.find(g => g.key === k) || {}).name;
+    const mainOf = k => d.groups.find(g => g.key === k);
+    const mine = scope ? d.panels.filter(p => p.projectKey === scope) : d.panels.filter(p => !mainOf(p.projectKey));
+    if (!scope && !mine.length) { holder.replaceChildren(); return; }
+    const proj = scope ? mainOf(scope) : null;
     const add = h("button", { class: "btn" }, icon("plus", 15), "New panel");
     add.addEventListener("click", async () => {
-      const title = await promptDialog("New sub-project panel", "Applications");
+      const title = await promptDialog("New sub-project panel", proj ? `${proj.name} — applications` : "Applications");
       if (!title) return;
-      const p = await act(add, () => gApi("POST", "/tickets/panels", { title }));
-      if (p) ticketPanelEditor(p, d, load);
+      const p = await act(add, () => gApi("POST", "/tickets/panels", { title, projectKey: scope }));
+      if (p) ticketPanelEditor({ ...p, projectKey: scope || p.projectKey }, d, load);
     });
     holder.replaceChildren(
-      h("div", { class: "card" }, h("div", { class: "card-head" }, h("h2", {}, "Sub-project panels"), add),
-        h("p", { class: "muted small" }, "A separate message with a button for each ticket type of one project — e.g. “WWM — applications” with GvG application and POV review. ",
-          "Post it in that project's channel. Discord can't hide buttons per member, so access is checked on click: members without the role get a private refusal. ",
-          "To hide the panel completely, post it in a channel only that role can see.")),
-      d.panels.length ? h("div", { class: "panel-grid" }, d.panels.map(p => {
+      h("div", { class: "card" }, h("div", { class: "card-head" },
+          h("h2", {}, proj ? `🧩 ${proj.name} — sub-project panels` : "🧩 Sub-project panels without a project"), scope ? add : null),
+        h("p", { class: "muted small" }, proj
+          ? `A message with a button for each sub-project of ${proj.name} (GvG application, POV review…). Post it in the project's channel. Discord can't hide buttons per member, so access is checked on click; to hide the panel completely, post it in a channel only the project's members see.`
+          : "These panels have no main project — open Edit and choose one, then they move into that project's tab.")),
+      mine.length ? h("div", { class: "panel-grid" }, mine.map(p => {
         const ch = channelSelect("text", "Channel…");
         if (p.channelId) ch.value = p.channelId;
-        const post = h("button", { class: "btn secondary" }, icon("pin", 15), p.jumpUrl ? "Repost" : "Post");
-        post.addEventListener("click", () => act(post, async () => {
+        const post = p.jumpUrl ? null : h("button", { class: "btn" }, icon("pin", 15), "Post");
+        if (post) post.addEventListener("click", () => act(post, async () => {
           if (!ch.value) return toast("Choose a channel first.", "warn");
-          if (p.jumpUrl && !await confirmDialog("Post this panel again?", "The old message is deleted and the panel is posted in the chosen channel.", "Post", false)) return;
           await gApi("POST", `/tickets/panels/${p.id}/post`, { channelId: ch.value });
           toast("Panel posted."); load();
         }));
-        const del = h("button", { class: "btn ghost" }, icon("trash-2", 15), "Delete");
-        del.addEventListener("click", () => act(del, async () => {
-          if (!await confirmDialog(`Delete “${p.title}”?`, "The posted message is deleted too. Ticket types and open tickets stay.", "Delete")) return;
-          await gApi("DELETE", `/tickets/panels/${p.id}`); toast("Panel deleted."); load();
-        }));
+        const more = menuButton([
+          p.jumpUrl ? { icon: "repeat", label: "Re-post", danger: true, onclick: () => act(null, async () => {
+            if (!ch.value) return toast("Choose a channel first.", "warn");
+            if (!await confirmDialog("Re-post this panel?", "The old message is deleted and the panel is posted in the chosen channel. To change it, just Edit and Save — the posted message is updated in place.", "Re-post")) return;
+            await gApi("POST", `/tickets/panels/${p.id}/post`, { channelId: ch.value });
+            toast("Panel re-posted."); load();
+          }) } : null,
+          { icon: "trash-2", label: "Delete panel", danger: true, onclick: () => act(null, async () => {
+            if (!await confirmDialog(`Delete “${p.title}”?`, "The posted message is deleted too. Sub-projects and open tickets stay.", "Delete")) return;
+            await gApi("DELETE", `/tickets/panels/${p.id}`); toast("Panel deleted."); load();
+          }) }
+        ].filter(Boolean));
         return h("div", { class: "card panel-card" },
           h("div", { class: "card-head" }, h("h3", {}, p.title),
-            p.projectKey ? h("span", { class: "chip" }, gName(p.projectKey) || "project") : null,
             p.jumpUrl ? h("a", { class: "chip ok", href: p.jumpUrl, target: "_blank", rel: "noopener" }, icon("external-link", 12), `#${p.channel || "posted"}`)
               : h("span", { class: "chip warn" }, "not posted")),
           h("div", { class: "dc-frame compact" }, ticketPanelPreview(p, d.types)),
-          p.ticketKeys.length ? null : h("p", { class: "error-text small" }, "No ticket types yet — Edit and pick them."),
-          h("div", { class: "row", style: "margin-top:10px" }, ch, post, h("span", { class: "spacer" }),
-            h("button", { class: "btn secondary", onclick: () => ticketPanelEditor(p, d, load) }, icon("pencil", 15), "Edit"), del));
-      })) : h("div", { class: "card" }, emptyState("layers", "No sub-project panels yet", "Create one, pick the project's ticket types and post it in the project's channel.")));
+          p.ticketKeys.length ? null : h("p", { class: "error-text small" }, "No sub-projects on it yet — Edit and pick them."),
+          h("div", { class: "row", style: "margin-top:10px;gap:8px" }, ch, post, h("span", { class: "spacer" }),
+            h("button", { class: p.jumpUrl ? "btn" : "btn secondary", onclick: () => ticketPanelEditor(p, d, load) }, icon("pencil", 15), "Edit"), more));
+      })) : h("div", { class: "card" }, emptyState("layers", "No panels yet", `Create one, tick the sub-projects and post it in ${proj ? proj.name + "'s" : "the project's"} channel.`)));
   }
   await load();
 }
@@ -3083,12 +3096,11 @@ async function pageTickets(main) {
   let sub = store.get("gb.ticketSub") || "";
   const asChild = projects.find(p => p.key === tab && !isMain(p));
   if (asChild) { sub = asChild.key; tab = asChild.parentKey; }
-  if (!["new", "general", "panels"].includes(tab) && !mains.some(p => p.key === tab)) tab = mains[0] ? mains[0].key : "new";
+  if (!["new", "general"].includes(tab) && !mains.some(p => p.key === tab)) tab = mains[0] ? mains[0].key : "new";
   const openOf = p => p.open + childrenOf(p.key).reduce((n, c) => n + c.open, 0);
-  main.append(tabsRow([...mains.map(p => [p.key, `📁 ${p.name}${openOf(p) ? ` (${openOf(p)})` : ""}`]), ["new", "➕ New project"], ["panels", "🧩 Sub-project panels"], ["general", "⚙️ General"]],
+  main.append(tabsRow([...mains.map(p => [p.key, `📁 ${p.name}${openOf(p) ? ` (${openOf(p)})` : ""}`]), ["new", "➕ New project"], ["general", "⚙️ General"]],
     tab, "gb.ticketTab"));
 
-  if (tab === "panels") { await ticketPanelsSection(main); return; }
 
   if (tab === "new") {
     const nameIn = h("input", { placeholder: "Project name, e.g. Aion 2", maxlength: "100" });
@@ -3110,14 +3122,15 @@ async function pageTickets(main) {
 
   const mainProject = mains.find(p => p.key === tab);
   const kids = mainProject ? childrenOf(mainProject.key) : [];
-  if (mainProject && sub !== "+sub" && !kids.some(c => c.key === sub)) sub = "";
+  if (mainProject && sub !== "+sub" && sub !== "#panels" && !kids.some(c => c.key === sub)) sub = "";
   if (mainProject) {
     // Вкладки внутри проекта: основной (по умолчанию) · подпроекты · ➕ подпроект
     main.append(h("div", { class: "tabs sub-tabs" },
-      [["", `${mainProject.name} · main`, mainProject.open], ...kids.map(c => [c.key, `↳ ${c.name}`, c.open]), ["+sub", "➕ Sub-project", 0]].map(([k, label, n]) =>
+      [["", `${mainProject.name} · main`, mainProject.open], ...kids.map(c => [c.key, `↳ ${c.name}`, c.open]), ["+sub", "➕ Sub-project", 0], ["#panels", "🧩 Panels", 0]].map(([k, label, n]) =>
         h("button", { class: `btn secondary sm${k === sub ? " active-tab" : ""}`, onclick: async () => { if (!await leavePage()) return; store.set("gb.ticketSub", k); renderShell(); } },
           label, n ? h("span", { class: "tab-count" }, String(n)) : null))));
   }
+  if (mainProject && sub === "#panels") { await ticketPanelsSection(main, mainProject.key); return; }
   if (mainProject && sub === "+sub") {
     const nameIn = h("input", { placeholder: "e.g. GvG application", maxlength: "100" });
     const roleIn = roleSelect("Role on Approve — none (e.g. a review)");
@@ -3130,7 +3143,7 @@ async function pageTickets(main) {
       refresh();
     });
     main.append(h("div", { class: "card" }, h("h3", {}, `New sub-project of ${mainProject.name}`),
-      h("p", { class: "muted small" }, `A separate kind of application inside ${mainProject.name} — e.g. GvG application or POV review. It isn't shown in the main ticket panel: members open it from a 🧩 sub-project panel. By default only members of ${mainProject.name} (its Approve roles) and its leadership can open it. Without a role on Approve (e.g. a mentor reviewing your POV) the ticket gets a ✅ Done button instead of Approve / Deny.`),
+      h("p", { class: "muted small" }, `A separate kind of application inside ${mainProject.name} — e.g. GvG application or POV review. It isn't shown in the main ticket panel: members open it from a panel (🧩 Panels tab of this project). By default only members of ${mainProject.name} (its Approve roles) and its leadership can open it. Without a role on Approve (e.g. a mentor reviewing your POV) the ticket gets a ✅ Done button instead of Approve / Deny.`),
       h("div", { class: "row" }, h("div", { class: "grow" }, nameIn), roleIn, addBtn)));
     return;
   }
@@ -3139,7 +3152,7 @@ async function pageTickets(main) {
   if (project) main.append(projectCard(project, mains, kids.length > 0 && project === mainProject));
   else main.append(postPanelCard("Ticket panel", "Posts the message with the button to open a ticket (ticket types without a project — sub-project types are in their own panels).", "/tickets/panel"));
   main.append(h("div", { class: "card" }, h("div", { class: "card-head" }, h("h2", {}, project ? `Open tickets · ${project.name}` : "Open tickets")), openBody));
-  if (!project) main.append(ticketArchiveCard());
+  if (!project) { main.append(ticketArchiveCard()); ticketPanelsSection(main, null); }
 
   try {
     let open = await gApi("GET", "/tickets/open");
@@ -3318,7 +3331,7 @@ function projectCard(p, mains = [], hasChildren = false) {
     h("div", { class: "grid2" },
       h("div", { class: "field" }, h("label", {}, "Main project"), parentSel,
         h("span", { class: "muted small" }, hasChildren ? "It has sub-projects, so it stays a main project."
-          : "A sub-project is a tab inside its main project; it leaves the main ticket panel — post it with a 🧩 sub-project panel.")),
+          : "A sub-project is a tab inside its main project; it leaves the main ticket panel — post it with a 🧩 Panels tab of the main project.")),
       h("div", { class: "field" }, h("label", {}, "Who can open this ticket"), openRoles.el, requireAll.el,
         h("div", { style: "margin-top:6px" }, openUsers.el),
         h("span", { class: "muted small" }, (p.parentKey ? "Empty — members of the main project (its Approve roles) and its leadership." : "Empty — everyone.") +

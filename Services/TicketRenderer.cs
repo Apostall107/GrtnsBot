@@ -70,7 +70,7 @@ public static class TicketRenderer
         }
 
         var embed = new EmbedBuilder()
-            .WithTitle(Tx.Get(gid, "ticket.msg.title", ("project", p?.Name ?? "Project")))
+            .WithTitle(Tx.Get(gid, "ticket.msg.title", ("project", DisplayName(p))))
             .WithDescription(sb.ToString())
             .WithColor(Tx.Color(gid, t.ApprovedBy is null ? "color.ticket.open" : "color.ticket.approved"))
             .WithFooter(Tx.Get(gid, "ticket.msg.footer", ("id", t.Id)))
@@ -146,11 +146,20 @@ public static class TicketRenderer
     }
 
     // ---------- Имена каналов ----------
-    public static string TextChannelName(TicketProject p, IUser user) => Slug($"{p.Name}-{user.Username}");
+    /// <summary>Имя основного проекта по ключу (задаёт TicketStore).</summary>
+    public static Func<string, string?> ParentName { get; set; } = _ => null;
+
+    /// <summary>Имя для людей: у подпроекта — «Основной · Подпроект».</summary>
+    public static string DisplayName(TicketProject? p) =>
+        p is null ? "Project" : p.ParentKey is { } k && ParentName(k) is { } parent ? $"{parent} · {p.Name}" : p.Name;
+
+    /// <summary>Канал тикета: у подпроекта впереди основной проект — «where-winds-meet-pov-ник».</summary>
+    public static string TextChannelName(TicketProject p, IUser user) =>
+        Slug(p.ParentKey is { } k && ParentName(k) is { } parent ? $"{parent}-{p.Name}-{user.Username}" : $"{p.Name}-{user.Username}");
 
     public static string VoiceChannelName(TicketProject p, IGuildUser user)
     {
-        var name = Tx.Get(user.GuildId, "ticket.voiceName", ("project", p.Name), ("user", user.DisplayName));
+        var name = Tx.Get(user.GuildId, "ticket.voiceName", ("project", DisplayName(p)), ("user", user.DisplayName));
         return name.Length <= 100 ? name : name[..100];
     }
 
