@@ -5736,16 +5736,32 @@ async function pageChannelPages(main) {
   async function load() {
     let d;
     try { d = await gApi("GET", "/pages"); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
+    // Вкладки по проектам: All · General · <проект>… — выбранная запоминается; новая страница создаётся в ней
+    const groups = d.groups || [];
+    const isGeneral = p => !p.projectKey || !groups.some(g => g.key === p.projectKey);
+    const tabs = [["all", "All", d.pages.length], ["", "General", d.pages.filter(isGeneral).length],
+      ...groups.map(g => [g.key, g.name, d.pages.filter(p => p.projectKey === g.key).length])];
+    let tab = store.get("gb.pagesTab") ?? "all";
+    if (!tabs.some(t => t[0] === tab)) tab = "all";
+    const shown = tab === "all" ? d.pages : tab === "" ? d.pages.filter(isGeneral) : d.pages.filter(p => p.projectKey === tab);
+    const tabBar = h("div", { class: "tabs page-tabs" }, tabs.map(([k, label, n]) =>
+      h("button", { class: `btn secondary sm${k === tab ? " active-tab" : ""}`, onclick: () => { store.set("gb.pagesTab", k); load(); } },
+        label, h("span", { class: "tab-count" }, String(n)))));
+
     const add = h("button", { class: "btn" }, icon("plus", 15), "New page");
     add.addEventListener("click", async () => {
       const name = await promptDialog("New channel page", "Channel page");
       if (!name) return;
-      const p = await act(add, () => gApi("POST", "/pages", { name }));
+      const p = await act(add, () => gApi("POST", "/pages", { name, projectKey: tab === "all" ? "" : tab }));
       if (p) channelPageEditor(p.id, d.rolePanels, d.moduleKeys, load, d.groups);
     });
+    const view = { ...d, pages: shown };
     holder.replaceChildren(h("div", { class: "card" },
       h("div", { class: "card-head" }, h("h2", {}, "Pages"), add),
-      d.pages.length ? h("div", {}, pageGroups(d).map(([gname, list]) => h("div", { style: "margin-bottom:10px" }, sectionLabel(gname), h("div", { class: "list" }, list.map(p => {
+      groups.length ? tabBar : null,
+      !d.pages.length ? emptyState("layers", "No channel pages yet", "Create one to assemble a channel from several messages and panels.")
+      : !shown.length ? h("p", { class: "muted small" }, "No pages in this project yet — “New page” creates one here.")
+      : h("div", {}, pageGroups(view).map(([gname, list]) => h("div", { style: "margin-bottom:10px" }, tab === "all" ? sectionLabel(gname) : null, h("div", { class: "list" }, list.map(p => {
         const chSel = channelSelect("text", "Channel…");
         if (p.channelId) chSel.value = p.channelId;
         const publish = h("button", { class: "btn secondary sm", title: p.published ? "Update the posted page: only changed blocks are touched" : "Post the page" },
@@ -5778,7 +5794,7 @@ async function pageChannelPages(main) {
             if (!await confirmDialog(`Delete “${p.name}”?`, "The page and its posted messages are deleted.", "Delete")) return;
             await gApi("DELETE", `/pages/${p.id}`); toast("Page deleted."); load();
           }) }, icon("trash-2", 14)));
-      }))))) : emptyState("layers", "No channel pages yet", "Create one to assemble a channel from several messages and panels.")));
+      })))))));
   }
   await load();
 }
