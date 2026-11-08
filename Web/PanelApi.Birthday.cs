@@ -68,6 +68,35 @@ public static partial class PanelApi
             return Results.Ok(new { granted = r.Granted, removed = r.Removed });
         });
 
+        // Участники для выбора: только с ролью «Участник» из настроек (если задана), поиск по имени; есть ли уже дата
+        g.MapGet("/candidates", async (ulong guildId, string? q, bool? withoutDate, DiscordSocketClient client, [FromServices] BirthdayStore store) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            if (!guild.HasAllMembers) await guild.DownloadUsersAsync();
+            var data = store.Get(guildId);
+            var roleId = data.MemberRoleId;
+            var query = (q ?? "").Trim();
+            bool Has(string? t) => t is not null && t.Contains(query, StringComparison.OrdinalIgnoreCase);
+            var pool = guild.Users.Where(u => !u.IsBot && (roleId is not { } rid || u.Roles.Any(r => r.Id == rid))).ToList();
+            var list = pool
+                .Where(u => query.Length == 0 || Has(u.DisplayName) || Has(u.GlobalName) || Has(u.Username))
+                .Where(u => withoutDate != true || !data.People.ContainsKey(u.Id))
+                .OrderBy(u => data.People.ContainsKey(u.Id)).ThenBy(u => u.DisplayName)
+                .Take(60)
+                .Select(u => new
+                {
+                    member = Member(guild, u.Id),
+                    birthday = data.People.TryGetValue(u.Id, out var b) ? $"{b.Day:00}.{b.Month:00}{(b.Year is { } y ? $".{y}" : "")}" : null
+                });
+            return Results.Ok(new
+            {
+                role = roleId is { } r0 ? guild.GetRole(r0)?.Name : null,
+                total = pool.Count,
+                withDate = pool.Count(u => data.People.ContainsKey(u.Id)),
+                members = list
+            });
+        });
+
         g.MapPost("/people", async (ulong guildId, BirthdayPersonBody b, [FromServices] BirthdayStore store,
             [FromServices] BirthdayService service) =>
         {

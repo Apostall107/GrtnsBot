@@ -5737,6 +5737,37 @@ async function pageVoiceNow(main) {
 // ================= Birthdays =================
 
 /** Member birthdays: on someone's day the bot gives a role (if they have the member role) and removes it next day. */
+/** Окно выбора участника для дня рождения: только с ролью «Участник» (из настроек), поиск, фильтр «без даты». */
+function pickBirthdayMember() {
+  return new Promise(resolve => {
+    const d = dialog();
+    const list = h("div", { class: "pick-list", style: "max-height:55vh;overflow:auto" });
+    const info = h("p", { class: "muted small" });
+    const only = toggle(true, "Only members without a birthday yet");
+    let timer = 0, seq = 0;
+    const search = async () => {
+      const my = ++seq;
+      try {
+        const r = await gApi("GET", `/birthdays/candidates?q=${encodeURIComponent(input.value)}&withoutDate=${only.cb.checked}`);
+        if (my !== seq) return;
+        info.textContent = `${r.role ? `Members with @${r.role}` : "All members (no member role set in the settings)"}: ${r.total} · with a date: ${r.withDate} · without: ${r.total - r.withDate}`;
+        list.replaceChildren(...(r.members.length ? r.members.map(x =>
+          h("button", { onclick: () => { d.close(); resolve(x); } }, member(x.member),
+            x.birthday ? h("span", { class: "chip", style: "margin-left:auto" }, x.birthday) : h("span", { class: "muted small", style: "margin-left:auto" }, "no date"))) :
+          [empty(only.cb.checked ? "Everyone found already has a birthday." : "Nobody found.")]));
+      } catch (e) { list.replaceChildren(empty(e.message)); }
+    };
+    const input = h("input", { placeholder: "Search by name…", style: "width:100%", oninput: () => { clearTimeout(timer); timer = setTimeout(search, 250); } });
+    only.cb.addEventListener("change", search);
+    d.replaceChildren(h("h2", {}, "Choose a member"), input, h("div", { class: "row", style: "margin:8px 0" }, only.el), info, list,
+      h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => { d.close(); resolve(null); } }, "Cancel")));
+    d.onclose = () => resolve(null);
+    d.showModal();
+    input.focus();
+    search();
+  });
+}
+
 async function pageBirthdays(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "🎂 Birthdays"),
     h("button", { class: "btn btn-refresh", title: "Reload now", onclick: hardRefresh }, "🔄 Refresh")));
@@ -5834,10 +5865,24 @@ async function pageBirthdays(main) {
       uid.value = day.value = month.value = year.value = "";
       toast("Birthday saved."); load();
     }));
+    // Выбор участника сервера (только с ролью «Участник» из настроек) — вместо ввода ID
+    const chosen = h("span", { class: "muted small" });
+    const pick = h("button", { class: "btn secondary", type: "button" }, icon("users", 14), "Choose member…");
+    pick.addEventListener("click", async () => {
+      const r = await pickBirthdayMember();
+      if (!r) return;
+      uid.value = r.member.id;
+      chosen.replaceChildren(member(r.member), r.birthday ? h("span", { class: "chip", style: "margin-left:6px" }, `now ${r.birthday}`) : null);
+      if (r.birthday) { const [dd, mm, yy] = r.birthday.split("."); day.value = +dd; month.value = +mm; year.value = yy || ""; }
+      day.focus();
+    });
+    uid.addEventListener("input", () => chosen.replaceChildren());
+    add.addEventListener("click", () => setTimeout(() => { if (!uid.value) chosen.replaceChildren(); }, 800));
     addCard.replaceChildren(
       sectionLabel("Add a birthday"),
-      h("p", { class: "muted small" }, "In Discord: enable Developer Mode, right-click a user → Copy User ID."),
-      h("div", { class: "row", style: "gap:8px;flex-wrap:wrap;align-items:center" }, uid, day, h("span", { class: "muted" }, "."), month, year, add));
+      h("p", { class: "muted small" }, "Choose a member of the server (only people with the member role from the settings), or paste a Discord user ID."),
+      h("div", { class: "row", style: "gap:8px;flex-wrap:wrap;align-items:center" }, pick, chosen),
+      h("div", { class: "row", style: "gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px" }, uid, day, h("span", { class: "muted" }, "."), month, year, add));
   }
 
   const removePerson = (id, name) => act(null, async () => {
