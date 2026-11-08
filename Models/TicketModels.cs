@@ -83,6 +83,9 @@ public sealed class TicketArchiveEntry
     public string Id { get; set; } = "";
     public ulong GuildId { get; set; }
     public string Project { get; set; } = "";
+    /// <summary>Ключ тикет-проекта и его основного проекта (для подпроекта) — для фильтра архива по проектам.</summary>
+    public string? ProjectKey { get; set; }
+    public string? MainProjectKey { get; set; }
     public ulong UserId { get; set; }
     public string UserName { get; set; } = "";
     public DateTimeOffset OpenedAt { get; set; }

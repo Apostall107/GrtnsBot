@@ -3152,7 +3152,8 @@ async function pageTickets(main) {
   if (project) main.append(projectCard(project, mains, kids.length > 0 && project === mainProject));
   else main.append(postPanelCard("Ticket panel", "Posts the message with the button to open a ticket (ticket types without a project — sub-project types are in their own panels).", "/tickets/panel"));
   main.append(h("div", { class: "card" }, h("div", { class: "card-head" }, h("h2", {}, project ? `Open tickets · ${project.name}` : "Open tickets")), openBody));
-  if (!project) { main.append(ticketArchiveCard()); ticketPanelsSection(main, null); }
+  if (!project) { main.append(ticketArchiveCard(mains)); ticketPanelsSection(main, null); }
+  else if (project === mainProject) main.append(ticketArchiveCard(mains, mainProject));
 
   try {
     let open = await gApi("GET", "/tickets/open");
@@ -3399,9 +3400,13 @@ function questionEditor(p) {
 }
 
 /** Archive of closed tickets with search. */
-function ticketArchiveCard() {
+/** Архив закрытых тикетов. mains — основные проекты для фильтра; fixedProject — архив одного проекта (он и его подпроекты). */
+function ticketArchiveCard(mains = [], fixedProject = null) {
   const OUT = { approved: ["approved", "ok"], denied: ["denied", "lock"], closed: ["closed", ""], "auto-closed": ["auto-closed", "wait"] };
   const outcome = h("select", {}, h("option", { value: "" }, "All outcomes"), Object.keys(OUT).map(k => h("option", { value: k }, k)));
+  const projectSel = fixedProject || !mains.length ? null
+    : h("select", {}, h("option", { value: "" }, "All projects"), mains.map(m => h("option", { value: m.key }, m.name)));
+  if (projectSel) projectSel.value = store.get("gb.archiveProject") || "";
   const q = h("input", { placeholder: "Search: name, ID, project, reason, answers…", style: "flex:1 1 220px" });
   const tbody = h("tbody", {});
   const more = h("button", { class: "btn secondary", style: "display:none" }, "Load more");
@@ -3411,6 +3416,8 @@ function ticketArchiveCard() {
     const params = new URLSearchParams({ skip: String(skip), take: "50" });
     if (outcome.value) params.set("outcome", outcome.value);
     if (q.value.trim()) params.set("q", q.value.trim());
+    const proj = fixedProject ? fixedProject.key : projectSel ? projectSel.value : "";
+    if (proj) params.set("project", proj);
     const res = await act(more, () => gApi("GET", `/tickets/archive?${params}`));
     if (res === undefined) return;
     skip += res.entries.length;
@@ -3435,11 +3442,12 @@ function ticketArchiveCard() {
   };
   let timer = 0;
   outcome.addEventListener("change", () => load(true));
+  if (projectSel) projectSel.addEventListener("change", () => { store.set("gb.archiveProject", projectSel.value); load(true); });
   q.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => load(true), 300); });
   more.addEventListener("click", () => load(false));
   load(true);
-  return h("div", { class: "card" }, h("h2", {}, "🗄️ Archive"),
-    h("div", { class: "row", style: "margin-bottom:12px" }, outcome, q),
+  return h("div", { class: "card" }, h("h2", {}, fixedProject ? `🗄️ Archive · ${fixedProject.name} (with sub-projects)` : "🗄️ Archive"),
+    h("div", { class: "row", style: "margin-bottom:12px" }, projectSel, outcome, q),
     h("div", { class: "table-wrap" }, h("table", { class: "table" },
       h("thead", {}, h("tr", {}, h("th", {}, "Applicant"), h("th", {}, "Outcome"), h("th", {}, "Reason"), h("th", {}, "Opened → closed"), h("th", {}))), tbody)),
     h("div", { class: "row", style: "margin-top:12px" }, more));

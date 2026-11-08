@@ -516,10 +516,21 @@ public static partial class PanelApi
         });
 
         // Архив закрытых тикетов с поиском
-        g.MapGet("/archive", (ulong guildId, string? outcome, string? q, int? skip, int? take, TicketArchiveStore archive) =>
+        g.MapGet("/archive", (ulong guildId, string? outcome, string? q, string? project, int? skip, int? take, TicketArchiveStore archive,
+            TicketStore tickets) =>
         {
             var size = Math.Clamp(take ?? 50, 10, 200);
-            var list = archive.Query(guildId, outcome, q, null, Math.Max(0, skip ?? 0), size + 1);
+            // Фильтр по основному проекту: он сам и его подпроекты (старые записи без ключей — по названию)
+            Func<TicketArchiveEntry, bool>? filter = null;
+            if (!string.IsNullOrWhiteSpace(project))
+            {
+                var all = tickets.GetProjects(guildId);
+                var family = all.Where(p => p.Key == project || p.ParentKey == project).ToList();
+                var keys = family.Select(p => p.Key).ToHashSet();
+                var names = family.Select(p => p.Name).Concat(family.Select(TicketRenderer.DisplayName)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                filter = e => e.MainProjectKey == project || (e.ProjectKey is { } k ? keys.Contains(k) : names.Contains(e.Project));
+            }
+            var list = archive.Query(guildId, outcome, q, null, Math.Max(0, skip ?? 0), size + 1, filter);
             return Results.Ok(new
             {
                 more = list.Count > size,

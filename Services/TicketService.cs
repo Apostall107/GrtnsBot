@@ -9,10 +9,16 @@ using Microsoft.Extensions.Logging;
 
 namespace LfgBot.Services;
 
-/// <summary>Архив закрытых тикетов: кто, когда, итог, кем, анкета (data/ticket-archive.json, последние 5000).</summary>
+/// <summary>
+/// Архив закрытых тикетов: кто, когда, итог, кем, анкета (data/ticket-archive.json).
+/// Хранится до 5000 последних записей на КАЖДЫЙ проект/подпроект отдельно — активный проект не вытесняет историю других.
+/// </summary>
 public sealed class TicketArchiveStore
 {
-    public const int MaxEntries = 5000;
+    public const int MaxEntriesPerProject = 5000;
+
+    /// <summary>Корзина хранения: сервер + проект (старые записи без ключа — по названию).</summary>
+    private static (ulong, string) Bucket(TicketArchiveEntry e) => (e.GuildId, e.ProjectKey ?? "name:" + e.Project);
 
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
     private readonly object _lock = new();
@@ -32,7 +38,11 @@ public sealed class TicketArchiveStore
         lock (_lock)
         {
             _data.Add(entry);
-            if (_data.Count > MaxEntries) _data.RemoveRange(0, _data.Count - MaxEntries);
+            // Лимит — в пределах проекта этой записи: убрать самые старые записи этого же проекта
+            var bucket = Bucket(entry);
+            var extra = _data.Count(e => Bucket(e) == bucket) - MaxEntriesPerProject;
+            for (var i = 0; i < _data.Count && extra > 0; i++)
+                if (Bucket(_data[i]) == bucket) { _data.RemoveAt(i--); extra--; }
             var dir = Path.GetDirectoryName(Path.GetFullPath(_path));
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
             DataFiles.Save(_path, JsonSerializer.Serialize(_data, JsonOptions));
@@ -40,11 +50,13 @@ public sealed class TicketArchiveStore
     }
 
     /// <summary>Новые сверху; поиск по заявителю, проекту, причине и ответам анкеты.</summary>
-    public IReadOnlyList<TicketArchiveEntry> Query(ulong guildId, string? outcome, string? search, ulong? userId, int skip, int take)
+    public IReadOnlyList<TicketArchiveEntry> Query(ulong guildId, string? outcome, string? search, ulong? userId, int skip, int take,
+        Func<TicketArchiveEntry, bool>? filter = null)
     {
         lock (_lock)
         {
             IEnumerable<TicketArchiveEntry> q = _data.Where(e => e.GuildId == guildId);
+            if (filter is not null) q = q.Where(filter);
             if (!string.IsNullOrWhiteSpace(outcome)) q = q.Where(e => e.Outcome == outcome);
             if (userId is { } u) q = q.Where(e => e.UserId == u);
             if (!string.IsNullOrWhiteSpace(search))
@@ -303,7 +315,9 @@ public sealed class TicketService(
         {
             Id = ticket.Id,
             GuildId = ticket.GuildId,
-            Project = store.FindProject(ticket.GuildId, ticket.ProjectKey)?.Name ?? "Deleted project",
+            Project = store.FindProject(ticket.GuildId, ticket.ProjectKey) is { } pr ? TicketRenderer.DisplayName(pr) : "Deleted project",
+            ProjectKey = ticket.ProjectKey,
+            MainProjectKey = store.FindProject(ticket.GuildId, ticket.ProjectKey)?.ParentKey ?? ticket.ProjectKey,
             UserId = ticket.UserId,
             UserName = guild?.GetUser(ticket.UserId)?.DisplayName ?? client.GetUser(ticket.UserId)?.Username ?? ticket.UserId.ToString(),
             OpenedAt = ticket.CreatedAt,
