@@ -252,6 +252,26 @@ const dialog = () => {
   return first.open ? document.getElementById("dialog2") : first;
 };
 
+/** Подтверждение опасного действия вводом слова (имени): кнопка активна, только когда введено верно. */
+function confirmTyped(title, text, word, okLabel = "Confirm") {
+  return new Promise(resolve => {
+    const d = dialog();
+    const input = h("input", { placeholder: word, style: "width:100%" });
+    const ok = h("button", { class: "btn danger", disabled: true }, okLabel);
+    input.addEventListener("input", () => { ok.disabled = input.value.trim() !== word.trim(); });
+    input.addEventListener("keydown", e => { if (e.key === "Enter" && !ok.disabled) ok.click(); });
+    let done = false;
+    const finish = v => { if (done) return; done = true; d.close(); resolve(v); };
+    ok.addEventListener("click", () => finish(true));
+    d.replaceChildren(h("h2", {}, "⚠️ " + title), h("p", { class: "muted" }, text),
+      h("div", { class: "field" }, h("label", {}, `Type “${word}” to confirm`), input),
+      h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => finish(false) }, "Cancel"), ok));
+    d.onclose = () => { if (!done) { done = true; resolve(false); } };
+    d.showModal();
+    input.focus();
+  });
+}
+
 function confirmDialog(title, text, okLabel = "Confirm", danger = true) {
   return new Promise(resolve => {
     const d = dialog();
@@ -5860,7 +5880,8 @@ async function pageChannelPages(main) {
       : h("div", {}, pageGroups(view).map(([gname, list]) => h("div", { style: "margin-bottom:10px" }, tab === "all" ? sectionLabel(gname) : null, h("div", { class: "list" }, list.map(p => {
         const chSel = channelSelect("text", "Channel…");
         if (p.channelId) chSel.value = p.channelId;
-        const publish = h("button", { class: "btn secondary sm", title: p.published ? "Update the posted page: only changed blocks are touched" : "Post the page" },
+        // Главное действие — Update / Publish; опасные (Re-post all, Unpublish, Delete) спрятаны в «⋯»
+        const publish = h("button", { class: "btn sm", title: p.published ? "Update the posted page: only changed blocks are touched, reactions stay" : "Post the page" },
           icon(p.published ? "refresh-cw" : "pin", 14), p.published ? "Update" : "Publish");
         publish.addEventListener("click", () => act(publish, async () => {
           if (!chSel.value) return toast("Choose a channel.", "warn");
@@ -5868,28 +5889,34 @@ async function pageChannelPages(main) {
           await gApi("POST", `/pages/${p.id}/publish`, { channelId: chSel.value });
           toast(p.published ? "Page updated." : "Page published."); load();
         }));
-        const repostAll = p.published ? h("button", { class: "btn ghost sm", title: "Delete every message of the page and post it again" }, "Re-post all") : null;
-        if (repostAll) repostAll.addEventListener("click", () => act(repostAll, async () => {
-          if (!chSel.value) return toast("Choose a channel.", "warn");
-          if (!await confirmDialog("Re-post the whole page?", "All its messages are deleted and posted again. Reactions on role panels start from zero." + REPOST_NOTE, "Re-post all")) return;
-          await gApi("POST", `/pages/${p.id}/publish`, { channelId: chSel.value, full: true });
-          toast("Page re-posted."); load();
-        }));
+        const edit = h("button", { class: "btn secondary sm", onclick: () => channelPageEditor(p.id, d.rolePanels, d.moduleKeys, load, d.groups) }, icon("pencil", 14), "Edit");
+        const more = menuButton([
+          p.published ? { icon: "repeat", label: "Re-post all (reactions reset)", danger: true, onclick: () => act(null, async () => {
+            if (!chSel.value) return toast("Choose a channel.", "warn");
+            if (!await confirmTyped("Re-post the whole page?",
+              "Every message of the page is deleted and posted again. All reactions on its role panels disappear and the bot can't put them back." + REPOST_NOTE +
+              " Usually Update is enough — it also re-posts messages someone deleted by hand.", p.name, "Re-post all")) return;
+            await gApi("POST", `/pages/${p.id}/publish`, { channelId: chSel.value, full: true });
+            toast("Page re-posted."); load();
+          }) } : null,
+          p.published ? { icon: "eye-off", label: "Unpublish (delete the messages)", danger: true, onclick: () => act(null, async () => {
+            if (!await confirmTyped("Unpublish this page?", "All its messages in the channel are deleted, reactions on its role panels too. The page itself stays — you can publish it again.", p.name, "Unpublish")) return;
+            await gApi("POST", `/pages/${p.id}/unpublish`); toast("Unpublished."); load();
+          }) } : null,
+          { icon: "trash-2", label: "Delete page", danger: true, onclick: () => act(null, async () => {
+            const ok = p.published
+              ? await confirmTyped(`Delete “${p.name}”?`, "The page AND all its posted messages are deleted, reactions on its role panels too. This can't be undone.", p.name, "Delete")
+              : await confirmDialog(`Delete “${p.name}”?`, "The page is deleted (it isn't posted anywhere).", "Delete");
+            if (!ok) return;
+            await gApi("DELETE", `/pages/${p.id}`); toast("Page deleted."); load();
+          }) }
+        ].filter(Boolean));
         return h("div", { class: "list-row", style: "gap:8px;align-items:center;flex-wrap:wrap" },
           h("div", { class: "grow", style: "min-width:160px" }, h("b", {}, p.name),
             p.published ? h("span", { class: "chip ok", style: "margin-left:8px" }, icon("check", 12), `#${p.channel || "posted"}`)
               : h("span", { class: "chip warn", style: "margin-left:8px" }, "not published"),
             h("span", { class: "muted small", style: "margin-left:8px" }, `${p.blockCount} block${p.blockCount === 1 ? "" : "s"}`)),
-          chSel, publish, repostAll,
-          h("button", { class: "btn ghost sm", onclick: () => channelPageEditor(p.id, d.rolePanels, d.moduleKeys, load, d.groups) }, icon("pencil", 14), "Edit"),
-          p.published ? h("button", { class: "btn ghost sm", title: "Delete the posted messages", onclick: () => act(null, async () => {
-            if (!await confirmDialog("Unpublish this page?", "Its messages in the channel are deleted. The page itself stays.", "Unpublish")) return;
-            await gApi("POST", `/pages/${p.id}/unpublish`); toast("Unpublished."); load();
-          }) }, "Unpublish") : null,
-          h("button", { class: "btn ghost sm icon-only", title: "Delete the page", onclick: () => act(null, async () => {
-            if (!await confirmDialog(`Delete “${p.name}”?`, "The page and its posted messages are deleted.", "Delete")) return;
-            await gApi("DELETE", `/pages/${p.id}`); toast("Page deleted."); load();
-          }) }, icon("trash-2", 14)));
+          chSel, publish, edit, more);
       })))))));
   }
   await load();

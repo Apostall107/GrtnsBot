@@ -102,6 +102,7 @@ public sealed class ChannelPageService(DiscordSocketClient client, ChannelPageSt
     private async Task<string?> CanKeepAsync(ChannelPage page, PageBlock b, ulong after)
     {
         if (b.MessageIds.Count == 0 || b.MessageIds.Min() <= after) return null; // новый блок или нарушен порядок
+        if (!await AllExistAsync(page, b)) return null; // сообщение удалили в Discord руками — блок (и хвост) перепостится
         switch (b.Type)
         {
             case "text":
@@ -125,6 +126,18 @@ public sealed class ChannelPageService(DiscordSocketClient client, ChannelPageSt
             default:
                 return null;
         }
+    }
+
+    private async Task<bool> AllExistAsync(ChannelPage page, PageBlock b)
+    {
+        if (page.ChannelId is not { } cid || client.GetGuild(page.GuildId)?.GetTextChannel(cid) is not { } channel) return false;
+        try
+        {
+            foreach (var id in b.MessageIds)
+                if (await channel.GetMessageAsync(id) is null) return false;
+            return true;
+        }
+        catch (Discord.Net.HttpException) { return false; }
     }
 
     private async Task<bool> SameContentAsync(ChannelPage page, PageBlock b, List<string> parts)
