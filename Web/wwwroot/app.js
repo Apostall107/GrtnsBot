@@ -225,9 +225,17 @@ function member(m) {
     m.name, m.onServer ? null : h("span", { class: "muted small" }, " (left)"));
 }
 
+/** A role's own icon on the server: custom image, else unicode emoji, else null. */
+function roleIconEl(r, size = 16) {
+  if (!r) return null;
+  if (r.iconUrl) return h("img", { src: r.iconUrl, alt: "", style: `width:${size}px;height:${size}px;border-radius:3px;vertical-align:-3px` });
+  if (r.icon) return h("span", { style: `font-size:${size}px;line-height:1` }, r.icon);
+  return null;
+}
+
 function roleChip(r, onRemove) {
   return h("span", { class: `chip${r.exists === false ? " warn" : ""}` },
-    h("span", { class: "swatch", style: r.color ? `background:${r.color}` : null }),
+    roleIconEl(r, 15) || h("span", { class: "swatch", style: r.color ? `background:${r.color}` : null }),
     `@${r.name}`,
     onRemove ? h("button", { title: "Remove", onclick: async () => {
       if (await confirmDialog(`Remove @${r.name}?`, "It is removed from this list (saved when you save the form).", "Remove")) onRemove();
@@ -583,7 +591,10 @@ function optionView(sel, opt) {
       reserve ? h("span", { class: "muted small" }, "reserve") : null);
   }
   const ic = opt.dataset.icon;
-  return h("span", { class: "opt-view" }, ic ? h("span", { class: "opt-icon" }, classMark({ classIcon: ic }) || ic) : null, h("span", { class: "opt-text" }, text));
+  const iconUrl = opt.dataset.iconUrl;
+  const iconEl = iconUrl ? h("img", { src: iconUrl, alt: "", style: "width:18px;height:18px;border-radius:3px" })
+    : ic ? (classMark({ classIcon: ic }) || h("span", {}, ic)) : null;
+  return h("span", { class: "opt-view" }, iconEl ? h("span", { class: "opt-icon" }, iconEl) : null, h("span", { class: "opt-text" }, text));
 }
 
 function enhanceSelect(sel) {
@@ -1066,7 +1077,8 @@ function attachMentions(ta, onInsert) {
 function roleSelect(placeholder = "Choose a role…", exclude = [], pool = state.roles) {
   return h("select", {},
     h("option", { value: "" }, placeholder),
-    pool.filter(r => !exclude.includes(r.id)).map(r => h("option", { value: r.id }, `@${r.name}`)));
+    pool.filter(r => !exclude.includes(r.id)).map(r =>
+      h("option", { value: r.id, "data-icon": r.icon || null, "data-icon-url": r.iconUrl || null }, `@${r.name}`)));
 }
 
 function channelSelect(kind, placeholder) {
@@ -2718,14 +2730,20 @@ function groupNoteLine(g) {
   return g.note ? h("div", { class: "muted small group-note", style: "white-space:pre-wrap" }, icon("file-pen-line", 14), g.note) : null;
 }
 
-/** Attendance toggle for a seated member: not marked → came → no-show → not marked. */
+/** Attendance toggle for a seated member: not marked → came → no-show → not marked.
+ *  Updates itself in place (no full page re-render) so the page doesn't jump to the top. */
 function attendanceButton(s, url) {
-  const next = s.attended === null || s.attended === undefined ? true : s.attended ? false : null;
-  const ic = s.attended === true ? "circle-check" : s.attended === false ? "circle-x" : "circle-dot";
-  const cls = s.attended === true ? " att-came" : s.attended === false ? " att-miss" : "";
-  const title = s.attended === true ? "Came — click: no-show" : s.attended === false ? "No-show — click: clear" : "Not marked — click: came";
-  return h("button", { class: `btn ghost icon-only sm${cls}`, title, "aria-label": title,
-    onclick: () => act(null, () => gApi("POST", url, { userId: s.member.id, attended: next })).then(r => { if (r !== undefined) refresh(); }) }, icon(ic, 16));
+  const build = () => {
+    const next = s.attended === null || s.attended === undefined ? true : s.attended ? false : null;
+    const ic = s.attended === true ? "circle-check" : s.attended === false ? "circle-x" : "circle-dot";
+    const cls = s.attended === true ? " att-came" : s.attended === false ? " att-miss" : "";
+    const title = s.attended === true ? "Came — click: no-show" : s.attended === false ? "No-show — click: clear" : "Not marked — click: came";
+    const btn = h("button", { class: `btn ghost icon-only sm${cls}`, title, "aria-label": title,
+      onclick: () => act(btn, () => gApi("POST", url, { userId: s.member.id, attended: next }))
+        .then(r => { if (r !== undefined) { s.attended = next; btn.replaceWith(build()); } }) }, icon(ic, 16));
+    return btn;
+  };
+  return build();
 }
 
 /** Own requirement of an open slot: 🔒 the role it needs, or 🔓 when this slot needs no role. */
@@ -3446,8 +3464,8 @@ function emojiField(value, emojis, onChange) {
   const prev = h("span", { class: "emoji-prev" }, emojiEl(value));
   const set = v => { input.value = v; prev.replaceChildren(emojiEl(v) || ""); onChange(); };
   input.addEventListener("input", () => { prev.replaceChildren(emojiEl(input.value) || ""); onChange(); });
-  const pick = emojis.length ? h("select", { style: "width:130px", title: "Server / bot emoji" }, h("option", { value: "" }, "server emoji…"),
-    emojis.map(e => h("option", { value: e.code }, `:${e.name}:${e.app ? " (bot)" : ""}`))) : null;
+  const pick = emojis.length ? h("select", { style: "width:150px", title: "Server / bot emoji" }, h("option", { value: "" }, "server emoji…"),
+    emojis.map(e => h("option", { value: e.code, "data-icon": e.code }, `:${e.name}:${e.app ? " (bot)" : ""}`))) : null;
   if (pick) pick.addEventListener("change", () => { if (pick.value) { set(pick.value); pick.value = ""; } });
   return { el: h("div", { class: "row", style: "gap:6px;flex-wrap:nowrap" }, prev, input, pick), value: () => input.value.trim() || null };
 }
