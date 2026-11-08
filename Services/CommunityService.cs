@@ -507,14 +507,41 @@ public sealed class CommunityService(
         if (reaction.UserId == client.CurrentUser?.Id) return Task.CompletedTask;
         if (store.FindPanelByMessage(messageId) is not { } panel) return Task.CompletedTask;
         var binding = panel.Reactions.FirstOrDefault(b => LfgProjectStore.ToEmote(b.Emoji) is { } e && SameEmote(e, reaction.Emote));
-        if (binding is null) return Task.CompletedTask;
+        if (binding is null)
+        {
+            logger.LogInformation("Reaction {Emoji} on panel {Panel} matches no binding", reaction.Emote, panel.Title);
+            return Task.CompletedTask;
+        }
 
         _ = Task.Run(async () =>
         {
             try
             {
-                if (client.GetGuild(panel.GuildId)?.GetUser(reaction.UserId) is not { IsBot: false } member) return;
-                await PickAsync(panel, member, binding.Id, added);
+                var guild = client.GetGuild(panel.GuildId);
+                if (guild is null) return;
+                // Участника может не быть в кэше — догрузить
+                var member = guild.GetUser(reaction.UserId)
+                    ?? (reaction.User.IsSpecified ? reaction.User.Value as SocketGuildUser : null);
+                if (member is null)
+                {
+                    await guild.DownloadUsersAsync();
+                    member = guild.GetUser(reaction.UserId);
+                }
+                if (member is null || member.IsBot) return;
+
+                var result = await PickAsync(panel, member, binding.Id, added);
+                var gid = panel.GuildId;
+                var failed = result == Tx.Get(gid, "roles.gone") || Gate(panel, member) is not null
+                    || binding.RoleIds.Select(guild.GetRole).Any(r => !CanManage(guild, r));
+                logger.LogInformation("Reaction role {Emoji} by {User} on panel {Panel}: {Result}", reaction.Emote.Name, member.Username, panel.Title, result);
+
+                // Реакцией ответить нельзя — при отказе снять реакцию и написать в ЛС, почему
+                if (added && failed)
+                {
+                    if (reaction.Channel is ITextChannel ch && await ch.GetMessageAsync(messageId) is IUserMessage m)
+                        try { await m.RemoveReactionAsync(reaction.Emote, reaction.UserId); } catch (Discord.Net.HttpException) { }
+                    try { await member.SendMessageAsync($"**{guild.Name}** — {panel.Title}: {result}"); } catch (Discord.Net.HttpException) { }
+                }
 
                 // Unique: убрать остальные реакции этого человека на панели (нужно Manage Messages)
                 if (added && panel.Mode == RolePanelMode.Unique && reaction.Channel is ITextChannel tc &&
@@ -536,11 +563,14 @@ public sealed class CommunityService(
     private static bool SameEmote(IEmote a, IEmote b) => a switch
     {
         Emote x when b is Emote y => x.Id == y.Id,
-        Emoji x => x.Name == b.Name,
+        Emoji x => Bare(x.Name) == Bare(b.Name),
         _ => false
     };
 
     // ---------- Мелочи ----------
+
+    /// <summary>Юникод-эмодзи без селектора вариантов (Discord присылает реакции то с U+FE0F, то без).</summary>
+    private static string Bare(string? name) => (name ?? "").Replace("\uFE0F", "");
 
     private static string Mentions(IEnumerable<SocketRole?> roles) => string.Join(", ", roles.Where(r => r is not null).Select(r => r!.Mention));
     private static string Names(IEnumerable<SocketRole?> roles) => string.Join(", ", roles.Where(r => r is not null).Select(r => "@" + r!.Name));
