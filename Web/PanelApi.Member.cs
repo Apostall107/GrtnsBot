@@ -426,7 +426,7 @@ public static partial class PanelApi
                     channel = LfgChannel(guild, settings, panels, p.Key, lfg) is { } c ? new { id = c.Id.ToString(), name = c.Name } : null
                 }),
                 // Админ может продублировать пост в другие каналы
-                mirrorChannels = access.IsAdmin(me)
+                mirrorChannels = access.Has(me, PanelPermissions.Lfg)
                     ? guild.TextChannels.Where(c => c is not SocketThreadChannel)
                         .Where(c => guild.CurrentUser.GetPermissions(c) is { ViewChannel: true, SendMessages: true, EmbedLinks: true })
                         .OrderBy(c => c is SocketVoiceChannel).ThenBy(c => c.Position)
@@ -508,7 +508,7 @@ public static partial class PanelApi
                     required, minGs,
                     project?.Key,
                     // Дублировать пост в другие каналы может только админ
-                    access.IsAdmin(me) ? ParseIds(body.MirrorChannelIds).Where(id => guild.GetTextChannel(id) is not null).Take(LfgPublisher.MaxMirrors).ToList() : null,
+                    access.Has(me, PanelPermissions.Lfg) ? ParseIds(body.MirrorChannelIds).Where(id => guild.GetTextChannel(id) is not null).Take(LfgPublisher.MaxMirrors).ToList() : null,
                     body.CreateVoice,
                     slotReq.Codes,
                     LfgNote.Clean(body.Note), slotReq.Classes, ownerCharacter));

@@ -3204,7 +3204,7 @@ function lfgForm(acts, opts) {
   if (projectSel) projectSel.value = v.projectKey || (opts.projects.find(p => p.isDefault) || opts.projects[0]).key;
   const currentProject = () => locked ? opts.lockProject : projectSel ? projectSel.value : null;
   // Admins: duplicate the post to other channels
-  // Admins only (the server sends the list only to admins): chosen channels as chips + a searchable picker
+  // LFG admins only (the server sends the list only to people with the LFG permission): chosen channels as chips + a searchable picker
   const mirrorPool = (opts.mirrorChannels || []).map(c => {
     const voice = c.name.startsWith("🔊 ");
     return { id: c.id, name: voice ? c.name.slice(3) : c.name, voice };
@@ -3495,7 +3495,7 @@ function lfgForm(acts, opts) {
     opts.mode === "once" ? h("label", { class: "row" }, voice, "🔊 Create a voice room (everyone listens, the group speaks)") : null,
     seatLabel));
   if (mirrorPool.length) fields.push(h("div", { class: "field" },
-    h("label", {}, "Also post in other channels (admins, optional)"), mirrorChips));
+    h("label", {}, "Also post in other channels (LFG admins only, optional)"), mirrorChips));
 
   return {
     el: h("div", {}, fields),
