@@ -1629,8 +1629,11 @@ async function logout() {
     return { left: r && r.right > 0 && innerWidth > 900 ? r.right : 0, top, right: innerWidth - 12, bottom: innerHeight - 8 };
   };
   let busy = false, timer = 0;
-  function fly() {
+  function fly(opts) {
     if (busy || document.hidden || !state.me) return schedule();
+    // Sometimes (≈15%) an escape ends with a show: before vanishing it casts a black hole or a fireball
+    const forced = opts && typeof opts === "object" ? opts.finale : null;
+    const finale = forced || (Math.random() < .15 ? (Math.random() < .5 ? "hole" : "fire") : null);
     const M = BOT; // only our robot flies (the cat is retired)
     const A = area(), W = M.w, H = M.h;
     // Starts just outside the page area: mostly left↔right, sometimes up↕down. While it flies, clicks within 200 px
@@ -1659,7 +1662,7 @@ async function logout() {
     // After 5 runs/dashes it gets tired: slows down and can be caught.
     const NEAR = 55, MAX_ACTS = 5, inside = () => ({ x0: A.left + 4, y0: A.top + 4, x1: A.right - W - 4, y1: A.bottom - H - 4 });
     let ptr = null, raf = 0, last = performance.now(), born = last, entered = false, acts = 0, tired = false;
-    let runUntil = 0, dash = null, done = false;
+    let runUntil = 0, dash = null, done = false, casting = false, traveled = 0;
     const onMove = e => { ptr = [e.clientX, e.clientY]; };
     const norm = (x, y) => { const l = Math.hypot(x, y) || 1; return [x / l, y / l]; };
     const tire = () => { if (++acts >= MAX_ACTS) { tired = true; el.classList.add("tired"); el.classList.remove("run"); el.title = "It's tired — catch it!"; } };
@@ -1671,7 +1674,7 @@ async function logout() {
     const tick = now => {
       raf = requestAnimationFrame(tick);
       const dt = Math.min(50, now - last); last = now;
-      if (done) return;
+      if (done || casting) return;
       const b = inside(), cx = pos[0] + W / 2, cy = pos[1] + H / 2;
       if (dash) {   // quick hop to a new spot
         const t = Math.min(1, (now - dash.t0) / 280), k = 1 - Math.pow(1 - t, 3);
@@ -1704,7 +1707,7 @@ async function logout() {
       const running = now < runUntil;
       if (!running) el.classList.remove("run");
       const v = base * (running ? 2 : tired ? .6 : 1) * dt;
-      pos = [pos[0] + dir[0] * v, pos[1] + dir[1] * v];
+      pos = [pos[0] + dir[0] * v, pos[1] + dir[1] * v]; traveled += v;
       if (running) pos = [Math.max(b.x0, Math.min(b.x1, pos[0])), Math.max(b.y0, Math.min(b.y1, pos[1]))];   // no escaping while fleeing
       place();
       // fade with how much of it is on the page; done once it has entered and then left
@@ -1712,6 +1715,7 @@ async function logout() {
       const frac = ix * iy / (W * H);
       el.style.opacity = frac.toFixed(2);
       if (frac > .98) entered = true;
+      if (finale && entered && !running && frac > .98 && traveled > span * .4) return cast(finale);
       if ((entered && frac <= 0) || now - born > 120000) end();
     };
     document.addEventListener("pointermove", onMove, { passive: true });
@@ -1737,7 +1741,91 @@ async function logout() {
       if (ended) return; ended = true;
       stopWatch(); clearInterval(trail); EVENTS.forEach(t => document.removeEventListener(t, guard, true)); el.remove(); busy = false; schedule();
     }
+    // ---- The finale spells (pure DOM/CSS, a few seconds, never block clicks) ----
+    const fxEl = (cls, style) => { const d = h("div", { class: `gb-fx ${cls}`, style: style || "" }); document.body.append(d); return d; };
+    const burst = (x, y, n, dist, cls, dur) => {
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2, d = dist * (.5 + Math.random() * .7);
+        const s = h("i", { class: `cat-spark big ${cls}`, style: `left:${x}px;top:${y}px` });
+        document.body.append(s);
+        s.animate([{ transform: "translate(0,0) scale(1.4)", opacity: 1 }, { transform: `translate(${Math.cos(a) * d}px, ${Math.sin(a) * d}px) scale(.2)`, opacity: 0 }],
+          { duration: dur * (.7 + Math.random() * .5), easing: "cubic-bezier(.1,.7,.3,1)" });
+        setTimeout(() => s.remove(), dur * 1.3);
+      }
+    };
+    function cast(kind) {
+      casting = true; clearInterval(trail);
+      el.classList.remove("run"); el.classList.add("cast", `cast-${kind}`); el.style.pointerEvents = "none"; el.title = "";
+      if (look) look.style.transform = "translate(0px, -2px)";
+      const tx = (A.left + A.right) / 2, ty = (A.top + A.bottom) / 2, D = Math.min(Math.max(A.right - A.left, A.bottom - A.top) * .8, 1100);
+      const ox = pos[0] + W * 104 / 120, oy = pos[1] + H * 104 / 163;   // the orb in the robot's hand
+      const later = (ms, fn) => setTimeout(() => { if (!ended) fn(); }, ms);
+      const charge = fxEl(`gb-charge ${kind}`, `left:${ox}px;top:${oy}px`);
+      charge.animate([{ transform: "translate(-50%,-50%) scale(.2)", opacity: 0 }, { transform: "translate(-50%,-50%) scale(1.6)", opacity: 1 }], { duration: 900, easing: "ease-in", fill: "forwards" });
+      const clean = [charge];
+      if (kind === "hole") {
+        // Black hole: grows in the middle of the page, swallows sparks and then the robot, collapses with a flash
+        later(800, () => {
+          charge.remove();
+          const dim = fxEl("gb-dim", `background: radial-gradient(circle at ${tx}px ${ty}px, rgba(4,0,12,.92) 0, rgba(10,2,30,.7) ${D * .35}px, rgba(10,2,30,0) ${D * .75}px)`);
+          dim.animate([{ opacity: 0 }, { opacity: 1, offset: .25 }, { opacity: 1, offset: .85 }, { opacity: 0 }], { duration: 3300, fill: "forwards" });
+          const hole = fxEl("gb-hole", `left:${tx}px;top:${ty}px;width:${D * .5}px;height:${D * .5}px`);
+          hole.innerHTML = '<i class="disk"></i><i class="lens"></i><i class="core"></i>';
+          hole.animate([{ transform: "translate(-50%,-50%) scale(0)" }, { transform: "translate(-50%,-50%) scale(1)", offset: .45 }, { transform: "translate(-50%,-50%) scale(1.08)", offset: .88 }, { transform: "translate(-50%,-50%) scale(0)" }],
+            { duration: 3200, easing: "ease-in-out", fill: "forwards" });
+          clean.push(dim, hole);
+          for (let i = 0; i < 40; i++) later(200 + i * 45, () => {   // debris spiralling in
+            const a = Math.random() * Math.PI * 2, r = D * (.45 + Math.random() * .3), spin = (Math.random() < .5 ? 1 : -1) * 1.6;
+            const s = h("i", { class: `cat-spark big${i % 3 ? "" : " blue"}`, style: `left:${tx}px;top:${ty}px` });
+            document.body.append(s);
+            const k = [0, .35, .7, 1].map(t => ({ transform: `translate(${Math.cos(a + spin * t) * r * (1 - t)}px, ${Math.sin(a + spin * t) * r * (1 - t)}px) scale(${1.3 - t})`, opacity: t < 1 ? 1 : 0 }));
+            s.animate(k, { duration: 1000, easing: "ease-in" }); setTimeout(() => s.remove(), 1000);
+          });
+          later(900, () => el.animate([{ transform: el.style.transform }, { transform: `translate(${tx - W / 2}px, ${ty - H / 2}px) rotate(900deg) scale(0)` }],
+            { duration: 1500, easing: "cubic-bezier(.5,0,.9,.4)", fill: "forwards" }));
+          later(3000, () => {
+            const flash = fxEl("gb-ring hole", `left:${tx}px;top:${ty}px`);
+            flash.animate([{ transform: "translate(-50%,-50%) scale(0)", opacity: 1 }, { transform: "translate(-50%,-50%) scale(9)", opacity: 0 }], { duration: 700, easing: "ease-out", fill: "forwards" });
+            burst(tx, ty, 26, D * .45, "blue", 900); clean.push(flash);
+          });
+          later(3900, () => { clean.forEach(n => n.remove()); toast("The Greatness bot escaped into a black hole 🌀"); end(); });
+        });
+      } else {
+        // Fireball: charged in the orb, flies to the middle of the page and explodes with a big flash
+        later(900, () => {
+          charge.remove();
+          const ball = fxEl("gb-fireball", `left:${ox}px;top:${oy}px`);
+          clean.push(ball);
+          const t0 = performance.now(), dur = 650;
+          const step = now => {
+            if (ended) return;
+            const t = Math.min(1, (now - t0) / dur), k = t * t, x = ox + (tx - ox) * k, y = oy + (ty - oy) * k - Math.sin(t * Math.PI) * 60;
+            ball.style.transform = `translate(${x}px, ${y}px) translate(-50%,-50%) scale(${1 + t * 1.4})`;
+            const s = h("i", { class: "cat-spark fire", style: `left:${x + Math.random() * 16 - 8}px;top:${y + Math.random() * 16 - 8}px` });
+            document.body.append(s); setTimeout(() => s.remove(), 800);
+            if (t < 1) requestAnimationFrame(step); else boom();
+          };
+          ball.style.left = ball.style.top = "0px";
+          requestAnimationFrame(step);
+        });
+        const boom = () => {
+          clean.forEach(n => n.remove());
+          const flash = fxEl("gb-flash", `background: radial-gradient(circle at ${tx}px ${ty}px, rgba(255,252,235,.97) 0, rgba(255,190,90,.75) ${D * .2}px, rgba(255,90,30,.35) ${D * .45}px, rgba(255,60,20,0) ${D * .8}px)`);
+          flash.animate([{ opacity: 0 }, { opacity: 1, offset: .12 }, { opacity: 0 }], { duration: 1100, easing: "ease-out", fill: "forwards" });
+          const core = fxEl("gb-boom", `left:${tx}px;top:${ty}px;width:${D * .7}px;height:${D * .7}px`);
+          core.animate([{ transform: "translate(-50%,-50%) scale(.05)", opacity: 1 }, { transform: "translate(-50%,-50%) scale(1)", opacity: .9, offset: .35 }, { transform: "translate(-50%,-50%) scale(1.15)", opacity: 0 }],
+            { duration: 1100, easing: "ease-out", fill: "forwards" });
+          const ring = fxEl("gb-ring fire", `left:${tx}px;top:${ty}px`);
+          ring.animate([{ transform: "translate(-50%,-50%) scale(0)", opacity: 1 }, { transform: "translate(-50%,-50%) scale(14)", opacity: 0 }], { duration: 1000, easing: "cubic-bezier(.1,.6,.3,1)", fill: "forwards" });
+          burst(tx, ty, 40, D * .55, "fire", 1100);
+          el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: "forwards" });   // vanishes in the flash
+          setTimeout(() => { [flash, core, ring].forEach(n => n.remove()); }, 1250);
+          later(1300, () => { toast("The Greatness bot left with a bang 💥"); end(); });
+        };
+      }
+    }
     el.addEventListener("click", () => {
+      if (casting) return;
       stopWatch(); clearInterval(trail);
       const r = box(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
       for (let i = 0; i < 16; i++) {
@@ -1762,6 +1850,7 @@ async function logout() {
     timer = setTimeout(fly, Math.max(5, (first ? avg * .5 : avg) * (0.6 + Math.random() * 0.8)) * 1000);
   }
   window.__neonCat = fly;
+  window.__mascotFinale = kind => fly({ finale: kind });   // test hook: "hole" | "fire"
   window.__neonCatReschedule = () => schedule(false);
   window.__mascotStart = () => schedule(true);   // started from boot(), once the server's frequency is known
 })();

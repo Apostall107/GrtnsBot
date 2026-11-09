@@ -2634,3 +2634,31 @@ input.switch:checked { animation: switch-glow .5s ease-out; }
 @keyframes gb-hop { 0% { transform: scale(1, 1); } 35% { transform: scale(.85, 1.15) translateY(-6px); } 100% { transform: scale(1, 1); } }
 .mascot.tired .mascot-bob { animation-duration: 1.6s; }
 .mascot.tired::after { content: "💦"; position: absolute; left: 74%; top: 10px; font-size: 16px; animation: fade-in .3s ease both; pointer-events: none; }
+
+/* Mascot finale spells (rare, on escape): black hole or fireball. Short-lived, never catch clicks. */
+.gb-fx { position: fixed; z-index: 95; pointer-events: none; }
+.gb-dim, .gb-flash { inset: 0; }
+.mascot.cast .mascot-bob { animation: gb-cast-shake .09s linear infinite; }
+@keyframes gb-cast-shake { 0% { transform: translate(0, -2px); } 25% { transform: translate(1.5px, -3px); } 50% { transform: translate(0, -2px); } 75% { transform: translate(-1.5px, -3px); } 100% { transform: translate(0, -2px); } }
+.mascot.cast .gb-orb-glow { animation-duration: .25s; }
+.mascot.cast-fire .gb-orb-glow { fill: #FF8A2A; }
+.mascot.cast-hole .gb-orb-glow { fill: #3A0F8C; }
+.gb-charge { width: 46px; height: 46px; border-radius: 50%; }
+.gb-charge.fire { background: radial-gradient(circle, #FFF6D8 0, #FFC24A 30%, rgba(255, 110, 30, .7) 55%, rgba(255, 60, 20, 0) 72%); filter: blur(1px); }
+.gb-charge.hole { background: radial-gradient(circle, #05010F 0, #1A0640 35%, rgba(139, 108, 255, .7) 55%, rgba(139, 108, 255, 0) 72%); }
+.gb-hole { border-radius: 50%; }
+.gb-hole > i { position: absolute; inset: 0; border-radius: 50%; }
+.gb-hole .disk { inset: -38%; background: conic-gradient(from 0deg, rgba(139, 108, 255, 0), rgba(176, 140, 255, .9), rgba(224, 91, 208, .7), rgba(111, 184, 255, .85), rgba(139, 108, 255, 0) 70%, rgba(176, 140, 255, .6));
+  -webkit-mask: radial-gradient(circle, transparent 36%, #000 42%, #000 55%, transparent 72%); mask: radial-gradient(circle, transparent 36%, #000 42%, #000 55%, transparent 72%);
+  filter: blur(6px); animation: gb-spin 1.1s linear infinite; }
+.gb-hole .lens { inset: -6%; box-shadow: 0 0 40px 14px rgba(176, 140, 255, .55), inset 0 0 30px 8px rgba(224, 91, 208, .35); animation: gb-spin 2.4s linear infinite reverse; }
+.gb-hole .core { background: radial-gradient(circle, #000 0 62%, #07020F 75%, rgba(20, 6, 50, .9) 100%); box-shadow: 0 0 0 2px rgba(200, 180, 255, .55); }
+@keyframes gb-spin { to { transform: rotate(360deg); } }
+.gb-fireball { width: 34px; height: 34px; border-radius: 50%; will-change: transform;
+  background: radial-gradient(circle at 40% 40%, #FFFBEA 0, #FFD866 28%, #FF8A2A 55%, #E2381A 80%, rgba(180, 30, 10, 0) 100%);
+  box-shadow: 0 0 24px 8px rgba(255, 140, 40, .8), 0 0 60px 20px rgba(255, 80, 20, .45); }
+.gb-boom { border-radius: 50%; background: radial-gradient(circle, #FFFDF0 0, #FFE08A 18%, #FF9A3C 40%, rgba(230, 60, 20, .75) 62%, rgba(120, 20, 10, 0) 75%); filter: blur(2px); }
+.gb-ring { width: 80px; height: 80px; border-radius: 50%; }
+.gb-ring.fire { border: 5px solid rgba(255, 210, 140, .9); box-shadow: 0 0 30px rgba(255, 140, 40, .8), inset 0 0 20px rgba(255, 140, 40, .6); }
+.gb-ring.hole { border: 4px solid rgba(200, 180, 255, .95); box-shadow: 0 0 30px rgba(139, 108, 255, .9), inset 0 0 20px rgba(111, 184, 255, .7); }
+.cat-spark.fire { background: #FFD27A; box-shadow: 0 0 8px #FF8A2A, 0 0 16px rgba(255, 70, 20, .7); }
