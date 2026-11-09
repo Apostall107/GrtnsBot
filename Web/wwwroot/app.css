@@ -2694,37 +2694,45 @@ input.switch:checked { animation: switch-glow .5s ease-out; }
 .gb-ring.bolt { border: 4px solid rgba(225, 210, 255, .95); box-shadow: 0 0 30px rgba(167, 123, 255, .95), inset 0 0 20px rgba(167, 123, 255, .7); }
 .cat-spark.volt { background: #EDE2FF; box-shadow: 0 0 8px #A77BFF, 0 0 16px rgba(140, 90, 255, .7); }
 /* stone barrage */
-.gb-rock { margin: 0; background: radial-gradient(circle at 35% 30%, #CBB79A 0, #8D7458 45%, #4E3D2C 100%); box-shadow: 0 2px 6px rgba(0, 0, 0, .55); will-change: transform; }
+.gb-rock { margin: 0; background: radial-gradient(circle at 32% 28%, #F0DDBD 0, #B08F68 32%, #6E5439 62%, #2E2216 100%); filter: drop-shadow(0 6px 8px rgba(0, 0, 0, .7)) drop-shadow(0 0 6px rgba(255, 190, 120, .35)); will-change: transform; }
 .gb-rock.s0 { clip-path: polygon(30% 0, 75% 8%, 100% 45%, 82% 90%, 35% 100%, 0 62%, 6% 18%); }
 .gb-rock.s1 { clip-path: polygon(18% 6%, 62% 0, 96% 30%, 100% 72%, 60% 100%, 14% 88%, 0 40%); }
 .gb-rock.s2 { clip-path: polygon(40% 0, 88% 18%, 94% 66%, 66% 96%, 22% 92%, 0 52%, 12% 14%); }
 .gb-rock.s3 { clip-path: polygon(24% 2%, 70% 4%, 100% 52%, 76% 98%, 28% 96%, 2% 70%, 0 26%); }
 .gb-charge.rock { background: radial-gradient(circle, #FFF1D6 0, #D9B27A 30%, rgba(140, 100, 60, .7) 55%, rgba(110, 80, 50, 0) 72%); }
 .mascot.cast-rock .gb-orb-glow { fill: #C79A5A; }
-.gb-ring.rock { border: 3px solid rgba(220, 190, 150, .9); box-shadow: 0 0 18px rgba(180, 140, 90, .7); }
-.cat-spark.dust { background: #B9A386; box-shadow: 0 0 4px rgba(90, 70, 50, .6); border-radius: 50%; }
-.gb-cracks.rock .hi { stroke: rgba(235, 238, 248, .85); }
-.gb-cracks.rock path.pit { fill: rgba(6, 4, 10, .88); stroke: rgba(225, 225, 240, .75); stroke-width: 1.5; }
+.gb-ring.rock { border: 4px solid rgba(235, 205, 165, .95); box-shadow: 0 0 22px rgba(200, 150, 90, .85), inset 0 0 14px rgba(200, 150, 90, .6); }
+.cat-spark.dust { background: #CDB38E; box-shadow: 0 0 6px rgba(120, 90, 60, .8); border-radius: 50%; }
+.gb-cracks.rock .hi { stroke: #F4F6FF; }
+.gb-cracks.rock .sh { stroke: rgba(0, 0, 0, .7); }
+.gb-cracks.rock path.pit { fill: rgba(4, 2, 8, .95); stroke: #EEF0FF; stroke-width: 2.5; }
 /* tornado */
 .gb-tornado { pointer-events: none; transform-origin: 50% 100%; will-change: transform, opacity; }
 .gb-tornado > i { position: absolute; left: 50%; border-radius: 50%; transform: translateX(-50%);
-  border: 3px solid rgba(190, 228, 255, .35); border-left-color: rgba(225, 245, 255, .85); border-right-color: rgba(150, 205, 255, .8);
-  box-shadow: 0 0 14px rgba(120, 190, 255, .45), inset 0 0 10px rgba(160, 215, 255, .35); background: rgba(150, 205, 255, .06);
+  border: 5px solid rgba(190, 228, 255, .55); border-left-color: rgba(235, 248, 255, .95); border-right-color: rgba(140, 200, 255, .95);
+  box-shadow: 0 0 18px rgba(120, 190, 255, .7), inset 0 0 14px rgba(160, 215, 255, .55); background: rgba(150, 205, 255, .16);
   animation: gb-sway .55s ease-in-out infinite alternate; }
 @keyframes gb-sway { from { transform: translateX(calc(-50% - 12px)); } to { transform: translateX(calc(-50% + 12px)); } }
-.gb-tornado > b { position: absolute; left: 50%; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 2px; background: #CFE9FF; box-shadow: 0 0 6px rgba(140, 200, 255, .8); }
-.gb-tornado > b.mud { background: #6B4A2C; box-shadow: none; width: 6px; height: 4px; }
+.gb-tornado > b { position: absolute; left: 50%; width: 7px; height: 7px; margin-left: -3.5px; border-radius: 2px; background: #E2F3FF; box-shadow: 0 0 8px rgba(140, 200, 255, .95); }
+.gb-tornado > b.mud { background: #5A3A1E; box-shadow: 0 0 3px rgba(40, 25, 10, .8); width: 9px; height: 6px; }
+.gb-tornado > .core { position: absolute; inset: 0; clip-path: polygon(0 0, 100% 0, 57% 100%, 43% 100%);
+  background: linear-gradient(90deg, rgba(90, 160, 240, .25), rgba(210, 238, 255, .7) 35%, rgba(255, 255, 255, .85) 50%, rgba(170, 220, 255, .65) 65%, rgba(80, 150, 235, .25));
+  filter: blur(10px); animation: gb-core 0.35s linear infinite alternate; }
+.gb-tornado > .core.inner { clip-path: polygon(15% 0, 85% 0, 53% 100%, 47% 100%); filter: blur(4px); opacity: .8; animation-duration: .22s;
+  background: repeating-linear-gradient(100deg, rgba(255, 255, 255, .0) 0 18px, rgba(230, 245, 255, .55) 22px 30px, rgba(255, 255, 255, 0) 34px 48px); }
+@keyframes gb-core { from { transform: translateX(-6px) skewX(-3deg); } to { transform: translateX(6px) skewX(3deg); } }
 .gb-charge.air { background: radial-gradient(circle, #FFFFFF 0, #CFF0FF 30%, rgba(120, 200, 255, .7) 55%, rgba(80, 160, 255, 0) 72%); }
 .mascot.cast-air .gb-orb-glow { fill: #8FD8FF; }
 .gb-ring.air { border: 3px solid rgba(200, 235, 255, .9); box-shadow: 0 0 18px rgba(120, 190, 255, .8); }
 .cat-spark.air { background: #E6F6FF; box-shadow: 0 0 8px #8FD8FF; border-radius: 50%; }
 /* dirt on the glass */
-.gb-mud { z-index: 96; background: radial-gradient(circle at 45% 40%, rgba(96, 66, 38, .9) 0, rgba(74, 50, 28, .85) 55%, rgba(58, 38, 20, .55) 80%, rgba(58, 38, 20, 0) 100%);
-  filter: blur(.6px); box-shadow: inset 0 -2px 4px rgba(30, 18, 8, .5); }
+.gb-mud { z-index: 96; background: radial-gradient(circle, rgba(64, 42, 22, .96) 0 50%, rgba(52, 34, 17, .9) 70%, rgba(45, 29, 14, 0) 100%);
+  filter: blur(.5px); }
 .gb-mud > i.drip { position: absolute; top: 70%; height: var(--len); border-radius: 0 0 50% 50%; background: linear-gradient(rgba(74, 50, 28, .85), rgba(74, 50, 28, .25));
   transform-origin: top; animation: gb-drip 3s ease-in forwards; }
 @keyframes gb-drip { from { transform: scaleY(.1); } to { transform: scaleY(1); } }
-.gb-mud > b { position: absolute; border-radius: 50%; background: rgba(80, 55, 32, .85); }
+.gb-mud > u { position: absolute; border-radius: 50%; background: radial-gradient(circle, rgba(62, 41, 21, .95) 0 55%, rgba(50, 33, 16, 0) 100%); }
+.gb-mud > b { position: absolute; border-radius: 50%; background: rgba(78, 52, 28, .95); }
 /* owner: summon the robot from the profile menu */
 .menu-summon { padding: 8px 10px; border-top: 1px solid var(--border, rgba(255,255,255,.08)); }
 .menu-summon .menu-label { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }

@@ -1777,7 +1777,7 @@ function summonButtons(after) {
       hole: { n: [9, 12], pit: .26, rings: [.4, .58, .78], branch: .1, layers: ["sh", "hi"] },
       fire: { n: [11, 15], pit: .11, rings: [.2, .36, .56, .76], branch: .12, layers: ["gl", "sh", "hi"] },
       bolt: { n: [20, 26], pit: .05, rings: [.13, .24, .37, .52, .68, .85], branch: .3, layers: ["gl", "sh", "hi"] },
-      rock: { n: [5, 8], pit: .3, rings: [.62], branch: .15, layers: ["sh", "hi"] }
+      rock: { n: [7, 10], pit: .3, rings: [.55, .8], branch: .18, layers: ["sh", "hi"], w: 1.7 }
     };
     function cracks(x, y, R, kind) {
       const cfg = CRACK[kind] || CRACK.fire;
@@ -1791,7 +1791,8 @@ function summonButtons(after) {
         let L = 0; for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
         const d = "M" + pts.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join("L");
         for (const cls of cfg.layers) {
-          const path = mk("path", { d, class: cls, "stroke-width": cls === "gl" ? w + 5 : cls === "sh" ? w + (kind === "fire" ? 3 : 1.4) : w });
+          const ww = w * (cfg.w || 1);
+          const path = mk("path", { d, class: cls, "stroke-width": cls === "gl" ? ww + 5 : cls === "sh" ? ww + (kind === "fire" ? 3 : 1.4) : ww });
           if (cls === "sh") path.setAttribute("transform", "translate(.8 .8)");
           path.style.strokeDasharray = `${L} ${L}`;
           svg.append(path); list.push([path, L]);
@@ -1846,18 +1847,22 @@ function summonButtons(after) {
     // Dirt splat on the "glass" (tornado): an irregular blob with drips and specks that slowly slides down and fades
     function mud(x, y, size) {
       const blob = h("div", { class: "gb-fx gb-mud", style: `left:${x}px;top:${y}px;width:${size}px;height:${size * (.75 + Math.random() * .4)}px;` +
-        `border-radius:${[0, 0, 0, 0].map(() => 38 + Math.floor(Math.random() * 24)).join("% ")}% / ${[0, 0, 0, 0].map(() => 38 + Math.floor(Math.random() * 24)).join("% ")}%;` +
+        `border-radius:${[0, 0, 0, 0].map(() => 22 + Math.floor(Math.random() * 56)).join("% ")}% / ${[0, 0, 0, 0].map(() => 22 + Math.floor(Math.random() * 56)).join("% ")}%;` +
         "transform:translate(-50%,-50%)" });
-      for (let i = 0; i < 2 + Math.floor(Math.random() * 3); i++)   // drips
+      for (let i = 0; i < 2 + Math.floor(Math.random() * 3); i++) {   // lobes: a splat, not a ball
+        const a = Math.random() * Math.PI * 2, r = size * (.3 + Math.random() * .25), ls = size * (.3 + Math.random() * .3);
+        blob.append(h("u", { style: `left:calc(50% + ${Math.cos(a) * r - ls / 2}px);top:calc(50% + ${Math.sin(a) * r - ls / 2}px);width:${ls}px;height:${ls * (.6 + Math.random() * .5)}px` }));
+      }
+      for (let i = 0; i < 3 + Math.floor(Math.random() * 4); i++)   // drips
         blob.append(h("i", { class: "drip", style: `left:${20 + Math.random() * 60}%;width:${3 + Math.random() * 4}px;--len:${size * (.4 + Math.random() * .9)}px` }));
-      for (let i = 0; i < 4 + Math.floor(Math.random() * 5); i++) {   // specks around
+      for (let i = 0; i < 7 + Math.floor(Math.random() * 7); i++) {   // specks around
         const a = Math.random() * Math.PI * 2, r = size * (.6 + Math.random() * .7);
-        blob.append(h("b", { style: `left:calc(50% + ${Math.cos(a) * r}px);top:calc(50% + ${Math.sin(a) * r}px);width:${2 + Math.random() * 5}px;height:${2 + Math.random() * 5}px` }));
+        blob.append(h("b", { style: `left:calc(50% + ${Math.cos(a) * r}px);top:calc(50% + ${Math.sin(a) * r}px);width:${3 + Math.random() * 8}px;height:${3 + Math.random() * 8}px` }));
       }
       document.body.append(blob);
-      blob.animate([{ opacity: 0, scale: .3 }, { opacity: 1, scale: 1.08, offset: .04 }, { opacity: 1, scale: 1, offset: .08 }, { opacity: 1, scale: 1, offset: .3 }, { opacity: 0, scale: 1, translate: "0 18px" }],
-        { duration: 4200, easing: "ease-in", fill: "forwards" });
-      setTimeout(() => blob.remove(), 4300);
+      blob.animate([{ opacity: 0, scale: .3 }, { opacity: 1, scale: 1.1, offset: .03 }, { opacity: 1, scale: 1, offset: .06 }, { opacity: 1, scale: 1, offset: .4 }, { opacity: 0, scale: 1, translate: "0 24px" }],
+        { duration: 5000, easing: "ease-in", fill: "forwards" });
+      setTimeout(() => blob.remove(), 5100);
     }
     function cast(kind) {
       casting = true; clearInterval(trail);
@@ -1905,11 +1910,11 @@ function summonButtons(after) {
       };
       if (kind === "rock") {
         // Stone barrage: a volley of rocks from the orb; every hit punches a small hole with little cracks
-        const N = 9 + Math.floor(Math.random() * 4);
+        const N = 11 + Math.floor(Math.random() * 4);
         later(700, () => charge.remove());
         for (let i = 0; i < N; i++) later(700 + i * 110, () => {
           const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random());
-          const x = tx + Math.cos(a) * r * D * .45, y = ty + Math.sin(a) * r * D * .3, sz = 14 + Math.random() * 12;
+          const x = tx + Math.cos(a) * r * D * .5, y = ty + Math.sin(a) * r * D * .34, sz = 36 + Math.random() * 26;
           const rock = fxEl(`gb-rock s${i % 4}`, `left:${ox}px;top:${oy}px;width:${sz}px;height:${sz}px`);
           const dur = 380 + Math.random() * 160, mx = (ox + x) / 2, my = Math.min(oy, y) - 70 - Math.random() * 60, spin = (Math.random() < .5 ? -1 : 1) * (360 + Math.random() * 360);
           rock.animate([
@@ -1920,8 +1925,11 @@ function summonButtons(after) {
           setTimeout(() => {
             rock.remove();
             if (ended) return;
-            burst(x, y, 7, 26, "dust", 450);
-            cracks(x, y, 34 + Math.random() * 30, "rock");
+            burst(x, y, 14, 60, "dust", 600);
+            const puff = fxEl("gb-ring rock", `left:${x}px;top:${y}px`);
+            puff.animate([{ transform: "translate(-50%,-50%) scale(.2)", opacity: 1 }, { transform: "translate(-50%,-50%) scale(2.6)", opacity: 0 }], { duration: 450, easing: "ease-out", fill: "forwards" });
+            setTimeout(() => puff.remove(), 480);
+            cracks(x, y, 85 + Math.random() * 55, "rock");
           }, dur);
         });
         later(700 + N * 110 + 600, () => blinkOut("rock", "dust"));
@@ -1930,17 +1938,18 @@ function summonButtons(after) {
         // Tornado: a bluish twister grows in the middle of the page, sways, flings dirt on the "glass" and dissolves
         later(700, () => {
           charge.remove();
-          const Ht = Math.min(D * .95, (A.bottom - A.top) * .85), Wt = Math.min(D * .5, 420), RINGS = 15;
-          const tint = fxEl("gb-dim", `background: radial-gradient(ellipse at ${tx}px ${ty}px, rgba(120,190,255,.22) 0, rgba(60,120,200,.12) ${D * .35}px, rgba(40,90,180,0) ${D * .7}px)`);
+          const Ht = Math.min(D * .95, (A.bottom - A.top) * .88), Wt = Math.min(D * .55, 460), RINGS = 28;
+          const tint = fxEl("gb-dim", `background: radial-gradient(ellipse at ${tx}px ${ty}px, rgba(120,190,255,.38) 0, rgba(60,120,200,.24) ${D * .35}px, rgba(20,50,110,.12) ${D * .7}px, rgba(20,50,110,0) ${D}px)`);
           tint.animate([{ opacity: 0 }, { opacity: 1, offset: .2 }, { opacity: 1, offset: .8 }, { opacity: 0 }], { duration: 2600, fill: "forwards" });
           const tw = fxEl("gb-tornado", `left:${tx}px;top:${ty + Ht / 2}px;width:${Wt}px;height:${Ht}px`);
+          tw.append(h("div", { class: "core" }), h("div", { class: "core inner" }));   // the dense funnel body
           for (let i = 0; i < RINGS; i++) {
             const k = i / (RINGS - 1), w = Wt * (1 - k * .86), hh = Math.max(8, w * .2);
-            tw.append(h("i", { style: `width:${w}px;height:${hh}px;top:${k * (Ht - hh)}px;animation-delay:${(-i * .07).toFixed(2)}s;opacity:${(.95 - k * .35).toFixed(2)}` }));
+            tw.append(h("i", { style: `width:${w}px;height:${hh}px;top:${k * (Ht - hh)}px;animation-delay:${(-i * .05).toFixed(2)}s;opacity:${(1 - k * .25).toFixed(2)}` }));
           }
-          for (let i = 0; i < 26; i++) {   // debris whirling around the funnel
+          for (let i = 0; i < 70; i++) {   // debris whirling around the funnel
             const k = Math.random(), w = Wt * (1 - k * .86) / 2 + 6, dur = 500 + Math.random() * 400;
-            const d = h("b", { class: Math.random() < .45 ? "mud" : "", style: `top:${k * Ht}px` });
+            const d = h("b", { class: Math.random() < .55 ? "mud" : "", style: `top:${k * Ht}px` });
             tw.append(d);
             d.animate([{ transform: `translateX(${-w}px) scale(.6)`, opacity: .4 }, { transform: "translateX(0) scale(1.2)", opacity: 1, offset: .25 },
               { transform: `translateX(${w}px) scale(.6)`, opacity: .4, offset: .5 }, { transform: "translateX(0) scale(.4)", opacity: .15, offset: .75 },
@@ -1955,9 +1964,9 @@ function summonButtons(after) {
           ], { duration: 2600, easing: "ease-in-out", fill: "forwards" });
           clean.push(tint, tw);
           // dirt flung onto the screen while it spins
-          for (let i = 0; i < 16; i++) later(500 + i * 95, () => {
-            const a = Math.random() * Math.PI * 2, r = .25 + Math.random() * .75;
-            mud(tx + Math.cos(a) * r * D * .55, ty + Math.sin(a) * r * D * .38, 26 + Math.random() * 50);
+          for (let i = 0; i < 38; i++) later(450 + i * 48, () => {
+            const a = Math.random() * Math.PI * 2, r = .15 + Math.random() * .85;
+            mud(tx + Math.cos(a) * r * D * .65, ty + Math.sin(a) * r * D * .45, 40 + Math.random() * 85);
           });
           later(1500, () => blinkOut("air", "air"));
           later(2700, () => { clean.forEach(n => n.remove()); toast("The Greatness bot escaped on a whirlwind 🌪️"); end(); });
