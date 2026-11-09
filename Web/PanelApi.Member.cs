@@ -348,7 +348,7 @@ public static partial class PanelApi
                 Rank("spells", "Spells seen", "✨", x => x.Spells.Values.Sum()),
                 Rank("kinds", "Different spells", "📖", x => x.Spells.Count(kv => kv.Value > 0)),
                 Rank("legendary", "Legendary casts", "🌟", x => x.Legendary),
-                Rank("achievements", "Achievements", "🏆", x => MascotStatsStore.All.Count(a => a.Done(x))),
+                Rank("achievements", "Achievement grades", "🏆", x => MascotStatsStore.All.Sum(a => a.Grade(x))),
             };
             return Results.Ok(new
             {
@@ -358,9 +358,22 @@ public static partial class PanelApi
                     ? new { key = x.Key, icon = x.Icon, name = x.Name, count = n }
                     : new { key = x.Key, icon = "❔", name = "???", count = 0 }),
                 total = MascotStatsStore.All.Count,
-                achievements = MascotStatsStore.All.Select(a => a.Done(s)
-                    ? new { id = a.Id, unlocked = true, icon = a.Icon, title = a.Title, description = a.Description }
-                    : new { id = a.Id, unlocked = false, icon = "❔", title = "???", description = "Hidden achievement" })
+                grades = MascotStatsStore.GradeNames,
+                points = MascotStatsStore.All.Sum(a => a.Grade(s)),
+                maxPoints = MascotStatsStore.All.Sum(a => a.Tiers.Length),
+                // graded: grade 1..7 (rarity colour), progress to the next grade; locked ones come without any text
+                achievements = MascotStatsStore.All.Select(a =>
+                {
+                    var g = a.Grade(s);
+                    if (g == 0) return (object)new { id = a.Id, group = a.Group, unlocked = false };
+                    var v = a.Value(s);
+                    var next = g < a.Tiers.Length ? a.Tiers[g] : (int?)null;
+                    return new
+                    {
+                        id = a.Id, group = a.Group, unlocked = true, icon = a.Icon, title = a.Title, grade = g, gradeName = MascotStatsStore.GradeNames[g - 1],
+                        description = string.Format(a.Description, next ?? a.Tiers[^1]), value = v, prev = a.Tiers[g - 1], next, maxGrade = a.Tiers.Length
+                    };
+                })
             });
         });
 

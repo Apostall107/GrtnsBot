@@ -7671,6 +7671,38 @@ async function pageMascot(main) {
 
 // ================= Member: Achievements (the mascot game) =================
 
+/** Graded achievements: rarity colour by grade, progress to the next one; locked ones are just "?". */
+function achievementsCard(d) {
+  const grades = d.grades || ["Poor", "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic"];
+  const tile = (a, small) => a.unlocked
+    ? h("div", { class: `ach done g${a.grade}${small ? " sm" : ""}`, title: `${a.title} — ${a.gradeName} (${a.grade}/${a.maxGrade})` },
+      h("span", { class: "ach-icon" }, a.icon),
+      h("div", { class: "ach-text" },
+        h("div", { class: "ach-top" }, h("b", {}, a.title), h("span", { class: "ach-grade" }, a.gradeName)),
+        small ? null : h("span", { class: "muted small" }, a.next ? a.description : `${a.description} — max grade!`),
+        h("div", { class: "ach-bar", title: a.next ? `${a.value} / ${a.next}` : `${a.value}` },
+          h("i", { style: `width:${a.next ? Math.min(100, Math.round((a.value - a.prev) / (a.next - a.prev) * 100)) : 100}%` })),
+        h("span", { class: "ach-pips" }, Array.from({ length: a.maxGrade }, (_, i) => h("i", { class: i < a.grade ? `on g${i + 1}` : "" })))))
+    : h("div", { class: `ach locked${small ? " sm" : ""}` }, h("span", { class: "ach-icon" }, "?"),
+      h("div", { class: "ach-text" }, h("b", {}, "???"), small ? null : h("span", { class: "muted small" }, "Hidden achievement")));
+  const group = (key, title, small) => {
+    const list = d.achievements.filter(a => (a.group || "general") === key);
+    if (!list.length) return null;
+    const open = list.filter(a => a.unlocked).length;
+    const sorted = [...list].sort((x, y) => (y.unlocked ? 1 : 0) - (x.unlocked ? 1 : 0));
+    const grid = h("div", { class: `ach-grid${small ? " sm" : ""}` });
+    const hidden = list.length - open;
+    const draw = all => grid.replaceChildren(...(all || !small ? sorted : sorted.filter(a => a.unlocked)).map(a => tile(a, small)),
+      ...(!all && small && hidden ? [h("button", { type: "button", class: "ach locked sm ach-more", onclick: () => draw(true) },
+        h("span", { class: "ach-icon" }, "?"), h("div", { class: "ach-text" }, h("b", {}, `+${hidden} hidden`), h("span", { class: "muted small" }, "show")))] : []));
+    draw(false);   // the big combination list starts folded: found ones + "+N hidden"
+    return h("div", { class: "ach-group" }, h("h3", {}, `${title} · ${open}/${list.length}`), grid);
+  };
+  return h("div", { class: "card" }, h("h2", {}, "🏆 Achievements"),
+    h("div", { class: "ach-legend" }, grades.map((n, i) => h("span", { class: `ach-chip g${i + 1}` }, n))),
+    group("general", "General"), group("spells", "Spells"), group("legend", "Legendary casts"), group("combos", "Legendary combinations", true));
+}
+
 /** Ranking: my place per category among everyone on the server; hover a tile for the top 3. */
 function rankingCard(rows) {
   const medal = r => r === 1 ? "🥇" : r === 2 ? "🥈" : r === 3 ? "🥉" : null;
@@ -7704,16 +7736,13 @@ async function pageAchievements(main) {
       statCard("bot", "Robots caught", d.caught, d.quick ? `${d.quick} before it got tired` : "catch it when it flies by"),
       statCard("sparkles", "Spells seen", d.spells.reduce((a, s) => a + s.count, 0), `${seen} of ${d.spells.length} different`),
       statCard("star", "Legendary casts", d.legendary, "two spells at once"),
-      statCard("trophy", "Achievements", `${got}/${d.total}`, d.escaped ? `it escaped from you ${d.escaped}×` : "")),
+      statCard("trophy", "Achievements", `${got}/${d.achievements.length}`, `${d.points ?? 0} of ${d.maxPoints ?? 0} grade points`)),
     rankingCard(d.ranking || []),
     h("div", { class: "card" }, h("h2", {}, "📖 Spellbook"),
       h("div", { class: "spellbook" }, d.spells.map(s => h("div", { class: `spell-tile${s.count ? "" : " locked"}`, title: s.count ? `${s.name}: seen ${s.count}×` : "Not seen yet" },
         h("span", { class: "spell-icon" }, s.count ? s.icon : "?"), h("span", { class: "spell-name" }, s.count ? s.name : "???"),
         s.count ? h("span", { class: "spell-count" }, `×${s.count}`) : null)))),
-    h("div", { class: "card" }, h("h2", {}, `🏆 Achievements · ${got}/${d.total}`),
-      h("div", { class: "ach-grid" }, d.achievements.map(a => h("div", { class: `ach${a.unlocked ? " done" : " locked"}` },
-        h("span", { class: "ach-icon" }, a.unlocked ? a.icon : "?"),
-        h("div", { class: "ach-text" }, h("b", {}, a.unlocked ? a.title : "???"), h("span", { class: "muted small" }, a.unlocked ? a.description : "Hidden achievement")))))));
+    achievementsCard(d));
 }
 
 async function pageVoiceNow(main) {

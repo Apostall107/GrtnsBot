@@ -13,13 +13,21 @@ public sealed class MascotStats
     /// <summary>Spells seen: key → times.</summary>
     public Dictionary<string, int> Spells { get; set; } = [];
     public int Legendary { get; set; }
+    /// <summary>Legendary casts by combination ("fire+hole", keys sorted) → times.</summary>
+    public Dictionary<string, int> LegendCombos { get; set; } = [];
     public DateTimeOffset? Last { get; set; }
     /// <summary>The catches counted only in the browser before the server kept stats were taken over (once).</summary>
     public bool LegacyImported { get; set; }
 }
 
-/// <summary>One achievement: id, icon, title, how to get it, and whether the stats unlock it.</summary>
-public sealed record MascotAchievement(string Id, string Icon, string Title, string Description, Func<MascotStats, bool> Done);
+/// <summary>
+/// A graded achievement: the higher the count, the higher the grade (rarity colour). Grade 0 — locked (hidden on the site).
+/// </summary>
+public sealed record MascotAchievement(string Id, string Group, string Icon, string Title, string Description, int[] Tiers, Func<MascotStats, int> Value)
+{
+    public int Grade(MascotStats s) { var v = Value(s); return Tiers.Count(t => v >= t); }
+    public bool Done(MascotStats s) => Grade(s) > 0;
+}
 
 /// <summary>
 /// data/mascot-stats.json — per server, per member: robots caught, escapes, spells seen, legendary casts.
@@ -42,6 +50,15 @@ public sealed class MascotStatsStore
         "Wet Screen", "Sealed with Greatness", "Toxic", "Orbital Strike", "Scratched", "Have You Tried Turning It Off", "Hanami", "Celebration"
     ];
 
+    /// <summary>Grades: grey, white, green, blue, purple, gold, orange.</summary>
+    public static readonly string[] GradeNames = ["Poor", "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic"];
+    /// <summary>Most achievements: 1, then powers of two.</summary>
+    public static readonly int[] PowerTiers = [1, 2, 4, 8, 16, 32, 64];
+    /// <summary>Legendary casts (and each legendary combination).</summary>
+    public static readonly int[] LegendTiers = [1, 2, 3, 4, 5, 7, 10];
+
+    public static string ComboKey(string a, string b) => string.CompareOrdinal(a, b) < 0 ? $"{a}+{b}" : $"{b}+{a}";
+
     public static readonly IReadOnlyList<MascotAchievement> All = Build();
 
     private static List<MascotAchievement> Build()
@@ -50,28 +67,26 @@ public sealed class MascotStatsStore
         int Total(MascotStats s) => s.Spells.Values.Sum();
         var list = new List<MascotAchievement>
         {
-            new("catch1", "🤖", "Gotcha!", "Catch the robot for the first time.", s => s.Caught >= 1),
-            new("catch10", "🎯", "Bot Hunter", "Catch the robot 10 times.", s => s.Caught >= 10),
-            new("catch50", "🏹", "Exterminator", "Catch the robot 50 times.", s => s.Caught >= 50),
-            new("catch100", "🏆", "Robot Whisperer", "Catch the robot 100 times.", s => s.Caught >= 100),
-            new("quick1", "⚡", "Quick Hands", "Catch the robot before it gets tired.", s => s.QuickCatches >= 1),
-            new("quick10", "🥷", "Lightning Reflexes", "Catch the robot before it gets tired 10 times.", s => s.QuickCatches >= 10),
-            new("escape10", "💨", "It Got Away", "Let the robot escape 10 times.", s => s.Escaped >= 10),
+            new("caught", "general", "🤖", "Bot Hunter", "Catch the robot {0} times.", PowerTiers, s => s.Caught),
+            new("quick", "general", "⚡", "Quick Hands", "Catch the robot {0} times before it gets tired.", PowerTiers, s => s.QuickCatches),
+            new("escaped", "general", "💨", "It Got Away", "Let the robot escape {0} times.", PowerTiers, s => s.Escaped),
+            new("spells", "general", "✨", "Spellbound", "See {0} spells in total.", PowerTiers, Total),
+            new("kinds", "general", "📖", "Grimoire", "See {0} different spells.", [1, 2, 4, 8, 15], Seen),
+            new("legend", "legend", "🌟", "Legendary!", "Witness {0} legendary casts — two spells at once.", LegendTiers, s => s.Legendary),
         };
         for (var i = 0; i < Spells.Length; i++)
         {
             var key = Spells[i].Key;
-            list.Add(new($"spell-{key}", Spells[i].Icon, SpellTitles[i], $"See the robot cast {Spells[i].Name}.", s => s.Spells.GetValueOrDefault(key) > 0));
+            list.Add(new($"spell-{key}", "spells", Spells[i].Icon, SpellTitles[i], $"See the robot cast {Spells[i].Name} {{0}} times.", PowerTiers, s => s.Spells.GetValueOrDefault(key)));
         }
-        list.AddRange([
-            new("seen5", "📖", "Apprentice", "See 5 different spells.", s => Seen(s) >= 5),
-            new("seen10", "📚", "Spellbook", "See 10 different spells.", s => Seen(s) >= 10),
-            new("seenAll", "🧙", "Grimoire Complete", "See every spell at least once.", s => Seen(s) >= Spells.Length),
-            new("spells25", "✨", "Spellbound", "See 25 spells in total.", s => Total(s) >= 25),
-            new("spells100", "🔮", "Arcane Veteran", "See 100 spells in total.", s => Total(s) >= 100),
-            new("legend1", "🌟", "Legendary!", "Witness a legendary cast — two spells at once.", s => s.Legendary >= 1),
-            new("legend5", "💫", "Myth Keeper", "Witness 5 legendary casts.", s => s.Legendary >= 5),
-        ]);
+        for (var i = 0; i < Spells.Length; i++)
+        for (var j = i + 1; j < Spells.Length; j++)
+        {
+            var (a, b) = (Spells[i], Spells[j]);
+            var combo = ComboKey(a.Key, b.Key);
+            list.Add(new($"combo-{combo}", "combos", $"{a.Icon}{b.Icon}", $"{a.Name} + {b.Name}", $"Witness the legendary cast {a.Name} + {b.Name} {{0}} times.",
+                LegendTiers, s => s.LegendCombos.GetValueOrDefault(combo)));
+        }
         return list;
     }
 
@@ -123,7 +138,12 @@ public sealed class MascotStatsStore
             // spells it cast — when it escaped or, now and then, when it was caught
             var valid = (spells ?? []).Distinct().Where(k => Spells.Any(x => x.Key == k)).Take(2).ToList();
             foreach (var k in valid) s.Spells[k] = s.Spells.GetValueOrDefault(k) + 1;
-            if (legendary && valid.Count == 2) s.Legendary++;
+            if (legendary && valid.Count == 2)
+            {
+                s.Legendary++;
+                var combo = ComboKey(valid[0], valid[1]);
+                s.LegendCombos[combo] = s.LegendCombos.GetValueOrDefault(combo) + 1;
+            }
             var dir = Path.GetDirectoryName(Path.GetFullPath(_path));
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
             DataFiles.Save(_path, JsonSerializer.Serialize(_data, JsonOptions));
