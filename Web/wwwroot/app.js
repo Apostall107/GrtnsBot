@@ -1633,7 +1633,7 @@ async function logout() {
     if (busy || document.hidden || !state.me) return schedule();
     // Sometimes (≈15%) a successful escape ends with a show: instead of just leaving the screen it casts a black hole or a fireball
     const forced = opts && typeof opts === "object" ? opts.finale : null;
-    const finale = forced || (Math.random() < .15 ? (Math.random() < .5 ? "hole" : "fire") : null);
+    const finale = forced || (Math.random() < .15 ? ["hole", "fire", "bolt"][Math.floor(Math.random() * 3)] : null);
     const M = BOT; // only our robot flies (the cat is retired)
     const A = area(), W = M.w, H = M.h;
     // Starts just outside the page area: mostly left↔right, sometimes up↕down. While it flies, clicks within 200 px
@@ -1758,58 +1758,77 @@ async function logout() {
         setTimeout(() => s.remove(), dur * 1.3);
       }
     };
-    // Cracked glass where the spell hit: splinters out in a blink, then heal back to the centre over ~3 s
-    function cracks(x, y, R) {
+    // Cracked glass where the spell hit: splinters out in a blink, then heals back to the centre over ~3 s.
+    // Each spell leaves its own kind: fire — scorched, glowing cracks that cool down; black hole — a big broken-out
+    // hole with fewer cracks; lightning — a small hole but lots of crackling, electrified cracks.
+    const CRACK = {
+      hole: { n: [9, 12], pit: .26, rings: [.4, .58, .78], branch: .1, layers: ["sh", "hi"] },
+      fire: { n: [11, 15], pit: .11, rings: [.2, .36, .56, .76], branch: .12, layers: ["gl", "sh", "hi"] },
+      bolt: { n: [20, 26], pit: .05, rings: [.13, .24, .37, .52, .68, .85], branch: .3, layers: ["gl", "sh", "hi"] }
+    };
+    function cracks(x, y, R, kind) {
+      const cfg = CRACK[kind] || CRACK.fire;
       const NS = "http://www.w3.org/2000/svg", S = Math.ceil(R * 2 + 40), c = S / 2;
       const svg = document.createElementNS(NS, "svg");
-      svg.setAttribute("class", "gb-fx gb-cracks"); svg.setAttribute("width", S); svg.setAttribute("height", S);
+      svg.setAttribute("class", `gb-fx gb-cracks ${kind}`); svg.setAttribute("width", S); svg.setAttribute("height", S);
       svg.setAttribute("viewBox", `0 0 ${S} ${S}`); svg.style.left = `${x - c}px`; svg.style.top = `${y - c}px`;
+      const mk = (tag, attrs) => { const n = document.createElementNS(NS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); return n; };
       const lines = [], rings = [];
       const add = (pts, list, w) => {
         let L = 0; for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
         const d = "M" + pts.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join("L");
-        for (const [cls, dx] of [["sh", .8], ["hi", 0]]) {
-          const path = document.createElementNS(NS, "path");
-          path.setAttribute("d", d); path.setAttribute("class", cls); path.setAttribute("stroke-width", cls === "sh" ? w + 1.4 : w);
-          if (dx) path.setAttribute("transform", `translate(${dx} ${dx})`);
+        for (const cls of cfg.layers) {
+          const path = mk("path", { d, class: cls, "stroke-width": cls === "gl" ? w + 5 : cls === "sh" ? w + (kind === "fire" ? 3 : 1.4) : w });
+          if (cls === "sh") path.setAttribute("transform", "translate(.8 .8)");
           path.style.strokeDasharray = `${L} ${L}`;
           svg.append(path); list.push([path, L]);
         }
       };
-      const n = 11 + Math.floor(Math.random() * 5), base = Math.random() * Math.PI * 2, rays = [];
+      // the broken-out hole in the middle
+      const pitR = R * cfg.pit, m = 16 + Math.floor(Math.random() * 7), pitPts = [];
+      for (let i = 0; i < m; i++) { const a = i / m * Math.PI * 2, r = pitR * (.7 + Math.random() * .5); pitPts.push([c + Math.cos(a) * r, c + Math.sin(a) * r]); }
+      const pit = mk("path", { d: "M" + pitPts.map(p => p.map(v => v.toFixed(1)).join(",")).join("L") + "Z", class: "pit" });
+      // rays
+      const [n0, n1] = cfg.n, n = n0 + Math.floor(Math.random() * (n1 - n0 + 1)), base = Math.random() * Math.PI * 2, rays = [];
       for (let i = 0; i < n; i++) {
-        let a = base + i / n * Math.PI * 2 + (Math.random() - .5) * .35, r = 4 + Math.random() * 6;
+        let a = base + i / n * Math.PI * 2 + (Math.random() - .5) * .35, r = pitR * .9 + 2;
         const len = R * (.5 + Math.random() * .5), pts = [[c + Math.cos(a) * r, c + Math.sin(a) * r]];
         while (r < len) {
-          r += R * (.07 + Math.random() * .08); a += (Math.random() - .5) * .16;
+          r += R * (.07 + Math.random() * .08); a += (Math.random() - .5) * (kind === "bolt" ? .3 : .16);
           pts.push([c + Math.cos(a) * r, c + Math.sin(a) * r]);
-          if (Math.random() < .12 && r < len * .8) {   // a small branch
-            const b = a + (Math.random() < .5 ? 1 : -1) * (.35 + Math.random() * .3), bl = R * (.12 + Math.random() * .15);
-            const p0 = pts[pts.length - 1];
+          if (Math.random() < cfg.branch && r < len * .85) {   // a small branch
+            const b = a + (Math.random() < .5 ? 1 : -1) * (.35 + Math.random() * .3), bl = R * (.1 + Math.random() * .15), p0 = pts[pts.length - 1];
             add([p0, [p0[0] + Math.cos(b) * bl * .5, p0[1] + Math.sin(b) * bl * .5], [p0[0] + Math.cos(b + .1) * bl, p0[1] + Math.sin(b + .1) * bl]], lines, .9);
           }
         }
         add(pts, lines, 1.3 - i % 3 * .2); rays.push(pts);
       }
       // the "spider web" rings between neighbouring rays
-      for (const f of [.16, .32, .52, .74]) rays.forEach((ra, i) => {
+      for (const f of cfg.rings) rays.forEach((ra, i) => {
         const rb = rays[(i + 1) % rays.length], pick = pts => pts[Math.min(pts.length - 1, Math.round(f * (pts.length - 1) / .9))];
         if (Math.random() < (f > .6 ? .45 : .8) && ra.length > 2 && rb.length > 2) {
           const p = pick(ra), q = pick(rb), mx = (p[0] + q[0]) / 2, my = (p[1] + q[1]) / 2, k = .9 + Math.random() * .06;
           add([p, [c + (mx - c) * k, c + (my - c) * k], q], rings, .8);
         }
       });
-      const spot = document.createElementNS(NS, "circle");
-      spot.setAttribute("cx", c); spot.setAttribute("cy", c); spot.setAttribute("r", Math.min(26, R * .08)); spot.setAttribute("class", "spot");
-      svg.append(spot);
+      svg.append(pit);
       document.body.append(svg);
-      const HOLD = 350, HEAL = 2650;
+      const HOLD = 350, HEAL = 2650, ALL = HOLD + HEAL + 140, keep = (HOLD + 140) / ALL;
       [...lines, ...rings].forEach(([p, L]) => p.animate(
-        [{ strokeDashoffset: L, opacity: 1 }, { strokeDashoffset: 0, opacity: 1, offset: .05 }, { strokeDashoffset: 0, opacity: 1, offset: (HOLD + 140) / (HOLD + HEAL + 140) }, { strokeDashoffset: L, opacity: .2 }],
-        { duration: HOLD + HEAL + 140, easing: "ease-in-out", fill: "forwards" }));
-      rings.forEach(([p]) => p.animate([{ opacity: 1 }, { opacity: 1, offset: .2 }, { opacity: 0, offset: .6 }, { opacity: 0 }], { duration: HOLD + HEAL, fill: "forwards", composite: "replace" }));
-      spot.animate([{ opacity: .9 }, { opacity: .5, offset: .3 }, { opacity: 0 }], { duration: HOLD + HEAL, fill: "forwards" });
-      setTimeout(() => svg.remove(), HOLD + HEAL + 300);
+        [{ strokeDashoffset: L }, { strokeDashoffset: 0, offset: .05 }, { strokeDashoffset: 0, offset: keep }, { strokeDashoffset: L }],
+        { duration: ALL, easing: "ease-in-out", fill: "forwards" }));
+      rings.forEach(([p]) => p.animate([{ opacity: 1 }, { opacity: 1, offset: .2 }, { opacity: 0, offset: .6 }, { opacity: 0 }], { duration: ALL, fill: "forwards" }));
+      pit.animate([{ transform: "scale(.2)" }, { transform: "scale(1)", offset: .05 }, { transform: "scale(1)", offset: keep }, { transform: "scale(0)" }], { duration: ALL, easing: "ease-in-out", fill: "forwards" });
+      svg.animate([{ opacity: 1 }, { opacity: 1, offset: .85 }, { opacity: 0 }], { duration: ALL, fill: "forwards" });
+      let zap = 0;
+      if (kind === "bolt") zap = setInterval(() => {   // little electric arcs jumping along the cracks
+        const ray = rays[Math.floor(Math.random() * rays.length)], i = 1 + Math.floor(Math.random() * Math.max(1, ray.length - 2)), p = ray[Math.min(i, ray.length - 1)];
+        const a = Math.random() * Math.PI * 2, pts = [p];
+        for (let k = 0; k < 4; k++) { const q = pts[pts.length - 1]; pts.push([q[0] + Math.cos(a + (k % 2 ? .9 : -.9)) * 7, q[1] + Math.sin(a + (k % 2 ? .9 : -.9)) * 7]); }
+        const arc = mk("path", { d: "M" + pts.map(q => q.map(v => v.toFixed(1)).join(",")).join("L"), class: "arc" });
+        svg.append(arc); setTimeout(() => arc.remove(), 140);
+      }, 70);
+      setTimeout(() => { clearInterval(zap); svg.remove(); }, ALL + 200);
     }
     function cast(kind) {
       casting = true; clearInterval(trail);
@@ -1821,7 +1840,61 @@ async function logout() {
       const charge = fxEl(`gb-charge ${kind}`, `left:${ox}px;top:${oy}px`);
       charge.animate([{ transform: "translate(-50%,-50%) scale(.2)", opacity: 0 }, { transform: "translate(-50%,-50%) scale(1.6)", opacity: 1 }], { duration: 900, easing: "ease-in", fill: "forwards" });
       const clean = [charge];
-      if (kind === "hole") {
+      const blinkOut = (ring, spark) => {
+        const r = box(), px = r.left + r.width / 2, py = r.top + r.height / 2;
+        el.animate([{ transform: el.style.transform, opacity: 1 }, { transform: `${el.style.transform} scale(1.15, .8)`, opacity: 1, offset: .3 }, { transform: `${el.style.transform} scale(0, 1.6)`, opacity: 0 }],
+          { duration: 380, easing: "ease-in", fill: "forwards" });
+        later(300, () => { const rg = fxEl(`gb-ring ${ring}`, `left:${px}px;top:${py}px`); clean.push(rg);
+          rg.animate([{ transform: "translate(-50%,-50%) scale(0)", opacity: 1 }, { transform: "translate(-50%,-50%) scale(2.2)", opacity: 0 }], { duration: 500, easing: "ease-out", fill: "forwards" });
+          burst(px, py, 12, 60, spark, 600); });
+      };
+      // a jagged lightning bolt from a to b (with a few side branches), flickering for `dur` ms
+      const zig = (a, b, depth, k) => {
+        if (!depth) return [a, b];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, off = (Math.random() - .5) * L * k;
+        const mid = [(a[0] + b[0]) / 2 - (b[1] - a[1]) / L * off, (a[1] + b[1]) / 2 + (b[0] - a[0]) / L * off];
+        return zig(a, mid, depth - 1, k).concat(zig(mid, b, depth - 1, k).slice(1));
+      };
+      const strike = (a, b, dur, w) => {
+        const NS = "http://www.w3.org/2000/svg", svg = document.createElementNS(NS, "svg");
+        svg.setAttribute("class", "gb-fx gb-strike"); svg.setAttribute("width", innerWidth); svg.setAttribute("height", innerHeight);
+        const main = zig(a, b, 7, .32), paths = [[main, 1]];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]), ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+        for (let i = 0; i < 3 + Math.floor(w * 2); i++) {
+          const p = main[Math.floor(main.length * (.2 + Math.random() * .6))], t = ang + (Math.random() < .5 ? 1 : -1) * (.4 + Math.random() * .5), bl = L * (.12 + Math.random() * .2);
+          paths.push([zig(p, [p[0] + Math.cos(t) * bl, p[1] + Math.sin(t) * bl], 4, .4), .5]);
+        }
+        for (const [pts, k] of paths) {
+          const d = "M" + pts.map(q => q.map(v => v.toFixed(1)).join(",")).join("L");
+          for (const [cls, sw] of [["glow", 16], ["mid", 6], ["core", 2.2]]) {
+            const p = document.createElementNS(NS, "path"); p.setAttribute("d", d); p.setAttribute("class", cls); p.setAttribute("stroke-width", sw * w * k); svg.append(p);
+          }
+        }
+        document.body.append(svg);
+        svg.animate([{ opacity: 0 }, { opacity: 1, offset: .08 }, { opacity: .15, offset: .22 }, { opacity: 1, offset: .32 }, { opacity: .45, offset: .5 }, { opacity: 1, offset: .62 }, { opacity: 0 }], { duration: dur, fill: "forwards" });
+        setTimeout(() => svg.remove(), dur + 50);
+      };
+      if (kind === "bolt") {
+        // Lightning: the robot calls it with a bolt from its orb up to the sky, then a violet strike hits the middle of the page
+        later(750, () => { charge.remove(); strike([ox, oy], [ox + (Math.random() * 80 - 40), -20], 320, .55); });
+        later(950, () => {
+          const dim = fxEl("gb-dim", "background: rgba(14, 6, 40, .55)");
+          dim.animate([{ opacity: 0 }, { opacity: 1, offset: .2 }, { opacity: 1, offset: .6 }, { opacity: 0 }], { duration: 1300, fill: "forwards" });
+          setTimeout(() => dim.remove(), 1350);
+        });
+        later(1200, () => {
+          strike([tx + (Math.random() * 240 - 120), -20], [tx, ty], 520, 1);
+          const flash = fxEl("gb-flash", `background: radial-gradient(circle at ${tx}px ${ty}px, rgba(248,242,255,.97) 0, rgba(185,140,255,.7) ${D * .16}px, rgba(130,80,255,.3) ${D * .42}px, rgba(110,60,255,0) ${D * .8}px)`);
+          flash.animate([{ opacity: 0 }, { opacity: 1, offset: .08 }, { opacity: .35, offset: .2 }, { opacity: .9, offset: .3 }, { opacity: 0 }], { duration: 900, easing: "ease-out", fill: "forwards" });
+          const ring = fxEl("gb-ring bolt", `left:${tx}px;top:${ty}px`);
+          ring.animate([{ transform: "translate(-50%,-50%) scale(0)", opacity: 1 }, { transform: "translate(-50%,-50%) scale(10)", opacity: 0 }], { duration: 800, easing: "cubic-bezier(.1,.6,.3,1)", fill: "forwards" });
+          burst(tx, ty, 34, D * .45, "volt", 900); cracks(tx, ty, D * .55, "bolt");
+          setTimeout(() => { flash.remove(); ring.remove(); }, 950);
+        });
+        later(1450, () => strike([tx + (Math.random() * 300 - 150), -20], [tx + (Math.random() * 40 - 20), ty], 260, .6));   // an after-strike
+        later(1600, () => blinkOut("bolt", "volt"));
+        later(2300, () => { clean.forEach(n => n.remove()); toast("The Greatness bot escaped — with a thunderclap ⚡"); end(); });
+      } else if (kind === "hole") {
         // Black hole: grows in the middle of the page, swallows sparks and then the robot, collapses with a flash
         later(800, () => {
           charge.remove();
@@ -1839,18 +1912,11 @@ async function logout() {
             const k = [0, .35, .7, 1].map(t => ({ transform: `translate(${Math.cos(a + spin * t) * r * (1 - t)}px, ${Math.sin(a + spin * t) * r * (1 - t)}px) scale(${1.3 - t})`, opacity: t < 1 ? 1 : 0 }));
             s.animate(k, { duration: 1000, easing: "ease-in" }); setTimeout(() => s.remove(), 1000);
           });
-          later(2500, () => {   // and the robot blinks out right where it stands
-            const r = box(), px = r.left + r.width / 2, py = r.top + r.height / 2;
-            el.animate([{ transform: el.style.transform, opacity: 1 }, { transform: `${el.style.transform} scale(1.15, .8)`, opacity: 1, offset: .3 }, { transform: `${el.style.transform} scale(0, 1.6)`, opacity: 0 }],
-              { duration: 380, easing: "ease-in", fill: "forwards" });
-            later(300, () => { const ring = fxEl("gb-ring hole", `left:${px}px;top:${py}px`); clean.push(ring);
-              ring.animate([{ transform: "translate(-50%,-50%) scale(0)", opacity: 1 }, { transform: "translate(-50%,-50%) scale(2.2)", opacity: 0 }], { duration: 500, easing: "ease-out", fill: "forwards" });
-              burst(px, py, 12, 60, "blue", 600); });
-          });
+          later(2500, () => blinkOut("hole", "blue"));   // and the robot blinks out right where it stands
           later(3000, () => {
             const flash = fxEl("gb-ring hole", `left:${tx}px;top:${ty}px`);
             flash.animate([{ transform: "translate(-50%,-50%) scale(0)", opacity: 1 }, { transform: "translate(-50%,-50%) scale(9)", opacity: 0 }], { duration: 700, easing: "ease-out", fill: "forwards" });
-            burst(tx, ty, 26, D * .45, "blue", 900); clean.push(flash); cracks(tx, ty, D * .5);
+            burst(tx, ty, 26, D * .45, "blue", 900); clean.push(flash); cracks(tx, ty, D * .5, "hole");
           });
           later(3900, () => { clean.forEach(n => n.remove()); toast("The Greatness bot escaped — and left a black hole behind 🌀"); end(); });
         });
@@ -1881,7 +1947,7 @@ async function logout() {
             { duration: 1100, easing: "ease-out", fill: "forwards" });
           const ring = fxEl("gb-ring fire", `left:${tx}px;top:${ty}px`);
           ring.animate([{ transform: "translate(-50%,-50%) scale(0)", opacity: 1 }, { transform: "translate(-50%,-50%) scale(14)", opacity: 0 }], { duration: 1000, easing: "cubic-bezier(.1,.6,.3,1)", fill: "forwards" });
-          burst(tx, ty, 40, D * .55, "fire", 1100); cracks(tx, ty, D * .55);
+          burst(tx, ty, 40, D * .55, "fire", 1100); cracks(tx, ty, D * .55, "fire");
           el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: "forwards" });   // vanishes in the flash
           setTimeout(() => { [flash, core, ring].forEach(n => n.remove()); }, 1250);
           later(1300, () => { toast("The Greatness bot escaped with a bang 💥"); end(); });

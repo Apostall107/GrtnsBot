@@ -2664,6 +2664,32 @@ input.switch:checked { animation: switch-glow .5s ease-out; }
 .cat-spark.fire { background: #FFD27A; box-shadow: 0 0 8px #FF8A2A, 0 0 16px rgba(255, 70, 20, .7); }
 .gb-cracks { z-index: 96; overflow: visible; }
 .gb-cracks path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
-.gb-cracks path.hi { stroke: rgba(236, 240, 255, .85); }
-.gb-cracks path.sh { stroke: rgba(0, 0, 0, .45); }
-.gb-cracks .spot { fill: rgba(240, 244, 255, .5); filter: blur(3px); }
+.gb-cracks .hi { stroke: rgba(236, 240, 255, .85); }
+.gb-cracks .sh { stroke: rgba(0, 0, 0, .45); }
+.gb-cracks .pit { transform-box: fill-box; transform-origin: center; stroke-linejoin: miter; }
+/* black hole: a big broken-out hole, violet rim */
+.gb-cracks.hole .hi { stroke: rgba(225, 215, 255, .85); }
+.gb-cracks.hole path.pit { fill: rgba(3, 0, 10, .85); stroke: rgba(200, 180, 255, .85); stroke-width: 2; }
+/* fire: scorched cracks glowing orange that cool down to charred brown */
+.gb-cracks.fire .hi { animation: gb-cool 2.4s ease-out forwards; }
+@keyframes gb-cool { 0% { stroke: #FFF0C0; } 20% { stroke: #FFA040; } 65% { stroke: #B84A1C; } 100% { stroke: #4A1E0C; } }
+.gb-cracks.fire .sh { stroke: rgba(25, 8, 0, .8); }
+.gb-cracks.fire .gl { stroke: rgba(255, 120, 30, .38); animation: gb-ember 2.4s ease-out forwards; }
+@keyframes gb-ember { from { opacity: 1; } to { opacity: 0; } }
+.gb-cracks.fire path.pit { fill: rgba(22, 6, 0, .85); stroke: #FF8A2A; stroke-width: 2.5; }
+/* lightning: lots of crackling violet cracks, small hole */
+.gb-cracks.bolt .hi { stroke: #EFE4FF; }
+.gb-cracks.bolt .gl { stroke: rgba(160, 110, 255, .6); animation: gb-zap .16s steps(2) infinite; }
+@keyframes gb-zap { 0% { opacity: 1; } 50% { opacity: .2; } }
+.gb-cracks.bolt path.pit { fill: rgba(12, 4, 30, .85); stroke: #CDB4FF; stroke-width: 2; }
+.gb-cracks .arc { stroke: #F4ECFF; stroke-width: 1.4; filter: drop-shadow(0 0 3px #A77BFF); }
+/* lightning strike */
+.gb-strike { left: 0; top: 0; z-index: 97; overflow: visible; }
+.gb-strike path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.gb-strike .glow { stroke: rgba(150, 100, 255, .45); filter: blur(5px); }
+.gb-strike .mid { stroke: #A77BFF; }
+.gb-strike .core { stroke: #F8F3FF; }
+.gb-charge.bolt { background: radial-gradient(circle, #FFFFFF 0, #E2D2FF 25%, rgba(167, 123, 255, .8) 50%, rgba(120, 70, 255, 0) 72%); }
+.mascot.cast-bolt .gb-orb-glow { fill: #C49BFF; }
+.gb-ring.bolt { border: 4px solid rgba(225, 210, 255, .95); box-shadow: 0 0 30px rgba(167, 123, 255, .95), inset 0 0 20px rgba(167, 123, 255, .7); }
+.cat-spark.volt { background: #EDE2FF; box-shadow: 0 0 8px #A77BFF, 0 0 16px rgba(140, 90, 255, .7); }
