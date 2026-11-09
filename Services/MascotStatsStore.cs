@@ -52,8 +52,8 @@ public sealed class MascotStatsStore
 
     /// <summary>Grades: grey, white, green, blue, purple, gold, orange.</summary>
     public static readonly string[] GradeNames = ["Poor", "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic"];
-    /// <summary>Most achievements: powers of two from 2.</summary>
-    public static readonly int[] PowerTiers = [2, 4, 8, 16, 32, 64, 128];
+    /// <summary>Most achievements: geometric, from 5 doubling each grade.</summary>
+    public static readonly int[] PowerTiers = [5, 10, 20, 40, 80, 160, 320];
     /// <summary>Legendary casts (and each legendary combination).</summary>
     public static readonly int[] LegendTiers = [1, 2, 3, 4, 5, 7, 10];
 
