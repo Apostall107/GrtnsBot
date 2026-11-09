@@ -4133,6 +4133,29 @@ function hint(text) {
   return h("span", { class: "hint", tabindex: "0", "data-tip": text, "aria-label": text }, icon("circle-help", 14));
 }
 
+// "?" hints: one tooltip on top of everything (pinned heading, glass cards, dialogs), placed above or below — whichever fits
+(function hintTip() {
+  const tip = h("div", { class: "hint-tip", role: "tooltip" });
+  document.body.append(tip);
+  let cur = null;
+  const show = el => {
+    cur = el;
+    tip.textContent = el.dataset.tip || "";
+    tip.classList.add("on");
+    const r = el.getBoundingClientRect(), t = tip.getBoundingClientRect();
+    const head = (document.querySelector(".topbar") || { getBoundingClientRect: () => ({ bottom: 0 }) }).getBoundingClientRect().bottom;
+    const below = r.top - t.height - 10 < head + 6;
+    tip.style.left = `${Math.max(8, Math.min(r.left - 10, innerWidth - t.width - 8))}px`;
+    tip.style.top = `${below ? r.bottom + 10 : r.top - t.height - 10}px`;
+    tip.classList.toggle("below", below);
+  };
+  const hide = () => { cur = null; tip.classList.remove("on"); };
+  document.addEventListener("pointerover", e => { const el = e.target.closest && e.target.closest(".hint[data-tip]"); if (el && el !== cur) show(el); else if (!el && cur) hide(); });
+  document.addEventListener("focusin", e => { const el = e.target.closest && e.target.closest(".hint[data-tip]"); if (el) show(el); });
+  document.addEventListener("focusout", hide);
+  addEventListener("scroll", hide, { passive: true, capture: true });
+})();
+
 /** Подпись поля с подсказкой. */
 const fieldLabel = (text, tip) => h("label", { class: "field-label" }, text, tip ? hint(tip) : null);
 
