@@ -2662,3 +2662,8 @@ input.switch:checked { animation: switch-glow .5s ease-out; }
 .gb-ring.fire { border: 5px solid rgba(255, 210, 140, .9); box-shadow: 0 0 30px rgba(255, 140, 40, .8), inset 0 0 20px rgba(255, 140, 40, .6); }
 .gb-ring.hole { border: 4px solid rgba(200, 180, 255, .95); box-shadow: 0 0 30px rgba(139, 108, 255, .9), inset 0 0 20px rgba(111, 184, 255, .7); }
 .cat-spark.fire { background: #FFD27A; box-shadow: 0 0 8px #FF8A2A, 0 0 16px rgba(255, 70, 20, .7); }
+.gb-cracks { z-index: 96; overflow: visible; }
+.gb-cracks path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.gb-cracks path.hi { stroke: rgba(236, 240, 255, .85); }
+.gb-cracks path.sh { stroke: rgba(0, 0, 0, .45); }
+.gb-cracks .spot { fill: rgba(240, 244, 255, .5); filter: blur(3px); }

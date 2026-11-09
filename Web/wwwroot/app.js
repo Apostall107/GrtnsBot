@@ -1753,6 +1753,59 @@ async function logout() {
         setTimeout(() => s.remove(), dur * 1.3);
       }
     };
+    // Cracked glass where the spell hit: splinters out in a blink, then heal back to the centre over ~3 s
+    function cracks(x, y, R) {
+      const NS = "http://www.w3.org/2000/svg", S = Math.ceil(R * 2 + 40), c = S / 2;
+      const svg = document.createElementNS(NS, "svg");
+      svg.setAttribute("class", "gb-fx gb-cracks"); svg.setAttribute("width", S); svg.setAttribute("height", S);
+      svg.setAttribute("viewBox", `0 0 ${S} ${S}`); svg.style.left = `${x - c}px`; svg.style.top = `${y - c}px`;
+      const lines = [], rings = [];
+      const add = (pts, list, w) => {
+        let L = 0; for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+        const d = "M" + pts.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join("L");
+        for (const [cls, dx] of [["sh", .8], ["hi", 0]]) {
+          const path = document.createElementNS(NS, "path");
+          path.setAttribute("d", d); path.setAttribute("class", cls); path.setAttribute("stroke-width", cls === "sh" ? w + 1.4 : w);
+          if (dx) path.setAttribute("transform", `translate(${dx} ${dx})`);
+          path.style.strokeDasharray = `${L} ${L}`;
+          svg.append(path); list.push([path, L]);
+        }
+      };
+      const n = 11 + Math.floor(Math.random() * 5), base = Math.random() * Math.PI * 2, rays = [];
+      for (let i = 0; i < n; i++) {
+        let a = base + i / n * Math.PI * 2 + (Math.random() - .5) * .35, r = 4 + Math.random() * 6;
+        const len = R * (.5 + Math.random() * .5), pts = [[c + Math.cos(a) * r, c + Math.sin(a) * r]];
+        while (r < len) {
+          r += R * (.07 + Math.random() * .08); a += (Math.random() - .5) * .16;
+          pts.push([c + Math.cos(a) * r, c + Math.sin(a) * r]);
+          if (Math.random() < .12 && r < len * .8) {   // a small branch
+            const b = a + (Math.random() < .5 ? 1 : -1) * (.35 + Math.random() * .3), bl = R * (.12 + Math.random() * .15);
+            const p0 = pts[pts.length - 1];
+            add([p0, [p0[0] + Math.cos(b) * bl * .5, p0[1] + Math.sin(b) * bl * .5], [p0[0] + Math.cos(b + .1) * bl, p0[1] + Math.sin(b + .1) * bl]], lines, .9);
+          }
+        }
+        add(pts, lines, 1.3 - i % 3 * .2); rays.push(pts);
+      }
+      // the "spider web" rings between neighbouring rays
+      for (const f of [.16, .32, .52, .74]) rays.forEach((ra, i) => {
+        const rb = rays[(i + 1) % rays.length], pick = pts => pts[Math.min(pts.length - 1, Math.round(f * (pts.length - 1) / .9))];
+        if (Math.random() < (f > .6 ? .45 : .8) && ra.length > 2 && rb.length > 2) {
+          const p = pick(ra), q = pick(rb), mx = (p[0] + q[0]) / 2, my = (p[1] + q[1]) / 2, k = .9 + Math.random() * .06;
+          add([p, [c + (mx - c) * k, c + (my - c) * k], q], rings, .8);
+        }
+      });
+      const spot = document.createElementNS(NS, "circle");
+      spot.setAttribute("cx", c); spot.setAttribute("cy", c); spot.setAttribute("r", Math.min(26, R * .08)); spot.setAttribute("class", "spot");
+      svg.append(spot);
+      document.body.append(svg);
+      const HOLD = 350, HEAL = 2650;
+      [...lines, ...rings].forEach(([p, L]) => p.animate(
+        [{ strokeDashoffset: L, opacity: 1 }, { strokeDashoffset: 0, opacity: 1, offset: .05 }, { strokeDashoffset: 0, opacity: 1, offset: (HOLD + 140) / (HOLD + HEAL + 140) }, { strokeDashoffset: L, opacity: .2 }],
+        { duration: HOLD + HEAL + 140, easing: "ease-in-out", fill: "forwards" }));
+      rings.forEach(([p]) => p.animate([{ opacity: 1 }, { opacity: 1, offset: .2 }, { opacity: 0, offset: .6 }, { opacity: 0 }], { duration: HOLD + HEAL, fill: "forwards", composite: "replace" }));
+      spot.animate([{ opacity: .9 }, { opacity: .5, offset: .3 }, { opacity: 0 }], { duration: HOLD + HEAL, fill: "forwards" });
+      setTimeout(() => svg.remove(), HOLD + HEAL + 300);
+    }
     function cast(kind) {
       casting = true; clearInterval(trail);
       el.classList.remove("run"); el.classList.add("cast", `cast-${kind}`); el.style.pointerEvents = "none"; el.title = "";
@@ -1786,7 +1839,7 @@ async function logout() {
           later(3000, () => {
             const flash = fxEl("gb-ring hole", `left:${tx}px;top:${ty}px`);
             flash.animate([{ transform: "translate(-50%,-50%) scale(0)", opacity: 1 }, { transform: "translate(-50%,-50%) scale(9)", opacity: 0 }], { duration: 700, easing: "ease-out", fill: "forwards" });
-            burst(tx, ty, 26, D * .45, "blue", 900); clean.push(flash);
+            burst(tx, ty, 26, D * .45, "blue", 900); clean.push(flash); cracks(tx, ty, D * .5);
           });
           later(3900, () => { clean.forEach(n => n.remove()); toast("The Greatness bot escaped into a black hole 🌀"); end(); });
         });
@@ -1817,7 +1870,7 @@ async function logout() {
             { duration: 1100, easing: "ease-out", fill: "forwards" });
           const ring = fxEl("gb-ring fire", `left:${tx}px;top:${ty}px`);
           ring.animate([{ transform: "translate(-50%,-50%) scale(0)", opacity: 1 }, { transform: "translate(-50%,-50%) scale(14)", opacity: 0 }], { duration: 1000, easing: "cubic-bezier(.1,.6,.3,1)", fill: "forwards" });
-          burst(tx, ty, 40, D * .55, "fire", 1100);
+          burst(tx, ty, 40, D * .55, "fire", 1100); cracks(tx, ty, D * .55);
           el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: "forwards" });   // vanishes in the flash
           setTimeout(() => { [flash, core, ring].forEach(n => n.remove()); }, 1250);
           later(1300, () => { toast("The Greatness bot left with a bang 💥"); end(); });
