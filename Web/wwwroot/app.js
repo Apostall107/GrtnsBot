@@ -1628,47 +1628,10 @@ async function logout() {
     lines: ["Meow! A Greatness spirit was caught ✨", "The cat approves of your guild 💜", "+1 luck for the next raid 🎲", "Purr… your GS feels higher already", "Neon cat says: don't forget to mark attendance 😼"]
   };
   const BOT = {
-    name: "robot", w: 72, h: 90, rotate: false,
-    // Full-height pixel version of the bot's icon: hooded little mage-bot with a crown and a blue crystal,
-    // glowing (blinking) eyes, gold shoulders and hem, a "G" on the robe and a glowing orb in hand
-    svg: (() => {
-      const R = [
-        "...........kk...........",
-        "..........kCCk..........",
-        ".........kcCCck.........",
-        "....g....kcccck....g....",
-        "....gg...kkcckk...gg....",
-        "....ggg.gggkkggg.ggg....",
-        "....gGggggggggggggGg....",
-        "....kGgGgGgGGgGgGgGk....",
-        "...khhhhhhhhhhhhhhhhk...",
-        "..khHHhhhhhhhhhhhhHHhk..",
-        "..khHffffffffffffffHhk..",
-        ".khHffffffffffffffffHhp.",
-        ".khHfeeeffffffffeeefHooo",
-        ".khHfeEeffffffffeEefoOOo",
-        ".khhffeeffffffffeeffoOoo",
-        "..khhffffffffffffffhhoo.",
-        "..kgggkhhhhhhhhhhkgggkgk",
-        ".kgGGgkrrrrrrrrrrkgGGgGk",
-        ".kgGgkrrRrggggrRrrkgGgk.",
-        "..kkkrrRrrgRGGrrRrrkkk..",
-        "....krrRrrgRRgrrRrrk....",
-        "....krRrrrggggrrrRrk....",
-        "...krrRrrrrrrrrrrRrrk...",
-        "...krRrrrrrrrrrrrrRrk...",
-        "..krrRrrrrrrrrrrrrRrrk..",
-        "..kRrrrrrrrrrrrrrrrrRk..",
-        "..kGggggggggggggggggGk..",
-        "...kkkkkkkkkkkkkkkkkk..."];
-      const L = [["....kbbbk.......kbbbk...", "....kkkkk.......kkkkk..."], [".....kbbbk.....kbbbk....", ".....kkkkk.....kkkkk...."]];
-      const C = { k: "#120A24", h: "#2E1E58", H: "#4A3390", r: "#3A2470", R: "#5A3CA8", f: "#0C0618", e: "#B9A2FF", E: "#FFFFFF",
-        g: "#E8B84A", G: "#A8782A", c: "#6FB8FF", C: "#C8E8FF", o: "#B9A2FF", O: "#F0E8FF", b: "#3A2A6A", p: "#E05BD0" };
-      return `<svg viewBox="0 0 24 30" width="72" height="90" shape-rendering="crispEdges" aria-hidden="true">${px(R, C)}` +
-        `<g class="cat-legs a">${px(L[0], C, 28)}</g><g class="cat-legs b">${px(L[1], C, 28)}</g>` +
-        `<g class="bot-blink"><rect x="5" y="12" width="3" height="3" fill="#0C0618"/><rect x="16" y="12" width="3" height="3" fill="#0C0618"/></g>` +
-        `<circle class="bot-orb" cx="21.8" cy="13.6" r="2.6" fill="#B9A2FF" opacity=".35"/></svg>`;
-    })(),
+    name: "robot", w: 84, h: 108, rotate: false,
+    // Our bot from its icon, drawn in full: crown with a blue crystal, hooded face with glowing eyes (they blink),
+    // gold pauldrons, a robe with a gold hem and a "G" emblem, a glowing orb in hand, little feet that step
+    svg: "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 -4 120 154\" width=\"84\" height=\"108\" aria-hidden=\"true\"> <defs> <linearGradient id=\"gbCry\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#E6F4FF\"/><stop offset=\".5\" stop-color=\"#7CC4FF\"/><stop offset=\"1\" stop-color=\"#2F6FD6\"/></linearGradient> <linearGradient id=\"gbGold\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFE9A3\"/><stop offset=\".45\" stop-color=\"#E8B84A\"/><stop offset=\"1\" stop-color=\"#9C6A1E\"/></linearGradient> <radialGradient id=\"gbHood\" cx=\".35\" cy=\".25\" r=\".9\"><stop offset=\"0\" stop-color=\"#6A4BC4\"/><stop offset=\".45\" stop-color=\"#3A2478\"/><stop offset=\"1\" stop-color=\"#160C33\"/></radialGradient> <linearGradient id=\"gbRobe\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#4A2E92\"/><stop offset=\"1\" stop-color=\"#1E1240\"/></linearGradient> <radialGradient id=\"gbFace\" cx=\".5\" cy=\".4\" r=\".7\"><stop offset=\"0\" stop-color=\"#140A2A\"/><stop offset=\"1\" stop-color=\"#030108\"/></radialGradient> <radialGradient id=\"gbEye\" cx=\".5\" cy=\".4\" r=\".6\"><stop offset=\"0\" stop-color=\"#FFFFFF\"/><stop offset=\".45\" stop-color=\"#E2D6FF\"/><stop offset=\"1\" stop-color=\"#9B7BFF\"/></radialGradient> <radialGradient id=\"gbOrb\" cx=\".4\" cy=\".35\" r=\".7\"><stop offset=\"0\" stop-color=\"#FFFFFF\"/><stop offset=\".35\" stop-color=\"#D9C9FF\"/><stop offset=\".75\" stop-color=\"#9B6BFF\"/><stop offset=\"1\" stop-color=\"#6A3BD6\"/></radialGradient> <filter id=\"gbGlow\" x=\"-50%\" y=\"-50%\" width=\"200%\" height=\"200%\"><feGaussianBlur stdDeviation=\"2.2\" result=\"b\"/><feMerge><feMergeNode in=\"b\"/><feMergeNode in=\"SourceGraphic\"/></feMerge></filter> </defs> <g class=\"gb-feet\"> <ellipse class=\"gb-foot l\" cx=\"47\" cy=\"142\" rx=\"8\" ry=\"4.5\" fill=\"#2A1A55\" stroke=\"#0E0720\" stroke-width=\"1.5\"/> <ellipse class=\"gb-foot r\" cx=\"73\" cy=\"142\" rx=\"8\" ry=\"4.5\" fill=\"#2A1A55\" stroke=\"#0E0720\" stroke-width=\"1.5\"/> </g> <path d=\"M30,100 Q20,112 22,124\" fill=\"none\" stroke=\"#2C1B5E\" stroke-width=\"9\" stroke-linecap=\"round\"/> <circle cx=\"22.5\" cy=\"125\" r=\"5\" fill=\"url(#gbGold)\" stroke=\"#6E4A14\" stroke-width=\"1.2\"/> <path d=\"M34,96 L86,96 L97,136 Q60,148 23,136 Z\" fill=\"url(#gbRobe)\" stroke=\"#0E0720\" stroke-width=\"2\" stroke-linejoin=\"round\"/> <path d=\"M48,100 L44,138 M72,100 L76,138 M60,100 L60,142\" stroke=\"#5C3DB0\" stroke-width=\"1.2\" opacity=\".55\"/> <path d=\"M24,134 Q60,146 96,134\" fill=\"none\" stroke=\"url(#gbGold)\" stroke-width=\"3.2\" stroke-linecap=\"round\"/> <circle cx=\"60\" cy=\"114\" r=\"9\" fill=\"url(#gbGold)\" stroke=\"#6E4A14\" stroke-width=\"1.4\"/> <path d=\"M64.5,110.5 A5.2,5.2 0 1 0 64.8,117.6 L64.8,114.6 L61,114.6\" fill=\"none\" stroke=\"#5A3A0E\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/> <path d=\"M14,104 Q16,90 34,90 L42,96 Q36,108 22,110 Q14,110 14,104Z\" fill=\"url(#gbGold)\" stroke=\"#6E4A14\" stroke-width=\"1.5\"/> <path d=\"M106,104 Q104,90 86,90 L78,96 Q84,108 98,110 Q106,110 106,104Z\" fill=\"url(#gbGold)\" stroke=\"#6E4A14\" stroke-width=\"1.5\"/> <path d=\"M20,100 Q28,96 36,96\" stroke=\"#FFF2C4\" stroke-width=\"1.4\" fill=\"none\" opacity=\".7\"/> <path d=\"M100,100 Q92,96 84,96\" stroke=\"#FFF2C4\" stroke-width=\"1.4\" fill=\"none\" opacity=\".7\"/> <path d=\"M22,70 C22,45 40,34 60,34 C80,34 98,45 98,70 C98,86 92,95 84,99 L36,99 C28,95 22,86 22,70Z\" fill=\"url(#gbHood)\" stroke=\"#0E0720\" stroke-width=\"2\"/> <path d=\"M30,56 C34,44 46,39 58,38\" fill=\"none\" stroke=\"#8C6CFF\" stroke-width=\"1.6\" stroke-linecap=\"round\" opacity=\".7\"/> <ellipse cx=\"60\" cy=\"71\" rx=\"28\" ry=\"21\" fill=\"url(#gbFace)\"/> <ellipse cx=\"60\" cy=\"71\" rx=\"28\" ry=\"21\" fill=\"none\" stroke=\"#000\" stroke-opacity=\".6\" stroke-width=\"2\"/> <g class=\"gb-eyes\" filter=\"url(#gbGlow)\"> <ellipse cx=\"48\" cy=\"72\" rx=\"6.2\" ry=\"7.4\" fill=\"url(#gbEye)\"/> <ellipse cx=\"72\" cy=\"72\" rx=\"6.2\" ry=\"7.4\" fill=\"url(#gbEye)\"/> </g> <g class=\"gb-blink\"><ellipse cx=\"48\" cy=\"72\" rx=\"7\" ry=\"8\" fill=\"#08040F\"/><ellipse cx=\"72\" cy=\"72\" rx=\"7\" ry=\"8\" fill=\"#08040F\"/> <path d=\"M42,73 Q48,75 54,73 M66,73 Q72,75 78,73\" stroke=\"#B9A2FF\" stroke-width=\"1.6\" fill=\"none\" stroke-linecap=\"round\"/></g> <path d=\"M33,40 L30,20 L41,30 L48,14 L55,27 L60,22 L65,27 L72,14 L79,30 L90,20 L87,40 Z\" fill=\"url(#gbGold)\" stroke=\"#6E4A14\" stroke-width=\"1.6\" stroke-linejoin=\"round\"/> <rect x=\"32\" y=\"36\" width=\"56\" height=\"7\" rx=\"2\" fill=\"url(#gbGold)\" stroke=\"#6E4A14\" stroke-width=\"1.4\"/> <circle cx=\"44\" cy=\"39.5\" r=\"2\" fill=\"#B35CFF\"/><circle cx=\"76\" cy=\"39.5\" r=\"2\" fill=\"#B35CFF\"/><circle cx=\"60\" cy=\"39.5\" r=\"2.2\" fill=\"#4FB0FF\"/> <g filter=\"url(#gbGlow)\"> <polygon points=\"60,0 69,14 60,30 51,14\" fill=\"url(#gbCry)\" stroke=\"#1F4FA8\" stroke-width=\"1.2\"/> <polygon points=\"60,2 64,13 60,26\" fill=\"#FFFFFF\" opacity=\".55\"/> </g> <path d=\"M90,100 Q102,104 104,114\" fill=\"none\" stroke=\"#2C1B5E\" stroke-width=\"9\" stroke-linecap=\"round\"/> <circle cx=\"104\" cy=\"115\" r=\"5\" fill=\"url(#gbGold)\" stroke=\"#6E4A14\" stroke-width=\"1.2\"/> <circle class=\"gb-orb-glow\" cx=\"104\" cy=\"100\" r=\"14\" fill=\"#9B6BFF\" opacity=\".28\"/> <circle cx=\"104\" cy=\"100\" r=\"9\" fill=\"url(#gbOrb)\" stroke=\"#5A2FC0\" stroke-width=\"1\" filter=\"url(#gbGlow)\"/> <path d=\"M100,96 Q103,93 107,95\" stroke=\"#fff\" stroke-width=\"1.4\" fill=\"none\" opacity=\".8\" stroke-linecap=\"round\"/> <g class=\"gb-sparks\" fill=\"#E9E1FF\"><circle cx=\"116\" cy=\"88\" r=\"1.3\"/><circle cx=\"92\" cy=\"86\" r=\"1\"/><circle cx=\"114\" cy=\"110\" r=\"1\"/></g> </svg>",
     lines: ["Beep-boop! You caught the Greatness bot 🤖", "The bot salutes you, officer 👑", "Your tickets will be approved faster now (not really) 😄", "System check: guild morale 100% 💜", "Bot says: see you in the next raid ⚔️"]
   };
   const area = () => {
