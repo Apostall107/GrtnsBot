@@ -975,11 +975,75 @@ function iconizeHeadings(root) {
   }
 }
 
+/**
+ * Меньше серого текста: длинные пояснения под полями, во вступлении карточки и страницы превращаются в «?» рядом
+ * с подписью/заголовком (текст — по наведению). Короткие строки, счётчики и тексты со ссылками/кнопками не трогаются.
+ * Каждый элемент проверяется один раз — при первом появлении (динамические строки, пустые в начале, остаются как есть).
+ */
+const HINT_MIN = 45;
+function hintText(el) {
+  if (el.dataset.hintChecked) return null;
+  el.dataset.hintChecked = "1";
+  if (el.closest("dialog, .dc-frame, .guide-body, .no-hints")) return null;
+  if (el.querySelector("a, button, input, select, textarea, img, .chip, .member")) return null;
+  const t = el.textContent.replace(/\s+/g, " ").trim();
+  return t.length >= HINT_MIN ? t : null;
+}
+function addHint(target, text) {
+  const existing = target.querySelector(":scope > .hint");
+  if (existing) { existing.dataset.tip += "\n\n" + text; existing.setAttribute("aria-label", existing.dataset.tip); return; }
+  target.append(hint(text));
+}
+function tidyHints(root) {
+  // 1) Пояснение под полем → «?» у подписи поля
+  for (const el of root.querySelectorAll(".field > span.muted.small, .field > p.muted.small, .field > p.muted")) {
+    const label = el.parentElement.querySelector(":scope > label");
+    if (!label || label.querySelector("input")) { el.dataset.hintChecked = "1"; continue; }
+    const t = hintText(el);
+    if (!t) continue;
+    label.classList.add("field-label");
+    addHint(label, t);
+    el.remove();
+  }
+  // 2) Вступление карточки (сразу после заголовка) → «?» у заголовка
+  for (const el of root.querySelectorAll(".card > p.muted, .card > p.muted.small")) {
+    const prev = el.previousElementSibling;
+    const head = prev && (prev.matches(".card-head") ? prev.querySelector("h2, h3") : prev.matches("h2, h3, .section-label") ? prev : null);
+    if (!head) { el.dataset.hintChecked = "1"; continue; }
+    const t = hintText(el);
+    if (!t) continue;
+    addHint(head, t);
+    head.classList.add("has-hint");
+    el.remove();
+  }
+  // 3) Вступление страницы (под заголовком страницы) → «?» у заголовка страницы
+  for (const el of root.querySelectorAll("main > p.muted, main > p.muted.small, main > div > p.muted.small:first-child")) {
+    const prev = el.previousElementSibling || (el.parentElement !== root && el.parentElement.previousElementSibling);
+    const h1 = prev && prev.matches(".card-head") ? prev.querySelector("h1, h2") : null;
+    if (!h1) { el.dataset.hintChecked = "1"; continue; }
+    const t = hintText(el);
+    if (!t) continue;
+    addHint(h1, t);
+    h1.classList.add("has-hint", "page-hint");
+    el.remove();
+  }
+  // 4) Пояснение сразу под вкладками → «?» у заголовка страницы
+  for (const el of root.querySelectorAll(".tabs + p.muted, .tabs + p.muted.small")) {
+    const h1 = el.closest("main") && el.closest("main").querySelector(".card-head h1");
+    if (!h1) { el.dataset.hintChecked = "1"; continue; }
+    const t = hintText(el);
+    if (!t) continue;
+    addHint(h1, t);
+    h1.classList.add("has-hint", "page-hint");
+    el.remove();
+  }
+}
+
 let iconizeQueued = false;
 new MutationObserver(() => {
   if (iconizeQueued) return;
   iconizeQueued = true;
-  requestAnimationFrame(() => { iconizeQueued = false; iconizeButtons(document.body); iconizeHeadings(document.body); enhanceControls(document.body); });
+  requestAnimationFrame(() => { iconizeQueued = false; iconizeButtons(document.body); iconizeHeadings(document.body); enhanceControls(document.body); tidyHints(document.body); });
 }).observe(document.body, { childList: true, subtree: true });
 
 // ================= Mentions: @ / # suggestions in text fields =================
@@ -1951,7 +2015,15 @@ async function pageLfg(main) {
   if (mode === "shared") {
     // ⚙️ General: projects, settings, channel, shared activities / templates, common classes
     const projCard = card(), lfgSettingsCard = card(), lfgPrefsCard = card(), armoryCard = card();
-    main.append(projCard, h("div", { class: "grid-main" }, actCard, h("div", {}, channelCard(), voiceCard(), mirrorCard())), lfgSettingsCard, lfgPrefsCard, armoryCard, classCard, tplCard);
+    const sec = sectionTabs([
+      ["activities", "swords", "Activities & channels", h("div", { class: "grid-main" }, actCard, h("div", {}, channelCard(), voiceCard(), mirrorCard()))],
+      ["projects", "gamepad-2", "Projects", projCard],
+      ["settings", "settings", "Settings", h("div", {}, lfgSettingsCard, lfgPrefsCard)],
+      ["armory", "shield", "Official armory", armoryCard],
+      ["classes", "drama", "Classes", classCard],
+      ["templates", "clipboard-list", "Templates", tplCard]
+    ], "gb.lfgSectionShared");
+    main.append(sec.nav, ...sec.panels);
     renderArmoryPrefs(armoryCard);
     renderProjects(projCard, lfgProjects);
     renderLfgSettings(lfgSettingsCard);
@@ -1961,14 +2033,23 @@ async function pageLfg(main) {
     return;
   }
 
-  main.append(h("div", { class: "grid-main" }, actCard, h("div", {}, panelCard(), mode === "all" ? channelCard() : null, voiceCard(), mirrorCard())));
+  // Разделы проекта: группы, активности и панель, классы, шаблоны, повторяющиеся, статистика
+  const lfgSections = [
+    ["groups", "users-round", "Active groups", groupsCard],
+    ["activities", "swords", "Activities & panel", h("div", { class: "grid-main" }, actCard, h("div", {}, panelCard(), mode === "all" ? channelCard() : null, voiceCard(), mirrorCard()))],
+    ["recurring", "repeat", "Recurring", recCard],
+    ["templates", "clipboard-list", "Templates", tplCard],
+    ["classes", "drama", "Classes", classCard],
+    ["stats", "chart-column", "Statistics", statsCard]
+  ];
   if (mode === "all") {
     const projCard = card(), lfgSettingsCard = card();
-    main.append(lfgSettingsCard, projCard);
+    lfgSections.push(["settings", "settings", "Settings & projects", h("div", {}, lfgSettingsCard, projCard)]);
     renderLfgSettings(lfgSettingsCard);
     renderProjects(projCard, lfgProjects);
   }
-  main.append(classCard, tplCard, recCard, groupsCard, statsCard);
+  const lfgSec = sectionTabs(lfgSections, "gb.lfgSection");
+  main.append(lfgSec.nav, ...lfgSec.panels);
   renderClasses(classCard, projects, P || "", { noTabs: true });
   renderTemplates(tplCard, acts, templates, P, mode);
   renderRecurring(recCard, acts, templates, projects, P);
@@ -3556,7 +3637,7 @@ async function pageVoice(main) {
     }), "Channel is now 'join to create'.") !== undefined) refresh();
   });
 
-  main.append(
+  const createCards = (
     h("div", { class: "grid2" },
       h("div", { class: "card" }, h("h3", {}, "Create a 'join to create' channel"),
         h("div", { class: "field" }, h("label", {}, "Channel name"), nName),
@@ -3567,14 +3648,18 @@ async function pageVoice(main) {
         h("p", { class: "muted small" }, "Everyone who joins it is moved to a new room — don't pick a channel people normally sit in."),
         h("div", { class: "field" }, h("label", {}, "Voice channel"), eCh),
         h("div", { class: "field" }, h("label", {}, "Room name"), eTpl),
-        h("div", { class: "row" }, eLim, eBtn))),
-    postPanelCard("Room control panel", "Posts the panel members use to manage their own room.", "/voice/panel"));
+        h("div", { class: "row" }, eLim, eBtn))));
 
   const creatorsBody = h("div", {}, h("div", { class: "muted" }, "Loading…"));
   const roomsBody = h("div", {}, h("div", { class: "muted" }, "Loading…"));
-  main.append(
-    h("div", { class: "card" }, h("div", { class: "card-head" }, h("h2", {}, "'Join to create' channels")), creatorsBody),
-    h("div", { class: "card" }, h("div", { class: "card-head" }, h("h2", {}, "Active rooms")), roomsBody));
+  // Разделы: активные комнаты · каналы «зайди и создай» (список + создание) · панель управления комнатой
+  const voiceSec = sectionTabs([
+    ["rooms", "volume-2", "Active rooms", h("div", { class: "card" }, h("div", { class: "card-head" }, h("h2", {}, "Active rooms")), roomsBody)],
+    ["creators", "headphones", "'Join to create' channels", h("div", {},
+      h("div", { class: "card" }, h("div", { class: "card-head" }, h("h2", {}, "'Join to create' channels")), creatorsBody), createCards)],
+    ["panel", "pin", "Room panel", postPanelCard("Room control panel", "Posts the panel members use to manage their own room.", "/voice/panel")]
+  ], "gb.voiceSection");
+  main.append(voiceSec.nav, ...voiceSec.panels);
 
   try {
     const creators = await gApi("GET", "/voice/creators");
@@ -4048,17 +4133,21 @@ async function pageWelcome(main) {
   test.addEventListener("click", () => act(test, () => gApi("POST", "/welcome/test", body()), "Sent to your DMs."));
 
   holder.replaceChildren(h("div", { class: "editor-layout" },
-    h("div", { class: "editor-form" },
-      sectionCard("hash", "Message in a channel", "Posted when someone joins the server.",
-        h("div", { class: "field" }, h("label", {}, "Channel"), channel), chMsg.el),
-      sectionCard("mail-plus", "Direct message", "Sent privately to the new member (if their DMs are open).", dmMsg.el),
-      sectionCard("link", "Buttons under the welcome", w.ticketPanelUrl ? null : "The Apply button appears once the ticket panel is posted.",
-        apply.el, h("div", { class: "field" }, h("label", {}, "Apply button label"), applyLabel),
-        h("label", { class: "field-label" }, "Link buttons (rules, website…)"), linksBox),
-      sectionCard("user-plus", "Auto role", "Off by default. For a role given after accepting the rules, make a Role panel in the “Give only” mode.",
-        w.canManageRoles ? null : h("p", { class: "error-text small" }, "The bot has no Manage Roles permission."),
-        h("div", { class: "field" }, h("label", {}, "Mode"), mode), roleBox),
-      h("div", { class: "row sticky-actions" }, save, test)),
+    (() => {
+      // Разделы вместо четырёх карточек подряд; превью справа остаётся
+      const sec = sectionTabs([
+        ["channel", "hash", "Channel message", sectionCard("hash", "Message in a channel", "Posted when someone joins the server.",
+          h("div", { class: "field" }, h("label", {}, "Channel"), channel), chMsg.el)],
+        ["dm", "mail-plus", "Direct message", sectionCard("mail-plus", "Direct message", "Sent privately to the new member (if their DMs are open).", dmMsg.el)],
+        ["buttons", "link", "Buttons", sectionCard("link", "Buttons under the welcome", w.ticketPanelUrl ? null : "The Apply button appears once the ticket panel is posted.",
+          apply.el, h("div", { class: "field" }, h("label", {}, "Apply button label"), applyLabel),
+          h("label", { class: "field-label" }, "Link buttons (rules, website…)"), linksBox)],
+        ["role", "user-plus", "Auto role", sectionCard("user-plus", "Auto role", "Off by default. For a role given after accepting the rules, make a Role panel in the “Give only” mode.",
+          w.canManageRoles ? null : h("p", { class: "error-text small" }, "The bot has no Manage Roles permission."),
+          h("div", { class: "field" }, h("label", {}, "Mode"), mode), roleBox)]
+      ], "gb.welcomeSection");
+      return h("div", { class: "editor-form" }, sec.nav, ...sec.panels, h("div", { class: "row sticky-actions" }, save, test));
+    })(),
     h("div", { class: "editor-preview" }, h("div", { class: "card preview-card" }, h("h3", {}, "Preview"), previewBox))));
   tracker.attach(holder.firstElementChild);
   drawPreview();
@@ -5902,7 +5991,14 @@ async function pageBirthdays(main) {
   const listCard = h("div", { class: "card" }, skeletonLines(4));
   const panelCard = h("div", { class: "card" });
   const greetCard = h("div", { class: "card" });
-  main.append(setCard, greetCard, addCard, panelCard, ioCard, listCard);
+  // Разделы страницы вместо шести карточек подряд
+  const sec = sectionTabs([
+    ["people", "users", "People", h("div", {}, addCard, ioCard, listCard)],
+    ["greeting", "megaphone", "Greeting post", greetCard],
+    ["panel", "cake", "Birthday panel", panelCard],
+    ["settings", "settings", "Settings", setCard]
+  ], "gb.birthdaysSection");
+  main.append(sec.nav, ...sec.panels);
 
   // Bulk import (one CSV/JSON file) and export of the current list
   const base = `/api/guilds/${state.guildId}/birthdays`;

@@ -1633,3 +1633,9 @@ details.binding-summary > summary { cursor: pointer; color: var(--muted, #9aa3b2
 .q-opts .btn { padding: 4px 8px; min-height: 0; }
 .q-opts .spacer { min-width: 0; }
 .q-opts input[type=number] { width: 88px !important; }
+
+/* Hints that replaced grey paragraphs */
+.hint::after { white-space: pre-line; }
+.has-hint { display: flex; align-items: center; }
+.page-hint .hint::after { max-width: 460px; font-size: 13px; top: calc(100% + 10px); bottom: auto; }
+h1 .hint svg { width: 17px; height: 17px; }
