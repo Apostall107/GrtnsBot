@@ -8,8 +8,21 @@ namespace LfgBot.Services;
 /// Публикует панели модулей (LFG, Tickets, Room controls) со своими текстами и запоминает сообщения,
 /// чтобы после смены текста в веб-админке обновить уже опубликованные панели.
 /// </summary>
-public sealed class PanelService(DiscordSocketClient client, PanelTextStore store, TimeService time, ILogger<PanelService> logger)
+public sealed class PanelService(DiscordSocketClient client, PanelTextStore store, TimeService time, LfgStore lfg, ILogger<PanelService> logger)
 {
+    /// <summary>Project of an LFG panel nobody linked: the project most of the active groups in its channel belong to.</summary>
+    public string? GuessLfgProject(ulong guildId, ulong channelId) =>
+        lfg.Groups.Values.Where(g => g.GuildId == guildId && g.ChannelId == channelId && g.ProjectKey is not null)
+            .GroupBy(g => g.ProjectKey!).OrderByDescending(x => x.Count()).Select(x => x.Key).FirstOrDefault();
+
+    /// <summary>An LFG panel message the bot doesn't remember (its record was lost): remember it again, with a guessed project.</summary>
+    public PostedPanel? Adopt(ulong guildId, ulong channelId, ulong messageId)
+    {
+        if (store.Track(guildId, "lfg", channelId, messageId) && GuessLfgProject(guildId, channelId) is { } project)
+            store.SetPanelProject(guildId, "lfg", messageId, project);
+        return store.FindPosted(guildId, "lfg", messageId);
+    }
+
     public (Embed Embed, MessageComponent Components) Build(ulong guildId, string key)
     {
         var text = store.GetText(guildId, key);
@@ -47,11 +60,9 @@ public sealed class PanelService(DiscordSocketClient client, PanelTextStore stor
         {
             try
             {
-                if (client.GetGuild(guildId)?.GetTextChannel(p.ChannelId) is not { } channel)
-                {
-                    store.Untrack(guildId, key, p.MessageId);
-                    continue;
-                }
+                // Server or channel not in the cache (bot still connecting, Discord hiccup) — keep the record, try next time.
+                // Only Discord saying "this message is gone" makes us forget a panel.
+                if (client.GetGuild(guildId)?.GetTextChannel(p.ChannelId) is not { } channel) continue;
 
                 if (await channel.GetMessageAsync(p.MessageId) is not IUserMessage message || message.Author.Id != client.CurrentUser.Id)
                 {
@@ -103,7 +114,11 @@ public sealed class PanelService(DiscordSocketClient client, PanelTextStore stor
 
                     foreach (var def in PanelDefs.All)
                         if (ids.Contains(def.MarkerCustomId) && store.Track(guild.Id, def.Key, channel.Id, message.Id))
+                        {
                             found[def.Key]++;
+                            if (def.Key == "lfg" && GuessLfgProject(guild.Id, channel.Id) is { } project)
+                                store.SetPanelProject(guild.Id, "lfg", message.Id, project);
+                        }
                 }
             }
             catch (Discord.Net.HttpException ex)

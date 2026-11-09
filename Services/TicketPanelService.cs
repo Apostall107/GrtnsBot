@@ -48,8 +48,9 @@ public sealed class TicketPanelService(DiscordSocketClient client, TicketPanelSt
     public async Task RefreshAsync(TicketPanel panel)
     {
         if (panel.ChannelId is not { } channelId || panel.MessageId is not { } messageId) return;
-        if (client.GetGuild(panel.GuildId)?.GetTextChannel(channelId) is not { } channel ||
-            await channel.GetMessageAsync(messageId) is not IUserMessage message)
+        // Not in the cache (bot still connecting) — keep it as posted; only a deleted message un-posts the panel
+        if (client.GetGuild(panel.GuildId)?.GetTextChannel(channelId) is not { } channel) return;
+        if (await channel.GetMessageAsync(messageId) is not IUserMessage message)
         {
             panels.SetPosted(panel.Id, null, null);
             return;

@@ -933,6 +933,8 @@ public static partial class PanelApi
         ("PUT", "/access/{userId}", "access", "Set panel access"),
         ("DELETE", "/access/{userId}", "access", "Removed panel access"),
         ("PUT", "/settings/", "settings", "Changed bot settings"),
+        ("PUT", "/mascot", "settings", "Changed the mascot (easter egg) frequency"),
+        ("PUT", "/search-roles", "settings", "Changed the roles for quick search"),
         ("PUT", "/lfg/settings/", "lfg", "Changed LFG settings (time zone, auto-delete, reminder)"),
         ("POST", "/backup/restore", "settings", "Uploaded a data backup"),
         ("POST", "/characters-transfer/import", "settings", "Imported characters from a file"),

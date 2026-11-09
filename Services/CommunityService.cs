@@ -377,8 +377,9 @@ public sealed class CommunityService(
     public async Task<string?> RefreshAsync(RolePanel panel)
     {
         if (panel.ChannelId is not { } channelId || panel.MessageId is not { } messageId) return null;
-        if (client.GetGuild(panel.GuildId)?.GetTextChannel(channelId) is not { } channel ||
-            await channel.GetMessageAsync(messageId) is not IUserMessage message)
+        // Not in the cache (bot still connecting) — keep it as posted; only a deleted message un-posts the panel
+        if (client.GetGuild(panel.GuildId)?.GetTextChannel(channelId) is not { } channel) return null;
+        if (await channel.GetMessageAsync(messageId) is not IUserMessage message)
         {
             store.SetPosted(panel.Id, null, null);
             return "The posted message was deleted — post the panel again.";

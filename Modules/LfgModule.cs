@@ -60,6 +60,9 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         // Проект сборов: панель, на которой нажали Create LFG (LFG → Projects), иначе панель этого канала, иначе по умолчанию
         var messageId = (Context.Interaction as SocketMessageComponent)?.Message.Id;
         var posted = messageId is { } mid ? panelStore.FindPosted(Context.Guild.Id, "lfg", mid) : null;
+        // A panel of ours the bot lost track of — remember it again (project guessed from the groups in this channel)
+        if (posted is null && messageId is { } lost && (Context.Interaction as SocketMessageComponent)?.Message.Author.Id == Context.Client.CurrentUser.Id)
+            posted = panels.Adopt(Context.Guild.Id, ChannelId, lost);
         var projectKey = posted?.ProjectKey ??
                          panelStore.GetPosted(Context.Guild.Id, "lfg").FirstOrDefault(p => p.ChannelId == ChannelId && p.ProjectKey is not null)?.ProjectKey;
         var project = projects.Effective(Context.Guild.Id, projectKey);
