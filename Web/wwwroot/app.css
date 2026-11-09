@@ -2891,3 +2891,5 @@ input.switch:checked { animation: switch-glow .5s ease-out; }
 .rank-row .avatar { width: 22px; height: 22px; border-radius: 50%; flex: none; background: rgba(255, 255, 255, .08); }
 .rank-row .rank-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rank-row.me .rank-name { color: #FFD86A; font-weight: 700; }
+/* the ranking card rises above the cards below while its top-3 popup is open */
+.card:has(.rank-tile:hover), .card:has(.rank-tile:focus) { position: relative; z-index: 60; }
