@@ -1547,21 +1547,24 @@ async function logout() {
   if (!document.querySelector(".gv-aurora"))
     document.body.prepend(h("div", { class: "gv-aurora", "aria-hidden": "true" }, h("i", {}), h("i", {}), h("i", {}), h("i", {})));
   if (matchMedia("(prefers-reduced-motion: reduce)").matches || matchMedia("(pointer: coarse)").matches) return;
-  let pending = null, last = null;
-  document.addEventListener("pointermove", e => {
-    pending = e;
-    if (pending.__q) return;
-    requestAnimationFrame(() => {
-      const ev = pending; pending = null;
-      const el = ev.target.closest && ev.target.closest(".main .card, .stat, .quick-action, .group-mini, dialog");
-      if (last && last !== el) { last.style.removeProperty("--mx"); last.style.removeProperty("--my"); }
-      last = el;
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      el.style.setProperty("--mx", `${Math.round(ev.clientX - r.left)}px`);
-      el.style.setProperty("--my", `${Math.round(ev.clientY - r.top)}px`);
-    });
-  }, { passive: true });
+  // Light follows the pointer; on scroll the page moves under a still pointer, so recompute from its last position
+  let x = -1, y = -1, queued = false, last = null;
+  const update = () => {
+    queued = false;
+    if (x < 0) return;
+    const hit = document.elementFromPoint(x, y);
+    const el = hit && hit.closest && hit.closest(".main .card, .stat, .quick-action, .group-mini, dialog");
+    if (last && last !== el) { last.style.removeProperty("--mx"); last.style.removeProperty("--my"); }
+    last = el;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    el.style.setProperty("--mx", `${Math.round(x - r.left)}px`);
+    el.style.setProperty("--my", `${Math.round(y - r.top)}px`);
+  };
+  const schedule = () => { if (!queued) { queued = true; requestAnimationFrame(update); } };
+  document.addEventListener("pointermove", e => { x = e.clientX; y = e.clientY; schedule(); }, { passive: true });
+  document.addEventListener("scroll", schedule, { passive: true, capture: true }); // window and inner scroll areas
+  document.addEventListener("pointerleave", () => { x = -1; if (last) { last.style.removeProperty("--mx"); last.style.removeProperty("--my"); last = null; } });
 })();
 
 async function boot() {
