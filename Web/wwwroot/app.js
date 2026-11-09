@@ -502,17 +502,22 @@ function pickMemberDialog(title) {
 /** Список отдельных людей (кнопка «Add person…» с поиском) → { el, value() } (ID). */
 function userListEditor(initial = [], onChange = null, addLabel = "Add person…") {
   let list = initial.filter(Boolean).map(m => ({ ...m }));
-  const el = h("div", {});
-  const draw = () => el.replaceChildren(
-    list.length ? h("div", { class: "row", style: "gap:6px;flex-wrap:wrap;margin-bottom:6px" }, list.map(m =>
+  // chips и button доступны и по отдельности — чтобы поставить «Add person…» в один ряд с «Add roles…»
+  const chips = h("div", { class: "row", style: "gap:6px;flex-wrap:wrap" });
+  const button = h("button", { class: "btn secondary", type: "button", onclick: async () => {
+    const m = await pickMemberDialog("Add a person");
+    if (m && !list.some(x => x.id === m.id)) { list.push(m); draw(); if (onChange) onChange(); }
+  } }, icon("user-plus", 15), addLabel);
+  const draw = () => {
+    chips.replaceChildren(...list.map(m =>
       h("span", { class: "chip" }, member(m), h("button", { type: "button", title: "Remove",
-        onclick: () => { list = list.filter(x => x.id !== m.id); draw(); if (onChange) onChange(); } }, "×")))) : null,
-    h("button", { class: "btn secondary", type: "button", onclick: async () => {
-      const m = await pickMemberDialog("Add a person");
-      if (m && !list.some(x => x.id === m.id)) { list.push(m); draw(); if (onChange) onChange(); }
-    } }, icon("user-plus", 15), addLabel));
+        onclick: () => { list = list.filter(x => x.id !== m.id); draw(); if (onChange) onChange(); } }, "×"))));
+    chips.style.display = list.length ? "" : "none";
+    chips.style.marginBottom = list.length ? "6px" : "";
+  };
+  const el = h("div", {}, chips, button);
   draw();
-  return { el, value: () => list.map(m => m.id) };
+  return { el, chips, button, value: () => list.map(m => m.id), count: () => list.length };
 }
 
 // ================= Shared UI pieces =================
@@ -1130,7 +1135,7 @@ function channelSelect(kind, placeholder) {
  * pool: array or a function returning the short list for the picker (e.g. roles of the current project);
  * with fullPool the picker can also show all server roles. onChange — after add/remove.
  */
-function roleListEditor(initial, pool = state.roles, onChange = null, fullPool = null, addLabel = "➕ Add roles…") {
+function roleListEditor(initial, pool = state.roles, onChange = null, fullPool = null, addLabel = "➕ Add roles…", people = null) {
   let ids = initial.map(r => r.id);
   const known = new Map(initial.map(r => [r.id, r]));
   for (const r of fullPool || (typeof pool === "function" ? pool() : pool)) known.set(r.id, { ...r, exists: true });
@@ -1144,13 +1149,15 @@ function roleListEditor(initial, pool = state.roles, onChange = null, fullPool =
       const picked = await pickRolesDialog(addLabel.replace(/^➕\s*|…$/g, ""), ids, short, fullPool);
       if (picked) { for (const r of picked) known.set(r.id, { ...r, exists: true }); ids.push(...picked.map(r => r.id)); changed(); }
     });
-    el.replaceChildren(
-      h("div", {}, ids.length ? ids.map(id => roleChip(known.get(id) || { id, name: "deleted role", exists: false }, () => { ids = ids.filter(x => x !== id); changed(); }))
-                              : h("span", { class: "muted" }, "not set")),
-      h("div", { style: "margin-top:6px" }, sel));
+    // people — userListEditor: люди показываются под ролями, «Add person…» — рядом с «Add roles…»
+    el.replaceChildren(...[
+      h("div", { class: "chip-wrap" }, ids.length ? ids.map(id => roleChip(known.get(id) || { id, name: "deleted role", exists: false }, () => { ids = ids.filter(x => x !== id); changed(); }))
+                              : people && people.count() ? null : h("span", { class: "muted" }, "not set")),
+      people ? h("div", { style: "margin-top:6px" }, people.chips) : null,
+      h("div", { class: "row", style: "margin-top:6px;gap:6px;flex-wrap:wrap" }, sel, people ? people.button : null)].filter(Boolean));
   };
   draw();
-  return { el, value: () => ids.slice(), roles: () => ids.map(id => known.get(id) || { id, name: "deleted role", exists: false }) };
+  return { el, redraw: draw, value: () => ids.slice(), roles: () => ids.map(id => known.get(id) || { id, name: "deleted role", exists: false }) };
 }
 
 /** "Post panel in channel" control. */
@@ -3278,6 +3285,33 @@ function menuButton(items) {
   return wrap;
 }
 
+/** Подсказка «?»: короткое объяснение по наведению/фокусу вместо абзаца серого текста под полем. */
+function hint(text) {
+  return h("span", { class: "hint", tabindex: "0", "data-tip": text, "aria-label": text }, icon("circle-help", 14));
+}
+
+/** Подпись поля с подсказкой. */
+const fieldLabel = (text, tip) => h("label", { class: "field-label" }, text, tip ? hint(tip) : null);
+
+/**
+ * Разделы длинной формы: сегментированный переключатель + панели (все остаются в DOM — сохранение и «несохранено» работают как раньше).
+ * sections: [[key, icon, label, panel, badge?]]; выбранный раздел запоминается по storeKey.
+ */
+function sectionTabs(sections, storeKey) {
+  let cur = store.get(storeKey);
+  if (!sections.some(s => s[0] === cur)) cur = sections[0][0];
+  const buttons = sections.map(([k, ic, label, , badge]) => h("button", { type: "button", class: "seg-btn", "data-k": k },
+    icon(ic, 15), label, badge ? h("span", { class: "seg-badge" }, badge) : null));
+  const show = k => {
+    cur = k; store.set(storeKey, k);
+    buttons.forEach(b => b.classList.toggle("active", b.dataset.k === k));
+    sections.forEach(([sk, , , panel]) => { panel.style.display = sk === k ? "" : "none"; });
+  };
+  buttons.forEach(b => b.addEventListener("click", () => show(b.dataset.k)));
+  show(cur);
+  return { nav: h("div", { class: "seg" }, buttons), panels: sections.map(s => s[3]) };
+}
+
 function projectCard(p, mains = [], hasChildren = false) {
   const nameIn = h("input", { maxlength: "100", value: p.name, style: "font-weight:600;min-width:200px" });
   // Основной проект (для подпроекта) и кто может открыть
@@ -3286,13 +3320,13 @@ function projectCard(p, mains = [], hasChildren = false) {
   parentSel.value = p.parentKey || "";
   if (hasChildren) parentSel.disabled = true;
   // «Нужны ВСЕ роли» имеет смысл только при 2+ ролях (напр. разбор POV — только у кого есть и WWM, и GW)
-  const openRoles = roleListEditor(p.openRoles || [], state.roles, () => syncRequireAll());
-  const openUsers = userListEditor(p.openUsers || []);
-  const staffUsers = userListEditor(p.staffUsers || [], () => preview.refresh());
+  const openUsers = userListEditor(p.openUsers || [], () => openRoles.redraw && openRoles.redraw());
+  const staffUsers = userListEditor(p.staffUsers || [], () => { preview.refresh(); staff.redraw(); });
+  const openRoles = roleListEditor(p.openRoles || [], state.roles, () => syncRequireAll(), null, "➕ Add roles…", openUsers);
   const requireAll = toggle(!!p.openRequireAll, "Require ALL of these roles (off — any one of them is enough)");
   const syncRequireAll = () => { requireAll.el.style.display = openRoles.value().length >= 2 ? "" : "none"; };
   syncRequireAll();
-  const staff = roleListEditor(p.staffRoles, state.roles, () => preview.refresh());
+  const staff = roleListEditor(p.staffRoles, state.roles, () => preview.refresh(), null, "➕ Add roles…", staffUsers);
   const members = roleListEditor(p.memberRoles, state.roles, () => preview.refresh());
   const cat = channelSelect("categories", "Default category “Tickets”");
   if (p.category) cat.value = p.category.id;
@@ -3308,7 +3342,7 @@ function projectCard(p, mains = [], hasChildren = false) {
     formEnabled: form.enabled(), questions: form.value()
   }), "Ticket message preview");
 
-  const save = h("button", { class: "btn" }, "💾 Save");
+  const save = h("button", { class: "btn" }, icon("check", 15), "Save");
   const body = () => ({
     staffRoleIds: staff.value(), memberRoleIds: members.value(), categoryId: cat.value || null, customText: text.value,
     formEnabled: form.enabled(), questions: form.value(), name: nameIn.value,
@@ -3330,35 +3364,49 @@ function projectCard(p, mains = [], hasChildren = false) {
     return true;
   });
   save.addEventListener("click", tracker.save);
-  const remove = h("button", { class: "btn danger" }, "🗑️ Remove");
-  remove.addEventListener("click", async () => {
+  // Удаление — в меню «⋯», а не рядом с «Save»
+  const more = menuButton([{ icon: "trash-2", label: "Remove project", danger: true, onclick: async () => {
     if (!await confirmDialog(`Remove ${p.name}?`, "New tickets for this project can't be created. Open tickets stay until they are closed.", "Remove project")) return;
-    if (await act(remove, () => gApi("DELETE", `/tickets/projects/${encodeURIComponent(p.key)}`), "Project removed.") !== undefined) refresh();
-  });
+    if (await act(null, () => gApi("DELETE", `/tickets/projects/${encodeURIComponent(p.key)}`), "Project removed.") !== undefined) refresh();
+  } }]);
+  const parentName = (mains.find(m => m.key === p.parentKey) || {}).name;
 
-  const card = h("div", { class: "card", style: "margin:0" },
-    h("div", { class: "card-head" }, h("div", { class: "field", style: "margin:0;margin-right:auto" }, h("label", {}, "Project name"), nameIn),
-      h("span", { class: "badge wait" }, `${p.open} open`)),
+  // Разделы: Доступ · Сообщение тикета · Анкета · Каналы
+  const access = h("div", { class: "form-section" },
     h("div", { class: "grid2" },
-      h("div", { class: "field" }, h("label", {}, "Main project"), parentSel,
-        h("span", { class: "muted small" }, hasChildren ? "It has sub-projects, so it stays a main project."
-          : "A sub-project is a tab inside its main project; it leaves the main ticket panel — post it with a 🧩 Panels tab of the main project.")),
-      h("div", { class: "field" }, h("label", {}, "Who can open this ticket"), openRoles.el, requireAll.el,
-        h("div", { style: "margin-top:6px" }, openUsers.el),
-        h("span", { class: "muted small" }, (p.parentKey ? "Empty — members of the main project (its Approve roles) and its leadership." : "Empty — everyone.") +
-          " Only people, no roles — only those people. The one who opened a ticket always sees it."))),
+      h("div", { class: "field" }, fieldLabel("Who can open", (p.parentKey ? "Empty — members of the main project (its Approve roles) and its leadership." : "Empty — everyone.") +
+          " Only people and no roles — only those people. The applicant always sees their own ticket."), openRoles.el, requireAll.el),
+      h("div", { class: "field" }, fieldLabel("Leadership", "See the ticket channels, get pinged, can Approve / Done. Roles and/or separate people (e.g. a mentor). Changes apply to new tickets."),
+        staff.el)),
     h("div", { class: "grid2" },
-      h("div", { class: "field" }, h("label", {}, "Leadership (see tickets, can Approve)"), staff.el,
-        h("div", { style: "margin-top:6px" }, staffUsers.el),
-        h("span", { class: "muted small" }, "Roles and/or separate people (e.g. a mentor). Changes apply to new tickets.")),
-      h("div", { class: "field" }, h("label", {}, "Roles given on Approve"), members.el,
-        h("span", { class: "muted small" }, "Empty — the ticket isn't about a role (e.g. a mentor reviews your POV): it gets ✅ Done instead of Approve / Deny."))),
-    h("div", { class: "field" }, h("label", {}, "Category for ticket channels"), cat),
-    h("div", { class: "field" }, h("label", {}, "Ticket text (under the system info, above the buttons)"), text, counter),
-    form.el,
-    h("div", { class: "field" }, h("label", {}, "Auto-close inactive tickets after (days)"),
-      h("div", { class: "row" }, autoClose, h("span", { class: "muted small" }, "Empty = never. The bot warns 24 h before closing; any message resets the timer."))),
-    h("div", { class: "row" }, save, remove));
+      h("div", { class: "field" }, fieldLabel("Roles given on Approve", "Empty — the ticket isn't about a role (e.g. a mentor reviews your POV): it gets ✅ Done instead of Approve / Deny."), members.el),
+      h("div", { class: "field" }, fieldLabel("Main project", hasChildren ? "It has sub-projects, so it stays a main project."
+          : "A sub-project is a tab inside its main project and isn't in the main ticket panel — post it from the main project's 🧩 Panels tab."), parentSel)));
+  const message = h("div", { class: "form-section" },
+    h("div", { class: "field" }, fieldLabel("Ticket text", "Shown under the system info, above the buttons. Markdown works; {applicant} — the applicant, {project} — the project name."), text,
+      h("div", { class: "row", style: "justify-content:flex-end" }, counter)));
+  const formPanel = h("div", { class: "form-section" }, form.el);
+  const channels = h("div", { class: "form-section" },
+    h("div", { class: "grid2" },
+      h("div", { class: "field" }, fieldLabel("Category for ticket channels", "Sub-projects without their own category use the main project's."), cat),
+      h("div", { class: "field" }, fieldLabel("Auto-close after (days)", "Empty = never. The bot warns 24 h before closing; any message in the ticket resets the timer."), autoClose)));
+  const qCount = (p.questions || []).length;
+  const tabs = sectionTabs([
+    ["access", "key-round", "Access", access],
+    ["message", "message-square-text", "Message", message],
+    ["form", "clipboard-list", "Form", formPanel, p.formEnabled && qCount ? String(qCount) : null],
+    ["channels", "folder", "Channels", channels]
+  ], "gb.ticketSection");
+
+  const card = h("div", { class: "card project-card", style: "margin:0" },
+    h("div", { class: "project-head" },
+      h("div", { class: "project-title" }, nameIn,
+        h("div", { class: "row", style: "gap:6px;flex-wrap:wrap" },
+          p.parentKey ? h("span", { class: "chip" }, icon("corner-down-right", 12), `Sub-project of ${parentName || "?"}`) : h("span", { class: "chip" }, icon("folder", 12), "Main project"),
+          h("span", { class: `chip ${p.open ? "warn" : ""}` }, `${p.open} open`),
+          members.value().length ? null : h("span", { class: "chip" }, "✅ Done tickets"))),
+      h("div", { class: "row", style: "gap:6px" }, save, more)),
+    tabs.nav, ...tabs.panels);
   // Any edit in the form (name, text, questions) refreshes the preview
   card.addEventListener("input", () => preview.refresh());
   card.addEventListener("change", () => preview.refresh());
@@ -3401,9 +3449,11 @@ function questionEditor(p) {
       const del = h("button", { class: "btn ghost", type: "button", title: "Remove", onclick: async () => {
         if (await confirmDialog("Remove this question?", "Saved when you press Save.", "Remove")) { qs.splice(i, 1); draw(); }
       } }, "✖");
-      return h("div", { class: "row question-row" }, h("span", { class: "muted" }, `${i + 1}.`), label, hint,
-        h("label", { class: "row small" }, long, "long"), h("label", { class: "row small" }, req, "required"),
-        h("label", { class: "row small", title: "Birthday question: the answer must be a date (DD.MM) and is saved to Birthdays right away" }, bd, "🎂 birthday"), max, up, del);
+      return h("div", { class: "question-row" }, h("span", { class: "q-num" }, `${i + 1}`), label, hint,
+        h("div", { class: "q-opts" },
+          h("label", { class: "row small" }, req, "required"), h("label", { class: "row small" }, long, "long"),
+          h("label", { class: "row small", title: "Birthday question: the answer must be a date (DD.MM) and is saved to Birthdays right away" }, bd, "🎂 birthday"),
+          h("label", { class: "row small muted", title: "Max length" }, "max", max), h("span", { class: "spacer" }), up, del));
     }));
     add.disabled = qs.length >= 5;
   };
