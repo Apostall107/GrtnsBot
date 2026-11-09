@@ -1110,6 +1110,9 @@ function tidyHints(root) {
   }
 }
 
+// Page heading turns to glass once the page is scrolled (see .page-head in app.css)
+window.addEventListener("scroll", () => document.body.classList.toggle("scrolled", window.scrollY > 4), { passive: true });
+
 let iconizeQueued = false;
 new MutationObserver(() => {
   if (iconizeQueued) return;

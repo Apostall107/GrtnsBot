@@ -1827,7 +1827,22 @@ h1 .hint svg { width: 17px; height: 17px; }
 .group-mini-count { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 12.5px; }
 @media (max-width: 640px) { .groups-toolbar .groups-seg { width: 100%; overflow-x: auto; } .group-mini-meta { display: none; } .group-mini-name { max-width: none; flex: 1; } }
 
-/* Page heading: the same on every page; it scrolls with the page (no band) */
+/* Page heading: the same on every page; pinned at the top, see-through glass while the page is scrolled */
+html, body { overflow-x: clip; }
+.main > .page-head {
+  position: sticky; top: var(--header-h); z-index: 20;
+  margin: calc(-1 * var(--s6)) calc(-1 * var(--s8)) var(--s5); padding: 14px var(--s8) 12px;
+}
+.main > .page-head::before {
+  content: ""; position: absolute; inset: 0 -100vmax; z-index: -1; pointer-events: none; opacity: 0;
+  background: linear-gradient(180deg, rgba(16, 14, 34, .55), rgba(16, 14, 34, .35));
+  backdrop-filter: blur(16px) saturate(140%); -webkit-backdrop-filter: blur(16px) saturate(140%);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, .06); transition: opacity 160ms ease;
+}
+body.scrolled .main > .page-head::before { opacity: 1; }
+@media (min-width: 901px) { .nav { z-index: 30; } }
+@media (max-width: 900px) { .main > .page-head { margin: calc(-1 * var(--s5)) calc(-1 * var(--s5)) var(--s4); padding: 12px var(--s5) 10px; } }
+@media (max-width: 640px) { .main > .page-head { margin: calc(-1 * var(--s4)) calc(-1 * var(--s3)) var(--s4); padding: 10px var(--s3); } }
 .page-head h1 { font-size: 24px; min-width: 0; }
 .page-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
 @media (max-width: 640px) {
