@@ -51,6 +51,9 @@ public sealed class GuildPrefs
     public List<ulong> SearchRoleIds { get; set; } = [];
     /// <summary>Пасхалка-маскот на сайте: в среднем раз в столько минут (0 — выключен).</summary>
     public int MascotMinutes { get; set; } = 15;
+    /// <summary>То же в секундах (задаётся на сайте); null — берётся MascotMinutes × 60.</summary>
+    public int? MascotSeconds { get; set; }
+    public int MascotEverySeconds => MascotSeconds ?? MascotMinutes * 60;
 }
 
 /// <summary>Проект на официальной оружейной: включён ли, фракция (1 — Elyos, 2 — Asmodians) и сервер по умолчанию.</summary>

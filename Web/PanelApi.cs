@@ -74,7 +74,7 @@ public static partial class PanelApi
                 isMember = access.IsMember(user.UserId(), g.Id),
                 iconUrl = g.IconUrl,
                 members = g.MemberCount,
-                mascotMinutes = prefs.Get(g.Id).MascotMinutes
+                mascotSeconds = prefs.Get(g.Id).MascotEverySeconds
             })
         }));
 
@@ -127,7 +127,7 @@ public static partial class PanelApi
     }
 
     public sealed record SearchRolesBody(List<string>? RoleIds);
-    public sealed record MascotBody(int Minutes);
+    public sealed record MascotBody(int Seconds);
 
     private static IEnumerable<RouteHandlerBuilder> MapCommonEndpoints(RouteGroupBuilder g)
     {
@@ -161,7 +161,7 @@ public static partial class PanelApi
         yield return g.MapPut("/mascot", (ulong guildId, MascotBody body, DiscordSocketClient client, GuildPrefsStore prefs) =>
         {
             if (client.GetGuild(guildId) is null) return GuildNotFound();
-            prefs.Update(guildId, p => p.MascotMinutes = Math.Clamp(body.Minutes, 0, 1440));
+            prefs.Update(guildId, p => p.MascotSeconds = Math.Clamp(body.Seconds, 0, 7 * 86400));
             return Results.Ok();
         }).AddEndpointFilter(Require(PanelPermissions.Settings));
 

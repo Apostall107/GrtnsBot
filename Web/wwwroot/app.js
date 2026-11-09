@@ -1611,99 +1611,106 @@ async function logout() {
   document.documentElement.addEventListener("pointerleave", () => { x = -1; schedule(); });
 })();
 
-// ----- Easter egg: now and then a little neon pixel cat (Greatness spirit) flies across the screen. Click it!
-(function neonCat() {
+// ----- Easter egg: now and then a mascot flies across the page — the neon cat or our little robot (from the bot's icon).
+// It flies over the page area (not the sidebar); while it flies, clicks within 200 px of it are ignored.
+(function mascots() {
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  const ROWS = [
-    "...........o...o..",
-    "..........obo.obo.",
-    "..........obbbbbbo",
-    "o.........obebbebo",
-    "bo.......obbbpbbbo",
-    ".bo..oooobbbbbbbo.",
-    "..bobbbbbbbbbbbo..",
-    "...obbbbbbbbbbo...",
-    "...obblbbbblbbo...",
-    "....oooooooooo...."];
-  const LEGS = [["....ob...ob..ob.ob", "....oo...oo..oo.oo"], [".....ob.ob...ob.ob", ".....oo.oo...oo.oo"]];
-  const COL = { o: "#2A1660", b: "#8B6CFF", l: "#C9B6FF", e: "#FFE66D", p: "#F06A9A" };
-  const px = (rows, y0) => rows.flatMap((r, y) => [...r].map((c, x) => COL[c] ? `<rect x="${x}" y="${y + y0}" width="1.02" height="1.02" fill="${COL[c]}"/>` : "")).join("");
-  const svg = `<svg viewBox="0 0 18 12" width="72" height="48" shape-rendering="crispEdges" aria-hidden="true">${px(ROWS, 0)}` +
-    `<g class="cat-legs a">${px(LEGS[0], 10)}</g><g class="cat-legs b">${px(LEGS[1], 10)}</g></svg>`;
-  const LINES = ["Meow! A Greatness spirit was caught ✨", "The cat approves of your guild 💜", "+1 luck for the next raid 🎲",
-    "Purr… your GS feels higher already", "Caught! It will tell the others…", "Neon cat says: don't forget to mark attendance 😼"];
-  let busy = false;
+  const px = (rows, col, y0 = 0) => rows.flatMap((r, y) => [...r].map((c, x) => col[c] ? `<rect x="${x}" y="${y + y0}" width="1.02" height="1.02" fill="${col[c]}"/>` : "")).join("");
+  const CAT = {
+    name: "cat", w: 72, h: 48, rotate: true,
+    svg: (() => {
+      const R = ["...........o...o..", "..........obo.obo.", "..........obbbbbbo", "o.........obebbebo", "bo.......obbbpbbbo", ".bo..oooobbbbbbbo.",
+        "..bobbbbbbbbbbbo..", "...obbbbbbbbbbo...", "...obblbbbblbbo...", "....oooooooooo...."];
+      const L = [["....ob...ob..ob.ob", "....oo...oo..oo.oo"], [".....ob.ob...ob.ob", ".....oo.oo...oo.oo"]];
+      const C = { o: "#2A1660", b: "#8B6CFF", l: "#C9B6FF", e: "#FFE66D", p: "#F06A9A" };
+      return `<svg viewBox="0 0 18 12" width="72" height="48" shape-rendering="crispEdges" aria-hidden="true">${px(R, C)}<g class="cat-legs a">${px(L[0], C, 10)}</g><g class="cat-legs b">${px(L[1], C, 10)}</g></svg>`;
+    })(),
+    lines: ["Meow! A Greatness spirit was caught ✨", "The cat approves of your guild 💜", "+1 luck for the next raid 🎲", "Purr… your GS feels higher already", "Neon cat says: don't forget to mark attendance 😼"]
+  };
+  const BOT = {
+    name: "robot", w: 56, h: 56, rotate: false,
+    svg: (() => {
+      const R = ["......kCk.......", ".....kcCck......", "..g..kccck..g...", "..gg.gkckg.gg...", "..ggggggggggg...", "..kGgGgGgGgGk...", ".khhhhhhhhhhhk..", ".kHffffffffhhk..",
+        "khHfeEfffeEfhhk.", "khHfeefffeefhhk.", "khhfffffffffhhk.", ".khhffffffhhhk..", ".kgghhhhhhhggk..", "..kgGkhhhkgGk...", "...kk.khk.kk....", ".......k........"];
+      const C = { k: "#120A24", h: "#2E1E58", H: "#4A3390", g: "#E8B84A", G: "#A8782A", c: "#6FB8FF", C: "#C8E8FF", e: "#B9A2FF", E: "#FFFFFF", f: "#0C0618" };
+      return `<svg viewBox="0 0 16 16" width="56" height="56" shape-rendering="crispEdges" aria-hidden="true">${px(R, C)}<g class="bot-eyes"><rect x="4" y="8" width="2" height="2" fill="#E9E1FF"/><rect x="9" y="8" width="2" height="2" fill="#E9E1FF"/></g></svg>`;
+    })(),
+    lines: ["Beep-boop! You caught the Greatness bot 🤖", "The bot salutes you, officer 👑", "Your tickets will be approved faster now (not really) 😄", "System check: guild morale 100% 💜", "Bot says: see you in the next raid ⚔️"]
+  };
+  const area = () => {
+    const n = document.querySelector(".layout:not(.drawer-open) .nav"), r = n && n.getBoundingClientRect();
+    const top = ((document.querySelector(".topbar") || {}).getBoundingClientRect?.().bottom || 56) + 10;
+    return { left: r && r.right > 0 && innerWidth > 900 ? r.right : 0, top, right: innerWidth - 12, bottom: innerHeight - 8 };
+  };
+  let busy = false, timer = 0;
   function fly() {
     if (busy || document.hidden || !state.me) return schedule();
-    // Fly only through a horizontal band with no buttons, links or fields — never over anything you could click
-    const y = freeBand();
-    if (y == null) return schedule();
+    const M = Math.random() < .5 ? CAT : BOT;
+    const A = area();
+    // Any strip of the page: mostly left↔right, sometimes up↕down. While it flies, clicks within 200 px of it are ignored
+    // (so you never hit a button by accident while trying to catch it).
+    let path;
+    if (Math.random() < .7) {
+      const y = A.top + Math.random() * Math.max(10, A.bottom - A.top - M.h), ltr = Math.random() < .5;
+      path = { dir: ltr ? "right" : "left", from: [ltr ? A.left - 20 : A.right + 10, y], to: [ltr ? A.right + 10 : A.left - 20, y + 4] };
+    } else {
+      const vw = M.rotate ? M.h : M.w, vh = M.rotate ? M.w : M.h;
+      const x = A.left + 10 + Math.random() * Math.max(10, A.right - A.left - vw - 20), up = Math.random() < .5;
+      path = { dir: up ? "up" : "down", from: [x, up ? A.bottom : A.top - vh], to: [x + 4, up ? A.top - vh : A.bottom] };
+    }
     busy = true;
-    const ltr = Math.random() < .5, dur = 6500 + Math.random() * 3000;
-    const cat = h("div", { class: "neon-cat", title: "Catch me!" });
-    cat.innerHTML = `<div class="neon-cat-bob${ltr ? "" : " flip"}">${svg}</div>`;
-    document.body.append(cat);
-    const L = flightLeft(), from = ltr ? L - 20 : innerWidth + 20, to = ltr ? innerWidth + 20 : L - 20;
-    const anim = cat.animate([{ transform: `translate(${from}px, ${y}px)`, opacity: 0 }, { opacity: 1, offset: .04 }, { transform: `translate(${(from + to) / 2}px, ${y - 6}px)`, opacity: 1, offset: .5 },
-      { opacity: 1, offset: .96 }, { transform: `translate(${to}px, ${y + 4}px)`, opacity: 0 }], { duration: dur, easing: "linear" });
+    const dist = Math.hypot(path.to[0] - path.from[0], path.to[1] - path.from[1]), dur = Math.max(4500, dist * 7.5);
+    const turn = M.rotate ? { right: "", left: " flip", up: " up", down: " down" }[path.dir] : "";
+    const el = h("div", { class: `mascot mascot-${M.name}`, title: "Catch me!" });
+    el.innerHTML = `<div class="mascot-bob${turn}">${M.svg}</div>`;
+    document.body.append(el);
+    const [fx, fy] = path.from, [tx, ty] = path.to, mx = (fx + tx) / 2, my = (fy + ty) / 2;
+    const anim = el.animate([{ transform: `translate(${fx}px, ${fy}px)`, opacity: 0 }, { opacity: 1, offset: .05 }, { transform: `translate(${mx}px, ${my}px)`, opacity: 1, offset: .5 },
+      { opacity: 1, offset: .95 }, { transform: `translate(${tx}px, ${ty}px)`, opacity: 0 }], { duration: dur, easing: "linear" });
     const trail = setInterval(() => {
-      const r = cat.getBoundingClientRect();
-      const s = h("i", { class: "cat-spark", style: `left:${(ltr ? r.left + 6 : r.right - 6) + (Math.random() * 10 - 5)}px;top:${r.top + 22 + (Math.random() * 16 - 8)}px` });
+      const r = el.getBoundingClientRect();
+      const sx = path.dir === "right" ? r.left + 6 : path.dir === "left" ? r.right - 6 : r.left + r.width / 2;
+      const sy = path.dir === "up" ? r.bottom - 6 : path.dir === "down" ? r.top + 6 : r.top + r.height / 2;
+      const s = h("i", { class: `cat-spark${M === BOT && Math.random() < .4 ? " blue" : ""}`, style: `left:${sx + (Math.random() * 10 - 5)}px;top:${sy + (Math.random() * 10 - 5)}px` });
       document.body.append(s); setTimeout(() => s.remove(), 800);
     }, 55);
-    // Scrolling moves the page under the cat — then it vanishes rather than end up over a button
-    const onScroll = () => { anim.cancel(); end(); };
-    const end = () => { clearInterval(trail); removeEventListener("scroll", onScroll, true); cat.remove(); busy = false; schedule(); };
+    // Click guard: near the mascot (200 px) buttons, links and fields don't react — only the mascot does
+    const guard = e => {
+      if (!el.isConnected || (e.target.closest && e.target.closest(".mascot"))) return;
+      const r = el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      if (e.clientX == null || Math.hypot(e.clientX - cx, e.clientY - cy) > 200) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+    };
+    const EVENTS = ["pointerdown", "mousedown", "pointerup", "mouseup", "click", "dblclick", "contextmenu"];
+    EVENTS.forEach(t => document.addEventListener(t, guard, true));
+    const end = () => { clearInterval(trail); EVENTS.forEach(t => document.removeEventListener(t, guard, true)); el.remove(); busy = false; schedule(); };
     anim.onfinish = end;
-    addEventListener("scroll", onScroll, { passive: true, capture: true, once: true });
-    cat.addEventListener("click", () => {
+    el.addEventListener("click", () => {
       anim.pause(); clearInterval(trail);
-      const r = cat.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const r = el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
       for (let i = 0; i < 16; i++) {
         const a = i / 16 * Math.PI * 2, d = 40 + Math.random() * 40;
-        const s = h("i", { class: "cat-spark big", style: `left:${cx}px;top:${cy}px` });
+        const s = h("i", { class: `cat-spark big${M === BOT && i % 3 === 0 ? " blue" : ""}`, style: `left:${cx}px;top:${cy}px` });
         document.body.append(s);
         s.animate([{ transform: "translate(0,0) scale(1)", opacity: 1 }, { transform: `translate(${Math.cos(a) * d}px, ${Math.sin(a) * d}px) scale(.2)`, opacity: 0 }], { duration: 700, easing: "ease-out" });
         setTimeout(() => s.remove(), 720);
       }
-      cat.classList.add("caught");
-      let n = 0; try { n = Number(localStorage.getItem("gb.catsCaught") || 0) + 1; localStorage.setItem("gb.catsCaught", String(n)); } catch { /* private mode */ }
-      toast(`${LINES[Math.floor(Math.random() * LINES.length)]}${n > 1 ? ` (caught: ${n})` : ""}`);
+      el.classList.add("caught");
+      let n = 0; try { n = Number(localStorage.getItem("gb.mascotsCaught") || localStorage.getItem("gb.catsCaught") || 0) + 1; localStorage.setItem("gb.mascotsCaught", String(n)); } catch { /* private mode */ }
+      toast(`${M.lines[Math.floor(Math.random() * M.lines.length)]}${n > 1 ? ` (caught: ${n})` : ""}`);
       setTimeout(end, 650);
     }, { once: true });
   }
   // Frequency comes from Settings (per server): on average every N minutes, 0 = off
-  let timer = 0;
-  const INTERACTIVE = "button, a, input, select, textarea, label, summary, [role=button], [tabindex], .nav-item, .select-trigger, .chip, .seg-btn, .menu-wrap";
-  // The cat flies over the page area only (never over the sidebar menu)
-  const flightLeft = () => { const n = document.querySelector(".layout:not(.drawer-open) .nav"); const r = n && n.getBoundingClientRect(); return r && r.right > 0 && innerWidth > 900 ? r.right : 0; };
-  function freeBand() {
-    const top = ((document.querySelector(".topbar") || {}).getBoundingClientRect?.().bottom || 56) + 12;
-    const left = flightLeft();
-    const ys = [];
-    for (let y = top; y < innerHeight - 70; y += 20) ys.push(y);
-    ys.sort(() => Math.random() - .5);
-    for (const y of ys) {
-      let ok = true;
-      for (let dy = -12; dy <= 62 && ok; dy += 12)
-        for (let x = left + 4; x < innerWidth && ok; x += 24) {
-          const el = document.elementFromPoint(x, y + dy);
-          if (el && el.closest(INTERACTIVE)) ok = false;
-        }
-      if (ok) return y;
-    }
-    return null;
-  }
   function schedule(first) {
     clearTimeout(timer);
     const g = state.guilds && state.guilds.find(x => x.id === state.guildId);
-    const avg = g && g.mascotMinutes != null ? g.mascotMinutes : 15;
-    if (!avg) { timer = setTimeout(() => schedule(first), 60000); return; } // off — check again later
-    const base = first ? avg * .5 : avg;
-    timer = setTimeout(fly, base * (0.6 + Math.random() * 0.8) * 60000);
+    const avg = g && g.mascotSeconds != null ? g.mascotSeconds : 900;   // seconds, 0 = off
+    if (!avg) { timer = setTimeout(() => schedule(first), 60000); return; }
+    timer = setTimeout(fly, Math.max(5, (first ? avg * .5 : avg) * (0.6 + Math.random() * 0.8)) * 1000);
   }
+  window.__neonCat = fly;
   window.__neonCatReschedule = () => schedule(false);
-  window.__neonCat = fly; // for testing from the console
   schedule(true);
 })();
 
@@ -6013,25 +6020,26 @@ async function pageSettings(main) {
   const holder = h("div", {});
   main.append(holder);
 
-  // Easter egg: how often the neon cat flies across the screen
+  // Easter egg: how often a mascot flies across the screen (seconds, 0 = off)
   if (can("settings")) {
     const g = currentGuild() || {};
-    const OPTS = [[0, "Off"], [5, "Often (~5 min)"], [15, "Sometimes (~15 min)"], [30, "Rarely (~30 min)"], [60, "Very rarely (~1 h)"], [180, "Almost never (~3 h)"]];
-    const cur = g.mascotMinutes ?? 15;
-    const sel = h("select", { "aria-label": "How often" }, OPTS.map(([v, l]) => h("option", { value: v, selected: v === cur }, l)),
-      OPTS.some(o => o[0] === cur) ? null : h("option", { value: cur, selected: true }, `~${cur} min`));
+    const secs = h("input", { type: "number", min: "0", max: "604800", step: "1", value: String(g.mascotSeconds ?? 900), style: "width:140px", "aria-label": "Seconds" });
+    const human = h("span", { class: "muted small" });
+    const say = () => { const v = Number(secs.value) || 0; human.textContent = !v ? "off" : v < 120 ? `≈ every ${v} s` : v < 7200 ? `≈ every ${Math.round(v / 60)} min` : `≈ every ${(v / 3600).toFixed(1)} h`; };
+    secs.addEventListener("input", say); say();
     const save = h("button", { class: "btn" }, "Save");
-    const preview = h("button", { class: "btn secondary", title: "Let it fly once right now" }, icon("sparkles", 15), "Show now");
+    const preview = h("button", { class: "btn secondary", title: "Let one fly right now" }, icon("sparkles", 15), "Show now");
     preview.addEventListener("click", () => window.__neonCat && window.__neonCat());
-    const tracker = track("Easter egg", () => sel.value, async () => {
-      const ok = await act(save, () => gApi("PUT", "/mascot", { minutes: Number(sel.value) }), "Saved.") !== undefined;
-      if (ok) { g.mascotMinutes = Number(sel.value); window.__neonCatReschedule && window.__neonCatReschedule(); }
+    const tracker = track("Easter egg", () => secs.value, async () => {
+      const v = Math.max(0, Math.round(Number(secs.value) || 0));
+      const ok = await act(save, () => gApi("PUT", "/mascot", { seconds: v }), "Saved.") !== undefined;
+      if (ok) { g.mascotSeconds = v; window.__neonCatReschedule && window.__neonCatReschedule(); }
       return ok;
     });
     save.addEventListener("click", tracker.save);
     holder.append(tracker.attach(h("div", { class: "card" }, h("h2", {}, "😺 Easter egg"),
-      h("p", { class: "muted small" }, "Now and then a little neon cat flies across the site for everyone on this server. Clicking it catches it. People who turned on 'reduce motion' in their system never see it."),
-      h("div", { class: "row" }, h("div", { class: "field", style: "margin:0;min-width:220px" }, fieldLabel("How often"), sel), save, preview))));
+      h("p", { class: "muted small" }, "Now and then the neon cat or the little Greatness robot flies across the site for everyone on this server. While it flies, buttons within 200 px of it don't react — clicking it catches it. People with 'reduce motion' turned on never see it."),
+      h("div", { class: "row", style: "align-items:flex-end" }, h("div", { class: "field", style: "margin:0" }, fieldLabel("Every … seconds on average (0 = off)"), h("div", { class: "row" }, secs, human)), save, preview))));
   }
 
   // Quick search (Ctrl+K): which members it finds

@@ -2605,3 +2605,17 @@ input.switch:checked { animation: switch-glow .5s ease-out; }
 .cat-spark:nth-child(odd) { background: #F0A6E8; }
 .cat-spark.big { width: 7px; height: 7px; animation: none; }
 @keyframes cat-spark { from { opacity: .95; transform: scale(1); } to { opacity: 0; transform: translateY(6px) scale(.2); } }
+
+/* Mascots (cat + robot) */
+.mascot { position: fixed; left: 0; top: 0; z-index: 90; cursor: pointer; will-change: transform; }
+.mascot svg { display: block; filter: drop-shadow(0 0 6px rgba(139, 108, 255, .9)) drop-shadow(0 0 14px rgba(224, 91, 208, .4)); }
+.mascot-robot svg { filter: drop-shadow(0 0 6px rgba(139, 108, 255, .95)) drop-shadow(0 0 14px rgba(111, 184, 255, .45)); }
+.mascot-bob { animation: cat-bob .45s ease-in-out infinite alternate; }
+.mascot-robot .mascot-bob { animation-duration: .9s; }
+.mascot-bob.flip svg { transform: scaleX(-1); }
+.mascot-bob.up svg { transform: rotate(-90deg); }
+.mascot-bob.down svg { transform: rotate(90deg); }
+.mascot.caught .mascot-bob { animation: cat-caught .6s cubic-bezier(.3, 1.4, .5, 1) forwards; }
+.bot-eyes { animation: bot-blink 3.2s steps(1) infinite; }
+@keyframes bot-blink { 0%, 92% { opacity: 1; } 93%, 97% { opacity: 0; } }
+.cat-spark.blue { background: #A8D8FF; box-shadow: 0 0 8px #6FB8FF, 0 0 14px rgba(111, 184, 255, .6); }
