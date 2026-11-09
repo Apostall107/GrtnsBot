@@ -388,10 +388,34 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
                 }
             }
         }
+        catch (Discord.Net.HttpException ex) when (ex.DiscordCode == DiscordErrorCode.UnknownMessage)
+        {
+            // Пост удалили в Discord вручную — сбора больше нет: закрываем его, убираем копии и уведомления
+            await ForgetDeletedPostAsync(group);
+        }
         catch (Discord.Net.HttpException ex)
         {
             logger.LogWarning(ex, "Could not update LFG post {GroupId}", group.Id);
         }
+    }
+
+    /// <summary>Пост сбора удалён руками в Discord: сбор закрывается (как «deleted»), его копии и служебные сообщения удаляются.</summary>
+    private async Task ForgetDeletedPostAsync(LfgGroup group)
+    {
+        if (!await group.Gate.WaitAsync(TimeSpan.FromSeconds(10))) return;
+        try
+        {
+            if (!store.Groups.TryRemove(group.Id, out _)) return;
+            group.IsClosed = true;
+            store.RecordClosed(group, "deleted");
+            store.SaveGroups();
+        }
+        finally
+        {
+            group.Gate.Release();
+        }
+        try { await DeleteMessagesAsync(group); } catch (Exception) { /* главный пост уже удалён */ }
+        logger.LogInformation("LFG post of {GroupId} ({Activity}) was deleted in Discord — group closed", group.Id, group.ActivityName);
     }
 
     /// <summary>ЛС человеку, которого организатор перевёл из резерва в группу.</summary>
