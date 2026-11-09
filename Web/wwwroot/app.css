@@ -1844,3 +1844,35 @@ h1 .hint svg { width: 17px; height: 17px; }
   .page-actions .btn-refresh .btn-text, .page-actions .btn-guide .btn-text { display: none; }
   .page-actions .btn-refresh, .page-actions .btn-guide { width: 36px; padding: 0; justify-content: center; }
 }
+
+/* =====================================================================
+   Phones
+   ===================================================================== */
+@media (max-width: 640px) {
+  /* iOS zooms into fields with text under 16px — keep them at 16px */
+  input, select, textarea, .select-trigger { font-size: 16px; }
+  /* Section tabs wrap instead of hiding the last ones off-screen */
+  .seg { flex-wrap: wrap; overflow-x: visible; }
+  .seg-btn { padding: 8px 11px; }
+  /* Dialogs use the whole screen width and scroll inside */
+  dialog { width: calc(100vw - 16px); max-width: none; max-height: calc(100dvh - 24px); overflow-y: auto; padding: var(--s4); border-radius: 12px; }
+  dialog .actions { position: sticky; bottom: calc(-1 * var(--s4)); margin: var(--s4) calc(-1 * var(--s4)) calc(-1 * var(--s4)); padding: 12px var(--s4);
+    background: var(--surface); border-top: 1px solid var(--border); flex-wrap: wrap; }
+  /* Unsaved-changes bar sits at the bottom edge, buttons stay reachable */
+  .pending-bar { bottom: 8px; width: calc(100vw - 16px); flex-wrap: wrap; padding: 10px 12px; }
+  .pending-names { display: none; }
+  body.has-pending #toasts { bottom: 96px; }
+  #toasts { left: 8px; right: 8px; bottom: 8px; max-width: none; }
+  .toast { max-width: none; }
+  /* Group cards: slightly tighter */
+  .group-card { padding: var(--s3); }
+  .slot.taken { padding: 7px 6px 7px 8px; column-gap: 6px; }
+  .slot.taken > .role-pill { width: 50px; min-width: 50px; }
+}
+/* Finger-sized targets on touch screens */
+@media (pointer: coarse) {
+  .btn.icon-only.sm, .slot-tools .btn.icon-only.sm { width: 36px; min-width: 36px; min-height: 36px; }
+  .chip button { padding: 4px 2px 4px 6px; font-size: 16px; }
+  .nav-item { height: 42px; }
+  .seg-btn { min-height: 38px; }
+}
