@@ -11,6 +11,8 @@
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
     <!-- Без ICU (данные локалей ~30 МБ в памяти): все тексты бота свои, даты/числа форматируются явно; libicu на сервере не нужна -->
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Discord.Net создаёт CultureInfo по языку сервера ("uk" и т.п.): разрешаем любые имена — без ICU они ведут себя как инвариантная -->
+    <PredefinedCulturesOnly>false</PredefinedCulturesOnly>
   </PropertyGroup>
 
   <ItemGroup>
