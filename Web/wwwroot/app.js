@@ -3739,7 +3739,7 @@ function dcEmbed(e, mentions = {}) {
   return h("div", { class: "dc-embed", style: `border-left-color:${e.color || "#1e1f22"}` },
     h("div", { class: "dc-embed-main" },
       // Заголовок embed в Discord — без разметки: **, #, -# и т.п. показываются как есть; работают только эмодзи
-      e.title ? h("div", { class: "dc-embed-title" }, plainWithEmoji(e.title)) : null,
+      e.title ? h("div", { class: "dc-embed-title", style: e.url ? "color:#00a8fc" : null }, plainWithEmoji(e.title)) : null,
       e.description ? mdPreview(e.description, mentions) : null,
       fields.length ? h("div", { class: "dc-fields" }, fields.map(f => h("div", { class: `dc-field${f.inline ? " inline" : ""}` },
         h("div", { class: "dc-field-name" }, mdPreview(f.name, mentions)), mdPreview(f.value, mentions)))) : null,
@@ -5802,7 +5802,8 @@ async function pageBirthdays(main) {
   const addCard = h("div", { class: "card" });
   const ioCard = h("div", { class: "card" });
   const listCard = h("div", { class: "card" }, skeletonLines(4));
-  main.append(setCard, addCard, ioCard, listCard);
+  const panelCard = h("div", { class: "card" });
+  main.append(setCard, addCard, panelCard, ioCard, listCard);
 
   // Bulk import (one CSV/JSON file) and export of the current list
   const base = `/api/guilds/${state.guildId}/birthdays`;
@@ -5915,6 +5916,57 @@ async function pageBirthdays(main) {
     toast(`${name}'s birthday removed.`); load();
   });
 
+  // Панель «Укажи свой ДР»: сообщение с кнопкой 🎂 — окно ввода даты, дата сразу попадает в список
+  function renderPanel(p) {
+    const title = h("input", { maxlength: "256", placeholder: p.defaultTitle || "", value: p.title || "", style: "width:100%" });
+    const text = h("textarea", { maxlength: "3000", rows: "4", placeholder: p.defaultText || "", style: "width:100%" });
+    text.value = p.text || "";
+    const btnText = h("input", { maxlength: "80", placeholder: p.defaultButton || "Set my birthday", value: p.button || "", style: "width:100%" });
+    const preview = h("div", { class: "dc-frame compact" });
+    const update = () => preview.replaceChildren(dcMessage({
+      embed: { title: `${title.value || p.defaultTitle} | Bot Website`, url: "#", description: text.value || p.defaultText, color: color.value() || "#f47fff" },
+      rows: [[dcButton(btnText.value || p.defaultButton || "Set my birthday", "🎂", "Blurple")]]
+    }));
+    const color = embedColorField(p.color || null, update);
+    title.addEventListener("input", update); text.addEventListener("input", update); btnText.addEventListener("input", update);
+    const ch = channelSelect("text", "Channel…");
+    if (p.channelId) ch.value = p.channelId;
+    const body = () => ({ title: title.value, text: text.value, color: color.value(), button: btnText.value });
+    const save = h("button", { class: p.jumpUrl ? "btn" : "btn secondary" }, icon("check", 14), "Save");
+    save.addEventListener("click", () => act(save, async () => {
+      const r = await gApi("PUT", "/birthdays/panel", body());
+      toast(r.updated ? "Saved — the posted panel is updated." : "Saved.");
+    }));
+    const post = h("button", { class: p.jumpUrl ? "btn ghost" : "btn" }, icon("pin", 14), p.jumpUrl ? "Re-post" : "Post");
+    post.addEventListener("click", () => act(post, async () => {
+      if (!ch.value) return toast("Choose a channel.", "warn");
+      if (p.jumpUrl && !await confirmDialog("Re-post the birthday panel?", "The old message is deleted and the panel is posted in the chosen channel. To change the text, just Save.", "Re-post", false)) return;
+      await gApi("PUT", "/birthdays/panel", body());
+      await gApi("POST", "/birthdays/panel/post", { channelId: ch.value });
+      toast("Birthday panel posted."); load();
+    }));
+    const remove = p.jumpUrl ? h("button", { class: "btn ghost", title: "Delete the posted message" }, icon("trash-2", 14), "Remove") : null;
+    if (remove) remove.addEventListener("click", () => act(remove, async () => {
+      if (!await confirmDialog("Remove the birthday panel?", "The posted message is deleted. Saved birthdays stay.", "Remove")) return;
+      await gApi("DELETE", "/birthdays/panel"); toast("Panel removed."); load();
+    }));
+    update();
+    panelCard.replaceChildren(
+      h("div", { class: "row", style: "align-items:center;gap:8px" }, sectionLabel("Birthday panel"),
+        p.jumpUrl ? h("a", { class: "chip ok", href: p.jumpUrl, target: "_blank", rel: "noopener" }, icon("external-link", 12), `#${p.channel || "posted"}`)
+          : h("span", { class: "chip warn" }, "not posted")),
+      h("p", { class: "muted small" }, "A message with a 🎂 button: members press it, enter their birthday (DD.MM, year optional) and it's saved to the list below right away. Empty fields use the default text."),
+      h("div", { class: "editor-layout" },
+        h("div", {},
+          h("div", { class: "field" }, h("label", {}, "Title"), title),
+          h("div", { class: "field" }, h("label", {}, "Text"), text),
+          h("div", { class: "grid2" }, h("div", { class: "field" }, h("label", {}, "Button text"), btnText),
+            h("div", { class: "field" }, h("label", {}, "Color"), color.el)),
+          h("p", { class: "muted small" }, "The title links to the bot website (“ | Bot Website” is added, like on the other panels). The window and replies after pressing the button are in Panels & posts → Bot messages → “Birthdays — /birthday”.")),
+        h("div", { class: "editor-preview" }, preview)),
+      h("div", { class: "row", style: "gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px" }, ch, post, save, remove));
+  }
+
   function renderList(d) {
     if (!d.people.length) { listCard.replaceChildren(emptyState("cake", "No birthdays yet", "Members add theirs with /birthday, or add them above.")); return; }
     listCard.replaceChildren(
@@ -5930,7 +5982,7 @@ async function pageBirthdays(main) {
   async function load() {
     let d;
     try { d = await gApi("GET", "/birthdays"); } catch (e) { setCard.replaceChildren(empty(e.message)); return; }
-    renderSettings(d); renderAdd(); renderList(d);
+    renderSettings(d); renderAdd(); renderPanel(d.panel || {}); renderList(d);
   }
   await load();
 }

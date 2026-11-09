@@ -18,7 +18,13 @@ public sealed class BirthdayModule(BirthdayStore store, BirthdayService service,
     private string T(string key, params (string, object?)[] args) => Tx.Get(Gid, key, args);
 
     [SlashCommand("birthday", "Set your birthday to get the birthday role on your day")]
-    public async Task BirthdayCommand()
+    public Task BirthdayCommand() => ShowModalAsync();
+
+    /// <summary>Кнопка на панели дня рождения (сайт → Birthdays → Birthday panel) — то же окно, что /birthday.</summary>
+    [ComponentInteraction("bday:panel")]
+    public Task OnPanelButton() => ShowModalAsync();
+
+    private async Task ShowModalAsync()
     {
         var current = store.Of(Gid, Context.User.Id);
         var modal = new ModalBuilder()

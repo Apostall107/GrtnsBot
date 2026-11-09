@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Discord;
 using Discord.WebSocket;
 using LfgBot.Modules;
 using LfgBot.Services;
@@ -18,6 +19,24 @@ public static partial class PanelApi
 {
     public sealed record BirthdaySettingsBody(bool Enabled, string? MemberRoleId, string? BirthdayRoleId, string? AnnounceChannelId);
     public sealed record BirthdayPersonBody(string? UserId, int Day, int Month, int? Year);
+    public sealed record BirthdayPanelBody(string? Title, string? Text, string? Color, string? ChannelId = null, string? Button = null);
+
+    /// <summary>Панель «Укажи свой день рождения»: embed + кнопка, открывающая окно ввода даты (как /birthday).</summary>
+    private static async Task<(Embed Embed, MessageComponent Components)> BirthdayPanelAsync(ulong guildId, GuildBirthdays d, AnnouncementService announce)
+    {
+        var title = string.IsNullOrWhiteSpace(d.PanelTitle) ? Tx.Get(guildId, "birthday.panelTitle") : d.PanelTitle!;
+        var text = string.IsNullOrWhiteSpace(d.PanelText) ? Tx.Get(guildId, "birthday.panelText") : d.PanelText!;
+        // Заголовок — ссылка на сайт бота (« | Bot Website»), как у остальных панелей
+        var embed = new EmbedBuilder()
+            .WithSiteTitle(Tx.Clip(await announce.ResolveEmotesAsync(guildId, title), 240))
+            .WithDescription(Tx.Clip(await announce.ResolveEmotesAsync(guildId, text), 4000))
+            .WithColor(Tx.ParseColor(d.PanelColor) ?? new Color(0xF47FFF))
+            .Build();
+        var comps = new ComponentBuilder()
+            .WithButton(Tx.Clip(string.IsNullOrWhiteSpace(d.PanelButton) ? Tx.Get(guildId, "birthday.panelButton") : d.PanelButton!, 80), "bday:panel", ButtonStyle.Primary, new Emoji("🎂"))
+            .Build();
+        return (embed, comps);
+    }
 
     private static void MapBirthdays(RouteGroupBuilder g)
     {
@@ -45,6 +64,15 @@ public static partial class PanelApi
                 memberRoleId = data.MemberRoleId?.ToString(),
                 birthdayRoleId = data.BirthdayRoleId?.ToString(),
                 announceChannelId = data.AnnounceChannelId?.ToString(),
+                panel = new
+                {
+                    title = data.PanelTitle, text = data.PanelText, color = data.PanelColor,
+                    defaultTitle = Tx.Get(guildId, "birthday.panelTitle"), defaultText = Tx.Get(guildId, "birthday.panelText"),
+                    button = data.PanelButton, defaultButton = Tx.Get(guildId, "birthday.panelButton"),
+                    channelId = data.PanelChannelId?.ToString(),
+                    channel = data.PanelChannelId is { } pc ? guild.GetTextChannel(pc)?.Name : null,
+                    jumpUrl = data.PanelChannelId is { } c2 && data.PanelMessageId is { } m2 ? $"https://discord.com/channels/{guildId}/{c2}/{m2}" : null
+                },
                 count = people.Count,
                 people
             });
@@ -95,6 +123,63 @@ public static partial class PanelApi
                 withDate = pool.Count(u => data.People.ContainsKey(u.Id)),
                 members = list
             });
+        });
+
+        // Панель дня рождения: сохранить тексты (опубликованная обновляется на месте)
+        g.MapPut("/panel", async (ulong guildId, BirthdayPanelBody b, DiscordSocketClient client, [FromServices] BirthdayStore store,
+            [FromServices] AnnouncementService announce) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            if (b.Title is { Length: > 256 }) return Error("Title: up to 256 characters.");
+            if (b.Text is { Length: > 3000 }) return Error("Text: up to 3000 characters.");
+            store.UpdateSettings(guildId, s =>
+            {
+                s.PanelTitle = string.IsNullOrWhiteSpace(b.Title) ? null : b.Title.Trim();
+                s.PanelText = string.IsNullOrWhiteSpace(b.Text) ? null : b.Text.Trim();
+                s.PanelColor = string.IsNullOrWhiteSpace(b.Color) ? null : b.Color.Trim();
+                s.PanelButton = string.IsNullOrWhiteSpace(b.Button) ? null : Tx.Clip(b.Button.Trim(), 80);
+            });
+            var d = store.Get(guildId);
+            if (d.PanelChannelId is { } cid && d.PanelMessageId is { } mid && guild.GetTextChannel(cid) is { } ch)
+            {
+                try
+                {
+                    if (await ch.GetMessageAsync(mid) is IUserMessage msg)
+                    {
+                        var (embed, comps) = await BirthdayPanelAsync(guildId, d, announce);
+                        await msg.ModifyAsync(m => { m.Embeds = new[] { embed }; m.Components = comps; });
+                        return Results.Ok(new { updated = true });
+                    }
+                }
+                catch (Discord.Net.HttpException) { return Error("Saved, but the posted panel couldn't be updated."); }
+            }
+            return Results.Ok(new { updated = false });
+        });
+
+        // Опубликовать панель в канал (старое сообщение панели удаляется)
+        g.MapPost("/panel/post", async (ulong guildId, BirthdayPanelBody b, DiscordSocketClient client, [FromServices] BirthdayStore store,
+            [FromServices] AnnouncementService announce) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            if (ParseId(b.ChannelId) is not { } channelId || guild.GetTextChannel(channelId) is not { } channel) return Error("Choose a text channel.");
+            var d = store.Get(guildId);
+            var (embed, comps) = await BirthdayPanelAsync(guildId, d, announce);
+            IUserMessage message;
+            try { message = await channel.SendMessageAsync(embed: embed, components: comps); }
+            catch (Discord.Net.HttpException) { return Error("I can't post there — give the bot View Channel, Send Messages and Embed Links."); }
+            if (d.PanelChannelId is { } oc && d.PanelMessageId is { } om && guild.GetTextChannel(oc) is { } old)
+                try { await old.DeleteMessageAsync(om); } catch (Discord.Net.HttpException) { /* уже удалено */ }
+            store.UpdateSettings(guildId, s => { s.PanelChannelId = channel.Id; s.PanelMessageId = message.Id; });
+            return Results.Ok(new { jumpUrl = $"https://discord.com/channels/{guildId}/{channel.Id}/{message.Id}" });
+        });
+
+        g.MapDelete("/panel", async (ulong guildId, DiscordSocketClient client, [FromServices] BirthdayStore store) =>
+        {
+            var d = store.Get(guildId);
+            if (d.PanelChannelId is { } oc && d.PanelMessageId is { } om && client.GetGuild(guildId)?.GetTextChannel(oc) is { } ch)
+                try { await ch.DeleteMessageAsync(om); } catch (Discord.Net.HttpException) { /* уже удалено */ }
+            store.UpdateSettings(guildId, s => { s.PanelChannelId = null; s.PanelMessageId = null; });
+            return Results.Ok();
         });
 
         g.MapPost("/people", async (ulong guildId, BirthdayPersonBody b, [FromServices] BirthdayStore store,

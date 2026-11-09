@@ -448,6 +448,9 @@ public static class BotTextCatalog
         T("birthday.none", "No date yet", "You haven't set a birthday yet. Enter it below.", null, 300);
         T("birthday.badDate", "Invalid date", "Enter the date as DD.MM or DD.MM.YYYY, e.g. 07.03 or 07.03.1998.", null, 300);
         T("birthday.remove", "Remove button", "Remove my birthday", null, Button);
+        T("birthday.panelButton", "Birthday panel: button", "Set my birthday", null, Button);
+        T("birthday.panelTitle", "Birthday panel: default title", "🎂 When is your birthday?", null, 256);
+        T("birthday.panelText", "Birthday panel: default text", "Press the button and enter your birthday (DD.MM — the year is optional). On your day you'll get a special role!", null, 2000);
         T("birthday.announce", "Birthday greeting in the channel", "🎂 Happy birthday, {user}! 🎉", "{user}", 1000);
 
         Group("General");

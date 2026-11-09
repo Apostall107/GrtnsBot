@@ -40,6 +40,13 @@ public sealed class GuildBirthdays
     public ulong? BirthdayRoleId { get; set; }
     /// <summary>Необязательно: канал для поздравления (null — не поздравлять).</summary>
     public ulong? AnnounceChannelId { get; set; }
+    /// <summary>Панель «Укажи свой день рождения»: сообщение с кнопкой, по которой открывается окно ввода даты.</summary>
+    public string? PanelTitle { get; set; }
+    public string? PanelText { get; set; }
+    public string? PanelColor { get; set; }
+    public string? PanelButton { get; set; }
+    public ulong? PanelChannelId { get; set; }
+    public ulong? PanelMessageId { get; set; }
     /// <summary>Дни рождения: Discord ID → дата.</summary>
     public Dictionary<ulong, Birthday> People { get; set; } = new();
 }
