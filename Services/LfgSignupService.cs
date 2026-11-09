@@ -391,7 +391,8 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
         catch (Discord.Net.HttpException ex) when (ex.DiscordCode == DiscordErrorCode.UnknownMessage)
         {
             // Пост удалили в Discord вручную — сбора больше нет: закрываем его, убираем копии и уведомления
-            await ForgetDeletedPostAsync(group);
+            // в фоне: вызывающий код может держать замок группы
+            _ = Task.Run(() => ForgetDeletedPostAsync(group));
         }
         catch (Discord.Net.HttpException ex)
         {
@@ -402,7 +403,7 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
     /// <summary>Пост сбора удалён руками в Discord: сбор закрывается (как «deleted»), его копии и служебные сообщения удаляются.</summary>
     private async Task ForgetDeletedPostAsync(LfgGroup group)
     {
-        if (!await group.Gate.WaitAsync(TimeSpan.FromSeconds(10))) return;
+        if (!await group.Gate.WaitAsync(TimeSpan.FromMinutes(1))) return;
         try
         {
             if (!store.Groups.TryRemove(group.Id, out _)) return;
