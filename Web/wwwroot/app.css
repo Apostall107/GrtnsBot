@@ -2492,3 +2492,73 @@ input:not([type=checkbox]):not([type=radio]):focus, select:focus, textarea:focus
 .gv-rim > i { position: absolute; left: -130px; top: -130px; width: 260px; height: 260px; border-radius: 50%; will-change: transform;
   background: radial-gradient(circle, rgba(240, 232, 255, .95) 0%, rgba(200, 180, 255, .55) 22%, rgba(176, 150, 255, 0) 60%); }
 @media (pointer: coarse), (prefers-reduced-motion: reduce) { .gv-light { display: none; } }
+
+/* =====================================================================
+   Sidebar v4: animated folding, attention counters, labels in icon mode
+   ===================================================================== */
+.nav-group > .nav-group-items { display: grid !important; grid-template-rows: 1fr; transition: grid-template-rows .26s cubic-bezier(.2, .7, .2, 1), opacity .2s ease; }
+.nav-group.folded > .nav-group-items { grid-template-rows: 0fr; opacity: 0; padding-top: 0; }
+.nav-group-inner { min-height: 0; overflow: hidden; }
+.layout.collapsed .nav-group.folded > .nav-group-items { grid-template-rows: 1fr; opacity: 1; }
+@media (max-width: 900px) { .layout.collapsed .nav-group.folded > .nav-group-items { grid-template-rows: 0fr; opacity: 0; } }
+.nav .nav-fold { transition: transform .26s cubic-bezier(.2, .7, .2, 1), opacity .16s; }
+
+/* Counters: what waits on that page (tickets to decide, groups short of people, birthdays, failed posts) */
+.nav-badge { display: none; margin-left: auto; min-width: 20px; height: 18px; padding: 0 6px; border-radius: 9px; flex: none;
+  font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; color: #fff;
+  background: linear-gradient(180deg, #F06A9A, #C9387A); box-shadow: 0 0 10px rgba(240, 106, 154, .45); }
+.nav-badge.on { display: inline-block; animation: badge-pop .35s cubic-bezier(.3, 1.6, .5, 1) both; }
+@keyframes badge-pop { from { transform: scale(.4); opacity: 0; } to { transform: none; opacity: 1; } }
+.nav-group.folded.has-badge .nav-count { background: linear-gradient(180deg, #F06A9A, #C9387A); color: #fff; box-shadow: 0 0 10px rgba(240, 106, 154, .45); }
+/* Icon-only mode: the counter becomes a dot on the icon, the label a flyout on hover */
+.layout.collapsed .nav-item { position: relative; }
+.layout.collapsed .nav-badge.on { position: absolute; top: 4px; right: 8px; min-width: 9px; width: 9px; height: 9px; padding: 0; font-size: 0; }
+.nav-flyout { position: fixed; z-index: 70; display: none; align-items: center; gap: 8px; white-space: nowrap; pointer-events: none;
+  padding: 6px 10px; border-radius: 8px; font-size: 13px; font-weight: 600; color: #fff; transform: translateY(-50%);
+  background: #17122B; border: 1px solid rgba(176, 156, 255, .3); box-shadow: 0 10px 26px rgba(0, 0, 0, .5), 0 0 16px rgba(139, 108, 255, .2); }
+.nav-flyout.on { display: inline-flex; animation: pop-in .14s ease both; }
+.nav-flyout .nav-badge { display: inline-block; margin: 0; }
+/* Active item: a soft entrance, the icon nudges on hover */
+.nav .nav-item.active { animation: nav-active-in .35s cubic-bezier(.2, .7, .2, 1); }
+@keyframes nav-active-in { from { background-position: -40px 0; box-shadow: none; } }
+.nav .nav-item .icon { transition: transform .18s cubic-bezier(.3, 1.6, .5, 1), opacity .16s; }
+.nav .nav-item:hover .icon { transform: translateX(2px) scale(1.08); }
+
+/* =====================================================================
+   Motion pack: ripples, growing bars and charts, live status, lifts.
+   All short and on transform/opacity; off for reduced motion.
+   ===================================================================== */
+.ripple { position: absolute; border-radius: 50%; pointer-events: none; z-index: 0;
+  background: radial-gradient(circle, rgba(220, 205, 255, .35) 0%, rgba(180, 150, 255, .14) 40%, transparent 70%);
+  transform: scale(0); opacity: 1; animation: ripple .6s cubic-bezier(.2, .7, .2, 1) forwards; }
+@keyframes ripple { to { transform: scale(1); opacity: 0; } }
+.ripple-box { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; z-index: 0; }
+
+/* Bars and charts grow in */
+@keyframes grow-x { from { transform: scaleX(0); } }
+@keyframes grow-y { from { transform: scaleY(0); } }
+.hbar-track i, .cap-bar > span, .mc-att-bar i, .outcome-bar i, .att-bar i { transform-origin: left center; animation: grow-x .7s cubic-bezier(.2, .7, .2, 1) both; }
+.chart .bar { transform-box: fill-box; transform-origin: 50% 100%; animation: grow-y .6s cubic-bezier(.2, .7, .2, 1) both; }
+.chart polyline { stroke-dasharray: 4000; stroke-dashoffset: 4000; animation: draw-line 1.1s ease-out forwards; }
+@keyframes draw-line { to { stroke-dashoffset: 0; } }
+.chart path[fill^="url"] { animation: fade-in .9s ease .2s both; }
+.heat-cell[style] { animation: fade-in .5s ease both; }
+
+/* Live status: the online dot breathes */
+.status-pill.ok .dot { position: relative; }
+.status-pill.ok .dot::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid rgba(34, 197, 139, .6); animation: live-ring 2.4s ease-out infinite; }
+@keyframes live-ring { 0% { transform: scale(.5); opacity: .9; } 100% { transform: scale(1.8); opacity: 0; } }
+
+/* Clickable tiles lift; switches bounce */
+.stat.clickable, .quick-action, .group-mini, .att-row { transition: transform .18s cubic-bezier(.3, 1.4, .5, 1), border-color .2s, background .2s, box-shadow .2s; }
+.stat.clickable:hover, .quick-action:hover, .group-mini:hover { transform: translateY(-2px); }
+.att-row:hover { transform: translateX(3px); }
+input.switch::after { transition: transform .22s cubic-bezier(.3, 1.6, .5, 1), background .2s; }
+input.switch:checked { animation: switch-glow .5s ease-out; }
+@keyframes switch-glow { 0% { box-shadow: 0 0 0 0 rgba(139, 108, 255, .7); } 100% { box-shadow: 0 0 0 8px rgba(139, 108, 255, 0), 0 0 14px rgba(118, 87, 246, .5); } }
+/* Attention: the counter pulses once when it appears */
+.attention-card .card-head .badge { animation: badge-pop .45s cubic-bezier(.3, 1.6, .5, 1) .3s both; }
+/* Menus and popovers drop in */
+.user-pop, .menu-pop, .select-pop { animation: pop-in .16s ease both; }
+
+@media (prefers-reduced-motion: reduce) { .ripple, .status-pill.ok .dot::after { display: none; } .chart polyline { stroke-dasharray: none; stroke-dashoffset: 0; } }

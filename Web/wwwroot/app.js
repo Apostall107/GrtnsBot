@@ -760,7 +760,38 @@ const EMOJI_ICONS = { "➕": "plus", "💾": "save", "🗑️": "trash-2", "🗑
  * One look for cards, row actions and Save buttons, whatever page built them:
  * a bare card title gets the standard header, Delete/Remove/Edit in rows become icon buttons, Save gets its icon.
  */
+// ----- Small motion helpers: numbers count up, a ripple where you click -----
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+function countUp(el) {
+  el.dataset.counted = "1";
+  const text = el.textContent.trim();
+  const m = /^(\d[\d\s,]*)(.*)$/.exec(text);
+  if (!m || reduceMotion || /^[.,]\d/.test(m[2])) return;
+  const target = Number(m[1].replace(/[\s,]/g, ""));
+  if (!Number.isFinite(target) || target < 2) return;
+  const sep = /[\s,]/.test(m[1]) ? m[1].match(/[\s,]/)[0] : "";
+  const fmt = n => sep ? String(n).replace(/\B(?=(\d{3})+(?!\d))/g, sep) : String(n);
+  const t0 = performance.now(), dur = Math.min(900, 380 + target * 2);
+  const step = now => {
+    const p = Math.min(1, (now - t0) / dur), v = Math.round(target * (1 - Math.pow(1 - p, 3)));
+    el.textContent = fmt(v) + m[2];
+    if (p < 1 && el.isConnected) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+if (!reduceMotion) document.addEventListener("pointerdown", e => {
+  const b = e.target.closest && e.target.closest(".btn, .seg-btn, .nav-item, .quick-action, .group-mini, .att-row");
+  if (!b || b.disabled) return;
+  const r = b.getBoundingClientRect(), size = Math.max(r.width, r.height) * 2.2;
+  // the ripple lives in its own clipped box, so the button keeps its own overflow (glows, active bars)
+  const rip = h("span", { class: "ripple-box" }, h("span", { class: "ripple", style: `width:${size}px;height:${size}px;left:${e.clientX - r.left - size / 2}px;top:${e.clientY - r.top - size / 2}px` }));
+  if (getComputedStyle(b).position === "static") b.style.position = "relative";
+  b.append(rip);
+  setTimeout(() => rip.remove(), 650);
+}, { passive: true });
+
 function normalizeUi(root) {
+  for (const v of root.querySelectorAll(".stat .value:not([data-counted]), .dash-facts b:not([data-counted]), .mc-stat b:not([data-counted])")) countUp(v);
   for (const hd of root.querySelectorAll(".card > h2:first-child, .card > h3:first-child, .card > .section-label:first-child")) {
     if (hd.closest("dialog") || hd.parentElement.classList.contains("no-norm")) continue;
     const title = hd.tagName === "H2" ? hd : h("h2", { class: hd.className.replace(/\bsection-label\b/, "").trim() || null }, ...hd.childNodes);
@@ -1566,6 +1597,7 @@ async function logout() {
       el.append(light);
       void light.offsetWidth;
     }
+    if (!el) return;
     const r = el.getBoundingClientRect();
     const lx = x - r.left, ly = y - r.top;
     glow.style.transform = `translate3d(${lx}px, ${ly}px, 0)`;
@@ -1627,6 +1659,55 @@ async function selectGuild(id) {
   renderShell();
 }
 
+// ----- Sidebar helpers: remembered scroll, "needs attention" counters on items
+let navScrollTop = 0;
+const navBadges = { at: 0, data: {}, timer: 0, guild: null };
+function applyNavBadges() {
+  for (const el of document.querySelectorAll(".nav-item[data-key]")) {
+    const n = navBadges.data[el.dataset.key] || 0;
+    const b = el.querySelector(".nav-badge");
+    if (b) { b.textContent = n ? String(n > 99 ? "99+" : n) : ""; b.classList.toggle("on", !!n); }
+  }
+  // A folded group shows the sum of its counters instead of its page count, so waiting work isn't hidden
+  for (const g of document.querySelectorAll(".nav-group")) {
+    const sum = [...g.querySelectorAll(".nav-item[data-key]")].reduce((t, el) => t + (navBadges.data[el.dataset.key] || 0), 0);
+    g.classList.toggle("has-badge", sum > 0);
+    const c = g.querySelector(".nav-count");
+    if (c) { if (!c.dataset.pages) c.dataset.pages = c.textContent; c.textContent = sum > 0 ? String(sum) : c.dataset.pages; c.title = sum > 0 ? "Waiting for you in this group" : ""; }
+  }
+}
+async function loadNavBadges() {
+  if (!isAdmin() || !state.guildId || state.me.viewAsMember) { navBadges.data = {}; applyNavBadges(); return; }
+  try {
+    const a = await gApi("GET", "/attention");
+    navBadges.data = { tickets: a.tickets.length, lfg: a.groups.length, birthdays: a.birthdays.length, announce: a.failedPosts.length };
+    navBadges.at = Date.now(); navBadges.guild = state.guildId;
+  } catch { /* badges are optional */ }
+  applyNavBadges();
+}
+// Icon-only sidebar: the page name (and its counter) flies out next to the hovered icon
+(function navFlyout() {
+  const fly = h("div", { class: "nav-flyout", "aria-hidden": "true" });
+  document.body.append(fly);
+  document.addEventListener("pointerover", e => {
+    const it = e.target.closest && e.target.closest(".layout.collapsed .nav .nav-item, .layout.collapsed .nav .nav-section");
+    if (!it || innerWidth <= 900) { fly.classList.remove("on"); return; }
+    const r = it.getBoundingClientRect();
+    const label = it.dataset.label || it.getAttribute("aria-label") || (it.querySelector(".nav-section-text") || {}).textContent || "";
+    const n = it.dataset.key ? navBadges.data[it.dataset.key] : 0;
+    fly.replaceChildren(label, n ? h("span", { class: "nav-badge" }, String(n)) : "");
+    fly.style.left = `${r.right + 12}px`; fly.style.top = `${r.top + r.height / 2}px`;
+    fly.classList.add("on");
+  });
+  document.addEventListener("pointerout", e => { if (!e.relatedTarget || !e.relatedTarget.closest || !e.relatedTarget.closest(".layout.collapsed .nav")) fly.classList.remove("on"); });
+})();
+
+function scheduleNavBadges() {
+  if (Date.now() - navBadges.at > 60000 || navBadges.guild !== state.guildId) loadNavBadges();
+  clearInterval(navBadges.timer);
+  navBadges.timer = setInterval(() => { if (!document.hidden) loadNavBadges(); }, 120000);
+}
+
 function renderShell() {
   pending.items = [];
   pending.deferred = false;
@@ -1642,10 +1723,10 @@ function renderShell() {
     announce: "pink", overview: "green", log: "blue", settings: "cyan", access: "amber" };
   const navButton = ([key, ic, label]) => h("button", {
     // Tooltip only when the menu is collapsed to icons (labels are visible otherwise)
-    class: `nav-item tone-${NAV_TONES[key] || "violet"}${state.tab === key ? " active" : ""}`, title: collapsed ? label : null, "aria-label": label,
+    class: `nav-item tone-${NAV_TONES[key] || "violet"}${state.tab === key ? " active" : ""}`, "data-key": key, "data-label": label, "aria-label": label,
     "aria-current": state.tab === key ? "page" : null,
-    onclick: async () => { if (!await leavePage()) return; state.tab = key; store.set("gb.tab", key); renderShell(); }
-  }, icon(ic, 18), h("span", { class: "nav-label" }, label));
+    onclick: async () => { if (!await leavePage()) return; state.tab = key; store.set("gb.tab", key); closeDrawer(); renderShell(); }
+  }, icon(ic, 18), h("span", { class: "nav-label" }, label), h("span", { class: "nav-badge" }));
   // Groups fold by a click on their title (remembered); "Owner tools" is folded by default; the active tab's group stays open
   const folded = (() => { try { return new Set(JSON.parse(store.get("gb.navFold") || '["Owner tools"]')); } catch { return new Set(["Owner tools"]); } })();
   const navItems = [];
@@ -1664,7 +1745,7 @@ function renderShell() {
     const [secIcon, secTone] = SECTION_LOOK[sec.name] || ["layers", "violet"];
     const group = h("div", { class: `nav-group tone-${secTone}${active ? " current" : ""}${folded.has(sec.name) && !active ? " folded" : ""}` });
     const head = h("button", { class: "nav-section", type: "button", "aria-expanded": String(!group.classList.contains("folded")),
-      title: collapsed ? sec.name : active ? null : sec.tabs.map(t => t[2]).join(" · "),
+      title: collapsed || active ? null : sec.tabs.map(t => t[2]).join(" · "), "aria-label": sec.name,
       onclick: () => {
         if (active) return; // the open tab's group can't fold
         const isFolded = group.classList.toggle("folded");
@@ -1676,13 +1757,23 @@ function renderShell() {
       h("span", { class: "nav-section-text" }, sec.name),
       active ? h("span", { class: "nav-here", "aria-label": "Current section" })
         : [h("span", { class: "nav-count" }, String(sec.tabs.length)), icon("chevron-down", 14, "nav-fold")]);
-    group.append(head, h("div", { class: "nav-group-items" }, sec.tabs.map(navButton)));
+    // Items sit in an inner box so folding can animate the height (grid 1fr ↔ 0fr)
+    group.append(head, h("div", { class: "nav-group-items" }, h("div", { class: "nav-group-inner" }, sec.tabs.map(navButton))));
     navItems.push(group);
   }
   const collapseBtn = h("button", { class: "nav-item nav-collapse", title: collapsed ? "Expand menu" : "Collapse menu",
     onclick: async () => { if (!await leavePage()) return; store.set("gb.navCollapsed", collapsed ? "0" : "1"); renderShell(); } },
     icon(collapsed ? "panel-left-open" : "panel-left-close", 18), h("span", { class: "nav-label" }, "Collapse"));
   const nav = h("nav", { class: "nav", "aria-label": "Sections" }, navItems, h("div", { class: "nav-footer" }, collapseBtn));
+  // Keep the sidebar where it was scrolled (the shell is rebuilt on every page switch) and keep the active page in view
+  nav.addEventListener("scroll", () => { navScrollTop = nav.scrollTop; }, { passive: true });
+  requestAnimationFrame(() => {
+    nav.scrollTop = navScrollTop;
+    const act = nav.querySelector(".nav-item.active");
+    if (act) { const r = act.getBoundingClientRect(), n = nav.getBoundingClientRect(); if (r.top < n.top + 8 || r.bottom > n.bottom - 70) act.scrollIntoView({ block: "center" }); }
+    applyNavBadges();
+  });
+  scheduleNavBadges();
   const main = h("main", { class: "main" });
   layout.append(nav, h("div", { class: "nav-backdrop", onclick: closeDrawer }), main);
 
@@ -3437,7 +3528,7 @@ async function renderStats(card, projectKey = null) {
         h("div", {}, h("b", {}, st.fill == null ? "—" : `${st.fill}%`), h("span", {}, "seats filled")),
         h("div", { title: `${st.attendanceMarked} marked seat(s)` }, h("b", {}, st.attendance == null ? "—" : `${st.attendance}%`), h("span", {}, "came (of marked)"))),
       h("div", { class: "dash-grid" },
-        st.by.length >= 2 ? h("div", { class: "dash-chart wide" }, h("h3", {}, `Groups and people per ${st.monthly ? "month" : "week"}`),
+        (st.by || []).length >= 2 ? h("div", { class: "dash-chart wide" }, h("h3", {}, `Groups and people per ${st.monthly ? "month" : "week"}`),
           h("div", { class: "chart-legend" }, h("span", {}, h("i", { style: `background:${DASH.c}` }), "groups"), h("span", {}, h("i", { style: `background:${DASH.d}` }), "people in them")),
           fitChart(w => barChart(st.by, [{ key: "groups", label: "groups", color: DASH.c }, { key: "people", label: "people", color: DASH.d }], st.monthly, 180, w))) : null,
         h("div", { class: "dash-chart" }, h("h3", {}, "By activity"),
@@ -3445,7 +3536,7 @@ async function renderStats(card, projectKey = null) {
         people("Top players", st.topPlayers.slice(0, 10), p => [h("span", { class: "muted small" }, `came ${p.attended} · ${rel(p)}`), h("b", {}, String(p.groups))]),
         people("Top organizers", st.topOrganizers, p => [h("b", {}, String(p.organized))]),
         people("Most no-shows", st.noShows, p => [h("span", { class: "muted small" }, rel(p)), h("b", { class: "danger-num" }, String(p.noShows))]),
-        st.groups >= 15 ? h("div", { class: "dash-chart wide" }, h("h3", {}, "When groups play (server time)"), heatMap(st.heat)) : null));
+        st.groups >= 15 && st.heat ? h("div", { class: "dash-chart wide" }, h("h3", {}, "When groups play (server time)"), heatMap(st.heat)) : null));
   };
   period.addEventListener("change", load);
   card.replaceChildren(h("div", { class: "card-head" }, h("h2", {}, "📈 Statistics"), period),
