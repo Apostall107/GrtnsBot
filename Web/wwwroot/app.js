@@ -1639,13 +1639,13 @@ function summonButtons(after) {
   };
   let busy = false, timer = 0;
   function fly(opts) {
-    // Sometimes (≈15%) a successful escape ends with a show: instead of just leaving the screen it casts a spell.
+    // Often (40%) a successful escape ends with a show: instead of just leaving the screen it casts a spell.
     // The owner can summon it with a guaranteed spell (opts.finale: a spell or "random").
     let forced = opts && typeof opts === "object" ? opts.finale : null;
     if (forced && busy) return toast("The robot is already flying — wait until it's gone.", "warn");
     if (busy || document.hidden || !state.me) return schedule();
     if (forced === "random") forced = SPELLS[Math.floor(Math.random() * SPELLS.length)][0];
-    const finale = forced || (Math.random() < .15 ? SPELLS[Math.floor(Math.random() * SPELLS.length)][0] : null);
+    const finale = forced || (Math.random() < .4 ? SPELLS[Math.floor(Math.random() * SPELLS.length)][0] : null);
     const M = BOT; // only our robot flies (the cat is retired)
     const A = area(), W = M.w, H = M.h;
     // Starts just outside the page area: mostly left↔right, sometimes up↕down. While it flies, clicks within 200 px
