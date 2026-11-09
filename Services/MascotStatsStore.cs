@@ -55,7 +55,7 @@ public sealed class MascotStatsStore
     /// <summary>Most achievements: geometric, from 5 doubling each grade.</summary>
     public static readonly int[] PowerTiers = [5, 10, 20, 40, 80, 160, 320];
     /// <summary>Each single spell: an easier climb.</summary>
-    public static readonly int[] SpellTiers = [1, 2, 3, 5, 7, 10, 15];
+    public static readonly int[] SpellTiers = [1, 3, 5, 10, 15, 25, 40];
     /// <summary>Legendary casts (and each legendary combination).</summary>
     public static readonly int[] LegendTiers = [1, 2, 3, 4, 5, 7, 10];
 
