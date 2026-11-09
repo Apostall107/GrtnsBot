@@ -391,31 +391,6 @@ public static class BotTextCatalog
         T("char.nameTooLong", "Rename: name too long", "Name: up to {max} characters.", "{max}", 300);
         T("char.duplicate", "Rename: name taken", "You already have a character with this name.", null, 300);
 
-        // ================= Verification (captcha) =================
-        Group("Verification (captcha)");
-        T("captcha.title", "Title", "🤖 Verification required", null, Title);
-        T("captcha.text", "Text", "Before using the bot, type the code from the picture.\n{howto}\nClick **Enter code**. Case and spaces don't matter. Can't read it? Click **New picture**.\n\nAttempts left: **{attempts}**", "{howto}, {attempts}", 3000);
-        T("captcha.length", "How to read: length", "The picture has **{length} characters**{rows}.", "{length}, {rows}", 300);
-        T("captcha.rows", "How to read: rows", " in {rows} rows", "{rows}", 100, optional: true);
-        T("captcha.mirrored", "How to read: mirrored", " Every character is **mirrored** — read them left to right as usual.", null, 300, optional: true);
-        T("captcha.timeLimit", "Time limit line", "⏱️ Time limit: {time} — after that the attempt counts as wrong.", "{time}", 300);
-        C("color.captcha", "Stripe color", 0xE67E22);
-        T("captcha.enter", "“Enter code” button", "Enter code", null, Button);
-        T("captcha.new", "“New picture” button", "New picture", null, Button);
-        T("captcha.modalTitle", "Window: title", "Verification", null, ModalTitle);
-        T("captcha.modalLabel", "Window: field", "Code from the picture", null, ModalTitle);
-        T("captcha.modalHint", "Window: placeholder", "Spaces are allowed, e.g. K7MRQ A3XHT", null, 100);
-        T("captcha.passed", "Passed", "✅ Verified. Run your command again.", null, 500);
-        T("captcha.passedFor", "Passed (for some time)", "✅ Verified for {minutes} min. Run your command again.", "{minutes}", 500);
-        T("captcha.wrong", "Wrong code", "❌ Wrong code. Try the new picture.", null, 500);
-        T("captcha.timedOut", "Time ran out", "⏰ Time ran out — that counted as a wrong attempt. Try the new picture.", null, 500);
-        T("captcha.previousTimedOut", "Previous picture timed out", "⏰ Time ran out on the previous picture — that counted as a wrong attempt.", null, 500);
-        T("captcha.failed", "No attempts left", "⛔ No attempts left.", null, 300);
-        T("captcha.again", "Can use again", "You can use the bot again {time}.", "{time}", 300);
-        T("captcha.blocked", "Blocked", "⛔ You failed the verification. You can use the bot again {time}.", "{time}", 500);
-        T("captcha.timeoutBlocked", "Time ran out, blocked", "⛔ Time ran out and there are no attempts left. You can use the bot again {time}.", "{time}", 500);
-        T("captcha.expired", "Expired", "This verification has expired. Run your command again.", null, 500);
-
         // ================= Welcome & role panels =================
         Group("Welcome & role panels");
         T("welcome.applyButton", "Welcome: “Apply” link button", "Apply", null, Button);

@@ -108,7 +108,6 @@ public static partial class PanelApi
         // Только владелец бота (право Access не выдаётся другим)
         MapVoiceNow(guild.MapGroup("/voice-now").AddEndpointFilter(Require(PanelPermissions.Access)));
         MapCharacterTransfer(guild.MapGroup("/characters-transfer").AddEndpointFilter(Require(PanelPermissions.Access)));
-        MapCaptcha(api.MapGroup("/captcha").AddEndpointFilter(Require(PanelPermissions.Access)));
         MapBirthdays(guild.MapGroup("/birthdays").AddEndpointFilter(Require(PanelPermissions.Birthdays)));
         MapPages(guild.MapGroup("/pages").AddEndpointFilter(Require(PanelPermissions.Pages)));
         // Медиатека нужна всем, кто пишет посты: объявления, страницы, панели ролей, приветствие
