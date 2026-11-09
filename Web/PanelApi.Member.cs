@@ -313,10 +313,17 @@ public static partial class PanelApi
 
         // Сводка сервера для главной участника (только числа, без подробностей)
         g.MapGet("/summary", (ulong guildId, DiscordSocketClient client, LfgStore lfg, TicketStore tickets, TempVoiceStore voice,
-            GuildStatsStore stats, [Microsoft.AspNetCore.Mvc.FromServices] TimeService time) =>
+            GuildStatsStore stats, [Microsoft.AspNetCore.Mvc.FromServices] TimeService time,
+            [Microsoft.AspNetCore.Mvc.FromServices] TicketArchiveStore archive) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var groups = ActiveGroups(lfg, guildId);
+            // Tickets for everyone: how many were opened and processed in the last 7 days (+ opened per day for 14 days)
+            var now = DateTimeOffset.UtcNow;
+            var past = archive.Query(guildId, null, null, null, 0, int.MaxValue);
+            var openedAt = past.Select(e => e.OpenedAt).Concat(tickets.GetTickets(guildId).Select(t => t.CreatedAt)).Where(t => t > now.AddDays(-14)).ToList();
+            DateOnly Day(DateTimeOffset t) => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(t, time.Zone).DateTime);
+            var today = Day(now);
             return Results.Ok(new
             {
                 trends = GuildStatsService.Trends(stats, time, guildId, guild.MemberCount, tickets.GetTickets(guildId).Count),
@@ -324,6 +331,13 @@ public static partial class PanelApi
                 activeGroups = groups.Count,
                 recruiting = groups.Count(x => !x.IsFull),
                 openTickets = tickets.GetTickets(guildId).Count,
+                ticketWeek = new
+                {
+                    opened = openedAt.Count(t => t > now.AddDays(-7)),
+                    processed = past.Count(e => e.ClosedAt > now.AddDays(-7)),
+                    history = Enumerable.Range(0, 14).Select(i => today.AddDays(i - 13))
+                        .Select(d => new { date = d.ToString("yyyy-MM-dd"), value = openedAt.Count(t => Day(t) == d) })
+                },
                 voiceRooms = LiveRooms(guild, voice).Count
             });
         });

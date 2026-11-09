@@ -712,6 +712,7 @@ function trendRow(t) {
     const arrow = delta > 0 ? "▲" : delta < 0 ? "▼" : "•";
     return h("span", { class: `trend ${cls}`, title }, h("span", { class: "trend-num" }, delta === 0 ? "0" : `${Math.abs(delta)}${arrow}`), per);
   };
+  if (!("day" in t) && !("week" in t)) return h("div", { class: "trend-row" }, sparkline(t.history || []));   // sparkline only
   return h("div", { class: "trend-row" },
     chip(t.day, "24h", "Change since yesterday's daily snapshot"),
     chip(t.week, "7d", "Change since the snapshot 7 days ago"),
@@ -6461,7 +6462,10 @@ async function pageHome(main) {
     server.replaceChildren(sectionLabel("Server"), h("div", { class: "stats" },
       statCard("users", "Members", sum.server.members, sum.server.name, null, sum.trends.members),
       statCard("swords", "Active groups", sum.activeGroups, sum.recruiting ? `${sum.recruiting} recruiting` : "none recruiting", go("play")),
-      statCard("ticket", "Open tickets", sum.openTickets, "applications in progress", can("tickets") ? go("tickets") : null, sum.trends.tickets),
+      // Ticket staff see what's waiting for them; everyone else — how active applications were this week
+      can("tickets") || !sum.ticketWeek
+        ? statCard("ticket", "Open tickets", sum.openTickets, "applications in progress", can("tickets") ? go("tickets") : null, sum.trends.tickets)
+        : statCard("ticket", "Tickets · 7 days", sum.ticketWeek.opened, `opened · ${sum.ticketWeek.processed} processed`, null, { history: sum.ticketWeek.history }),
       statCard("headphones", "Voice rooms", sum.voiceRooms, "temporary rooms now", can("voice") ? go("voice") : null)));
   }).catch(e => server.replaceChildren(sectionLabel("Server"), errorState(e.message)));
 
