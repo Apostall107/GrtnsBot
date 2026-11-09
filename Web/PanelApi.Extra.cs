@@ -932,6 +932,8 @@ public static partial class PanelApi
         ("POST", "/birthdays/import", "birthdays", "Imported birthdays from a file"),
         ("POST", "/pages", "pages", "Created a channel page"),
         ("PUT", "/birthdays/panel", "birthdays", "Edited the birthday panel"),
+        ("PUT", "/birthdays/greeting", "birthdays", "Changed the birthday greeting post"),
+        ("POST", "/birthdays/greeting/now", "birthdays", "Posted the birthday greeting now"),
         ("POST", "/birthdays/panel/post", "birthdays", "Posted the birthday panel"),
         ("DELETE", "/birthdays/panel", "birthdays", "Removed the birthday panel"),
         ("POST", "/roles/panels/{id}/sync", "roles", "Synced role panel reactions"),

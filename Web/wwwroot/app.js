@@ -5851,7 +5851,8 @@ async function pageBirthdays(main) {
   const ioCard = h("div", { class: "card" });
   const listCard = h("div", { class: "card" }, skeletonLines(4));
   const panelCard = h("div", { class: "card" });
-  main.append(setCard, addCard, panelCard, ioCard, listCard);
+  const greetCard = h("div", { class: "card" });
+  main.append(setCard, greetCard, addCard, panelCard, ioCard, listCard);
 
   // Bulk import (one CSV/JSON file) and export of the current list
   const base = `/api/guilds/${state.guildId}/birthdays`;
@@ -5920,7 +5921,8 @@ async function pageBirthdays(main) {
       enabled.el,
       h("div", { class: "field" }, h("label", {}, "Member role (\"Участник\") — only its holders get the birthday role"), memberRole),
       h("div", { class: "field" }, h("label", {}, "Birthday role — given on the day, removed next day"), bdayRole),
-      h("div", { class: "field" }, h("label", {}, "Greeting channel (optional)"), channel),
+      h("div", { class: "field" }, h("label", {}, "Short line when the role is given (optional)"), channel,
+        h("span", { class: "muted small" }, "A one-line “Happy birthday, @name!” per person at the moment the role is given. For a prepared post at a set time with pictures and templates use Greeting post below.")),
       h("div", { class: "row", style: "margin-top:6px" }, save),
       h("p", { class: "muted small" }, "The bot's own role must be ABOVE the birthday role in the server's role list, or it can't assign it."));
   }
@@ -5963,6 +5965,78 @@ async function pageBirthdays(main) {
     await gApi("DELETE", `/birthdays/people/${id}`);
     toast(`${name}'s birthday removed.`); load();
   });
+
+  // Поздравительный пост в заданное время: упоминает КАЖДОГО именинника, шаблоны по очереди/случайно
+  function renderGreeting(gr) {
+    const enabled = toggle(!!gr.enabled, "Post a greeting every day there are birthdays");
+    const ch = channelSelect("text", "Channel…");
+    ch.value = gr.channelId || "";
+    const time = h("input", { type: "time", value: gr.time || "10:00" });
+    const mode = h("select", {},
+      h("option", { value: "shuffle" }, "Random, no repeats until all are used"),
+      h("option", { value: "random" }, "Random every time"),
+      h("option", { value: "sequence" }, "In turn (1 → 2 → 3 → 1 …)"));
+    mode.value = gr.mode || "shuffle";
+    const templates = (gr.templates || []).map(t => ({ ...t }));
+    const sampleUsers = (gr.today && gr.today.length ? gr.today : [{ id: "1", name: "Sataella" }, { id: "2", name: "NimoN" }]);
+    const mentionsMap = Object.fromEntries(sampleUsers.map(u => [`<@${u.id}>`, "@" + u.name]));
+    const render = text => {
+      const join = a => a.length <= 1 ? a.join("") : a.slice(0, -1).join(", ") + " & " + a[a.length - 1];
+      const users = join(sampleUsers.map(u => `<@${u.id}>`)), names = join(sampleUsers.map(u => u.name));
+      const out = (text || "").replace(/\{users\}/gi, users).replace(/\{names\}/gi, names).replace(/\{count\}/gi, String(sampleUsers.length))
+        .replace(/\{server\}/gi, (currentGuild() || {}).name || "Server");
+      return /\{users\}/i.test(text || "") ? out : `${users}\n${out}`;
+    };
+    const list = h("div", {});
+    const draw = () => list.replaceChildren(...(templates.length ? templates.map((t, i) => {
+      const name = h("input", { maxlength: "60", placeholder: `Template ${i + 1}`, value: t.name || "", style: "flex:1" });
+      name.addEventListener("input", () => { t.name = name.value; });
+      const on = toggle(t.enabled !== false, "on");
+      on.cb.addEventListener("change", () => { t.enabled = on.cb.checked; });
+      const ta = h("textarea", { rows: "4", maxlength: "20000", style: "width:100%", placeholder: "🎉 Happy birthday, {users}! The whole guild wishes you… (add a picture or GIF with 🖼 Image)" });
+      ta.value = t.text || "";
+      const prev = h("div", { class: "dc-frame compact" });
+      const upd = () => prev.replaceChildren(dcMessage({ content: resolveEmojiShortcodes(render(ta.value), emojiMapOf([])), mentions: mentionsMap }));
+      ta.addEventListener("input", () => { t.text = ta.value; upd(); });
+      const test = h("button", { class: "btn ghost sm", type: "button", title: "Send this template to your DM with you as the birthday person (save first)" }, icon("send", 14), "Test in DM");
+      test.addEventListener("click", () => act(test, async () => {
+        if (!t.id) return toast("Save first — then test.", "warn");
+        await gApi("POST", "/birthdays/greeting/test", { templateId: t.id }); toast("Sent to your DM.");
+      }));
+      const del = h("button", { class: "btn ghost sm", type: "button", title: "Remove template" }, icon("trash-2", 14));
+      del.addEventListener("click", () => { templates.splice(i, 1); draw(); });
+      upd();
+      return h("div", { class: "card", style: "margin:8px 0;padding:12px" },
+        h("div", { class: "row", style: "gap:8px;align-items:center;margin-bottom:6px" }, h("b", {}, `#${i + 1}`), name, on.el, test, del),
+        h("div", { class: "editor-layout" }, h("div", {}, ta, h("div", { class: "row", style: "gap:8px;margin-top:6px" }, mediaTextButton(ta))), h("div", { class: "editor-preview" }, prev)));
+    }) : [h("p", { class: "muted small" }, "No templates yet — add one.")]));
+    const add = h("button", { class: "btn secondary", type: "button" }, icon("plus", 14), "Add template");
+    add.addEventListener("click", () => { templates.push({ name: "", text: "🎉 Happy birthday, {users}! 🎂", enabled: true }); draw(); });
+    const save = h("button", { class: "btn" }, icon("check", 14), "Save greeting");
+    save.addEventListener("click", () => act(save, async () => {
+      await gApi("PUT", "/birthdays/greeting", { enabled: enabled.cb.checked, channelId: ch.value || null, time: time.value, mode: mode.value,
+        templates: templates.map(t => ({ id: t.id || null, name: t.name || "", text: t.text || "", enabled: t.enabled !== false })) });
+      toast("Greeting saved."); load();
+    }));
+    const now = h("button", { class: "btn ghost", title: "Post the greeting for today's birthday people right now (once more if it was already posted)" }, icon("megaphone", 14), "Post now");
+    now.addEventListener("click", () => act(now, async () => {
+      if (!await confirmDialog("Post the greeting now?", `For today's birthday people (${(gr.today || []).length}) in the chosen channel. Save your changes first.`, "Post", false)) return;
+      await gApi("POST", "/birthdays/greeting/now", {}); toast("Greeting posted."); load();
+    }));
+    draw();
+    greetCard.replaceChildren(
+      sectionLabel("Greeting post"),
+      h("p", { class: "muted small" },
+        "Every day at the set time (server time zone) the bot posts a greeting if someone has a birthday — each birthday person is mentioned personally (not the role). ",
+        "In the text: {users} — mentions of everyone (if missing, they go on the first line), {names} — their names, {count}, {server}, :emoji:, and pictures / GIFs with 🖼 Image."),
+      enabled.el,
+      h("div", { class: "row", style: "gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0" },
+        h("span", { class: "muted" }, "Channel"), ch, h("span", { class: "muted" }, "at"), time, h("span", { class: "muted" }, "· template:"), mode),
+      (gr.today && gr.today.length) ? h("p", { class: "small" }, "🎂 Today: ", ...gr.today.flatMap((m, i) => [i ? ", " : "", member(m)])) : h("p", { class: "muted small" }, "Nobody has a birthday today."),
+      gr.lastDate ? h("p", { class: "muted small" }, `Last greeting: ${gr.lastDate}`) : null,
+      list,
+      h("div", { class: "row", style: "gap:8px;flex-wrap:wrap;margin-top:8px" }, add, h("span", { class: "spacer" }), now, save));
+  }
 
   // Панель «Укажи свой ДР»: сообщение с кнопкой 🎂 — окно ввода даты, дата сразу попадает в список
   function renderPanel(p) {
@@ -6030,7 +6104,7 @@ async function pageBirthdays(main) {
   async function load() {
     let d;
     try { d = await gApi("GET", "/birthdays"); } catch (e) { setCard.replaceChildren(empty(e.message)); return; }
-    renderSettings(d); renderAdd(); renderPanel(d.panel || {}); renderList(d);
+    renderSettings(d); renderGreeting(d.greeting || {}); renderAdd(); renderPanel(d.panel || {}); renderList(d);
   }
   await load();
 }
@@ -6287,7 +6361,7 @@ function channelPageEditor(pageId, rolePanels, moduleKeys, reload, groups = []) 
 // ================= Media library =================
 
 /** Картинки/гифки для постов: лежат вложениями в служебном канале Discord; в текстах и полях — метка [img:имя]. */
-const MEDIA_PERMS = ["media", "announce", "pages", "roles", "welcome", "posts"];
+const MEDIA_PERMS = ["media", "announce", "pages", "roles", "welcome", "posts", "birthdays"];
 const MEDIA_TOKEN = /\[img:([A-Za-z0-9_\-]{1,40})\]/;
 const mediaLib = { items: [], map: new Map(), channelId: null, channel: null, maxMb: 10, loaded: null };
 

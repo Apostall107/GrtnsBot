@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using Discord;
@@ -19,6 +20,9 @@ public static partial class PanelApi
 {
     public sealed record BirthdaySettingsBody(bool Enabled, string? MemberRoleId, string? BirthdayRoleId, string? AnnounceChannelId);
     public sealed record BirthdayPersonBody(string? UserId, int Day, int Month, int? Year);
+    public sealed record BirthdayTemplateBody(string? Id, string? Name, string? Text, bool Enabled = true);
+    public sealed record BirthdayGreetingBody(bool Enabled, string? ChannelId, string? Time, string? Mode, List<BirthdayTemplateBody>? Templates);
+    public sealed record BirthdayGreetTestBody(string? TemplateId);
     public sealed record BirthdayPanelBody(string? Title, string? Text, string? Color, string? ChannelId = null, string? Button = null);
 
     /// <summary>Панель «Укажи свой день рождения»: embed + кнопка, открывающая окно ввода даты (как /birthday).</summary>
@@ -73,6 +77,16 @@ public static partial class PanelApi
                     channel = data.PanelChannelId is { } pc ? guild.GetTextChannel(pc)?.Name : null,
                     jumpUrl = data.PanelChannelId is { } c2 && data.PanelMessageId is { } m2 ? $"https://discord.com/channels/{guildId}/{c2}/{m2}" : null
                 },
+                greeting = new
+                {
+                    enabled = data.GreetEnabled,
+                    channelId = data.GreetChannelId?.ToString(),
+                    time = $"{data.GreetHour:00}:{data.GreetMinute:00}",
+                    mode = data.GreetMode,
+                    lastDate = data.GreetLastDate,
+                    templates = data.Templates.Select(t => new { id = t.Id, name = t.Name, text = t.Text, enabled = t.Enabled }),
+                    today = service.Celebrants(guildId).Select(u => Member(guild, u.Id))
+                },
                 count = people.Count,
                 people
             });
@@ -123,6 +137,65 @@ public static partial class PanelApi
                 withDate = pool.Count(u => data.People.ContainsKey(u.Id)),
                 members = list
             });
+        });
+
+        // Поздравительный пост: время, канал, режим выбора шаблона и сами шаблоны
+        g.MapPut("/greeting", (ulong guildId, BirthdayGreetingBody b, DiscordSocketClient client, [FromServices] BirthdayStore store) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            if (!TimeOnly.TryParseExact(b.Time ?? "", "HH:mm", System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.None, out var t)) return Error("Set the time as HH:mm.");
+            var channel = ParseId(b.ChannelId);
+            if (b.Enabled && (channel is null || guild.GetTextChannel(channel.Value) is null)) return Error("Choose the channel for the greeting.");
+            var templates = new List<BirthdayTemplate>();
+            foreach (var x in (b.Templates ?? []).Take(30))
+            {
+                var text = (x.Text ?? "").Trim();
+                if (text.Length == 0) continue;
+                if (text.Length > PostSplitter.MaxTotalLength) return Error("A template is too long.");
+                templates.Add(new BirthdayTemplate
+                {
+                    Id = string.IsNullOrWhiteSpace(x.Id) ? LfgBot.Models.IdGen.New() : x.Id!,
+                    Name = Tx.Clip((x.Name ?? "").Trim(), 60),
+                    Text = text,
+                    Enabled = x.Enabled
+                });
+            }
+            if (b.Enabled && !templates.Any(x => x.Enabled)) return Error("Add at least one enabled template.");
+            var mode = b.Mode is "random" or "sequence" or "shuffle" ? b.Mode : "shuffle";
+            store.UpdateSettings(guildId, s =>
+            {
+                // Поменяли время на более позднее сегодня — сегодняшний пост ещё может выйти
+                if (s.GreetHour != t.Hour || s.GreetMinute != t.Minute) s.GreetLastDate = null;
+                s.GreetEnabled = b.Enabled;
+                s.GreetChannelId = channel;
+                s.GreetHour = t.Hour;
+                s.GreetMinute = t.Minute;
+                if (s.GreetMode != mode) { s.GreetUsed.Clear(); s.GreetNextIndex = 0; }
+                s.GreetMode = mode;
+                s.GreetUsed.RemoveAll(id => templates.All(x => x.Id != id));
+                s.Templates = templates;
+            });
+            return Results.Ok(new { ok = true });
+        });
+
+        // Тест шаблона: в ЛС тому, кто нажал, с ним самим как именинником
+        g.MapPost("/greeting/test", async (ulong guildId, BirthdayGreetTestBody b, ClaimsPrincipal user, DiscordSocketClient client,
+            [FromServices] BirthdayService service) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            if (guild.GetUser(user.UserId()!.Value) is not { } me) return Error("You are not on this server.");
+            return await service.PostGreetingAsync(guildId, b.TemplateId, me) is { } error ? Error(error) : Results.Ok(new { ok = true });
+        });
+
+        // Поздравить сегодняшних именинников прямо сейчас (если пост пропущен или хочется раньше)
+        g.MapPost("/greeting/now", async (ulong guildId, BirthdayGreetTestBody b, DiscordSocketClient client, [FromServices] BirthdayStore store,
+            [FromServices] BirthdayService service, [FromServices] TimeService time) =>
+        {
+            if (client.GetGuild(guildId) is null) return GuildNotFound();
+            if (await service.PostGreetingAsync(guildId, string.IsNullOrWhiteSpace(b.TemplateId) ? null : b.TemplateId, null) is { } error) return Error(error);
+            store.UpdateSettings(guildId, s => s.GreetLastDate = time.LocalNow.ToString("yyyy-MM-dd"));
+            return Results.Ok(new { ok = true });
         });
 
         // Панель дня рождения: сохранить тексты (опубликованная обновляется на месте)

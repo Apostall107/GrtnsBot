@@ -113,7 +113,7 @@ public static partial class PanelApi
         MapPages(guild.MapGroup("/pages").AddEndpointFilter(Require(PanelPermissions.Pages)));
         // Медиатека нужна всем, кто пишет посты: объявления, страницы, панели ролей, приветствие
         MapMedia(guild.MapGroup("/media").AddEndpointFilter(RequireAny(PanelPermissions.Media, PanelPermissions.Announce,
-            PanelPermissions.Pages, PanelPermissions.Roles, PanelPermissions.Welcome, PanelPermissions.Posts)));
+            PanelPermissions.Pages, PanelPermissions.Roles, PanelPermissions.Welcome, PanelPermissions.Posts, PanelPermissions.Birthdays)));
     }
 
     // ================= Общее: сводка, роли, каналы, участники =================

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using LfgBot.Models;
 using Microsoft.Extensions.Configuration;
 
 namespace LfgBot.Services;
@@ -29,6 +30,15 @@ public sealed class Birthday
     }
 }
 
+/// <summary>Шаблон поздравительного поста: текст с {users}, картинки — [img:имя] из медиатеки.</summary>
+public sealed class BirthdayTemplate
+{
+    public string Id { get; set; } = IdGen.New();
+    public string Name { get; set; } = "";
+    public string Text { get; set; } = "";
+    public bool Enabled { get; set; } = true;
+}
+
 /// <summary>Настройки и список дней рождения одного сервера.</summary>
 public sealed class GuildBirthdays
 {
@@ -45,6 +55,19 @@ public sealed class GuildBirthdays
     public string? PanelText { get; set; }
     public string? PanelColor { get; set; }
     public string? PanelButton { get; set; }
+
+    // ---- Поздравительный пост в заданное время ----
+    public bool GreetEnabled { get; set; }
+    public ulong? GreetChannelId { get; set; }
+    public int GreetHour { get; set; } = 10;
+    public int GreetMinute { get; set; }
+    /// <summary>random — случайный; sequence — по очереди; shuffle — случайный без повторов, пока не пройдут все.</summary>
+    public string GreetMode { get; set; } = "shuffle";
+    public List<BirthdayTemplate> Templates { get; set; } = [];
+    public int GreetNextIndex { get; set; }
+    public List<string> GreetUsed { get; set; } = [];
+    /// <summary>Локальная дата последнего поздравления (yyyy-MM-dd) — не больше одного поста в день.</summary>
+    public string? GreetLastDate { get; set; }
     public ulong? PanelChannelId { get; set; }
     public ulong? PanelMessageId { get; set; }
     /// <summary>Дни рождения: Discord ID → дата.</summary>
