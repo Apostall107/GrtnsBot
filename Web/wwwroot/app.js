@@ -1611,28 +1611,17 @@ async function logout() {
   document.documentElement.addEventListener("pointerleave", () => { x = -1; schedule(); });
 })();
 
-// ----- Easter egg: now and then a mascot flies across the page — the neon cat or our little robot (from the bot's icon).
+// ----- Easter egg: now and then our little Greatness robot (from the bot's icon) flies across the page.
 // It flies over the page area (not the sidebar); while it flies, clicks within 200 px of it are ignored.
 (function mascots() {
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const px = (rows, col, y0 = 0) => rows.flatMap((r, y) => [...r].map((c, x) => col[c] ? `<rect x="${x}" y="${y + y0}" width="1.02" height="1.02" fill="${col[c]}"/>` : "")).join("");
-  const CAT = {
-    name: "cat", w: 72, h: 48, rotate: true,
-    svg: (() => {
-      const R = ["...........o...o..", "..........obo.obo.", "..........obbbbbbo", "o.........obebbebo", "bo.......obbbpbbbo", ".bo..oooobbbbbbbo.",
-        "..bobbbbbbbbbbbo..", "...obbbbbbbbbbo...", "...obblbbbblbbo...", "....oooooooooo...."];
-      const L = [["....ob...ob..ob.ob", "....oo...oo..oo.oo"], [".....ob.ob...ob.ob", ".....oo.oo...oo.oo"]];
-      const C = { o: "#2A1660", b: "#8B6CFF", l: "#C9B6FF", e: "#FFE66D", p: "#F06A9A" };
-      return `<svg viewBox="0 0 18 12" width="72" height="48" shape-rendering="crispEdges" aria-hidden="true">${px(R, C)}<g class="cat-legs a">${px(L[0], C, 10)}</g><g class="cat-legs b">${px(L[1], C, 10)}</g></svg>`;
-    })(),
-    lines: ["Meow! A Greatness spirit was caught ✨", "The cat approves of your guild 💜", "+1 luck for the next raid 🎲", "Purr… your GS feels higher already", "Neon cat says: don't forget to mark attendance 😼"]
-  };
   const BOT = {
-    name: "robot", w: 84, h: 108, rotate: false,
+    name: "robot", w: 84, h: 114, rotate: false,
     // Our bot from its icon, drawn in full: crown with a blue crystal, hooded face with glowing eyes (they blink),
     // gold pauldrons, a robe with a gold hem and a "G" emblem, a glowing orb in hand, little feet that step
-    svg: "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 -4 120 154\" width=\"84\" height=\"108\" aria-hidden=\"true\"> <defs> <linearGradient id=\"gbCry\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#E6F4FF\"/><stop offset=\".5\" stop-color=\"#7CC4FF\"/><stop offset=\"1\" stop-color=\"#2F6FD6\"/></linearGradient> <linearGradient id=\"gbGold\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFE9A3\"/><stop offset=\".45\" stop-color=\"#E8B84A\"/><stop offset=\"1\" stop-color=\"#9C6A1E\"/></linearGradient> <radialGradient id=\"gbHood\" cx=\".35\" cy=\".25\" r=\".9\"><stop offset=\"0\" stop-color=\"#6A4BC4\"/><stop offset=\".45\" stop-color=\"#3A2478\"/><stop offset=\"1\" stop-color=\"#160C33\"/></radialGradient> <linearGradient id=\"gbRobe\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#4A2E92\"/><stop offset=\"1\" stop-color=\"#1E1240\"/></linearGradient> <radialGradient id=\"gbFace\" cx=\".5\" cy=\".4\" r=\".7\"><stop offset=\"0\" stop-color=\"#140A2A\"/><stop offset=\"1\" stop-color=\"#030108\"/></radialGradient> <radialGradient id=\"gbEye\" cx=\".5\" cy=\".4\" r=\".6\"><stop offset=\"0\" stop-color=\"#FFFFFF\"/><stop offset=\".45\" stop-color=\"#E2D6FF\"/><stop offset=\"1\" stop-color=\"#9B7BFF\"/></radialGradient> <radialGradient id=\"gbOrb\" cx=\".4\" cy=\".35\" r=\".7\"><stop offset=\"0\" stop-color=\"#FFFFFF\"/><stop offset=\".35\" stop-color=\"#D9C9FF\"/><stop offset=\".75\" stop-color=\"#9B6BFF\"/><stop offset=\"1\" stop-color=\"#6A3BD6\"/></radialGradient> <filter id=\"gbGlow\" x=\"-50%\" y=\"-50%\" width=\"200%\" height=\"200%\"><feGaussianBlur stdDeviation=\"2.2\" result=\"b\"/><feMerge><feMergeNode in=\"b\"/><feMergeNode in=\"SourceGraphic\"/></feMerge></filter> </defs> <g class=\"gb-feet\"> <ellipse class=\"gb-foot l\" cx=\"47\" cy=\"142\" rx=\"8\" ry=\"4.5\" fill=\"#2A1A55\" stroke=\"#0E0720\" stroke-width=\"1.5\"/> <ellipse class=\"gb-foot r\" cx=\"73\" cy=\"142\" rx=\"8\" ry=\"4.5\" fill=\"#2A1A55\" stroke=\"#0E0720\" stroke-width=\"1.5\"/> </g> <path d=\"M30,100 Q20,112 22,124\" fill=\"none\" stroke=\"#2C1B5E\" stroke-width=\"9\" stroke-linecap=\"round\"/> <circle cx=\"22.5\" cy=\"125\" r=\"5\" fill=\"url(#gbGold)\" stroke=\"#6E4A14\" stroke-width=\"1.2\"/> <path d=\"M34,96 L86,96 L97,136 Q60,148 23,136 Z\" fill=\"url(#gbRobe)\" stroke=\"#0E0720\" stroke-width=\"2\" stroke-linejoin=\"round\"/> <path d=\"M48,100 L44,138 M72,100 L76,138 M60,100 L60,142\" stroke=\"#5C3DB0\" stroke-width=\"1.2\" opacity=\".55\"/> <path d=\"M24,134 Q60,146 96,134\" fill=\"none\" stroke=\"url(#gbGold)\" stroke-width=\"3.2\" stroke-linecap=\"round\"/> <circle cx=\"60\" cy=\"114\" r=\"9\" fill=\"url(#gbGold)\" stroke=\"#6E4A14\" stroke-width=\"1.4\"/> <path d=\"M64.5,110.5 A5.2,5.2 0 1 0 64.8,117.6 L64.8,114.6 L61,114.6\" fill=\"none\" stroke=\"#5A3A0E\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/> <path d=\"M14,104 Q16,90 34,90 L42,96 Q36,108 22,110 Q14,110 14,104Z\" fill=\"url(#gbGold)\" stroke=\"#6E4A14\" stroke-width=\"1.5\"/> <path d=\"M106,104 Q104,90 86,90 L78,96 Q84,108 98,110 Q106,110 106,104Z\" fill=\"url(#gbGold)\" stroke=\"#6E4A14\" stroke-width=\"1.5\"/> <path d=\"M20,100 Q28,96 36,96\" stroke=\"#FFF2C4\" stroke-width=\"1.4\" fill=\"none\" opacity=\".7\"/> <path d=\"M100,100 Q92,96 84,96\" stroke=\"#FFF2C4\" stroke-width=\"1.4\" fill=\"none\" opacity=\".7\"/> <path d=\"M22,70 C22,45 40,34 60,34 C80,34 98,45 98,70 C98,86 92,95 84,99 L36,99 C28,95 22,86 22,70Z\" fill=\"url(#gbHood)\" stroke=\"#0E0720\" stroke-width=\"2\"/> <path d=\"M30,56 C34,44 46,39 58,38\" fill=\"none\" stroke=\"#8C6CFF\" stroke-width=\"1.6\" stroke-linecap=\"round\" opacity=\".7\"/> <ellipse cx=\"60\" cy=\"71\" rx=\"28\" ry=\"21\" fill=\"url(#gbFace)\"/> <ellipse cx=\"60\" cy=\"71\" rx=\"28\" ry=\"21\" fill=\"none\" stroke=\"#000\" stroke-opacity=\".6\" stroke-width=\"2\"/> <g class=\"gb-eyes\" filter=\"url(#gbGlow)\"> <ellipse cx=\"48\" cy=\"72\" rx=\"6.2\" ry=\"7.4\" fill=\"url(#gbEye)\"/> <ellipse cx=\"72\" cy=\"72\" rx=\"6.2\" ry=\"7.4\" fill=\"url(#gbEye)\"/> </g> <g class=\"gb-blink\"><ellipse cx=\"48\" cy=\"72\" rx=\"7\" ry=\"8\" fill=\"#08040F\"/><ellipse cx=\"72\" cy=\"72\" rx=\"7\" ry=\"8\" fill=\"#08040F\"/> <path d=\"M42,73 Q48,75 54,73 M66,73 Q72,75 78,73\" stroke=\"#B9A2FF\" stroke-width=\"1.6\" fill=\"none\" stroke-linecap=\"round\"/></g> <path d=\"M33,40 L30,20 L41,30 L48,14 L55,27 L60,22 L65,27 L72,14 L79,30 L90,20 L87,40 Z\" fill=\"url(#gbGold)\" stroke=\"#6E4A14\" stroke-width=\"1.6\" stroke-linejoin=\"round\"/> <rect x=\"32\" y=\"36\" width=\"56\" height=\"7\" rx=\"2\" fill=\"url(#gbGold)\" stroke=\"#6E4A14\" stroke-width=\"1.4\"/> <circle cx=\"44\" cy=\"39.5\" r=\"2\" fill=\"#B35CFF\"/><circle cx=\"76\" cy=\"39.5\" r=\"2\" fill=\"#B35CFF\"/><circle cx=\"60\" cy=\"39.5\" r=\"2.2\" fill=\"#4FB0FF\"/> <g filter=\"url(#gbGlow)\"> <polygon points=\"60,0 69,14 60,30 51,14\" fill=\"url(#gbCry)\" stroke=\"#1F4FA8\" stroke-width=\"1.2\"/> <polygon points=\"60,2 64,13 60,26\" fill=\"#FFFFFF\" opacity=\".55\"/> </g> <path d=\"M90,100 Q102,104 104,114\" fill=\"none\" stroke=\"#2C1B5E\" stroke-width=\"9\" stroke-linecap=\"round\"/> <circle cx=\"104\" cy=\"115\" r=\"5\" fill=\"url(#gbGold)\" stroke=\"#6E4A14\" stroke-width=\"1.2\"/> <circle class=\"gb-orb-glow\" cx=\"104\" cy=\"100\" r=\"14\" fill=\"#9B6BFF\" opacity=\".28\"/> <circle cx=\"104\" cy=\"100\" r=\"9\" fill=\"url(#gbOrb)\" stroke=\"#5A2FC0\" stroke-width=\"1\" filter=\"url(#gbGlow)\"/> <path d=\"M100,96 Q103,93 107,95\" stroke=\"#fff\" stroke-width=\"1.4\" fill=\"none\" opacity=\".8\" stroke-linecap=\"round\"/> <g class=\"gb-sparks\" fill=\"#E9E1FF\"><circle cx=\"116\" cy=\"88\" r=\"1.3\"/><circle cx=\"92\" cy=\"86\" r=\"1\"/><circle cx=\"114\" cy=\"110\" r=\"1\"/></g> </svg>",
-    lines: ["Beep-boop! You caught the Greatness bot 🤖", "The bot salutes you, officer 👑", "Your tickets will be approved faster now (not really) 😄", "System check: guild morale 100% 💜", "Bot says: see you in the next raid ⚔️"]
+    svg: "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 -4 120 163\" width=\"84\" height=\"114\" aria-hidden=\"true\"> <defs> <linearGradient id=\"gbCry\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#E6F4FF\"/><stop offset=\".5\" stop-color=\"#7CC4FF\"/><stop offset=\"1\" stop-color=\"#2F6FD6\"/></linearGradient> <linearGradient id=\"gbGold\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFE9A3\"/><stop offset=\".45\" stop-color=\"#E8B84A\"/><stop offset=\"1\" stop-color=\"#9C6A1E\"/></linearGradient> <radialGradient id=\"gbHood\" cx=\".35\" cy=\".25\" r=\".9\"><stop offset=\"0\" stop-color=\"#6A4BC4\"/><stop offset=\".45\" stop-color=\"#3A2478\"/><stop offset=\"1\" stop-color=\"#160C33\"/></radialGradient> <linearGradient id=\"gbRobe\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#4A2E92\"/><stop offset=\"1\" stop-color=\"#1E1240\"/></linearGradient> <radialGradient id=\"gbFace\" cx=\".5\" cy=\".4\" r=\".7\"><stop offset=\"0\" stop-color=\"#140A2A\"/><stop offset=\"1\" stop-color=\"#030108\"/></radialGradient> <radialGradient id=\"gbEye\" cx=\".5\" cy=\".4\" r=\".6\"><stop offset=\"0\" stop-color=\"#FFFFFF\"/><stop offset=\".45\" stop-color=\"#E2D6FF\"/><stop offset=\"1\" stop-color=\"#9B7BFF\"/></radialGradient> <radialGradient id=\"gbOrb\" cx=\".4\" cy=\".35\" r=\".7\"><stop offset=\"0\" stop-color=\"#FFFFFF\"/><stop offset=\".35\" stop-color=\"#D9C9FF\"/><stop offset=\".75\" stop-color=\"#9B6BFF\"/><stop offset=\"1\" stop-color=\"#6A3BD6\"/></radialGradient> <filter id=\"gbGlow\" x=\"-50%\" y=\"-50%\" width=\"200%\" height=\"200%\"><feGaussianBlur stdDeviation=\"2.2\" result=\"b\"/><feMerge><feMergeNode in=\"b\"/><feMergeNode in=\"SourceGraphic\"/></feMerge></filter> </defs> <g class=\"gb-legs\"><g class=\"gb-leg l\"><rect x=\"42.5\" y=\"122\" width=\"9\" height=\"29\" rx=\"4\" fill=\"#2C1B5E\" stroke=\"#0E0720\" stroke-width=\"1.4\"/><path d=\"M43.5,146 L50.5,146\" stroke=\"url(#gbGold)\" stroke-width=\"2\" stroke-linecap=\"round\"/><ellipse cx=\"47\" cy=\"153\" rx=\"8.5\" ry=\"4.8\" fill=\"#2A1A55\" stroke=\"#0E0720\" stroke-width=\"1.5\"/><path d=\"M41,151.5 Q47,149 53,151.5\" stroke=\"#8C6CFF\" stroke-width=\"1.2\" fill=\"none\" opacity=\".8\"/></g><g class=\"gb-leg r\"><rect x=\"68.5\" y=\"122\" width=\"9\" height=\"29\" rx=\"4\" fill=\"#2C1B5E\" stroke=\"#0E0720\" stroke-width=\"1.4\"/><path d=\"M69.5,146 L76.5,146\" stroke=\"url(#gbGold)\" stroke-width=\"2\" stroke-linecap=\"round\"/><ellipse cx=\"73\" cy=\"153\" rx=\"8.5\" ry=\"4.8\" fill=\"#2A1A55\" stroke=\"#0E0720\" stroke-width=\"1.5\"/><path d=\"M67,151.5 Q73,149 79,151.5\" stroke=\"#8C6CFF\" stroke-width=\"1.2\" fill=\"none\" opacity=\".8\"/></g></g> <path d=\"M30,100 Q20,112 22,124\" fill=\"none\" stroke=\"#2C1B5E\" stroke-width=\"9\" stroke-linecap=\"round\"/> <circle cx=\"22.5\" cy=\"125\" r=\"5\" fill=\"url(#gbGold)\" stroke=\"#6E4A14\" stroke-width=\"1.2\"/> <path d=\"M34,96 L86,96 L97,136 Q60,148 23,136 Z\" fill=\"url(#gbRobe)\" stroke=\"#0E0720\" stroke-width=\"2\" stroke-linejoin=\"round\"/> <path d=\"M48,100 L44,138 M72,100 L76,138 M60,100 L60,142\" stroke=\"#5C3DB0\" stroke-width=\"1.2\" opacity=\".55\"/> <path d=\"M24,134 Q60,146 96,134\" fill=\"none\" stroke=\"url(#gbGold)\" stroke-width=\"3.2\" stroke-linecap=\"round\"/> <circle cx=\"60\" cy=\"114\" r=\"9\" fill=\"url(#gbGold)\" stroke=\"#6E4A14\" stroke-width=\"1.4\"/> <path d=\"M64.5,110.5 A5.2,5.2 0 1 0 64.8,117.6 L64.8,114.6 L61,114.6\" fill=\"none\" stroke=\"#5A3A0E\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/> <path d=\"M14,104 Q16,90 34,90 L42,96 Q36,108 22,110 Q14,110 14,104Z\" fill=\"url(#gbGold)\" stroke=\"#6E4A14\" stroke-width=\"1.5\"/> <path d=\"M106,104 Q104,90 86,90 L78,96 Q84,108 98,110 Q106,110 106,104Z\" fill=\"url(#gbGold)\" stroke=\"#6E4A14\" stroke-width=\"1.5\"/> <path d=\"M20,100 Q28,96 36,96\" stroke=\"#FFF2C4\" stroke-width=\"1.4\" fill=\"none\" opacity=\".7\"/> <path d=\"M100,100 Q92,96 84,96\" stroke=\"#FFF2C4\" stroke-width=\"1.4\" fill=\"none\" opacity=\".7\"/> <path d=\"M22,70 C22,45 40,34 60,34 C80,34 98,45 98,70 C98,86 92,95 84,99 L36,99 C28,95 22,86 22,70Z\" fill=\"url(#gbHood)\" stroke=\"#0E0720\" stroke-width=\"2\"/> <path d=\"M30,56 C34,44 46,39 58,38\" fill=\"none\" stroke=\"#8C6CFF\" stroke-width=\"1.6\" stroke-linecap=\"round\" opacity=\".7\"/> <ellipse cx=\"60\" cy=\"71\" rx=\"28\" ry=\"21\" fill=\"url(#gbFace)\"/> <ellipse cx=\"60\" cy=\"71\" rx=\"28\" ry=\"21\" fill=\"none\" stroke=\"#000\" stroke-opacity=\".6\" stroke-width=\"2\"/> <g class=\"gb-look\"><g class=\"gb-eyes\" filter=\"url(#gbGlow)\"> <ellipse cx=\"48\" cy=\"72\" rx=\"6.2\" ry=\"7.4\" fill=\"url(#gbEye)\"/> <ellipse cx=\"72\" cy=\"72\" rx=\"6.2\" ry=\"7.4\" fill=\"url(#gbEye)\"/> </g> <g class=\"gb-blink\"><ellipse cx=\"48\" cy=\"72\" rx=\"7\" ry=\"8\" fill=\"#08040F\"/><ellipse cx=\"72\" cy=\"72\" rx=\"7\" ry=\"8\" fill=\"#08040F\"/> <path d=\"M42,73 Q48,75 54,73 M66,73 Q72,75 78,73\" stroke=\"#B9A2FF\" stroke-width=\"1.6\" fill=\"none\" stroke-linecap=\"round\"/></g></g> <path d=\"M33,40 L30,20 L41,30 L48,14 L55,27 L60,22 L65,27 L72,14 L79,30 L90,20 L87,40 Z\" fill=\"url(#gbGold)\" stroke=\"#6E4A14\" stroke-width=\"1.6\" stroke-linejoin=\"round\"/> <rect x=\"32\" y=\"36\" width=\"56\" height=\"7\" rx=\"2\" fill=\"url(#gbGold)\" stroke=\"#6E4A14\" stroke-width=\"1.4\"/> <circle cx=\"44\" cy=\"39.5\" r=\"2\" fill=\"#B35CFF\"/><circle cx=\"76\" cy=\"39.5\" r=\"2\" fill=\"#B35CFF\"/><circle cx=\"60\" cy=\"39.5\" r=\"2.2\" fill=\"#4FB0FF\"/> <g filter=\"url(#gbGlow)\"> <polygon points=\"60,0 69,14 60,30 51,14\" fill=\"url(#gbCry)\" stroke=\"#1F4FA8\" stroke-width=\"1.2\"/> <polygon points=\"60,2 64,13 60,26\" fill=\"#FFFFFF\" opacity=\".55\"/> </g> <path d=\"M90,100 Q102,104 104,114\" fill=\"none\" stroke=\"#2C1B5E\" stroke-width=\"9\" stroke-linecap=\"round\"/> <circle cx=\"104\" cy=\"115\" r=\"5\" fill=\"url(#gbGold)\" stroke=\"#6E4A14\" stroke-width=\"1.2\"/> <circle class=\"gb-orb-glow\" cx=\"104\" cy=\"100\" r=\"14\" fill=\"#9B6BFF\" opacity=\".28\"/> <circle cx=\"104\" cy=\"100\" r=\"9\" fill=\"url(#gbOrb)\" stroke=\"#5A2FC0\" stroke-width=\"1\" filter=\"url(#gbGlow)\"/> <path d=\"M100,96 Q103,93 107,95\" stroke=\"#fff\" stroke-width=\"1.4\" fill=\"none\" opacity=\".8\" stroke-linecap=\"round\"/> <g class=\"gb-sparks\" fill=\"#E9E1FF\"><circle cx=\"116\" cy=\"88\" r=\"1.3\"/><circle cx=\"92\" cy=\"86\" r=\"1\"/><circle cx=\"114\" cy=\"110\" r=\"1\"/></g> </svg>",
+    lines: ["Beep-boop! You caught the Greatness bot 🤖", "Okay, okay, you got me! 😅", "Fast hands — worthy of a raid leader ⚡", "The bot salutes you, officer 👑", "Your tickets will be approved faster now (not really) 😄", "System check: guild morale 100% 💜", "Bot says: see you in the next raid ⚔️"]
   };
   const area = () => {
     const n = document.querySelector(".layout:not(.drawer-open) .nav"), r = n && n.getBoundingClientRect();
@@ -1642,7 +1631,7 @@ async function logout() {
   let busy = false, timer = 0;
   function fly() {
     if (busy || document.hidden || !state.me) return schedule();
-    const M = Math.random() < .5 ? CAT : BOT;
+    const M = BOT; // only our robot flies (the cat is retired)
     const A = area();
     // Any strip of the page: mostly left↔right, sometimes up↕down. While it flies, clicks within 200 px of it are ignored
     // (so you never hit a button by accident while trying to catch it).
@@ -1659,13 +1648,45 @@ async function logout() {
     const dist = Math.hypot(path.to[0] - path.from[0], path.to[1] - path.from[1]), dur = Math.max(4500, dist * 7.5);
     const turn = M.rotate ? { right: "", left: " flip", up: " up", down: " down" }[path.dir] : "";
     const el = h("div", { class: `mascot mascot-${M.name}`, title: "Catch me!" });
-    el.innerHTML = `<div class="mascot-bob${turn}">${M.svg}</div>`;
+    el.innerHTML = `<div class="mascot-dodge"><div class="mascot-bob${turn}">${M.svg}</div></div>`;
     document.body.append(el);
+    const dodge = el.firstChild, box = () => dodge.getBoundingClientRect();
+    // Our robot watches the cursor and is shy: when the cursor gets close it hops away (a few times — then it's tired and can be caught).
+    // Checked every frame, so it also reacts when it flies into a resting cursor.
+    const look = el.querySelector(".gb-look");
+    let off = [0, 0], hops = 0, near = false, lastHop = 0, ptr = null, raf = 0;
+    const onMove = e => { ptr = [e.clientX, e.clientY]; };
+    const tick = now => {
+      raf = requestAnimationFrame(tick);
+      if (!ptr || el.classList.contains("caught")) return;
+      const r = box(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      // eyes look toward the cursor
+      const ey = r.top + r.height * .46, dx = ptr[0] - cx, dy = ptr[1] - ey, L = Math.hypot(dx, dy) || 1, m = Math.min(1, L / 90);
+      if (look) look.style.transform = `translate(${(dx / L * 5 * m).toFixed(1)}px, ${(dy / L * 3.5 * m).toFixed(1)}px)`;
+      // distance from the cursor to the robot's edge (0 = on it)
+      const edge = Math.hypot(Math.max(r.left - ptr[0], 0, ptr[0] - r.right), Math.max(r.top - ptr[1], 0, ptr[1] - r.bottom));
+      if (edge > 110) { near = false; return; }
+      if (edge > 45 || hops >= 5 || (near && now - lastHop < 700)) return;
+      near = true; lastHop = now; hops++;
+      let vx = cx - ptr[0], vy = cy - ptr[1], v = Math.hypot(vx, vy);
+      if (v < 1) { const a = Math.random() * Math.PI * 2; vx = Math.cos(a); vy = Math.sin(a); v = 1; }
+      const jump = 150 + Math.random() * 40;
+      let nx = off[0] + vx / v * jump + (Math.random() * 30 - 15), ny = off[1] + vy / v * jump + (Math.random() * 30 - 15);
+      nx = Math.max(-r.left + off[0] + 8, Math.min(innerWidth - r.right + off[0] - 8, nx));   // stay on screen
+      ny = Math.max(-r.top + off[1] + 64, Math.min(innerHeight - r.bottom + off[1] - 8, ny));
+      off = [Math.max(-260, Math.min(260, nx)), Math.max(-260, Math.min(260, ny))];
+      dodge.style.transform = `translate(${off[0]}px, ${off[1]}px)`;
+      dodge.classList.remove("hop"); void dodge.offsetWidth; dodge.classList.add("hop");
+      if (hops >= 5) { el.classList.add("tired"); el.title = "It's tired — catch it!"; }
+    };
+    document.addEventListener("pointermove", onMove, { passive: true });
+    raf = requestAnimationFrame(tick);
+    const stopWatch = () => { cancelAnimationFrame(raf); document.removeEventListener("pointermove", onMove); };
     const [fx, fy] = path.from, [tx, ty] = path.to, mx = (fx + tx) / 2, my = (fy + ty) / 2;
     const anim = el.animate([{ transform: `translate(${fx}px, ${fy}px)`, opacity: 0 }, { opacity: 1, offset: .05 }, { transform: `translate(${mx}px, ${my}px)`, opacity: 1, offset: .5 },
       { opacity: 1, offset: .95 }, { transform: `translate(${tx}px, ${ty}px)`, opacity: 0 }], { duration: dur, easing: "linear" });
     const trail = setInterval(() => {
-      const r = el.getBoundingClientRect();
+      const r = box();
       const sx = path.dir === "right" ? r.left + 6 : path.dir === "left" ? r.right - 6 : r.left + r.width / 2;
       const sy = path.dir === "up" ? r.bottom - 6 : path.dir === "down" ? r.top + 6 : r.top + r.height / 2;
       const s = h("i", { class: `cat-spark${M === BOT && Math.random() < .4 ? " blue" : ""}`, style: `left:${sx + (Math.random() * 10 - 5)}px;top:${sy + (Math.random() * 10 - 5)}px` });
@@ -1674,17 +1695,17 @@ async function logout() {
     // Click guard: near the mascot (200 px) buttons, links and fields don't react — only the mascot does
     const guard = e => {
       if (!el.isConnected || (e.target.closest && e.target.closest(".mascot"))) return;
-      const r = el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const r = box(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
       if (e.clientX == null || Math.hypot(e.clientX - cx, e.clientY - cy) > 200) return;
       e.preventDefault(); e.stopImmediatePropagation();
     };
     const EVENTS = ["pointerdown", "mousedown", "pointerup", "mouseup", "click", "dblclick", "contextmenu"];
     EVENTS.forEach(t => document.addEventListener(t, guard, true));
-    const end = () => { clearInterval(trail); EVENTS.forEach(t => document.removeEventListener(t, guard, true)); el.remove(); busy = false; schedule(); };
+    const end = () => { clearInterval(trail); EVENTS.forEach(t => document.removeEventListener(t, guard, true)); stopWatch(); el.remove(); busy = false; schedule(); };
     anim.onfinish = end;
     el.addEventListener("click", () => {
-      anim.pause(); clearInterval(trail);
-      const r = el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      anim.pause(); clearInterval(trail); stopWatch();
+      const r = box(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
       for (let i = 0; i < 16; i++) {
         const a = i / 16 * Math.PI * 2, d = 40 + Math.random() * 40;
         const s = h("i", { class: `cat-spark big${M === BOT && i % 3 === 0 ? " blue" : ""}`, style: `left:${cx}px;top:${cy}px` });
@@ -6034,8 +6055,8 @@ async function pageSettings(main) {
       return ok;
     });
     save.addEventListener("click", tracker.save);
-    holder.append(tracker.attach(h("div", { class: "card" }, h("h2", {}, "😺 Easter egg"),
-      h("p", { class: "muted small" }, "Now and then the neon cat or the little Greatness robot flies across the site for everyone on this server. While it flies, buttons within 200 px of it don't react — clicking it catches it. People with 'reduce motion' turned on never see it."),
+    holder.append(tracker.attach(h("div", { class: "card" }, h("h2", {}, "🤖 Easter egg"),
+      h("p", { class: "muted small" }, "Now and then the little Greatness robot flies across the site for everyone on this server. It watches your cursor and hops away when you get close — after a few hops it gets tired and can be caught. While it flies, buttons within 200 px of it don't react. People with 'reduce motion' turned on never see it."),
       h("div", { class: "row", style: "align-items:flex-end" }, h("div", { class: "field", style: "margin:0" }, fieldLabel("Every … seconds on average (0 = off)"), h("div", { class: "row" }, secs, human)), save, preview))));
   }
 
