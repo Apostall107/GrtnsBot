@@ -2384,3 +2384,61 @@ input:not([type=checkbox]):not([type=radio]):focus, select:focus, textarea:focus
 /* Collapse always reachable: pinned to the bottom of the sidebar */
 .nav-footer { position: sticky; bottom: calc(-1 * var(--s3)); margin-bottom: calc(-1 * var(--s3)); padding-bottom: var(--s3); z-index: 2;
   background: #120E22; box-shadow: 0 -12px 18px 4px #120E22; }
+
+/* ===== Neon tuned down + a tighter pointer light ===== */
+/* Pointer light: small, bright at the cursor, falls off fast */
+.main .card, .stat, .quick-action {
+  background-image:
+    radial-gradient(60px circle at var(--mx, -999px) var(--my, -999px), rgba(240, 232, 255, .16), rgba(240, 232, 255, 0) 70%),
+    radial-gradient(180px circle at var(--mx, -999px) var(--my, -999px),
+      rgba(206, 188, 255, .26) 0%, rgba(176, 150, 255, .13) 14%, rgba(150, 120, 255, .05) 34%, rgba(139, 108, 255, 0) 58%),
+    linear-gradient(115deg, rgba(255, 255, 255, .07) 0%, rgba(255, 255, 255, .015) 22%, rgba(255, 255, 255, 0) 38%),
+    var(--gv-grain);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), inset 1px 0 0 rgba(255, 255, 255, .04), inset 0 -1px 0 rgba(0, 0, 0, .35),
+    0 16px 44px rgba(4, 2, 14, .5);
+}
+.stat, .home-hero, .attention-card {
+  background-image:
+    radial-gradient(150px circle at var(--mx, -999px) var(--my, -999px),
+      rgba(224, 210, 255, .22) 0%, rgba(176, 150, 255, .10) 18%, rgba(139, 108, 255, 0) 60%),
+    var(--gv-sheen),
+    radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--tone, var(--gv-violet)) 18%, transparent), transparent 60%),
+    var(--gv-grain);
+}
+/* The rim lights up only near the cursor; elsewhere it stays quiet */
+.card::before {
+  background:
+    radial-gradient(140px circle at var(--mx, -999px) var(--my, -999px), rgba(230, 220, 255, .85), rgba(176, 156, 255, 0) 70%),
+    linear-gradient(150deg, rgba(200, 184, 255, .38), rgba(176, 156, 255, .10) 24%, rgba(255, 255, 255, .03) 52%, rgba(224, 91, 208, .22) 100%);
+}
+.card:hover::before {
+  background:
+    radial-gradient(140px circle at var(--mx, -999px) var(--my, -999px), rgba(236, 228, 255, .95), rgba(176, 156, 255, 0) 70%),
+    linear-gradient(150deg, rgba(200, 184, 255, .45), rgba(176, 156, 255, .12) 24%, rgba(255, 255, 255, .04) 52%, rgba(224, 91, 208, .28) 100%);
+}
+.card::after { opacity: .55; box-shadow: 0 0 6px color-mix(in srgb, var(--tone, var(--gv-violet)) 45%, transparent); }
+.tone-chip, .stat-icon, .qa-icon, .es-icon, .mc-sec-ic, .att-ic {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone, var(--gv-violet)) 45%, transparent), 0 0 10px color-mix(in srgb, var(--tone, var(--gv-violet)) 28%, transparent);
+}
+.tone-chip .icon, .stat-icon .icon, .qa-icon .icon { filter: none; }
+.card-head h2 { text-shadow: none; }
+.page-head h1 { filter: drop-shadow(0 0 12px rgba(139, 108, 255, .22)); }
+.page-head h1 .icon { filter: drop-shadow(0 0 5px rgba(185, 162, 255, .55)); }
+.nav .nav-item.active { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), 0 0 0 1px color-mix(in srgb, var(--tone) 40%, transparent), 0 0 12px color-mix(in srgb, var(--tone) 18%, transparent); }
+.nav .nav-item.active::before { box-shadow: 0 0 8px 1px var(--tone); }
+.btn:not(.secondary):not(.ghost):not(.danger):not(.btn-refresh):not(.btn-guide) {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), 0 0 0 1px rgba(30, 10, 70, .4), 0 4px 14px rgba(110, 70, 240, .35);
+}
+.btn:not(.secondary):not(.ghost):not(.danger):not(.btn-refresh):not(.btn-guide):hover {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .26), 0 0 0 1px rgba(214, 200, 255, .4), 0 0 18px rgba(139, 108, 255, .45);
+}
+.btn.btn-refresh, .btn.btn-guide { box-shadow: none; }
+.seg-btn.active, .tabs .btn.active-tab {
+  box-shadow: inset 0 0 0 1px rgba(200, 186, 255, .55), 0 0 12px rgba(139, 108, 255, .28), inset 0 -2px 0 rgba(224, 91, 208, .7) !important;
+}
+.badge { box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 30%, transparent); }
+.topbar::after { height: 1px; filter: none; opacity: .7; }
+.nav-group.current { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04); }
+/* Background light a bit calmer */
+.gv-aurora i { opacity: .38; }
+.gv-aurora i:nth-child(2) { opacity: .22; } .gv-aurora i:nth-child(3) { opacity: .18; } .gv-aurora i:nth-child(4) { opacity: .2; }
