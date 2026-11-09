@@ -1762,7 +1762,7 @@ function summonButtons(after) {
     EVENTS.forEach(t => document.addEventListener(t, guard, true));
     let ended = false;
     // Achievements: the member caught it / saw it escape (with the spells it cast) — counted on the server
-    const report = body => { if (state.guildId) gApi("POST", "/me/mascot", body).catch(() => { /* just a game */ }); };
+    const report = body => state.guildId ? gApi("POST", "/me/mascot", body).catch(() => null) : Promise.resolve(null);
     function end() {
       if (ended) return; ended = true;
       if (!caughtIt && entered) report({ kind: "escaped", spells: castKinds, legendary: castLegend });
@@ -2466,17 +2466,19 @@ function summonButtons(after) {
         setTimeout(() => s.remove(), 720);
       }
       caughtIt = true;
-      let n = 0; try { n = Number(localStorage.getItem("gb.mascotsCaught") || localStorage.getItem("gb.catsCaught") || 0) + 1; localStorage.setItem("gb.mascotsCaught", String(n)); } catch { /* private mode */ }
+      // The count lives on the server (same as Achievements); catches this browser counted before are handed over once
+      let legacy = null;
+      try { if (!localStorage.getItem("gb.mascotsLegacySent")) { legacy = Number(localStorage.getItem("gb.mascotsCaught") || localStorage.getItem("gb.catsCaught") || 0) || null; localStorage.setItem("gb.mascotsLegacySent", "1"); } } catch { /* private mode */ }
       // Caught — but sometimes it strikes back with a spell as it vanishes (the owner's summon always does)
       const spell = forced ? finale : rollSpell(1.5);
       if (spell) {
         cast(spell);
-        report({ kind: "caught", quick: !tired, spells: castKinds, legendary: castLegend });
+        report({ kind: "caught", quick: !tired, spells: castKinds, legendary: castLegend, legacy });
         return;
       }
       el.classList.add("caught");
-      report({ kind: "caught", quick: !tired });
-      toast(`${M.lines[Math.floor(Math.random() * M.lines.length)]}${n > 1 ? ` (caught: ${n})` : ""}`);
+      const line = M.lines[Math.floor(Math.random() * M.lines.length)];
+      report({ kind: "caught", quick: !tired, legacy }).then(r => toast(`${line}${r && r.caught > 1 ? ` (caught: ${r.caught})` : ""}`));
       setTimeout(end, 650);
     }, { once: true });
   }

@@ -315,8 +315,8 @@ public static partial class PanelApi
         // The site mascot: the member caught the robot / saw it escape (with the spells it cast)
         g.MapPost("/mascot", (ulong guildId, MascotEventBody body, ClaimsPrincipal user, [FromServices] MascotStatsStore mascot) =>
         {
-            mascot.Record(guildId, user.UserId()!.Value, body.Kind ?? "", body.Quick, body.Spells, body.Legendary);
-            return Results.Ok();
+            var caught = mascot.Record(guildId, user.UserId()!.Value, body.Kind ?? "", body.Quick, body.Spells, body.Legendary, body.Legacy);
+            return Results.Ok(new { caught = caught ?? mascot.Get(guildId, user.UserId()!.Value).Caught });
         });
 
         // Achievements tab: my stats and the achievements (locked ones come without title and description)
@@ -728,7 +728,7 @@ public static partial class PanelApi
 }
 
 public sealed record MemberRolesBody(List<string>? RoleIds);
-public sealed record MascotEventBody(string? Kind, bool Quick, List<string>? Spells, bool Legendary);
+public sealed record MascotEventBody(string? Kind, bool Quick, List<string>? Spells, bool Legendary, int? Legacy = null);
 public sealed record JoinBody(string? Role, string? Character);
 public sealed record CharacterBody(string? Name);
 public sealed record CharacterProfileBody(string? ClassRoleId, string? Comment, int? Gs = null, int? Race = null, int? ServerId = null);

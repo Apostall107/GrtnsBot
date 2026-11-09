@@ -14,6 +14,8 @@ public sealed class MascotStats
     public Dictionary<string, int> Spells { get; set; } = [];
     public int Legendary { get; set; }
     public DateTimeOffset? Last { get; set; }
+    /// <summary>The catches counted only in the browser before the server kept stats were taken over (once).</summary>
+    public bool LegacyImported { get; set; }
 }
 
 /// <summary>One achievement: id, icon, title, how to get it, and whether the stats unlock it.</summary>
@@ -90,23 +92,25 @@ public sealed class MascotStatsStore
             return _data.TryGetValue($"{guildId}:{userId}", out var s) ? JsonSerializer.Deserialize<MascotStats>(JsonSerializer.Serialize(s))! : new MascotStats();
     }
 
-    /// <summary>Record an event from the site. false — ignored (too fast after the previous one / nothing valid).</summary>
-    public bool Record(ulong guildId, ulong userId, string kind, bool quick, IEnumerable<string>? spells, bool legendary)
+    /// <summary>Record an event from the site; returns the member's catches after it (null — ignored: too fast / not valid).</summary>
+    public int? Record(ulong guildId, ulong userId, string kind, bool quick, IEnumerable<string>? spells, bool legendary, int? legacyCaught = null)
     {
         lock (_lock)
         {
             var key = $"{guildId}:{userId}";
             if (!_data.TryGetValue(key, out var s)) _data[key] = s = new MascotStats();
             var now = DateTimeOffset.UtcNow;
-            if (s.Last is { } last && now - last < TimeSpan.FromSeconds(3)) return false;   // one robot at a time — no spam
+            if (s.Last is { } last && now - last < TimeSpan.FromSeconds(3)) return null;   // one robot at a time — no spam
             s.Last = now;
             if (kind == "caught")
             {
+                // once: catches the browser counted before the server kept stats (capped)
+                if (!s.LegacyImported) { s.LegacyImported = true; if (legacyCaught is > 0) s.Caught = Math.Max(s.Caught, Math.Min(legacyCaught.Value, 500)); }
                 s.Caught++;
                 if (quick) s.QuickCatches++;
             }
             else if (kind == "escaped") s.Escaped++;
-            else return false;
+            else return null;
             // spells it cast — when it escaped or, now and then, when it was caught
             var valid = (spells ?? []).Distinct().Where(k => Spells.Any(x => x.Key == k)).Take(2).ToList();
             foreach (var k in valid) s.Spells[k] = s.Spells.GetValueOrDefault(k) + 1;
@@ -114,7 +118,7 @@ public sealed class MascotStatsStore
             var dir = Path.GetDirectoryName(Path.GetFullPath(_path));
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
             DataFiles.Save(_path, JsonSerializer.Serialize(_data, JsonOptions));
-            return true;
+            return s.Caught;
         }
     }
 }
