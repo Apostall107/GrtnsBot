@@ -64,6 +64,9 @@ async function act(button, fn, okText) {
   try {
     const result = await fn();
     if (okText) toast(typeof okText === "function" ? okText(result) : okText);
+    // A short green flash on the button that did it
+    if (button && button.isConnected) { button.classList.remove("ok-flash"); void button.offsetWidth; button.classList.add("ok-flash");
+      setTimeout(() => button.classList.remove("ok-flash"), 1100); }
     return result;
   } catch (e) {
     toast(e.message || String(e), "error");
@@ -288,7 +291,10 @@ function roleChip(r, onRemove) {
     onRemove ? h("button", { title: "Remove", onclick: () => onRemove() }, "×") : null);
 }
 
-function empty(text) { return h("div", { class: "empty" }, text); }
+/** Empty list / table: the same dashed box everywhere. */
+function empty(text) { return h("div", { class: "empty-state empty-inline" }, h("span", { class: "es-icon" }, icon("inbox", 18)), h("div", { class: "muted" }, text)); }
+/** Load error (not an empty list). */
+function errorState(text) { return h("div", { class: "empty-state error-state" }, h("span", { class: "es-icon" }, icon("triangle-alert", 18)), h("div", {}, text)); }
 
 // ================= Dialogs =================
 
@@ -317,7 +323,7 @@ async function memberCard(userId) {
   d.replaceChildren(h("div", { class: "mc-loading" }, h("span", { class: "mc-avatar mc-skel" }), h("div", { class: "muted" }, "Loading…")));
   if (!d.open) d.showModal();
   let c;
-  try { c = await gApi("GET", `/members/${userId}/card`); } catch (e) { d.replaceChildren(empty(e.message)); return; }
+  try { c = await gApi("GET", `/members/${userId}/card`); } catch (e) { d.replaceChildren(errorState(e.message)); return; }
   const m = c.member;
   const accent = (c.roles.find(r => r.color && r.color !== "#000000" && r.color !== "#99aab5") || {}).color || "#8b6cff";
   d.style.setProperty("--mc", accent);
@@ -378,10 +384,16 @@ async function memberCard(userId) {
             g.reserve ? h("span", { class: "badge wait" }, "reserve") : null)))) : none("Not in any group right now.")),
       sec("calendar-clock", "teal", "Attendance · 90 days", null, at ? h("div", {},
         h("div", { class: "mc-att" },
-          h("div", { class: "mc-att-bar" }, h("i", { class: "ok", style: `width:${at.groups ? 100 * at.attended / at.groups : 0}%` }),
-            h("i", { class: "no", style: `width:${at.groups ? 100 * at.noShows / at.groups : 0}%` })),
-          h("b", { class: "mc-att-rate" }, at.rate == null ? "—" : `${at.rate}%`)),
-        h("div", { class: "muted small" }, `${at.groups} group(s) · ${at.organized} organized · ${at.attended} came · ${at.noShows} no-show · ${at.unmarked} unmarked`))
+          // Bar = all groups: came · no-show · not marked by the organizer; % = came among the marked ones
+          h("div", { class: "mc-att-bar", title: `${at.attended} came · ${at.noShows} no-show · ${at.unmarked} not marked` },
+            h("i", { class: "ok", style: `width:${at.groups ? 100 * at.attended / at.groups : 0}%` }),
+            h("i", { class: "no", style: `width:${at.groups ? 100 * at.noShows / at.groups : 0}%` }),
+            h("i", { class: "un", style: `width:${at.groups ? 100 * at.unmarked / at.groups : 0}%` })),
+          h("div", { class: "mc-att-rate" }, h("b", {}, at.rate == null ? "—" : `${at.rate}%`), h("span", {}, "of marked"))),
+        h("div", { class: "mc-att-legend" },
+          h("span", {}, h("i", { class: "ok" }), `${at.attended} came`), h("span", {}, h("i", { class: "no" }), `${at.noShows} no-show`),
+          h("span", {}, h("i", { class: "un" }), `${at.unmarked} not marked`)),
+        h("div", { class: "muted small" }, `${at.groups} group(s) · ${at.organized} organized`))
         : none("No groups in the last 90 days.")),
       sec("ticket", "amber", "Tickets", c.openTickets.length + c.pastTickets.length, c.openTickets.length || c.pastTickets.length ? capped([
         ...c.openTickets.map(t => h("div", { class: "mc-row" }, h("div", { class: "mc-row-main" }, h("b", { title: t.project }, t.project),
@@ -570,7 +582,7 @@ function armoryPickDialog(name, servers, race, serverId, initialHits = null) {
           h("b", {}, x.name), h("span", { class: "muted small" }, [x.server, x.className, x.level ? `Lv ${x.level}` : null].filter(Boolean).join(" · ")),
           exact(x) ? h("span", { class: "chip" }, "exact name") : null))
           : [empty("Nobody with this name — check the faction and server.")]));
-      } catch (e) { list.replaceChildren(empty(e.message)); }
+      } catch (e) { list.replaceChildren(errorState(e.message)); }
     };
     go.addEventListener("click", search);
     input.addEventListener("keydown", e => { if (e.key === "Enter") search(); });
@@ -628,7 +640,7 @@ function pickMemberDialog(title) {
         list.replaceChildren(...(members.length ? members.map(m =>
           h("button", { onclick: () => { d.close(); resolve(m); } }, member(m), h("span", { class: "muted small" }, m.username ? `@${m.username}` : ""))) :
           [empty("Nobody found.")]));
-      } catch (e) { list.replaceChildren(empty(e.message)); }
+      } catch (e) { list.replaceChildren(errorState(e.message)); }
     };
     const input = h("input", { placeholder: "Search by name…", oninput: e => { clearTimeout(timer); timer = setTimeout(() => search(e.target.value), 250); } });
     d.replaceChildren(h("h2", {}, title), input, list,
@@ -743,7 +755,46 @@ function skeletonStat() { return h("div", { class: "stat" }, h("div", { class: "
 const EMOJI_ICONS = { "➕": "plus", "💾": "save", "🗑️": "trash-2", "🗑": "trash-2", "✏️": "pencil", "📌": "pin", "👁": "eye", "✅": "check",
   "✕": "x", "✖": "x", "✖️": "x", "🔍": "search", "↩️": "undo-2", "📅": "calendar", "🕒": "clock", "🔊": "volume-2", "📋": "clipboard-list", "⬇️": "download", "⬆️": "upload", "👤": "user-round", "🔎": "search",
   "⚙️": "settings", "🎨": "palette", "🎮": "gamepad-2", "🌐": "globe", "📣": "megaphone", "📝": "file-pen-line", "📨": "send", "🔒": "lock",
-  "🔓": "lock-open", "🔁": "repeat", "📁": "folder", "📄": "file-text", "📢": "megaphone", "🔄": "refresh-cw" };
+  "🔓": "lock-open", "🔁": "repeat", "📁": "folder", "📄": "file-text", "📢": "megaphone", "🔄": "refresh-cw", "↩": "undo-2", "📈": "trending-up", "↑": "chevron-up", "↓": "chevron-down", "👑": "crown", "↻": "refresh-cw", "❔": "circle-help", "🧩": "layers", "✉️": "mail-plus" };
+/**
+ * One look for cards, row actions and Save buttons, whatever page built them:
+ * a bare card title gets the standard header, Delete/Remove/Edit in rows become icon buttons, Save gets its icon.
+ */
+function normalizeUi(root) {
+  for (const hd of root.querySelectorAll(".card > h2:first-child, .card > h3:first-child, .card > .section-label:first-child")) {
+    if (hd.closest("dialog") || hd.parentElement.classList.contains("no-norm")) continue;
+    const title = hd.tagName === "H2" ? hd : h("h2", { class: hd.className.replace(/\bsection-label\b/, "").trim() || null }, ...hd.childNodes);
+    const head = h("div", { class: "card-head" });
+    hd.replaceWith(head);
+    head.append(title);
+  }
+  for (const b of root.querySelectorAll("td.actions > .btn:not([data-norm]), .list-row > .btn:not([data-norm]), .binding-row > .btn:not([data-norm]), .actions-row > .btn:not([data-norm])")) {
+    b.dataset.norm = "1";
+    const t = b.textContent.trim();
+    const label = t.replace(/^[^\p{L}]+/u, "");
+    if (/^(Delete|Remove)$/.test(label) && !b.classList.contains("icon-only")) {
+      b.className = "btn ghost icon-only sm danger-text"; b.title = b.title || label; b.setAttribute("aria-label", label);
+      b.replaceChildren(icon("trash-2", 15));
+    } else if (/^Edit$/.test(label) && !b.classList.contains("icon-only")) {
+      b.className = "btn secondary icon-only sm"; b.title = b.title || "Edit"; b.setAttribute("aria-label", "Edit");
+      b.replaceChildren(icon("pencil", 15));
+    }
+  }
+  // Trash icon buttons are always red
+  for (const svg of root.querySelectorAll('.btn.icon-only > svg[data-icon="trash-2"]')) svg.parentElement.classList.add("danger-text");
+  // Save buttons: always the save icon
+  for (const b of root.querySelectorAll(".btn:not([data-save-norm])")) {
+    b.dataset.saveNorm = "1";
+    const first = b.firstChild;
+    if (first && first.nodeType === Node.TEXT_NODE && /^Save\b/.test(first.textContent.trim())) b.insertBefore(icon("save", 16), first);
+  }
+  // Chip "×" buttons → a proper small x icon
+  for (const x of root.querySelectorAll(".chip > button:not([data-norm])")) {
+    x.dataset.norm = "1";
+    if (x.textContent.trim() === "×") { x.replaceChildren(icon("x", 12)); x.classList.add("chip-x"); }
+  }
+}
+
 function iconizeButtons(root) {
   for (const btn of root.querySelectorAll(".btn, .tabs button")) {
     const first = btn.firstChild;
@@ -1107,7 +1158,7 @@ document.addEventListener("focusin", e => { if (e.target instanceof HTMLTextArea
 window.addEventListener("resize", () => document.querySelectorAll("textarea[data-autogrow]").forEach(autoGrow));
 
 /** Card headings: a leading emoji (or a known title) becomes a tone icon chip. */
-const HEADING_EMOJI = { "⚙️": "settings", "🎭": "drama", "🎮": "gamepad-2", "👥": "users", "💾": "database-backup", "📄": "file-text",
+const HEADING_EMOJI = { "🧩": "layers", "✉️": "mail-plus", "✉": "mail-plus", "⚙️": "settings", "🎭": "drama", "🎮": "gamepad-2", "👥": "users", "💾": "database-backup", "📄": "file-text",
   "📅": "calendar", "📈": "trending-up", "📋": "clipboard-list", "📝": "file-pen-line", "🔁": "repeat", "🗂️": "folder", "🗄️": "archive",
   "🔊": "headphones", "📢": "megaphone", "📌": "pin", "🎫": "ticket", "📣": "megaphone", "🔑": "key-round", "📊": "chart-column", "📜": "scroll-text" };
 const HEADING_TEXT = [["Activities", "swords"], ["Shared activities", "swords"], ["LFG panel", "pin"], ["Voice rooms", "headphones"],
@@ -1212,7 +1263,7 @@ let iconizeQueued = false;
 new MutationObserver(() => {
   if (iconizeQueued) return;
   iconizeQueued = true;
-  requestAnimationFrame(() => { iconizeQueued = false; decorateHeading(document.querySelector("main.main")); iconizeButtons(document.body); iconizeHeadings(document.body); enhanceControls(document.body); tidyHints(document.body); });
+  requestAnimationFrame(() => { iconizeQueued = false; decorateHeading(document.querySelector("main.main")); iconizeButtons(document.body); normalizeUi(document.body); iconizeHeadings(document.body); enhanceControls(document.body); tidyHints(document.body); });
 }).observe(document.body, { childList: true, subtree: true });
 
 // ================= Mentions: @ / # suggestions in text fields =================
@@ -1896,7 +1947,7 @@ async function pageAnnounce(main) {
   main.append(tplCard, schedCard, sentCard);
 
   let data;
-  try { data = await gApi("GET", "/announce"); } catch (e) { schedCard.replaceChildren(h("h2", {}, "📅 Scheduled"), empty(e.message)); return; }
+  try { data = await gApi("GET", "/announce"); } catch (e) { schedCard.replaceChildren(h("h2", {}, "📅 Scheduled"), errorState(e.message)); return; }
   const where = p => p.channel ? `${p.voice ? "🔊" : "#"} ${p.channel}` : "deleted channel";
   const short = t => t.length > 90 ? t.slice(0, 90) + "…" : t;
   const loadIntoForm = (p, edit) => {
@@ -2104,7 +2155,7 @@ async function pageOverview(main) {
       h("div", { class: "quick-actions" }, allTabs.filter(t => t[3] !== "member" && t[0] !== "overview" && can(t[3])).map(([key, ic, label]) =>
         h("button", { class: `quick-action ${toneOf(ic)}`, onclick: async () => { if (!await leavePage()) return; state.tab = key; store.set("gb.tab", key); renderShell(); } },
           h("span", { class: "qa-icon" }, icon(ic, 18)), h("span", { class: "qa-text" }, h("b", {}, label), h("span", { class: "muted small" }, "Open"))))));
-  } catch (e) { holder.replaceChildren(empty(e.message)); }
+  } catch (e) { holder.replaceChildren(errorState(e.message)); }
 }
 
 // ================= LFG =================
@@ -2335,7 +2386,7 @@ async function pageLfg(main) {
   try {
     const groups = (await gApi("GET", "/lfg/groups")).filter(g => mode === "all" || ofProject(g.projectKey));
     groupsBody.replaceChildren(groups.length ? groupsBoard(groups, mode === "all" ? projects : [], defKey) : empty("No active groups."));
-  } catch (e) { groupsBody.replaceChildren(empty(e.message)); }
+  } catch (e) { groupsBody.replaceChildren(errorState(e.message)); }
 }
 
 /** Rename an activity / change the role it pings. */
@@ -2699,7 +2750,7 @@ async function renderRecurring(card, acts, templates = [], projects = [], projec
     h("p", { class: "muted small" }, "Posted automatically on the chosen days, the set number of hours before the start."), body);
 
   let list;
-  try { list = await gApi("GET", "/lfg/recurring"); } catch (e) { body.replaceChildren(empty(e.message)); return; }
+  try { list = await gApi("GET", "/lfg/recurring"); } catch (e) { body.replaceChildren(errorState(e.message)); return; }
   // Only this project's schedules (no project = default project)
   if (projectKey) list = list.filter(r => (r.projectKey || defKey) === projectKey);
   if (!list.length) { body.replaceChildren(empty("No schedules yet.")); return; }
@@ -2747,7 +2798,7 @@ function recurringDialog(acts, r, templates = [], projects = [], projectKey = nu
 async function renderLfgSettings(card) {
   card.replaceChildren(h("h2", {}, "⚙️ LFG settings"), h("div", { class: "muted" }, "Loading…"));
   let s;
-  try { s = await gApi("GET", "/lfg/settings"); } catch (e) { card.replaceChildren(h("h2", {}, "⚙️ LFG settings"), empty(e.message)); return; }
+  try { s = await gApi("GET", "/lfg/settings"); } catch (e) { card.replaceChildren(h("h2", {}, "⚙️ LFG settings"), errorState(e.message)); return; }
 
   const zones = h("datalist", { id: "zones" }, s.zones.map(z => h("option", { value: z })));
   const zone = h("input", { list: "zones", placeholder: s.defaults.timeZone, value: s.timeZone || "", style: "width:260px" });
@@ -2789,7 +2840,7 @@ async function renderArmoryPrefs(card) {
   const title = "🔗 Official armory (AION 2)";
   card.replaceChildren(h("h2", {}, title), skeletonLines(3));
   let d;
-  try { d = await gApi("GET", "/lfg/armory"); } catch (e) { card.replaceChildren(h("h2", {}, title), empty(e.message)); return; }
+  try { d = await gApi("GET", "/lfg/armory"); } catch (e) { card.replaceChildren(h("h2", {}, title), errorState(e.message)); return; }
   if (!d.projects.length) { card.replaceChildren(h("h2", {}, title), empty("Create a project first (LFG → Projects).")); return; }
   const rows = d.projects.map(p => {
     const on = h("input", { type: "checkbox", class: "switch", checked: p.enabled, "aria-label": `Armory for ${p.name}` });
@@ -2840,7 +2891,7 @@ async function renderArmoryPrefs(card) {
 async function renderLfgPrefs(card) {
   card.replaceChildren(h("h2", {}, "🧩 Group options"), skeletonLines(3));
   let p;
-  try { p = await gApi("GET", "/lfg/prefs"); } catch (e) { card.replaceChildren(h("h2", {}, "🧩 Group options"), empty(e.message)); return; }
+  try { p = await gApi("GET", "/lfg/prefs"); } catch (e) { card.replaceChildren(h("h2", {}, "🧩 Group options"), errorState(e.message)); return; }
   const ready = toggle(p.readyCheck, "✅ “Ready” button in the reminder before the start — those who pressed it get 🟢 in the post, the organizer sees who didn't");
   const auto = h("input", { type: "number", min: "0", max: "1440", value: p.autoPromoteMinutes, style: "width:100px" });
   const gsOn = toggle(p.gsReminder, "📈 Weekly reminder to update GS");
@@ -2940,7 +2991,7 @@ async function renderClasses(card, projectList = [], projectKey = store.get("gb.
   card.replaceChildren(h("h2", {}, "🎭 Classes"), h("div", { class: "muted" }, "Loading…"));
   let data;
   const q = projectKey ? `?project=${encodeURIComponent(projectKey)}` : "";
-  try { data = await gApi("GET", `/lfg/classes${q}`); } catch (e) { card.replaceChildren(h("h2", {}, "🎭 Classes"), empty(e.message)); return; }
+  try { data = await gApi("GET", `/lfg/classes${q}`); } catch (e) { card.replaceChildren(h("h2", {}, "🎭 Classes"), errorState(e.message)); return; }
   // Common classes + each project's own (a project without its own uses the common list)
   const tabs = projectList.length && !opts.noTabs ? h("div", { class: "row", style: "margin-bottom:10px" },
     [["", "🌐 Common"], ...projectList.map(p => [p.key, `🎮 ${p.name}`])].map(([k, label]) =>
@@ -3099,7 +3150,7 @@ async function renderStats(card, projectKey = null) {
   const load = async () => {
     body.replaceChildren(h("div", { class: "muted" }, "Loading…"));
     let st;
-    try { st = await gApi("GET", `/lfg/stats?days=${period.value}${projectKey ? `&project=${encodeURIComponent(projectKey)}` : ""}`); } catch (e) { body.replaceChildren(empty(e.message)); return; }
+    try { st = await gApi("GET", `/lfg/stats?days=${period.value}${projectKey ? `&project=${encodeURIComponent(projectKey)}` : ""}`); } catch (e) { body.replaceChildren(errorState(e.message)); return; }
     const table = (title, rows, cols) => h("div", {}, h("h3", {}, title), rows.length
       ? h("table", { class: "table" }, h("tbody", {}, rows.map(r => h("tr", {}, cols.map(c => h("td", {}, c(r)))))))
       : empty("—"));
@@ -3380,7 +3431,7 @@ async function ticketPanelsSection(main, scope = null) {
   main.append(holder);
   async function load() {
     let d;
-    try { d = await gApi("GET", "/tickets/panels"); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
+    try { d = await gApi("GET", "/tickets/panels"); } catch (e) { holder.replaceChildren(errorState(e.message)); return; }
     const mainOf = k => d.groups.find(g => g.key === k);
     const mine = scope ? d.panels.filter(p => p.projectKey === scope) : d.panels.filter(p => !mainOf(p.projectKey));
     if (!scope && !mine.length) { holder.replaceChildren(); return; }
@@ -3523,7 +3574,7 @@ async function pageTickets(main) {
 
   // A tab per ticket project; ⚙️ General — ticket panel, all open tickets, archive
   let projects = [];
-  try { projects = await gApi("GET", "/tickets/projects"); } catch (e) { main.append(empty(e.message)); return; }
+  try { projects = await gApi("GET", "/tickets/projects"); } catch (e) { main.append(errorState(e.message)); return; }
   // Основные проекты — вкладки; подпроекты (заявка на ГВГ, разбор POV…) — вкладки внутри своего основного проекта
   const isMain = p => !p.parentKey || !projects.some(x => x.key === p.parentKey);
   const mains = projects.filter(isMain);
@@ -3607,7 +3658,7 @@ async function pageTickets(main) {
           h("td", { class: "actions" }, h("div", { class: "row-actions" }, a.approve, a.deny, a.more)));
         return row;
       })))) : emptyState("inbox", "No open tickets", "New applications appear here."));
-  } catch (e) { openBody.replaceChildren(empty(e.message)); }
+  } catch (e) { openBody.replaceChildren(errorState(e.message)); }
 }
 
 const ticketStatus = t => t.approvedBy ? h("span", { class: "badge ok" }, icon("check", 12), "Approved") : h("span", { class: "badge wait" }, icon("clock", 12), "Pending");
@@ -3724,7 +3775,10 @@ function sectionTabs(sections, storeKey) {
   const show = k => {
     cur = k; store.set(storeKey, k);
     buttons.forEach(b => b.classList.toggle("active", b.dataset.k === k));
-    sections.forEach(([sk, , , panel]) => { panel.style.display = sk === k ? "" : "none"; });
+    sections.forEach(([sk, , , panel]) => {
+      panel.style.display = sk === k ? "" : "none";
+      if (sk === k) { panel.classList.remove("tab-in"); void panel.offsetWidth; panel.classList.add("tab-in"); } // replay the fade-in
+    });
   };
   buttons.forEach(b => b.addEventListener("click", () => show(b.dataset.k)));
   show(cur);
@@ -4003,14 +4057,14 @@ async function pageVoice(main) {
     creatorsBody.replaceChildren(creators.length ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
       h("thead", {}, h("tr", {}, h("th", {}, "Channel"), h("th", {}, "Room name"), h("th", {}, "Limit"), h("th", {}, "Rooms appear"), h("th", {}))),
       h("tbody", {}, creators.map(creatorRow)))) : empty("None yet."));
-  } catch (e) { creatorsBody.replaceChildren(empty(e.message)); }
+  } catch (e) { creatorsBody.replaceChildren(errorState(e.message)); }
 
   try {
     const rooms = await gApi("GET", "/voice/rooms");
     roomsBody.replaceChildren(rooms.length ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
       h("thead", {}, h("tr", {}, h("th", {}, "Room"), h("th", {}, "Owner"), h("th", {}, "Inside"), h("th", {}))),
       h("tbody", {}, rooms.map(roomRow)))) : empty("No active rooms."));
-  } catch (e) { roomsBody.replaceChildren(empty(e.message)); }
+  } catch (e) { roomsBody.replaceChildren(errorState(e.message)); }
 }
 
 const ROOM_PLACEMENTS = [
@@ -4337,7 +4391,7 @@ function emojiField(value, emojis, onChange) {
 
 function sectionCard(ic, title, hint, ...body) {
   return h("div", { class: "card editor-block" },
-    h("div", { class: "card-head" }, h("h3", { class: "row", style: "gap:8px" }, icon(ic, 17), title)),
+    cardHead(ic, title),
     hint ? h("p", { class: "muted small" }, hint) : null, ...body);
 }
 
@@ -4358,7 +4412,7 @@ async function pageWelcome(main) {
   try {
     w = await gApi("GET", "/welcome");
     try { emojis = await gApi("GET", "/welcome/emojis"); } catch { /* unicode only */ }
-  } catch (e) { holder.replaceChildren(empty(e.message)); return; }
+  } catch (e) { holder.replaceChildren(errorState(e.message)); return; }
 
   const sample = {
     "{user}": "@NewMember", "{name}": "NewMember", "{username}": "newmember", "{server}": w.server.name,
@@ -4510,7 +4564,7 @@ async function pageRoles(main) {
   try {
     data = await gApi("GET", "/roles/panels");
     try { emojis = await gApi("GET", "/roles/emojis"); } catch { /* unicode only */ }
-  } catch (e) { holder.replaceChildren(empty(e.message)); return; }
+  } catch (e) { holder.replaceChildren(errorState(e.message)); return; }
 
   // Вкладки по проектам (как у страниц каналов): All · General · <проект>…; новая панель — в открытом проекте
   const groups = data.groups || [];
@@ -4773,7 +4827,7 @@ async function pageTexts(main, keys = null) {
   try {
     const panels = (await gApi("GET", "/texts")).filter(p => !keys || keys.includes(p.key));
     holder.replaceChildren(...panels.map(textCard));
-  } catch (e) { holder.replaceChildren(empty(e.message)); }
+  } catch (e) { holder.replaceChildren(errorState(e.message)); }
 }
 
 function textCard(p) {
@@ -4892,7 +4946,7 @@ async function pageBotTexts(main, groupFilter = null) {
   const holder = h("div", {}, skeletonLines(4));
   main.append(holder);
   let items;
-  try { items = await gApi("GET", "/texts/bot"); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
+  try { items = await gApi("GET", "/texts/bot"); } catch (e) { holder.replaceChildren(errorState(e.message)); return; }
   if (groupFilter) items = items.filter(i => groupFilter(i.group));
 
   const dirty = new Map(); // key → new value ("" = back to default)
@@ -5248,7 +5302,7 @@ async function pagePosts(main) {
   try {
     const panels = await gApi("GET", "/posts/panels");
     panelsBody.replaceChildren(...panels.map(panelGroup));
-  } catch (e) { panelsBody.replaceChildren(empty(e.message)); }
+  } catch (e) { panelsBody.replaceChildren(errorState(e.message)); }
 }
 
 function panelGroup(p) {
@@ -5290,7 +5344,7 @@ async function renderBotMessages(card, refreshScan = false) {
     h("div", { class: "muted" }, "Looking for the bot's messages…"));
   let channels;
   try { channels = await gApi("GET", `/posts/channels${refreshScan ? "?refresh=true" : ""}`); }
-  catch (e) { card.replaceChildren(head, empty(e.message)); return; }
+  catch (e) { card.replaceChildren(head, errorState(e.message)); return; }
   if (!channels.length) { card.replaceChildren(head, emptyState("message-square-text", "No bot messages found", "The bot hasn't posted in the channels it can read.")); return; }
 
   let current = store.get("gb.msgChannel") || "all";
@@ -5503,7 +5557,7 @@ async function pageSettings(main) {
         h("p", { class: "muted small" }, "Which DMs the bot may send on this server. All are off until you turn them on. The welcome DM is set in Welcome."),
         ...items.map(x => x.t.el), save);
       tracker.attach(dmCard);
-    }).catch(e => dmCard.replaceChildren(h("h2", {}, "✉️ Direct messages"), empty(e.message)));
+    }).catch(e => dmCard.replaceChildren(h("h2", {}, "✉️ Direct messages"), errorState(e.message)));
   }
 
   // Member roles of the selected server
@@ -5519,7 +5573,7 @@ async function pageSettings(main) {
     saveRoles.addEventListener("click", tracker.save);
     card.append(editor.el, h("div", { class: "row", style: "margin-top:12px" }, saveRoles));
     tracker.attach(card);
-  } catch (e) { card.append(empty(e.message)); }
+  } catch (e) { card.append(errorState(e.message)); }
 }
 
 // ================= Member: home =================
@@ -5548,7 +5602,7 @@ async function pageHome(main) {
       statCard("swords", "Active groups", sum.activeGroups, sum.recruiting ? `${sum.recruiting} recruiting` : "none recruiting", go("play")),
       statCard("ticket", "Open tickets", sum.openTickets, "applications in progress", can("tickets") ? go("tickets") : null, sum.trends.tickets),
       statCard("headphones", "Voice rooms", sum.voiceRooms, "temporary rooms now", can("voice") ? go("voice") : null)));
-  }).catch(e => server.replaceChildren(sectionLabel("Server"), empty(e.message)));
+  }).catch(e => server.replaceChildren(sectionLabel("Server"), errorState(e.message)));
 
   // D. Quick actions — only what this user can do
   const quick = [
@@ -5580,7 +5634,7 @@ async function pageHome(main) {
   right.append(ticketsCard, roomCard, prefsCard);
 
   let d;
-  try { d = await gApi("GET", "/me/home"); } catch (e) { groupsCard.replaceChildren(empty(e.message)); return; }
+  try { d = await gApi("GET", "/me/home"); } catch (e) { groupsCard.replaceChildren(errorState(e.message)); return; }
   const STATUS = { organizer: ["Organizer", "ok", "crown"], group: ["In the group", "ok", "check"], reserve: ["Reserve", "wait", "clock"] };
 
   groupsCard.replaceChildren(groupsCard.firstChild, d.groups.length ? h("div", { class: "list" }, d.groups.map(g => h("div", { class: "list-row" },
@@ -5641,7 +5695,7 @@ async function pageHome(main) {
         h("div", { class: "field", style: "margin:0" }, h("label", {}, "User limit"), pl),
         h("label", { class: "row", style: "margin-top:20px" }, pk, "Lock the room right away")),
       ps);
-  }).catch(e => prefsCard.append(empty(e.message)));
+  }).catch(e => prefsCard.append(errorState(e.message)));
 
   // My stats
   gApi("GET", "/me/stats").then(st => {
@@ -5660,7 +5714,7 @@ async function pageHome(main) {
           : r.attended === true ? h("span", { class: "badge ok" }, icon("check", 12), "Came")
           : r.attended === false ? h("span", { class: "badge lock" }, icon("x", 12), "No-show") : null)))
         : h("p", { class: "muted small" }, "Your finished groups will appear here."));
-  }).catch(e => statsCard.replaceChildren(statsCard.firstChild, empty(e.message)));
+  }).catch(e => statsCard.replaceChildren(statsCard.firstChild, errorState(e.message)));
 
   // My characters (default project)
   gApi("GET", "/me/characters").then(c => {
@@ -5673,7 +5727,7 @@ async function pageHome(main) {
           [ch.classRole && ch.classRole.name, ch.gs ? `GS ${ch.gs}` : null].filter(Boolean).join(" · ") || "no class yet")))))
         : emptyState("user-plus", "No characters yet", "Add your characters once — then sign up for groups in one click.",
           h("button", { class: "btn", onclick: go("chars") }, icon("plus", 16), "Add a character")));
-  }).catch(e => charsCard.replaceChildren(charsCard.firstChild, empty(e.message)));
+  }).catch(e => charsCard.replaceChildren(charsCard.firstChild, errorState(e.message)));
 }
 
 /** Apply for a project from the site (with the project's form, if enabled). */
@@ -5842,14 +5896,14 @@ async function pagePlay(main) {
         refresh();
       });
       createBody.replaceChildren(form.el, h("div", { class: "row" }, publish));
-    } catch (e) { createBody.replaceChildren(empty(e.message)); }
+    } catch (e) { createBody.replaceChildren(errorState(e.message)); }
   });
   main.insertBefore(createCard, holder);
   // Home → «Create a group» opens the form right away
   if (store.get("gb.openCreate") === "1") { store.set("gb.openCreate", ""); toggle.click(); }
 
   let data;
-  try { data = await gApi("GET", "/me/groups"); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
+  try { data = await gApi("GET", "/me/groups"); } catch (e) { holder.replaceChildren(errorState(e.message)); return; }
   if (tab !== "all") data.groups = data.groups.filter(g => g.projectKey === tab);
   const focus = store.get("gb.focusGroup");
   if (focus) store.set("gb.focusGroup", "");
@@ -6065,7 +6119,7 @@ async function pageChars(main) {
 
   let data;
   const wanted = store.get("gb.charProject") || "";
-  try { data = await gApi("GET", `/me/characters?project=${encodeURIComponent(wanted)}`); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
+  try { data = await gApi("GET", `/me/characters?project=${encodeURIComponent(wanted)}`); } catch (e) { holder.replaceChildren(errorState(e.message)); return; }
   const pq = data.project ? `?project=${encodeURIComponent(data.project)}` : "";
   const project = data.projects.find(p => p.key === data.project);
 
@@ -6096,7 +6150,7 @@ async function pageChars(main) {
         return h("div", { class: "pref-row" }, h("div", { class: "grow" }, h("b", {}, title), h("div", { class: "muted small" }, hint)), sw);
       }))
       : h("p", { class: "muted small" }, "The bot sends no DMs on this server right now — admins turn them on in Settings."));
-  }).catch(e => prefs.replaceChildren(cardHead("bell", "My notifications"), empty(e.message)));
+  }).catch(e => prefs.replaceChildren(cardHead("bell", "My notifications"), errorState(e.message)));
 
   const isCustom = ic => /^<a?:[^:]+:\d+>$/.test(ic || "");
   const ap = data.armoryProject && data.armoryProject.enabled ? data.armoryProject : null;
@@ -6251,7 +6305,7 @@ async function pageVoiceNow(main) {
   const load = async () => {
     if (state.tab !== "voicenow" || !document.body.contains(body)) return false;
     let d;
-    try { d = await gApi("GET", "/voice-now"); } catch (e) { body.replaceChildren(empty(e.message)); return true; }
+    try { d = await gApi("GET", "/voice-now"); } catch (e) { body.replaceChildren(errorState(e.message)); return true; }
     stamp.textContent = `${d.total} in voice · ${new Date().toLocaleTimeString()}`;
     if (!d.channels.length) { body.replaceChildren(emptyState("headphones", "Nobody in voice", "The page updates by itself.")); return true; }
     const byCat = new Map();
@@ -6295,7 +6349,7 @@ function pickBirthdayMember() {
           h("button", { onclick: () => { d.close(); resolve(x); } }, member(x.member),
             x.birthday ? h("span", { class: "chip", style: "margin-left:auto" }, x.birthday) : h("span", { class: "muted small", style: "margin-left:auto" }, "no date"))) :
           [empty(only.cb.checked ? "Everyone found already has a birthday." : "Nobody found.")]));
-      } catch (e) { list.replaceChildren(empty(e.message)); }
+      } catch (e) { list.replaceChildren(errorState(e.message)); }
     };
     const input = h("input", { placeholder: "Search by name…", style: "width:100%", oninput: () => { clearTimeout(timer); timer = setTimeout(search, 250); } });
     only.cb.addEventListener("change", search);
@@ -6331,9 +6385,9 @@ async function pageBirthdays(main) {
 
   // Bulk import (one CSV/JSON file) and export of the current list
   const base = `/api/guilds/${state.guildId}/birthdays`;
-  const csvBtn = h("a", { class: "btn", href: `${base}/export`, download: "" }, icon("download", 14), "Export CSV");
+  const csvBtn = h("a", { class: "btn secondary", href: `${base}/export`, download: "" }, icon("download", 14), "Export CSV");
   const impFile = h("input", { type: "file", accept: ".csv,.json,.txt,text/csv,text/plain,application/json" });
-  const impBtn = h("button", { class: "btn" }, icon("upload", 14), "Import file");
+  const impBtn = h("button", { class: "btn secondary" }, icon("upload", 14), "Import file");
   impBtn.addEventListener("click", () => act(impBtn, async () => {
     const f = impFile.files && impFile.files[0];
     if (!f) return toast("Choose a CSV or JSON file first.", "warn");
@@ -6575,7 +6629,7 @@ async function pageBirthdays(main) {
 
   async function load() {
     let d;
-    try { d = await gApi("GET", "/birthdays"); } catch (e) { setCard.replaceChildren(empty(e.message)); return; }
+    try { d = await gApi("GET", "/birthdays"); } catch (e) { setCard.replaceChildren(errorState(e.message)); return; }
     renderSettings(d); renderGreeting(d.greeting || {}); renderAdd(); renderPanel(d.panel || {}); renderList(d);
   }
   await load();
@@ -6642,7 +6696,7 @@ async function pageChannelPages(main) {
 
   async function load() {
     let d;
-    try { d = await gApi("GET", "/pages"); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
+    try { d = await gApi("GET", "/pages"); } catch (e) { holder.replaceChildren(errorState(e.message)); return; }
     // Вкладки по проектам: All · General · <проект>… — выбранная запоминается; новая страница создаётся в ней
     const groups = d.groups || [];
     const isGeneral = p => !p.projectKey || !groups.some(g => g.key === p.projectKey);
@@ -6826,7 +6880,7 @@ function channelPageEditor(pageId, rolePanels, moduleKeys, reload, groups = []) 
           h("p", { class: "muted small" }, "Update keeps unchanged blocks as they are (role panel reactions stay) and edits changed text in place. Discord keeps messages in post order, so moving blocks or inserting one in the middle re-posts the blocks from that point on — add new blocks at the end.")),
         h("div", { class: "page-edit-right" }, h("label", {}, "How the channel will look"), whole)),
       h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), save));
-  }).catch(e => d.replaceChildren(h("h2", {}, "Channel page"), empty(e.message),
+  }).catch(e => d.replaceChildren(h("h2", {}, "Channel page"), errorState(e.message),
     h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Close"))));
 }
 
@@ -6920,7 +6974,7 @@ function pickMedia(title = "Choose an image") {
     d.replaceChildren(...head(), h("div", { class: "muted" }, "Loading…"));
     d.showModal();
     loadMedia().then(() => { d.replaceChildren(...head(), ...body(), foot()); draw(); })
-      .catch(e => d.replaceChildren(...head(), empty(e.message), foot()));
+      .catch(e => d.replaceChildren(...head(), errorState(e.message), foot()));
   });
 }
 
@@ -6987,7 +7041,7 @@ async function pageMedia(main) {
     "Images and GIFs for the bot's posts. They are kept as attachments in a private Discord channel — the bot's server stores nothing. ",
     "In texts an image is a [img:name] line (the 🖼 Image button inserts it, or paste / drop a picture right into the text); in panels choose it with 🖼 next to the image field. ",
     "Each post gets its own copy of the file, so removing an image here doesn't break old posts."));
-  try { await loadMedia(); } catch (e) { main.append(empty(e.message)); return; }
+  try { await loadMedia(); } catch (e) { main.append(errorState(e.message)); return; }
   if (!mediaLib.channelId) { main.append(mediaSetup(() => renderShell())); return; }
 
   const fileInput = h("input", { type: "file", multiple: true, accept: "image/png,image/jpeg,image/gif,image/webp", style: "display:none" });
@@ -7062,7 +7116,7 @@ async function pageAccess(main) {
   main.append(holder);
 
   let data;
-  try { data = await api("GET", "/api/access"); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
+  try { data = await api("GET", "/api/access"); } catch (e) { holder.replaceChildren(errorState(e.message)); return; }
 
   const permChecks = (selected) => {
     const boxes = data.permissions.map(p => {
@@ -7591,7 +7645,7 @@ async function pageGuild(main) {
   main.append(holder);
   try {
     await ({ calendar: guildCalendar, attendance: guildAttendance, roster: guildRoster, inactive: guildInactive }[tab])(holder);
-  } catch (e) { holder.replaceChildren(empty(e.message)); }
+  } catch (e) { holder.replaceChildren(errorState(e.message)); }
 }
 
 /** "Add to Google Calendar" link for one event (2 hours by default). */
@@ -7807,7 +7861,7 @@ async function pageSchedule(main) {
     h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
   const holder = h("div", {}, h("div", { class: "card" }, skeletonLines(4)));
   main.append(holder);
-  try { await guildCalendar(holder, "/me/calendar", true); } catch (e) { holder.replaceChildren(empty(e.message)); }
+  try { await guildCalendar(holder, "/me/calendar", true); } catch (e) { holder.replaceChildren(errorState(e.message)); }
 }
 
 /** Member: guild roster of the member's projects (+ top active players, if the admins turned it on). */
@@ -7816,7 +7870,7 @@ async function pageMemberRoster(main) {
     h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
   const holder = h("div", {}, h("div", { class: "card" }, skeletonLines(4)));
   let guild;
-  try { guild = await gApi("GET", "/me/guild"); } catch (e) { main.append(empty(e.message)); return; }
+  try { guild = await gApi("GET", "/me/guild"); } catch (e) { main.append(errorState(e.message)); return; }
   const tabs = [["roster", "👥 Roster"]];
   if (guild.top) tabs.push(["top", "🏆 Top players"]);
   let tab = store.get("gb.rosterTab") || "roster";
@@ -7826,7 +7880,7 @@ async function pageMemberRoster(main) {
   try {
     if (tab === "top") memberTop(holder, guild.top, guild);
     else memberRoster(holder, guild);
-  } catch (e) { holder.replaceChildren(empty(e.message)); }
+  } catch (e) { holder.replaceChildren(errorState(e.message)); }
 }
 
 /** Project tabs for the member pages: all of the member's projects (even one — so it's clear what is shown). */

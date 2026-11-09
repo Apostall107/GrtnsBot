@@ -125,6 +125,7 @@ function icon(name, size = 18, cls = "") {
   svg.setAttribute("stroke-linecap", "round");
   svg.setAttribute("stroke-linejoin", "round");
   svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("data-icon", name);
   svg.setAttribute("class", `icon${cls ? " " + cls : ""}`);
   svg.innerHTML = ICONS[name] || ICONS["circle-dot"];
   return svg;

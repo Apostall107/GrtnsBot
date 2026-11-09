@@ -2003,3 +2003,71 @@ dialog.member-card-dialog { width: min(760px, calc(100vw - 16px)); container-typ
 .mc-more:hover { color: var(--text-primary); border-color: color-mix(in srgb, var(--tone) 50%, transparent); }
 .mc-more-roles { cursor: pointer; font-weight: 700; color: var(--mc); border-color: color-mix(in srgb, var(--mc) 45%, transparent); }
 @container (max-width: 520px) { .mc-discord { margin-top: 0; } .mc-who { padding-top: 44px; } }
+
+/* ===== One style for forms, tables and lists ===== */
+.empty-state.empty-inline { padding: 12px 14px; gap: 12px; }
+.empty-state .es-icon { display: grid; place-items: center; width: 34px; height: 34px; flex: none; border-radius: 10px;
+  color: var(--text-secondary); background: rgba(255, 255, 255, .05); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08); }
+.empty-state.empty-inline > div { min-width: 0; }
+.error-state { border-color: rgba(248, 113, 113, .45); background: rgba(248, 113, 113, .06); color: #fca5a5; }
+.error-state .es-icon { color: #f87171; background: rgba(248, 113, 113, .12); }
+.btn.primary { /* same as the default button — the class is used in a few places */ }
+.chip .chip-x { display: inline-grid; place-items: center; width: 18px; height: 18px; padding: 0; margin-left: 2px; border-radius: 50%; color: var(--text-secondary); }
+.chip .chip-x:hover { color: #fff; background: rgba(248, 113, 113, .35); }
+/* Row actions line up the same in every table and list */
+.table td.actions { white-space: nowrap; }
+.table td.actions .btn + .btn, .table td.actions .btn + .menu-wrap { margin-left: 4px; }
+.table td.actions .btn:not(.icon-only) { min-height: 32px; }
+/* Card header inside cards that had a plain title: no extra gap above */
+.card > .card-head:first-child > h2 { margin: 0; }
+.card > .card-head:first-child > h2.section-label { font-size: inherit; letter-spacing: normal; text-transform: none; color: inherit; margin: 0; }
+.mc-att-bar i.un { background: repeating-linear-gradient(135deg, rgba(255,255,255,.22) 0 4px, rgba(255,255,255,.1) 4px 8px); }
+.mc-att-rate { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; }
+.mc-att-rate b { font-size: 20px; color: #6ee7b7; }
+.mc-att-rate span { font-size: 10.5px; color: var(--text-secondary); }
+.mc-att-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
+.mc-att-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.mc-att-legend i { width: 9px; height: 9px; border-radius: 3px; }
+.mc-att-legend i.ok { background: #1edb8f; } .mc-att-legend i.no { background: #ff6b7a; } .mc-att-legend i.un { background: rgba(255,255,255,.25); }
+
+/* =====================================================================
+   Motion: short, GPU-only (transform/opacity), nothing runs forever.
+   Turned off for people who asked their system for less motion.
+   ===================================================================== */
+@keyframes rise-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes dialog-in { from { opacity: 0; transform: translateY(10px) scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes ok-flash { 0% { box-shadow: 0 0 0 0 rgba(30, 219, 143, .65); } 100% { box-shadow: 0 0 0 10px rgba(30, 219, 143, 0); } }
+
+/* Page: blocks come in one after another */
+.main > * { animation: rise-in .32s cubic-bezier(.2, .7, .2, 1) both; }
+.main > *:nth-child(2) { animation-delay: .03s; } .main > *:nth-child(3) { animation-delay: .06s; }
+.main > *:nth-child(4) { animation-delay: .09s; } .main > *:nth-child(5) { animation-delay: .12s; }
+.main > *:nth-child(n+6) { animation-delay: .15s; }
+.main > .page-head { animation-name: fade-in; }
+/* Section tabs: the new panel fades in */
+.tab-in { animation: rise-in .24s cubic-bezier(.2, .7, .2, 1) both; }
+/* Cards inside grids appear in a quick stagger */
+.grid2 > .card, .panel-grid > *, .stats > *, .group-mini-list > * { animation: rise-in .3s cubic-bezier(.2, .7, .2, 1) both; }
+.grid2 > .card:nth-child(2), .panel-grid > :nth-child(2), .stats > :nth-child(2) { animation-delay: .04s; }
+.grid2 > .card:nth-child(3), .panel-grid > :nth-child(3), .stats > :nth-child(3) { animation-delay: .08s; }
+.grid2 > .card:nth-child(n+4), .panel-grid > :nth-child(n+4), .stats > :nth-child(n+4) { animation-delay: .12s; }
+/* Windows open with a soft scale, the backdrop fades */
+dialog[open] { animation: dialog-in .2s cubic-bezier(.2, .7, .2, 1); }
+dialog[open]::backdrop { animation: fade-in .2s ease; }
+/* Buttons press in; hover lifts a little */
+.btn { transition: transform .12s ease, box-shadow .16s ease, background .16s ease, border-color .16s ease, color .16s ease; }
+.btn:active:not(:disabled) { transform: translateY(1px) scale(.97); }
+.btn:not(.ghost):not(:disabled):hover { transform: translateY(-1px); }
+.btn.ok-flash { animation: ok-flash 1s ease-out; }
+/* Cards and rows react to the pointer */
+.card { transition: border-color .2s ease, box-shadow .2s ease; }
+.group-card:hover, .panel-grid > .card:hover { border-color: rgba(139, 108, 255, .35); box-shadow: 0 10px 30px rgba(0, 0, 0, .25); }
+.table tbody tr { transition: background .14s ease; }
+.seg-btn, .tabs .btn { transition: background .16s ease, color .16s ease, box-shadow .16s ease; }
+/* Removing with Undo: the row fades out instead of vanishing */
+.slot, .table tbody tr, .card { transition-property: opacity, transform, border-color, box-shadow, background; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
