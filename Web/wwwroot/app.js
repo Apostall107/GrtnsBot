@@ -1614,6 +1614,14 @@ async function logout() {
 
 // ----- Easter egg: now and then our little Greatness robot (from the bot's icon) flies across the page.
 // It flies over the page area (not the sidebar); while it flies, clicks within 200 px of it are ignored.
+// The robot's escape spells (key, emoji, name) — also used by the owner's "Summon" buttons
+const SPELLS = [["hole", "🌀", "Black hole"], ["fire", "🔥", "Fireball"], ["bolt", "⚡", "Lightning"], ["rock", "🪨", "Stone barrage"], ["air", "🌪️", "Tornado"]];
+/** Owner only: summon the robot now — it will surely cast the chosen spell when it escapes. */
+function summonButtons(after) {
+  const go = kind => { if (after) after(); window.__mascotFinale && window.__mascotFinale(kind); };
+  return h("div", { class: "row summon-row", style: "gap:6px;flex-wrap:wrap" },
+    [...SPELLS, ["random", "🎲", "Random spell"]].map(([k, e, n]) => h("button", { type: "button", class: "btn secondary sm", title: `Summon — casts: ${n}`, onclick: () => go(k) }, e)));
+}
 (function mascots() {
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const px = (rows, col, y0 = 0) => rows.flatMap((r, y) => [...r].map((c, x) => col[c] ? `<rect x="${x}" y="${y + y0}" width="1.02" height="1.02" fill="${col[c]}"/>` : "")).join("");
@@ -1631,10 +1639,13 @@ async function logout() {
   };
   let busy = false, timer = 0;
   function fly(opts) {
+    // Sometimes (≈15%) a successful escape ends with a show: instead of just leaving the screen it casts a spell.
+    // The owner can summon it with a guaranteed spell (opts.finale: a spell or "random").
+    let forced = opts && typeof opts === "object" ? opts.finale : null;
+    if (forced && busy) return toast("The robot is already flying — wait until it's gone.", "warn");
     if (busy || document.hidden || !state.me) return schedule();
-    // Sometimes (≈15%) a successful escape ends with a show: instead of just leaving the screen it casts a black hole or a fireball
-    const forced = opts && typeof opts === "object" ? opts.finale : null;
-    const finale = forced || (Math.random() < .15 ? ["hole", "fire", "bolt", "rock", "air"][Math.floor(Math.random() * 5)] : null);
+    if (forced === "random") forced = SPELLS[Math.floor(Math.random() * SPELLS.length)][0];
+    const finale = forced || (Math.random() < .15 ? SPELLS[Math.floor(Math.random() * SPELLS.length)][0] : null);
     const M = BOT; // only our robot flies (the cat is retired)
     const A = area(), W = M.w, H = M.h;
     // Starts just outside the page area: mostly left↔right, sometimes up↕down. While it flies, clicks within 200 px
@@ -2057,7 +2068,7 @@ async function logout() {
     timer = setTimeout(fly, Math.max(5, (first ? avg * .5 : avg) * (0.6 + Math.random() * 0.8)) * 1000);
   }
   window.__neonCat = fly;
-  window.__mascotFinale = kind => fly({ finale: kind });   // test hook: "hole" | "fire"
+  window.__mascotFinale = kind => fly({ finale: kind });   // owner summon / test hook: a spell key or "random"
   window.__neonCatReschedule = () => schedule(false);
   window.__mascotStart = () => schedule(true);   // started from boot(), once the server's frequency is known
 })();
@@ -2280,6 +2291,8 @@ function renderShell() {
       g0 && !serverPick ? h("span", { class: "muted small who-server" }, icon("server", 12), g0.name) : null),
     serverPick,
     viewAs,
+    state.me.isOwner && !state.me.viewAsMember && !matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? h("div", { class: "menu-summon" }, h("span", { class: "menu-label" }, icon("sparkles", 14), "Summon the robot (sure spell)"), summonButtons(() => toggleUser(false))) : null,
     h("button", { class: "menu-item danger", onclick: logout }, icon("log-out", 16), "Log out"));
   const userBtn = h("button", { class: "user-button", "aria-haspopup": "menu", "aria-expanded": "false" },
     state.me.avatarUrl ? h("img", { class: "avatar", src: state.me.avatarUrl, alt: "" }) : h("span", { class: "avatar" }),
@@ -6388,7 +6401,8 @@ async function pageSettings(main) {
     save.addEventListener("click", tracker.save);
     holder.append(tracker.attach(h("div", { class: "card" }, h("h2", {}, "🤖 Easter egg"),
       h("p", { class: "muted small" }, "Now and then the little Greatness robot flies across the site for everyone on this server. It watches your cursor and runs away when you get close (dashes past you if cornered) — after a few runs it gets tired and can be caught. Sometimes, when it escapes, it casts a spell on the way out — a black hole, a fireball, lightning, a stone barrage or a tornado. While it flies, buttons within 200 px of it don't react. People with 'reduce motion' turned on never see it."),
-      h("div", { class: "row", style: "align-items:flex-end" }, h("div", { class: "field", style: "margin:0" }, fieldLabel("Every … seconds on average (0 = off)"), h("div", { class: "row" }, secs, human)), save, preview))));
+      h("div", { class: "row", style: "align-items:flex-end" }, h("div", { class: "field", style: "margin:0" }, fieldLabel("Every … seconds on average (0 = off)"), h("div", { class: "row" }, secs, human)), save, preview),
+      state.me.isOwner ? h("div", { class: "field", style: "margin:14px 0 0" }, fieldLabel("Owner: summon now with a guaranteed spell when it escapes (only you see it)"), summonButtons()) : null)));
   }
 
   // Quick search (Ctrl+K): which members it finds

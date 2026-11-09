@@ -2725,3 +2725,7 @@ input.switch:checked { animation: switch-glow .5s ease-out; }
   transform-origin: top; animation: gb-drip 3s ease-in forwards; }
 @keyframes gb-drip { from { transform: scaleY(.1); } to { transform: scaleY(1); } }
 .gb-mud > b { position: absolute; border-radius: 50%; background: rgba(80, 55, 32, .85); }
+/* owner: summon the robot from the profile menu */
+.menu-summon { padding: 8px 10px; border-top: 1px solid var(--border, rgba(255,255,255,.08)); }
+.menu-summon .menu-label { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.summon-row .btn.sm { min-width: 36px; padding: 4px 8px; font-size: 16px; line-height: 1; }
