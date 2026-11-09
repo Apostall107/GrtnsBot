@@ -1644,12 +1644,15 @@ function summonButtons(after) {
   let busy = false, timer = 0;
   function fly(opts) {
     // Often (40%) a successful escape ends with a show: instead of just leaving the screen it casts a spell (1% — a legendary cast: two at once).
+    // When it's caught the chance is 1.5× higher (60%, 1.5% legendary).
     // The owner can summon it with a guaranteed spell (opts.finale: a spell or "random").
     let forced = opts && typeof opts === "object" ? opts.finale : null;
     if (forced && busy) return toast("The robot is already flying — wait until it's gone.", "warn");
     if (busy || document.hidden || !state.me) return schedule();
     if (forced === "random") forced = SPELLS[Math.floor(Math.random() * SPELLS.length)][0];
-    const roll = Math.random(), finale = forced || (roll < .01 ? "legend" : roll < .4 ? SPELLS[Math.floor(Math.random() * SPELLS.length)][0] : null);
+    // Escape: 40% a spell (1% legendary). Caught: 1.5× more — 60% (1.5% legendary), it strikes back as it vanishes.
+    const rollSpell = k => { const r = Math.random(); return r < .01 * k ? "legend" : r < .4 * k ? SPELLS[Math.floor(Math.random() * SPELLS.length)][0] : null; };
+    const finale = forced || rollSpell(1);
     const M = BOT; // only our robot flies (the cat is retired)
     const A = area(), W = M.w, H = M.h;
     // Starts just outside the page area: mostly left↔right, sometimes up↕down. While it flies, clicks within 200 px
@@ -1963,7 +1966,8 @@ function summonButtons(after) {
       const finish = msg => {
         if (--pending > 0) return;
         shared.forEach(n => n.remove());
-        toast(legendary ? `🌟 LEGENDARY CAST! ${kinds.map(name).join(" + ")} — the Greatness bot escaped!` : msg);
+        toast(caughtIt ? `🎯 Caught! …but it still cast ${kinds.map(name).join(" + ")}${legendary ? " — 🌟 LEGENDARY!" : ""}`
+          : legendary ? `🌟 LEGENDARY CAST! ${kinds.map(name).join(" + ")} — the Greatness bot escaped!` : msg);
         end();
       };
       if (legendary) {   // golden aura around the whole screen
@@ -2461,9 +2465,17 @@ function summonButtons(after) {
         s.animate([{ transform: "translate(0,0) scale(1)", opacity: 1 }, { transform: `translate(${Math.cos(a) * d}px, ${Math.sin(a) * d}px) scale(.2)`, opacity: 0 }], { duration: 700, easing: "ease-out" });
         setTimeout(() => s.remove(), 720);
       }
-      el.classList.add("caught");
-      caughtIt = true; report({ kind: "caught", quick: !tired });
+      caughtIt = true;
       let n = 0; try { n = Number(localStorage.getItem("gb.mascotsCaught") || localStorage.getItem("gb.catsCaught") || 0) + 1; localStorage.setItem("gb.mascotsCaught", String(n)); } catch { /* private mode */ }
+      // Caught — but sometimes it strikes back with a spell as it vanishes (the owner's summon always does)
+      const spell = forced ? finale : rollSpell(1.5);
+      if (spell) {
+        cast(spell);
+        report({ kind: "caught", quick: !tired, spells: castKinds, legendary: castLegend });
+        return;
+      }
+      el.classList.add("caught");
+      report({ kind: "caught", quick: !tired });
       toast(`${M.lines[Math.floor(Math.random() * M.lines.length)]}${n > 1 ? ` (caught: ${n})` : ""}`);
       setTimeout(end, 650);
     }, { once: true });
@@ -7629,7 +7641,7 @@ async function pageChars(main) {
 async function pageMascot(main) {
   const g = currentGuild() || {};
   main.append(h("div", { class: "card-head" }, h("h1", {}, "🤖 Mascot")),
-    h("p", { class: "muted small" }, "Only you (the bot owner) see this page. The little Greatness robot flies across the site for everyone on this server, runs away from the cursor, gets tired and can be caught. When it escapes it often casts a spell (40%; 1% — a legendary cast of two spells at once). Members collect what they saw in Member → Achievements."));
+    h("p", { class: "muted small" }, "Only you (the bot owner) see this page. The little Greatness robot flies across the site for everyone on this server, runs away from the cursor, gets tired and can be caught. When it escapes it often casts a spell (40%; 1% — a legendary cast of two spells at once); when it's caught — 1.5× more often (60%; 1.5% legendary). Members collect what they saw in Member → Achievements."));
   // How often
   const secs = h("input", { type: "number", min: "0", max: "604800", step: "1", value: String(g.mascotSeconds ?? 900), style: "width:140px", "aria-label": "Seconds" });
   const human = h("span", { class: "muted small" });
@@ -7650,7 +7662,7 @@ async function pageMascot(main) {
   const preview = h("button", { class: "btn secondary" }, icon("sparkles", 15), "Let it fly (normal)");
   preview.addEventListener("click", () => window.__neonCat && window.__neonCat());
   main.append(h("div", { class: "card" }, h("h2", {}, "✨ Summon now"),
-    h("p", { class: "muted small" }, "Only on your screen. With a spell button the robot surely casts that spell when it escapes (if you catch it — no spell). Works even when the mascot is off."),
+    h("p", { class: "muted small" }, "Only on your screen. With a spell button the robot surely casts that spell — when it escapes or when you catch it. Works even when the mascot is off."),
     h("div", { class: "row", style: "margin-bottom:10px" }, preview),
     summonButtons(), h("div", { class: "muted small", style: "margin-top:8px" }, SPELLS.map(s => `${s[1]} ${s[2]}`).join(" · ") + " · 🌟 Legendary · 🎲 Random")));
 }
@@ -7660,7 +7672,7 @@ async function pageMascot(main) {
 async function pageAchievements(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "🏆 Achievements"),
     h("button", { class: "btn btn-refresh", title: "Reload", onclick: hardRefresh }, "🔄 Refresh")),
-    h("p", { class: "muted small" }, "Now and then a little robot flies across the site. Catch it, or watch it escape — sometimes it casts a spell on the way out. Hidden achievements show what to do only once you've earned them."));
+    h("p", { class: "muted small" }, "Now and then a little robot flies across the site. Catch it, or watch it escape — either way it may cast a spell. Hidden achievements show what to do only once you've earned them."));
   const body = h("div", {}, h("div", { class: "card" }, skeletonLines(4)));
   main.append(body);
   let d;

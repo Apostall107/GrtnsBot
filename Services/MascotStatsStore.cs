@@ -105,14 +105,12 @@ public sealed class MascotStatsStore
                 s.Caught++;
                 if (quick) s.QuickCatches++;
             }
-            else if (kind == "escaped")
-            {
-                s.Escaped++;
-                var valid = (spells ?? []).Distinct().Where(k => Spells.Any(x => x.Key == k)).Take(2).ToList();
-                foreach (var k in valid) s.Spells[k] = s.Spells.GetValueOrDefault(k) + 1;
-                if (legendary && valid.Count == 2) s.Legendary++;
-            }
+            else if (kind == "escaped") s.Escaped++;
             else return false;
+            // spells it cast — when it escaped or, now and then, when it was caught
+            var valid = (spells ?? []).Distinct().Where(k => Spells.Any(x => x.Key == k)).Take(2).ToList();
+            foreach (var k in valid) s.Spells[k] = s.Spells.GetValueOrDefault(k) + 1;
+            if (legendary && valid.Count == 2) s.Legendary++;
             var dir = Path.GetDirectoryName(Path.GetFullPath(_path));
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
             DataFiles.Save(_path, JsonSerializer.Serialize(_data, JsonOptions));
