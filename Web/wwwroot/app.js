@@ -1110,9 +1110,6 @@ function tidyHints(root) {
   }
 }
 
-// Page heading gets its band only after scrolling (see .page-head in app.css)
-window.addEventListener("scroll", () => document.body.classList.toggle("scrolled", window.scrollY > 4), { passive: true });
-
 let iconizeQueued = false;
 new MutationObserver(() => {
   if (iconizeQueued) return;
