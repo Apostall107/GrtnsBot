@@ -2909,7 +2909,7 @@ function syncSlotAttendance(node, s) {
   slot.classList.toggle("att-no", s.attended === false);
   slot.querySelector(".att-badge")?.remove();
   const badge = attBadge(s);
-  if (badge) slot.querySelector(".slot-who")?.append(badge);
+  if (badge) (slot.querySelector(".slot-char") || slot.querySelector(".slot-who"))?.append(badge);
   // the "ready" green dot shows only while unmarked
   if (s.attended != null) [...slot.querySelectorAll(".slot-who span[title='Ready'], .slot-who span[title=\"Pressed ✅ Ready in the reminder\"]")].forEach(x => x.remove());
 }
@@ -2966,6 +2966,19 @@ function classMark(e) {
     : h("span", { title }, e.classIcon);
 }
 
+/** Seat of a group in two lines: who (name, Came/No-show, ready) and their character (class, name, GS, CP, note) —
+ *  so a narrow card never squeezes the texts on top of each other. */
+function slotInfo(s, readyTitle, withNote) {
+  const ready = readyTitle && s.ready && s.attended == null ? h("span", { class: "slot-ready", title: readyTitle }, "🟢") : null;
+  const charLine = [classMark(s), s.character ? h("span", { class: "slot-charname", title: s.character }, s.character) : null,
+    s.gs ? h("span", { class: "gs" }, `GS ${s.gs}`) : null, s.cp ? h("span", { class: "gs cp" }, `CP ${fmtCp(s.cp)}`) : null, attBadge(s)].filter(Boolean);
+  return h("div", { class: "slot-main" },
+    h("div", { class: "slot-who" }, member(s.member), ready),
+    charLine.length ? h("div", { class: "slot-char" }, charLine) : null,
+    withNote && s.comment ? h("div", { class: "slot-comment", title: s.comment }, icon("message-square-text", 12), h("span", {}, s.comment)) : null);
+}
+const slotTools = (...tools) => h("span", { class: "slot-tools" }, tools);
+
 function groupCard(g) {
   const gid = encodeURIComponent(g.id);
   const close = h("button", { class: "btn danger" }, icon("trash-2", 15), "Force close");
@@ -2982,7 +2995,6 @@ function groupCard(g) {
     const name = await promptDialog(`Character of ${m.name}`, current || "");
     if (name) roster("character", m, "Character changed.", { character: name });
   };
-  const note = c => c ? h("span", { class: "muted small", title: "Note" }, icon("message-square-text", 12), " ", c) : null;
 
   const full = g.filled >= g.size;
   return h("div", { class: `card group-card${full ? " is-full" : ""}`, style: "margin:0" },
@@ -3003,26 +3015,23 @@ function groupCard(g) {
     h("div", { class: "roster" }, g.slots.map((s, i) => s.member
       ? h("div", { class: `slot taken${attClass(s)}` },
           h("span", { class: "slot-num" }, i + 1), rolePill(s.role || s.slotRole),
-          h("span", { class: "slot-who" }, member(s.member), classMark(s), note(s.comment), attBadge(s),
-            s.ready && s.attended == null ? h("span", { title: "Pressed ✅ Ready in the reminder" }, " 🟢") : null),
-          h("span", { class: "slot-char" }, s.character || "", s.gs ? h("span", { class: "gs" }, `GS ${s.gs}`) : null, s.cp ? h("span", { class: "gs cp" }, `CP ${fmtCp(s.cp)}`) : null),
+          slotInfo(s, "Pressed ✅ Ready in the reminder", true), slotTools(
           g.started ? attendanceButton(s, `/lfg/groups/${gid}/attendance`) : null,
           tool("pencil", "Change character", rename(s.member, s.character)),
           (!g.owner || s.member.id !== g.owner.id) ? tool("arrow-right", "Move to reserve", () => roster("toReserve", s.member, "Moved to the reserve.")) : null,
           (!g.owner || s.member.id !== g.owner.id) ? tool("x", "Remove from the group", async () => {
             if (await confirmDialog(`Remove ${s.member.name}?`, "Their slot becomes free.", "Remove")) roster("remove", s.member, "Removed.");
-          }) : null)
+          }) : null))
       : h("div", { class: "slot open" }, h("span", { class: "slot-num" }, i + 1), rolePill(s.slotRole), slotReqMark(s),
           h("span", { class: "slot-open-text" }, icon("circle-plus", 14), "Open slot")))),
     g.reserve.length ? h("details", { class: "reserve", open: true }, h("summary", {}, icon("clock", 14), `Reserve · ${g.reserve.length}`),
       h("div", { class: "roster" }, g.reserve.map(r => h("div", { class: "slot taken reserve-row" },
-        rolePill(r.role || "All"), h("span", { class: "slot-who" }, member(r.member), classMark(r), note(r.comment)),
-        h("span", { class: "slot-char" }, r.character || "", r.gs ? h("span", { class: "gs" }, `GS ${r.gs}`) : null, r.cp ? h("span", { class: "gs cp" }, `CP ${fmtCp(r.cp)}`) : null),
+        rolePill(r.role || "All"), slotInfo(r, null, true), slotTools(
         tool("arrow-left", "Move into the group (sends a DM)", () => roster("promote", r.member, "Moved into the group, DM sent.")),
         tool("pencil", "Change character", rename(r.member, r.character)),
         tool("x", "Remove from the reserve", async () => {
           if (await confirmDialog(`Remove ${r.member.name} from the reserve?`, "They are taken out of this group.", "Remove")) roster("removeReserve", r.member, "Removed from the reserve.");
-        }))))) : null,
+        })))))) : null,
     h("div", { class: "group-actions" },
       h("a", { class: "btn secondary", href: g.jumpUrl, target: "_blank", rel: "noopener" }, icon("external-link", 15), "Open in Discord"),
       g.voiceUrl ? h("a", { class: "btn secondary voice-btn", href: g.voiceUrl, target: "_blank", rel: "noopener", title: "Open the group's voice room in Discord" }, icon("volume-2", 15), "Voice room") : null,
@@ -5558,23 +5567,20 @@ function playCard(g) {
   const roster = h("div", { class: "roster" }, g.slots.map((s, i) => s.member
     ? h("div", { class: `slot taken${s.member.id === meId ? " me" : ""}${attClass(s)}` },
         h("span", { class: "slot-num" }, i + 1), rolePill(s.role || s.slotRole),
-        h("span", { class: "slot-who" }, member(s.member), classMark(s), attBadge(s),
-          s.ready && s.attended == null ? h("span", { title: "Ready" }, " 🟢") : null),
-        h("span", { class: "slot-char" }, s.character || "", s.gs ? h("span", { class: "gs" }, `GS ${s.gs}`) : null, s.cp ? h("span", { class: "gs cp" }, `CP ${fmtCp(s.cp)}`) : null),
+        slotInfo(s, "Ready", false), slotTools(
         org && g.started ? attendanceButton(s, `/me/groups/${gid}/attendance`) : null,
-        org && (!g.owner || s.member.id !== g.owner.id) ? tool("arrow-right", "Move to reserve", () => roster$("toReserve", s.member, "Moved to the reserve.")) : null)
+        org && (!g.owner || s.member.id !== g.owner.id) ? tool("arrow-right", "Move to reserve", () => roster$("toReserve", s.member, "Moved to the reserve.")) : null))
     : h("div", { class: "slot open" },
         h("span", { class: "slot-num" }, i + 1), rolePill(s.slotRole), slotReqMark(s),
         h("span", { class: "slot-open-text" }, icon("circle-plus", 14), "Open slot"))));
   const reserve = g.reserve.length ? h("details", { class: "reserve", open: org },
     h("summary", {}, icon("clock", 14), `Reserve · ${g.reserve.length}`),
     h("div", { class: "roster" }, g.reserve.map(r => h("div", { class: "slot taken reserve-row" },
-      rolePill(r.role || "All"), h("span", { class: "slot-who" }, member(r.member), classMark(r)),
-      h("span", { class: "slot-char" }, r.character || "", r.gs ? h("span", { class: "gs" }, `GS ${r.gs}`) : null, r.cp ? h("span", { class: "gs cp" }, `CP ${fmtCp(r.cp)}`) : null),
+      rolePill(r.role || "All"), slotInfo(r, null, false), slotTools(
       org ? tool("arrow-left", "Move into the group (sends a DM)", () => roster$("promote", r.member, "Moved into the group, DM sent.")) : null,
       org ? tool("x", "Remove from the reserve", async () => {
         if (await confirmDialog(`Remove ${r.member.name} from the reserve?`, "They are taken out of this group.", "Remove")) roster$("removeReserve", r.member, "Removed from the reserve.");
-      }) : null)))) : null;
+      }) : null))))) : null;
 
   const closeBtn = org ? h("button", { class: "btn danger" }, icon("trash-2", 15), "Close group") : null;
   if (closeBtn) closeBtn.addEventListener("click", async () => {
