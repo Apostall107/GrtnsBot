@@ -162,11 +162,15 @@ public static class WebPanel
                      "inter-cyrillic-wght-normal.woff2", "inter-cyrillic-ext-wght-normal.woff2" })
             MapStatic(app, $"/fonts/{font}", $"fonts/{font}", "font/woff2", "public, max-age=31536000, immutable");
 
-        // Иконка сайта = аватар бота (берётся из Discord, кэшируется на час)
-        app.MapGet("/favicon.png", async (DiscordSocketClient client, IHttpClientFactory http) =>
+        // Иконка сайта = аватар бота (берётся из Discord, кэшируется на час). Пока бот не подключился (сразу после
+        // перезапуска) или Discord не ответил — встроенная копия иконки, а не 404: иначе браузер запоминает «нет иконки».
+        var defaultIcon = ReadResource("favicon-default.png");
+        app.MapGet("/favicon.png", async (HttpContext ctx, DiscordSocketClient client, IHttpClientFactory http) =>
         {
-            var bytes = await BotAvatar.GetAsync(client, http);
-            return bytes is null ? Results.NotFound() : Results.Bytes(bytes, "image/png");
+            byte[]? bytes = null;
+            try { bytes = await BotAvatar.GetAsync(client, http); } catch (Exception) { /* Discord недоступен */ }
+            ctx.Response.Headers.CacheControl = bytes is null ? "no-cache" : "public, max-age=3600";
+            return Results.Bytes(bytes ?? defaultIcon, "image/png");
         });
         app.MapGet("/favicon.ico", () => Results.Redirect("/favicon.png"));
 
