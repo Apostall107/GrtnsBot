@@ -393,10 +393,10 @@ public static partial class PanelApi
         });
 
         // Канал, куда уходят сборы, созданные участниками на сайте
-        g.MapGet("/channel", (ulong guildId, DiscordSocketClient client, BotSettingsStore settings, PanelTextStore panels) =>
+        g.MapGet("/channel", (ulong guildId, DiscordSocketClient client, BotSettingsStore settings, PanelTextStore panels, [FromServices] LfgStore lfg) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
-            var current = LfgChannel(guild, settings, panels);
+            var current = LfgChannel(guild, settings, panels, null, lfg);
             return Results.Ok(new
             {
                 channelId = settings.GetLfgChannel(guildId)?.ToString(),

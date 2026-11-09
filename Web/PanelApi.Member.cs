@@ -409,12 +409,12 @@ public static partial class PanelApi
         // Для создания сбора: активности и канал, куда уйдёт пост (выбирает админ в LFG → Channel for groups)
         g.MapGet("/create-options", (ulong guildId, ClaimsPrincipal user, DiscordSocketClient client, ActivityStore activities,
             BotSettingsStore settings, PanelTextStore panels, LfgTemplateStore templates, LfgProjectStore projects, PanelAccess access,
-            [FromServices] LfgProfileService profiles) =>
+            [FromServices] LfgProfileService profiles, [FromServices] LfgStore lfg) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var me = user.UserId()!.Value;
             var member = guild.GetUser(me);
-            var channel = LfgChannel(guild, settings, panels);
+            var channel = LfgChannel(guild, settings, panels, null, lfg);
             return Results.Ok(new
             {
                 // Проекты, роли которых у меня есть, и канал, куда уйдёт сбор каждого
@@ -423,7 +423,7 @@ public static partial class PanelApi
                     key = p.Key,
                     name = p.Name,
                     isDefault = p.Key == projects.DefaultKey(guildId),
-                    channel = LfgChannel(guild, settings, panels, p.Key) is { } c ? new { id = c.Id.ToString(), name = c.Name } : null
+                    channel = LfgChannel(guild, settings, panels, p.Key, lfg) is { } c ? new { id = c.Id.ToString(), name = c.Name } : null
                 }),
                 // Админ может продублировать пост в другие каналы
                 mirrorChannels = access.IsAdmin(me)
@@ -455,14 +455,14 @@ public static partial class PanelApi
         g.MapPost("/create", async (ulong guildId, LfgCreateBody body, ClaimsPrincipal user, DiscordSocketClient client,
             ActivityStore activities, LfgPublisher publisher, BotSettingsStore settings, PanelTextStore panels,
             LfgProjectStore projects, PanelAccess access, [Microsoft.AspNetCore.Mvc.FromServices] TimeService time,
-            [FromServices] CharacterStore characters, [FromServices] LfgProfileService profiles) =>
+            [FromServices] CharacterStore characters, [FromServices] LfgProfileService profiles, [FromServices] LfgStore lfg) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var me = user.UserId()!.Value;
             var project = projects.Effective(guildId, body.ProjectKey);
             if (!LfgProjectStore.CanUse(guild.GetUser(me), project)) return Error($"You need the {project!.Name} role to create its groups.");
             // Канал выбирает не участник, а админ — пост уходит в канал проекта / канал для сборов
-            if (LfgChannel(guild, settings, panels, project?.Key) is not { } lfgChannel)
+            if (LfgChannel(guild, settings, panels, project?.Key, lfg) is not { } lfgChannel)
                 return Error("The channel for groups is not set yet. Ask an admin (LFG → Channel for groups).");
             var (err, channelId, name, pingRole, slots) = ResolveLfgInput(guild, activities, lfgChannel.Id.ToString(), body.ActivityKey, body.CustomName, body.Slots);
             if (err is not null) return Error(err);
@@ -667,7 +667,7 @@ public static partial class PanelApi
     }
 
     /// <summary>Канал для сборов с сайта: из настроек, иначе канал первой LFG-панели.</summary>
-    private static SocketTextChannel? LfgChannel(SocketGuild guild, BotSettingsStore settings, PanelTextStore panels, string? projectKey = null)
+    private static SocketTextChannel? LfgChannel(SocketGuild guild, BotSettingsStore settings, PanelTextStore panels, string? projectKey = null, LfgStore? lfg = null)
     {
         // У проекта своя LFG-панель (LFG → Projects) — сборы проекта идут в её канал
         if (projectKey is not null &&
@@ -675,7 +675,14 @@ public static partial class PanelApi
                 .Select(p => guild.GetTextChannel(p.ChannelId)).FirstOrDefault(c => c is not null) is { } projectChannel)
             return projectChannel;
         if (settings.GetLfgChannel(guild.Id) is { } id && guild.GetTextChannel(id) is { } set) return set;
-        return panels.GetPosted(guild.Id, "lfg").Select(p => guild.GetTextChannel(p.ChannelId)).FirstOrDefault(c => c is not null);
+        if (panels.GetPosted(guild.Id, "lfg").Select(p => guild.GetTextChannel(p.ChannelId)).FirstOrDefault(c => c is not null) is { } panelChannel)
+            return panelChannel;
+        // Nothing set and no LFG panel known (e.g. its post was deleted or the setting was cleared): the channel where
+        // the latest group of this project (or any group) was posted — so members can still create groups.
+        if (lfg is null) return null;
+        var recent = lfg.Groups.Values.Where(gr => gr.GuildId == guild.Id && gr.ChannelId != 0).OrderByDescending(gr => gr.MessageId).ToList();
+        return recent.Where(gr => projectKey is null || gr.ProjectKey == projectKey).Concat(recent)
+            .Select(gr => guild.GetTextChannel(gr.ChannelId)).FirstOrDefault(c => c is not null && c is not SocketThreadChannel);
     }
 
     /// <summary>Ответы бота с Discord-разметкой → обычный текст для уведомления на сайте.</summary>

@@ -3030,7 +3030,7 @@ async function pageLfg(main) {
       if (c.channelId) chSel.value = c.channelId;
       tracker.rebase();
       chInfo.textContent = c.effective
-        ? `Now: #${c.effective.name}${c.fromPanel ? " (the LFG panel's channel)" : ""}`
+        ? `Now: #${c.effective.name}${c.fromPanel ? " (picked automatically: the LFG panel's channel or where the latest group was posted)" : ""}`
         : "Now: not set — members can't create groups until you pick a channel or post the LFG panel.";
     }).catch(e => { chInfo.textContent = e.message; });
     return chCard;
