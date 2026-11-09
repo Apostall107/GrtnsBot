@@ -1628,12 +1628,46 @@ async function logout() {
     lines: ["Meow! A Greatness spirit was caught ✨", "The cat approves of your guild 💜", "+1 luck for the next raid 🎲", "Purr… your GS feels higher already", "Neon cat says: don't forget to mark attendance 😼"]
   };
   const BOT = {
-    name: "robot", w: 56, h: 56, rotate: false,
+    name: "robot", w: 72, h: 90, rotate: false,
+    // Full-height pixel version of the bot's icon: hooded little mage-bot with a crown and a blue crystal,
+    // glowing (blinking) eyes, gold shoulders and hem, a "G" on the robe and a glowing orb in hand
     svg: (() => {
-      const R = ["......kCk.......", ".....kcCck......", "..g..kccck..g...", "..gg.gkckg.gg...", "..ggggggggggg...", "..kGgGgGgGgGk...", ".khhhhhhhhhhhk..", ".kHffffffffhhk..",
-        "khHfeEfffeEfhhk.", "khHfeefffeefhhk.", "khhfffffffffhhk.", ".khhffffffhhhk..", ".kgghhhhhhhggk..", "..kgGkhhhkgGk...", "...kk.khk.kk....", ".......k........"];
-      const C = { k: "#120A24", h: "#2E1E58", H: "#4A3390", g: "#E8B84A", G: "#A8782A", c: "#6FB8FF", C: "#C8E8FF", e: "#B9A2FF", E: "#FFFFFF", f: "#0C0618" };
-      return `<svg viewBox="0 0 16 16" width="56" height="56" shape-rendering="crispEdges" aria-hidden="true">${px(R, C)}<g class="bot-eyes"><rect x="4" y="8" width="2" height="2" fill="#E9E1FF"/><rect x="9" y="8" width="2" height="2" fill="#E9E1FF"/></g></svg>`;
+      const R = [
+        "...........kk...........",
+        "..........kCCk..........",
+        ".........kcCCck.........",
+        "....g....kcccck....g....",
+        "....gg...kkcckk...gg....",
+        "....ggg.gggkkggg.ggg....",
+        "....gGggggggggggggGg....",
+        "....kGgGgGgGGgGgGgGk....",
+        "...khhhhhhhhhhhhhhhhk...",
+        "..khHHhhhhhhhhhhhhHHhk..",
+        "..khHffffffffffffffHhk..",
+        ".khHffffffffffffffffHhp.",
+        ".khHfeeeffffffffeeefHooo",
+        ".khHfeEeffffffffeEefoOOo",
+        ".khhffeeffffffffeeffoOoo",
+        "..khhffffffffffffffhhoo.",
+        "..kgggkhhhhhhhhhhkgggkgk",
+        ".kgGGgkrrrrrrrrrrkgGGgGk",
+        ".kgGgkrrRrggggrRrrkgGgk.",
+        "..kkkrrRrrgRGGrrRrrkkk..",
+        "....krrRrrgRRgrrRrrk....",
+        "....krRrrrggggrrrRrk....",
+        "...krrRrrrrrrrrrrRrrk...",
+        "...krRrrrrrrrrrrrrRrk...",
+        "..krrRrrrrrrrrrrrrRrrk..",
+        "..kRrrrrrrrrrrrrrrrrRk..",
+        "..kGggggggggggggggggGk..",
+        "...kkkkkkkkkkkkkkkkkk..."];
+      const L = [["....kbbbk.......kbbbk...", "....kkkkk.......kkkkk..."], [".....kbbbk.....kbbbk....", ".....kkkkk.....kkkkk...."]];
+      const C = { k: "#120A24", h: "#2E1E58", H: "#4A3390", r: "#3A2470", R: "#5A3CA8", f: "#0C0618", e: "#B9A2FF", E: "#FFFFFF",
+        g: "#E8B84A", G: "#A8782A", c: "#6FB8FF", C: "#C8E8FF", o: "#B9A2FF", O: "#F0E8FF", b: "#3A2A6A", p: "#E05BD0" };
+      return `<svg viewBox="0 0 24 30" width="72" height="90" shape-rendering="crispEdges" aria-hidden="true">${px(R, C)}` +
+        `<g class="cat-legs a">${px(L[0], C, 28)}</g><g class="cat-legs b">${px(L[1], C, 28)}</g>` +
+        `<g class="bot-blink"><rect x="5" y="12" width="3" height="3" fill="#0C0618"/><rect x="16" y="12" width="3" height="3" fill="#0C0618"/></g>` +
+        `<circle class="bot-orb" cx="21.8" cy="13.6" r="2.6" fill="#B9A2FF" opacity=".35"/></svg>`;
     })(),
     lines: ["Beep-boop! You caught the Greatness bot 🤖", "The bot salutes you, officer 👑", "Your tickets will be approved faster now (not really) 😄", "System check: guild morale 100% 💜", "Bot says: see you in the next raid ⚔️"]
   };
