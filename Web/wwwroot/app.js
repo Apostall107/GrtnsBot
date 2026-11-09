@@ -1634,7 +1634,7 @@ async function logout() {
     if (busy || document.hidden || !state.me) return schedule();
     // Sometimes (≈15%) a successful escape ends with a show: instead of just leaving the screen it casts a black hole or a fireball
     const forced = opts && typeof opts === "object" ? opts.finale : null;
-    const finale = forced || (Math.random() < .15 ? ["hole", "fire", "bolt"][Math.floor(Math.random() * 3)] : null);
+    const finale = forced || (Math.random() < .15 ? ["hole", "fire", "bolt", "rock", "air"][Math.floor(Math.random() * 5)] : null);
     const M = BOT; // only our robot flies (the cat is retired)
     const A = area(), W = M.w, H = M.h;
     // Starts just outside the page area: mostly left↔right, sometimes up↕down. While it flies, clicks within 200 px
@@ -1765,7 +1765,8 @@ async function logout() {
     const CRACK = {
       hole: { n: [9, 12], pit: .26, rings: [.4, .58, .78], branch: .1, layers: ["sh", "hi"] },
       fire: { n: [11, 15], pit: .11, rings: [.2, .36, .56, .76], branch: .12, layers: ["gl", "sh", "hi"] },
-      bolt: { n: [20, 26], pit: .05, rings: [.13, .24, .37, .52, .68, .85], branch: .3, layers: ["gl", "sh", "hi"] }
+      bolt: { n: [20, 26], pit: .05, rings: [.13, .24, .37, .52, .68, .85], branch: .3, layers: ["gl", "sh", "hi"] },
+      rock: { n: [5, 8], pit: .3, rings: [.62], branch: .15, layers: ["sh", "hi"] }
     };
     function cracks(x, y, R, kind) {
       const cfg = CRACK[kind] || CRACK.fire;
@@ -1831,6 +1832,22 @@ async function logout() {
       }, 70);
       setTimeout(() => { clearInterval(zap); svg.remove(); }, ALL + 200);
     }
+    // Dirt splat on the "glass" (tornado): an irregular blob with drips and specks that slowly slides down and fades
+    function mud(x, y, size) {
+      const blob = h("div", { class: "gb-fx gb-mud", style: `left:${x}px;top:${y}px;width:${size}px;height:${size * (.75 + Math.random() * .4)}px;` +
+        `border-radius:${[0, 0, 0, 0].map(() => 38 + Math.floor(Math.random() * 24)).join("% ")}% / ${[0, 0, 0, 0].map(() => 38 + Math.floor(Math.random() * 24)).join("% ")}%;` +
+        "transform:translate(-50%,-50%)" });
+      for (let i = 0; i < 2 + Math.floor(Math.random() * 3); i++)   // drips
+        blob.append(h("i", { class: "drip", style: `left:${20 + Math.random() * 60}%;width:${3 + Math.random() * 4}px;--len:${size * (.4 + Math.random() * .9)}px` }));
+      for (let i = 0; i < 4 + Math.floor(Math.random() * 5); i++) {   // specks around
+        const a = Math.random() * Math.PI * 2, r = size * (.6 + Math.random() * .7);
+        blob.append(h("b", { style: `left:calc(50% + ${Math.cos(a) * r}px);top:calc(50% + ${Math.sin(a) * r}px);width:${2 + Math.random() * 5}px;height:${2 + Math.random() * 5}px` }));
+      }
+      document.body.append(blob);
+      blob.animate([{ opacity: 0, scale: .3 }, { opacity: 1, scale: 1.08, offset: .04 }, { opacity: 1, scale: 1, offset: .08 }, { opacity: 1, scale: 1, offset: .3 }, { opacity: 0, scale: 1, translate: "0 18px" }],
+        { duration: 4200, easing: "ease-in", fill: "forwards" });
+      setTimeout(() => blob.remove(), 4300);
+    }
     function cast(kind) {
       casting = true; clearInterval(trail);
       el.classList.remove("run"); el.classList.add("cast", `cast-${kind}`); el.style.pointerEvents = "none"; el.title = "";
@@ -1875,7 +1892,66 @@ async function logout() {
         svg.animate([{ opacity: 0 }, { opacity: 1, offset: .08 }, { opacity: .15, offset: .22 }, { opacity: 1, offset: .32 }, { opacity: .45, offset: .5 }, { opacity: 1, offset: .62 }, { opacity: 0 }], { duration: dur, fill: "forwards" });
         setTimeout(() => svg.remove(), dur + 50);
       };
-      if (kind === "bolt") {
+      if (kind === "rock") {
+        // Stone barrage: a volley of rocks from the orb; every hit punches a small hole with little cracks
+        const N = 9 + Math.floor(Math.random() * 4);
+        later(700, () => charge.remove());
+        for (let i = 0; i < N; i++) later(700 + i * 110, () => {
+          const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random());
+          const x = tx + Math.cos(a) * r * D * .45, y = ty + Math.sin(a) * r * D * .3, sz = 14 + Math.random() * 12;
+          const rock = fxEl(`gb-rock s${i % 4}`, `left:${ox}px;top:${oy}px;width:${sz}px;height:${sz}px`);
+          const dur = 380 + Math.random() * 160, mx = (ox + x) / 2, my = Math.min(oy, y) - 70 - Math.random() * 60, spin = (Math.random() < .5 ? -1 : 1) * (360 + Math.random() * 360);
+          rock.animate([
+            { transform: "translate(-50%,-50%) scale(.5) rotate(0deg)" },
+            { transform: `translate(${mx - ox}px, ${my - oy}px) translate(-50%,-50%) scale(.9) rotate(${spin / 2}deg)`, offset: .5 },
+            { transform: `translate(${x - ox}px, ${y - oy}px) translate(-50%,-50%) scale(1.25) rotate(${spin}deg)` }
+          ], { duration: dur, easing: "cubic-bezier(.45,0,.9,.6)", fill: "forwards" });
+          setTimeout(() => {
+            rock.remove();
+            if (ended) return;
+            burst(x, y, 7, 26, "dust", 450);
+            cracks(x, y, 34 + Math.random() * 30, "rock");
+          }, dur);
+        });
+        later(700 + N * 110 + 600, () => blinkOut("rock", "dust"));
+        later(700 + N * 110 + 1300, () => { clean.forEach(n => n.remove()); toast("The Greatness bot escaped under a hail of stones 🪨"); end(); });
+      } else if (kind === "air") {
+        // Tornado: a bluish twister grows in the middle of the page, sways, flings dirt on the "glass" and dissolves
+        later(700, () => {
+          charge.remove();
+          const Ht = Math.min(D * .95, (A.bottom - A.top) * .85), Wt = Math.min(D * .5, 420), RINGS = 15;
+          const tint = fxEl("gb-dim", `background: radial-gradient(ellipse at ${tx}px ${ty}px, rgba(120,190,255,.22) 0, rgba(60,120,200,.12) ${D * .35}px, rgba(40,90,180,0) ${D * .7}px)`);
+          tint.animate([{ opacity: 0 }, { opacity: 1, offset: .2 }, { opacity: 1, offset: .8 }, { opacity: 0 }], { duration: 2600, fill: "forwards" });
+          const tw = fxEl("gb-tornado", `left:${tx}px;top:${ty + Ht / 2}px;width:${Wt}px;height:${Ht}px`);
+          for (let i = 0; i < RINGS; i++) {
+            const k = i / (RINGS - 1), w = Wt * (1 - k * .86), hh = Math.max(8, w * .2);
+            tw.append(h("i", { style: `width:${w}px;height:${hh}px;top:${k * (Ht - hh)}px;animation-delay:${(-i * .07).toFixed(2)}s;opacity:${(.95 - k * .35).toFixed(2)}` }));
+          }
+          for (let i = 0; i < 26; i++) {   // debris whirling around the funnel
+            const k = Math.random(), w = Wt * (1 - k * .86) / 2 + 6, dur = 500 + Math.random() * 400;
+            const d = h("b", { class: Math.random() < .45 ? "mud" : "", style: `top:${k * Ht}px` });
+            tw.append(d);
+            d.animate([{ transform: `translateX(${-w}px) scale(.6)`, opacity: .4 }, { transform: "translateX(0) scale(1.2)", opacity: 1, offset: .25 },
+              { transform: `translateX(${w}px) scale(.6)`, opacity: .4, offset: .5 }, { transform: "translateX(0) scale(.4)", opacity: .15, offset: .75 },
+              { transform: `translateX(${-w}px) scale(.6)`, opacity: .4 }], { duration: dur, iterations: Infinity, delay: -Math.random() * dur });
+          }
+          const drift = (Math.random() < .5 ? -1 : 1) * (40 + Math.random() * 50);
+          tw.animate([
+            { transform: "translate(-50%,-100%) scale(.2, 0)", opacity: 0 },
+            { transform: "translate(-50%,-100%) scale(1, 1)", opacity: 1, offset: .2 },
+            { transform: `translate(calc(-50% + ${drift}px),-100%) scale(1, 1)`, opacity: 1, offset: .8 },
+            { transform: `translate(calc(-50% + ${drift * 1.3}px),-100%) scale(1.35, .9)`, opacity: 0 }
+          ], { duration: 2600, easing: "ease-in-out", fill: "forwards" });
+          clean.push(tint, tw);
+          // dirt flung onto the screen while it spins
+          for (let i = 0; i < 16; i++) later(500 + i * 95, () => {
+            const a = Math.random() * Math.PI * 2, r = .25 + Math.random() * .75;
+            mud(tx + Math.cos(a) * r * D * .55, ty + Math.sin(a) * r * D * .38, 26 + Math.random() * 50);
+          });
+          later(1500, () => blinkOut("air", "air"));
+          later(2700, () => { clean.forEach(n => n.remove()); toast("The Greatness bot escaped on a whirlwind 🌪️"); end(); });
+        });
+      } else if (kind === "bolt") {
         // Lightning: the robot calls it with a bolt from its orb up to the sky, then a violet strike hits the middle of the page
         later(750, () => { charge.remove(); strike([ox, oy], [ox + (Math.random() * 80 - 40), -20], 320, .55); });
         later(950, () => {
@@ -6311,7 +6387,7 @@ async function pageSettings(main) {
     });
     save.addEventListener("click", tracker.save);
     holder.append(tracker.attach(h("div", { class: "card" }, h("h2", {}, "🤖 Easter egg"),
-      h("p", { class: "muted small" }, "Now and then the little Greatness robot flies across the site for everyone on this server. It watches your cursor and runs away when you get close (dashes past you if cornered) — after a few runs it gets tired and can be caught. Sometimes, when it escapes, it casts a black hole or a fireball on the way out. While it flies, buttons within 200 px of it don't react. People with 'reduce motion' turned on never see it."),
+      h("p", { class: "muted small" }, "Now and then the little Greatness robot flies across the site for everyone on this server. It watches your cursor and runs away when you get close (dashes past you if cornered) — after a few runs it gets tired and can be caught. Sometimes, when it escapes, it casts a spell on the way out — a black hole, a fireball, lightning, a stone barrage or a tornado. While it flies, buttons within 200 px of it don't react. People with 'reduce motion' turned on never see it."),
       h("div", { class: "row", style: "align-items:flex-end" }, h("div", { class: "field", style: "margin:0" }, fieldLabel("Every … seconds on average (0 = off)"), h("div", { class: "row" }, secs, human)), save, preview))));
   }
 
