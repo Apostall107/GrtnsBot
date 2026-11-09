@@ -1763,7 +1763,7 @@ async function logout() {
   }
   window.__neonCat = fly;
   window.__neonCatReschedule = () => schedule(false);
-  schedule(true);
+  window.__mascotStart = () => schedule(true);   // started from boot(), once the server's frequency is known
 })();
 
 async function boot() {
@@ -1795,6 +1795,7 @@ async function boot() {
   const saved = store.get("gb.guild");
   state.guildId = state.guilds.some(g => g.id === saved) ? saved : (state.guilds[0] && state.guilds[0].id) || null;
   if (!visibleTabs().some(t => t[0] === state.tab)) state.tab = (visibleTabs()[0] || ["overview"])[0];
+  window.__mascotStart && window.__mascotStart();
   await selectGuild(state.guildId);
 }
 
