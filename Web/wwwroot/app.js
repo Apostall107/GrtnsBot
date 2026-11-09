@@ -268,7 +268,7 @@ function fmtRelative(ms) {
 
 function member(m) {
   if (!m) return h("span", { class: "muted" }, "—");
-  return h("span", { class: "member", title: m.username ? `@${m.username}` : m.id },
+  return h("span", { class: "member", title: m.username ? `@${m.username}` : m.id, "data-uid": m.id },
     m.avatarUrl ? h("img", { class: "avatar sm", src: m.avatarUrl, alt: "" }) : h("span", { class: "avatar sm" }),
     m.name, m.onServer ? null : h("span", { class: "muted small" }, " (left)"));
 }
@@ -297,6 +297,63 @@ const dialog = () => {
   const first = document.getElementById("dialog");
   return first.open ? document.getElementById("dialog2") : first;
 };
+
+// ================= Member card: click any member (admins) → everything the bot knows about them =================
+
+document.addEventListener("click", e => {
+  const el = e.target.closest && e.target.closest(".member[data-uid]");
+  if (!el || !isAdmin() || !state.guildId || e.target.closest("button, a, select, input, label, .menu-pop")) return;
+  if (el.closest("dialog.member-card-dialog")) return;
+  e.preventDefault();
+  memberCard(el.dataset.uid);
+});
+
+async function memberCard(userId) {
+  const d = dialog();
+  d.classList.add("member-card-dialog");
+  d.onclose = () => d.classList.remove("member-card-dialog");
+  d.replaceChildren(h("div", { class: "muted" }, "Loading…"));
+  if (!d.open) d.showModal();
+  let c;
+  try { c = await gApi("GET", `/members/${userId}/card`); } catch (e) { d.replaceChildren(empty(e.message)); return; }
+  const m = c.member;
+  const date = ms => ms ? new Date(ms).toLocaleDateString() : "—";
+  const ago = ms => ms ? fmtRelative(ms) : "never";
+  const sec = (ic, title, ...body) => h("section", { class: "mc-sec" }, h("h3", {}, icon(ic, 15), title), ...body);
+  const stat = (label, value, cls = "") => h("div", { class: `mc-stat ${cls}` }, h("b", {}, value), h("span", {}, label));
+  const bd = c.birthday ? `${String(c.birthday.day).padStart(2, "0")}.${String(c.birthday.month).padStart(2, "0")}${c.birthday.year ? "." + c.birthday.year : ""}` : null;
+  const OUT = { approved: ["ok", "Approved"], denied: ["lock", "Denied"], closed: ["wait", "Closed"] };
+  d.replaceChildren(
+    h("div", { class: "mc-head" },
+      m.avatarUrl ? h("img", { class: "mc-avatar", src: m.avatarUrl, alt: "" }) : h("span", { class: "mc-avatar" }),
+      h("div", { class: "mc-who" }, h("h2", {}, m.name), h("div", { class: "muted small" }, m.username ? `@${m.username}` : "", " · ", m.id),
+        m.onServer ? null : h("span", { class: "badge lock" }, "left the server")),
+      h("a", { class: "btn secondary sm", href: `https://discord.com/users/${m.id}`, target: "_blank", rel: "noopener" }, icon("external-link", 14), "Discord"),
+      h("button", { class: "btn ghost icon-only sm", title: "Close", "aria-label": "Close", onclick: () => d.close() }, icon("x", 16))),
+    h("div", { class: "mc-stats" },
+      stat("joined", date(c.joinedAt)), stat("last message", ago(c.lastMessage)), stat("last voice", c.voiceNow ? `🔊 ${c.voiceNow}` : ago(c.lastVoice)),
+      stat("birthday", bd || "—")),
+    c.roles.length ? h("div", { class: "chip-wrap mc-roles" }, c.roles.map(r => roleChip(r))) : null,
+    sec("user-round", `Characters · ${c.characters.length}`, c.characters.length ? h("div", { class: "mc-list" }, c.characters.map(ch =>
+      h("div", { class: "mc-row" }, h("b", {}, ch.name), ch.classRole ? roleChip(ch.classRole) : null,
+        h("span", { class: "muted small" }, ch.project), h("span", { class: "spacer" }),
+        ch.gs ? h("span", { class: "gs" }, `GS ${ch.gs}`) : null, ch.cp ? h("span", { class: "gs cp" }, `CP ${fmtCp(ch.cp)}`) : null))) : h("div", { class: "muted small" }, "No characters.")),
+    sec("swords", `Groups now · ${c.groups.length}`, c.groups.length ? h("div", { class: "mc-list" }, c.groups.map(g =>
+      h("div", { class: "mc-row" }, h("b", {}, g.activity), g.organizer ? h("span", { class: "badge ok" }, icon("crown", 12), "organizer") : null,
+        g.reserve ? h("span", { class: "badge wait" }, "reserve") : null, g.character ? h("span", { class: "muted small" }, g.character) : null,
+        h("span", { class: "spacer" }), h("span", { class: "muted small" }, g.startsAt ? fmtDate(g.startsAt) : "no time")))) : h("div", { class: "muted small" }, "Not in any group.")),
+    sec("calendar-clock", "Attendance · 90 days", c.attendance ? h("div", { class: "mc-stats" },
+      stat("groups", String(c.attendance.groups)), stat("organized", String(c.attendance.organized)),
+      stat("came", String(c.attendance.attended), "ok"), stat("no-show", String(c.attendance.noShows), c.attendance.noShows ? "no" : ""),
+      stat("reliability", c.attendance.rate == null ? "—" : `${c.attendance.rate}%`)) : h("div", { class: "muted small" }, "No groups in the last 90 days.")),
+    sec("ticket", "Tickets", c.openTickets.length || c.pastTickets.length ? h("div", { class: "mc-list" },
+      c.openTickets.map(t => h("div", { class: "mc-row" }, h("b", {}, t.project), h("span", { class: "badge recruiting" }, "open"),
+        h("span", { class: "spacer" }), h("span", { class: "muted small" }, fmtRelative(t.openedAt)))),
+      c.pastTickets.map(t => { const [cls, label] = OUT[t.outcome] || ["wait", t.outcome];
+        return h("div", { class: "mc-row" }, h("span", {}, t.project), h("span", { class: `badge ${cls}` }, label),
+          t.by ? h("span", { class: "muted small" }, `by ${t.by}`) : null, h("span", { class: "spacer" }), h("span", { class: "muted small" }, date(t.closedAt))); }))
+      : h("div", { class: "muted small" }, "No tickets.")));
+}
 
 /** Подтверждение опасного действия вводом слова (имени): кнопка активна, только когда введено верно. */
 function confirmTyped(title, text, word, okLabel = "Confirm") {
@@ -1530,6 +1587,8 @@ function renderShell() {
       h("div", { class: "brand" }, h("span", { class: "brand-logo" }, h("img", { src: "/favicon.png", alt: "" })),
         h("span", { class: "brand-text" }, h("span", { class: "brand-name" }, "Greatness Bot"))),
       h("div", { class: "spacer" }),
+      h("button", { type: "button", class: "search-trigger", title: "Search (Ctrl+K)", "aria-label": "Search", onclick: () => quickSearch() },
+        icon("search", 16), h("span", { class: "search-trigger-text" }, "Search…"), h("kbd", {}, navigator.platform.includes("Mac") ? "⌘K" : "Ctrl K")),
       state.guilds.length ? h("div", { class: "server-select" }, icon("server", 16), guildSel) : h("span", { class: "muted" }, "The bot is on no servers"),
       h("span", { class: `status-pill ${connected ? "ok" : "bad"}`, title: `Bot: ${state.connection || "unknown"}` },
         h("span", { class: "dot" }), h("span", { class: "label" }, connected ? "Online" : (state.connection || "Offline"))),
@@ -1880,6 +1939,102 @@ async function pageAnnounce(main) {
 
 // ================= Overview =================
 
+// ================= Quick search (Ctrl+K): pages, members, groups, tickets =================
+
+document.addEventListener("keydown", e => {
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "k" && state.me) { e.preventDefault(); quickSearch(); }
+});
+const searchCache = { at: 0, guild: null, groups: [], tickets: [] };
+
+async function quickSearch() {
+  const d = dialog();
+  if (d.open && d.classList.contains("qs-dialog")) return;
+  d.classList.add("qs-dialog");
+  d.onclose = () => d.classList.remove("qs-dialog");
+  const input = h("input", { type: "search", placeholder: "Search pages, members, groups, tickets…", autocomplete: "off", "aria-label": "Search" });
+  const list = h("div", { class: "qs-list", role: "listbox" });
+  d.replaceChildren(h("div", { class: "qs-input" }, icon("search", 18), input, h("kbd", {}, "Esc")), list);
+  d.showModal(); input.focus();
+
+  const goTab = async (key, before) => { d.close(); if (!await leavePage()) return; if (before) before(); state.tab = key; store.set("gb.tab", key); renderShell(); };
+  let members = [], active = 0, timer = 0, items = [];
+  const norm = t => String(t || "").toLowerCase();
+  function results(q) {
+    const has = (...xs) => xs.some(x => norm(x).includes(q));
+    const out = [];
+    for (const [key, ic, label, , section] of visibleTabs())
+      if (!q || has(label, section, key)) out.push({ ic, title: label, sub: section, kind: "Page", run: () => goTab(key) });
+    if (q) {
+      for (const g of searchCache.groups) {
+        const people = g.slots.filter(x => x.member).map(x => x.member.name + " " + (x.character || ""));
+        if (has(g.activity, g.owner && g.owner.name, ...people)) out.push({ ic: "swords", title: g.activity, kind: "Group",
+          sub: `${g.filled}/${g.size}${g.startsAt ? " · " + fmtDate(g.startsAt) : ""}`, run: () => goTab("lfg", () => { store.set("gb.groupsQuery", q); store.set("gb.lfgSection", "groups"); }) });
+      }
+      for (const t of searchCache.tickets)
+        if (has(t.applicant && t.applicant.name, t.project)) out.push({ ic: "ticket", title: `${t.applicant.name} — ${t.project}`, kind: "Ticket",
+          sub: t.status || "open", run: () => goTab("tickets") });
+      for (const m of members) out.push({ ic: "user-round", title: m.name, kind: "Member", sub: m.username ? "@" + m.username : "",
+        avatar: m.avatarUrl, run: () => { d.close(); memberCard(m.id); } });
+    }
+    return out.slice(0, 40);
+  }
+  function draw() {
+    if (!d.open) return;
+    items = results(norm(input.value.trim()));
+    active = Math.min(active, Math.max(items.length - 1, 0));
+    list.replaceChildren(...(items.length ? items.map((it, i) => h("button", { type: "button", class: `qs-item${i === active ? " active" : ""}`, role: "option",
+      onmouseenter: () => { active = i; mark(); }, onclick: () => it.run() },
+      it.avatar ? h("img", { class: "avatar sm", src: it.avatar, alt: "" }) : icon(it.ic, 16),
+      h("span", { class: "qs-title" }, it.title), it.sub ? h("span", { class: "muted small qs-sub" }, it.sub) : null,
+      h("span", { class: "qs-kind" }, it.kind))) : [h("div", { class: "muted small qs-empty" }, "Nothing found.")]));
+  }
+  const mark = () => [...list.children].forEach((el, i) => el.classList.toggle("active", i === active));
+  input.addEventListener("input", () => {
+    active = 0; draw();
+    clearTimeout(timer);
+    const q = input.value.trim();
+    if (q.length < 2 || !isAdmin()) { members = []; return; }
+    timer = setTimeout(async () => { members = await gApi("GET", `/members?q=${encodeURIComponent(q)}`).catch(() => []); if (input.value.trim() === q) draw(); }, 220);
+  });
+  input.addEventListener("keydown", e => {
+    if (e.key === "ArrowDown") { e.preventDefault(); active = Math.min(active + 1, items.length - 1); mark(); list.children[active]?.scrollIntoView({ block: "nearest" }); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); active = Math.max(active - 1, 0); mark(); list.children[active]?.scrollIntoView({ block: "nearest" }); }
+    else if (e.key === "Enter") { e.preventDefault(); items[active]?.run(); }
+  });
+  draw();
+  if (Date.now() - searchCache.at > 60000 || searchCache.guild !== state.guildId) {
+    searchCache.at = Date.now(); searchCache.guild = state.guildId;
+    const [groups, tickets] = await Promise.all([
+      can("lfg") ? gApi("GET", "/lfg/groups").catch(() => []) : [],
+      can("tickets") ? gApi("GET", "/tickets/open").catch(() => []) : []]);
+    searchCache.groups = groups; searchCache.tickets = tickets;
+    draw();
+  }
+}
+
+/** «Needs attention»: what an admin should look at now — each line leads to its page. */
+async function attentionCard(holder, go) {
+  let a;
+  try { a = await gApi("GET", "/attention"); } catch { return; }
+  const tickets = can("tickets") ? a.tickets : [], groups = can("lfg") ? a.groups : [];
+  const birthdays = can("birthdays") ? a.birthdays : [], failed = can("announce") ? a.failedPosts : [];
+  const total = tickets.length + groups.length + birthdays.length + failed.length;
+  const row = (ic, tone, title, sub, tab, extra) => h("button", { type: "button", class: `att-row tone-${tone}`, onclick: go(tab) || undefined, disabled: !go(tab) },
+    h("span", { class: "att-ic" }, icon(ic, 16)), h("span", { class: "att-main" }, h("b", {}, title), sub ? h("span", { class: "muted small" }, sub) : null),
+    extra || null, go(tab) ? icon("chevron-right", 16, "att-go") : null);
+  const items = [
+    ...tickets.slice(0, 4).map(t => row("ticket", "amber", `${t.member.name} — ${t.project}`, `ticket waiting for a decision · opened ${fmtRelative(t.openedAt)}`, "tickets")),
+    tickets.length > 4 ? row("ticket", "amber", `+${tickets.length - 4} more open ticket(s)`, null, "tickets") : null,
+    ...groups.map(g => row("swords", "violet", `${g.activity} — ${g.filled}/${g.size}`, `starts ${fmtRelative(g.startsAt)}${g.reserve ? ` · ${g.reserve} in reserve` : ""}${g.owner ? ` · ${g.owner.name}` : ""}`, "lfg")),
+    birthdays.length ? row("cake", "pink", `Birthday today: ${birthdays.map(m => m.name).join(", ")}`, null, "birthdays") : null,
+    ...failed.map(f => row("triangle-alert", "red", `Post to #${f.channel || "unknown"} failed`, f.error || fmtRelative(f.at), "announce"))
+  ].filter(Boolean);
+  holder.replaceChildren(h("div", { class: `card attention-card${total ? "" : " calm"}` },
+    h("div", { class: "card-head" }, h("h2", {}, icon(total ? "bell-ring" : "circle-check", 18), total ? "Needs attention" : "All clear"),
+      total ? h("span", { class: "badge wait" }, String(total)) : null),
+    total ? h("div", { class: "att-list" }, items) : h("p", { class: "muted small", style: "margin:0" }, "No waiting tickets, no groups short of people in the next 3 hours, no failed posts.")));
+}
+
 async function pageOverview(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "Dashboard"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
   const holder = h("div", {}, h("div", { class: "stats" }, [0, 1, 2, 3].map(() => skeletonStat())));
@@ -1888,7 +2043,10 @@ async function pageOverview(main) {
   try {
     const o = await gApi("GET", "/overview");
     const connected = state.connection === "Connected";
+    const attention = h("div", {});
+    attentionCard(attention, go);
     holder.replaceChildren(
+      attention,
       sectionLabel(o.guild.name),
       h("div", { class: "stats" },
         statCard("users", "Members", o.guild.members, "on the server", null, o.trends.members),
@@ -3066,6 +3224,9 @@ function groupsBoard(groups, projects = [], defKey = null) {
     return b;
   });
   const search = h("input", { type: "search", placeholder: "Search a member, character or activity…", "aria-label": "Search groups" });
+  // Coming from Ctrl+K: start with that query
+  const fromSearch = store.get("gb.groupsQuery");
+  if (fromSearch) { store.set("gb.groupsQuery", ""); search.value = fromSearch; f.q = fromSearch.toLowerCase(); }
   search.addEventListener("input", () => { f.q = search.value.trim().toLowerCase(); draw(); });
   const projSel = projects.length > 1 ? h("select", { "aria-label": "Project", style: "width:200px" }, h("option", { value: "" }, "All projects"),
     projects.map(p => h("option", { value: p.key }, p.name))) : null;
@@ -5929,9 +6090,8 @@ async function pageChars(main) {
         r => r.groupsUpdated ? `Saved. Updated ${r.groupsUpdated} active group(s).` : "Saved.") !== undefined;
     });
     save.addEventListener("click", tracker.save);
-    const rm = h("button", { class: "btn danger" }, icon("trash-2", 15), "Remove");
-    rm.addEventListener("click", () => removeWithUndo(rm.closest(".card"), `${c.name} removed.`,
-      () => gApi("DELETE", `/me/characters/${encodeURIComponent(c.name)}${pq}`), refresh));
+    const rm = menuButton([{ icon: "trash-2", label: `Remove ${c.name}`, danger: true, onclick: () => removeWithUndo(rm.closest(".card"), `${c.name} removed.`,
+      () => gApi("DELETE", `/me/characters/${encodeURIComponent(c.name)}${pq}`), refresh) }]);
     // Rename: class, note, GS and active groups follow the new name
     const rename = h("button", { class: "btn ghost icon-only sm", title: "Rename", "aria-label": `Rename ${c.name}` }, icon("pencil", 15));
     rename.addEventListener("click", async () => {
@@ -6911,11 +7071,10 @@ async function pageAccess(main) {
       return await act(save, () => api("PUT", `/api/access/${g.user.id}`, { permissions: value }), "Saved.") !== undefined;
     });
     save.addEventListener("click", tracker.save);
-    const rm = h("button", { class: "btn danger" }, "Remove");
-    rm.addEventListener("click", async () => {
+    const rm = menuButton([{ icon: "trash-2", label: "Remove access", danger: true, onclick: async () => {
       if (!await confirmDialog(`Remove access for ${g.user.name}?`, "They won't be able to use the panel anymore.", "Remove")) return;
-      if (await act(rm, () => api("DELETE", `/api/access/${g.user.id}`), "Access removed.") !== undefined) refresh();
-    });
+      if (await act(null, () => api("DELETE", `/api/access/${g.user.id}`), "Access removed.") !== undefined) refresh();
+    } }]);
     return tracker.attach(h("tr", {},
       h("td", {}, member(g.user), h("div", { class: "muted small" }, g.user.id)),
       h("td", {}, perms.el),
