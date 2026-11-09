@@ -1831,10 +1831,15 @@ h1 .hint svg { width: 17px; height: 17px; }
 .main > .page-head {
   position: sticky; top: var(--header-h); z-index: 20;
   margin: calc(-1 * var(--s6)) calc(-1 * var(--s8)) var(--s5); padding: 14px var(--s8) 12px;
-  background: linear-gradient(180deg, rgba(10, 12, 20, .92), rgba(10, 12, 20, .78));
-  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(255, 255, 255, .06);
+  background: transparent; transition: background 160ms ease, box-shadow 160ms ease;
 }
+/* Once the page is scrolled the heading gets a solid band across the whole content width (not a box) */
+body.scrolled .main > .page-head {
+  background: #0c0e17;
+  box-shadow: 0 0 0 100vmax #0c0e17, 0 1px 0 100vmax rgba(255, 255, 255, .08);
+  clip-path: inset(0 -100vmax -1px);
+}
+@media (min-width: 901px) { .nav { z-index: 30; } }
 .page-head h1 { font-size: 24px; min-width: 0; }
 .page-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
 @media (max-width: 900px) { .main > .page-head { margin: calc(-1 * var(--s5)) calc(-1 * var(--s5)) var(--s4); padding: 12px var(--s5) 10px; } }
