@@ -1737,7 +1737,7 @@ h1 .hint svg { width: 17px; height: 17px; }
 /* LFG classes: one aligned row per class — role | icon preview | icon code | emoji picker | role icon | group roles | remove */
 .class-row {
   display: grid; align-items: center; gap: 10px; padding: 8px 10px 8px 12px; margin-bottom: 6px;
-  grid-template-columns: minmax(140px, 220px) 34px minmax(160px, 1fr) minmax(150px, 220px) 124px 250px 30px;
+  grid-template-columns: minmax(140px, 220px) 34px minmax(160px, 1fr) minmax(150px, 220px) 124px 272px 30px;
   border-radius: 10px; background: rgba(255, 255, 255, .025); border: 1px solid rgba(255, 255, 255, .06);
   transition: border-color 160ms ease;
 }
@@ -1759,3 +1759,39 @@ h1 .hint svg { width: 17px; height: 17px; }
 }
 .class-row > .btn.secondary { width: 100%; justify-content: center; }
 .class-row .class-slots .muted { white-space: nowrap; }
+
+/* ===== Audit fixes ===== */
+/* "?" hints: the hidden tooltip must not take space (it widened phone pages and left a blank strip on the right) */
+.hint::after { display: none; max-width: min(300px, calc(100vw - 40px)); }
+.hint:hover::after, .hint:focus::after { display: block; }
+.page-hint .hint::after { max-width: min(460px, calc(100vw - 40px)); }
+/* Single-column editors and panel grids never get wider than the screen */
+@media (max-width: 980px) { .editor-layout { grid-template-columns: minmax(0, 1fr); } }
+.panel-grid { grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 1fr)); }
+/* Group meta (requirements: role chips + GS) wraps */
+.meta-item { flex-wrap: wrap; min-width: 0; }
+/* People / role chips: a long name is cut with … and the × stays visible */
+.chip { max-width: min(100%, 320px); }
+.chip > .member { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
+.chip > .member > .avatar, .chip > .member > img { vertical-align: -5px; margin-right: 6px; }
+.chip > button { flex: none; }
+/* Rows with a name + badges + buttons wrap instead of squeezing the name */
+.list-row.wrap-row { flex-wrap: wrap; }
+.list-row.wrap-row > .grow { flex: 1 1 180px; }
+/* Welcome link buttons: label and URL share the space, emoji stays compact */
+.binding-row { flex-wrap: wrap; }
+.binding-row > .binding-label { flex: 1 1 140px; min-width: 0; max-width: 220px; }
+.binding-row > .binding-url { flex: 2 1 200px; min-width: 0; }
+/* Armory per project: name on its own line on phones */
+@media (max-width: 640px) { .armory-proj > .grow { flex: 1 1 100%; } }
+.gs-age .btn { white-space: nowrap; flex: none; }
+/* LFG activities table fits the main column: chips and the project picker are capped */
+.act-table td .chip { max-width: 170px; }
+.act-table td .select, .act-table td select { max-width: 170px; }
+.act-table th, .act-table td { padding-left: 8px; padding-right: 8px; }
+.class-slots .slot-chip { flex: none; }
+/* Ticket form questions: one column on phones */
+@media (max-width: 640px) {
+  .question-row { grid-template-columns: 26px minmax(0, 1fr); }
+  .question-row > input:nth-of-type(2) { grid-column: 2; }
+}

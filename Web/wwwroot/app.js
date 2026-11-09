@@ -1277,7 +1277,6 @@ const allTabs = [
   ["log", "scroll-text", "Log", "log", "Administration"],
   ["settings", "settings", "Settings", "settings", "Administration"],
   ["access", "key-round", "Access", "access", "Owner tools"],
-  ["captcha", "shield-check", "Captcha", "access", "Owner tools"],
   ["voicenow", "headphones", "Voice now", "access", "Owner tools"]
 ];
 const currentGuild = () => state.guilds.find(g => g.id === state.guildId);
@@ -1378,7 +1377,7 @@ function renderShell() {
   // ----- Sidebar: sections, Lucide icons, active route; collapses to icons on desktop, drawer on mobile
   const layout = h("div", { class: `layout${collapsed ? " collapsed" : ""}` });
   const closeDrawer = () => layout.classList.remove("drawer-open");
-  const NAV_TONES = { voicenow: "teal", captcha: "amber", birthdays: "pink", pages: "blue", home: "violet", play: "violet", chars: "cyan", schedule: "teal", roster: "green", lfg: "violet", guild: "teal", tickets: "amber", voice: "teal", welcome: "pink", roles: "green", content: "blue",
+  const NAV_TONES = { voicenow: "teal", birthdays: "pink", pages: "blue", home: "violet", play: "violet", chars: "cyan", schedule: "teal", roster: "green", lfg: "violet", guild: "teal", tickets: "amber", voice: "teal", welcome: "pink", roles: "green", content: "blue",
     announce: "pink", overview: "green", log: "blue", settings: "cyan", access: "amber" };
   const navButton = ([key, ic, label]) => h("button", {
     // Tooltip only when the menu is collapsed to icons (labels are visible otherwise)
@@ -1465,7 +1464,7 @@ function renderShell() {
 
   if (!state.guildId) { main.append(empty("No servers available for your account.")); return; }
   if (!visibleTabs().length) { main.append(empty("You have no sections on this server. Ask an admin for the member role.")); return; }
-  const page = { home: pageHome, content: pageContent, play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, guild: pageGuild, schedule: pageSchedule, roster: pageMemberRoster, tickets: pageTickets, voice: pageVoice, welcome: pageWelcome, roles: pageRoles, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess, voicenow: pageVoiceNow, captcha: pageCaptcha, birthdays: pageBirthdays, pages: pageChannelPages, media: pageMedia }[state.tab];
+  const page = { home: pageHome, content: pageContent, play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, guild: pageGuild, schedule: pageSchedule, roster: pageMemberRoster, tickets: pageTickets, voice: pageVoice, welcome: pageWelcome, roles: pageRoles, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess, voicenow: pageVoiceNow, birthdays: pageBirthdays, pages: pageChannelPages, media: pageMedia }[state.tab];
   page(main);
   addGuideButton(main, state.tab);
   decorateHeading(main);
@@ -1880,11 +1879,11 @@ async function pageLfg(main) {
     });
     return el;
   };
-  actCard.append(actList.length ? h("div", { class: "table-wrap" }, h("table", { class: "table" },
+  actCard.append(actList.length ? h("div", { class: "table-wrap" }, h("table", { class: "table act-table" },
     h("thead", {}, h("tr", {}, h("th", {}, "Activity"), h("th", {}, "Ping role"), h("th", { title: "Characters with a lower GS don't see the activity when creating a group" }, "Min GS"), projects.length ? h("th", {}, "Project") : null, h("th", {}))),
     h("tbody", {}, actList.map(a => {
-      const edit = h("button", { class: "btn secondary", onclick: () => activityDialog(a) }, "✏️ Edit");
-      const rm = h("button", { class: "btn ghost" }, "Remove");
+      const edit = h("button", { class: "btn secondary icon-only sm", title: "Edit", "aria-label": "Edit", onclick: () => activityDialog(a) }, icon("pencil", 15));
+      const rm = h("button", { class: "btn ghost icon-only sm danger-text", title: "Remove", "aria-label": "Remove" }, icon("trash-2", 15));
       rm.addEventListener("click", async () => {
         if (!await confirmDialog(`Remove ${a.name}?`, "Groups that are already posted are not affected.", "Remove")) return;
         if (await act(rm, () => gApi("DELETE", `/lfg/activities/${encodeURIComponent(a.key)}`), "Activity removed.") !== undefined) refresh();
@@ -4097,13 +4096,13 @@ async function pageWelcome(main) {
   const linksBox = h("div", {});
   const drawLinks = () => {
     linksBox.replaceChildren(...links.map((l, i) => {
-      const label = h("input", { maxlength: "80", placeholder: "Label, e.g. Rules", value: l.label || "", style: "max-width:200px" });
-      const url = h("input", { placeholder: "https://…", value: l.url || "" });
+      const label = h("input", { maxlength: "80", placeholder: "Label, e.g. Rules", value: l.label || "", class: "binding-label" });
+      const url = h("input", { placeholder: "https://…", value: l.url || "", class: "binding-url" });
       const em = emojiField(l.emoji, emojis, () => { l.emoji = em.value(); update(); });
       label.addEventListener("input", () => { l.label = label.value; update(); });
       url.addEventListener("input", () => { l.url = url.value; update(); });
       return h("div", { class: "row binding-row" }, em.el, label, url,
-        h("button", { class: "btn ghost", type: "button", title: "Remove", onclick: () => { links.splice(i, 1); drawLinks(); update(); } }, "✖"));
+        h("button", { class: "btn ghost icon-only sm danger-text", type: "button", title: "Remove", "aria-label": "Remove", onclick: () => { links.splice(i, 1); drawLinks(); update(); } }, icon("trash-2", 15)));
     }), links.length < 4 ? h("button", { class: "btn secondary sm", type: "button", onclick: () => { links.push({ label: "", url: "", emoji: "" }); drawLinks(); } },
       icon("plus", 14), "Add a link button") : null);
   };
@@ -4560,7 +4559,7 @@ function colorField(value, def, onChange) {
 const BOT_TEXT_ICONS = [["LFG — group post", "swords"], ["LFG — creating", "circle-plus"], ["LFG — signing", "user-plus"],
   ["LFG — class", "drama"], ["LFG — organizer", "crown"], ["LFG — DMs", "mail-plus"], ["Tickets — ticket", "ticket"],
   ["Tickets — creating", "clipboard-list"], ["Tickets — approve", "shield-check"], ["Temp voice", "headphones"],
-  ["Characters", "users"], ["Verification", "bot"]];
+  ["Characters", "users"]];
 
 async function pageBotTexts(main, groupFilter = null) {
   if (!groupFilter) {
@@ -5430,7 +5429,6 @@ const TEXT_MODULES = [
   ["chars", "Characters", "users", [], g => g.startsWith("Characters")],
   ["community", "Welcome & role panels", "door-open", [], g => g.startsWith("Welcome")],
   ["birthdays", "Birthdays", "cake", [], g => g.startsWith("Birthdays")],
-  ["captcha", "Verification", "shield-check", [], g => g.startsWith("Verification")],
 ];
 const TEXT_MODULE_OTHER = g => !TEXT_MODULES.some(m => m[4](g));
 const ALL_TEXT_GROUPS = () => true;
@@ -6741,149 +6739,6 @@ async function pageMedia(main) {
     h("div", { class: "row", style: "margin-top:12px" }, h("span", { class: "muted small" }, `Storage channel: #${mediaLib.channel}`), change));
 }
 
-// ================= Captcha (bot owner only) =================
-
-/** Full captcha control (same as /super-panel): list + grant pass, add/remove users, settings, preview, reset. */
-async function pageCaptcha(main) {
-  main.append(h("div", { class: "card-head" }, h("h1", {}, "🛡️ Captcha"),
-    h("button", { class: "btn btn-refresh", title: "Reload now", onclick: hardRefresh }, "🔄 Refresh")));
-  main.append(h("p", { class: "muted small" },
-    "Only you (the bot owner) see this page. Listed users must solve a picture captcha before using the bot. ",
-    "Everything from the Discord /super-panel is here too: the list, settings and a preview. ",
-    "If someone is stuck on the captcha in the chat, grant them a pass — it clears any block and marks them as verified."));
-
-  const durOpts = [["", "For the default time"], ["60", "For 1 hour"], ["240", "For 4 hours"], ["1440", "For 24 hours"], ["0", "For one action only"]];
-  const dur = h("select", { class: "input", style: "max-width:220px" },
-    ...durOpts.map(([v, t]) => h("option", { value: v }, t)));
-
-  const listCard = h("div", { class: "card" }, skeletonLines(4));
-  const setCard = h("div", { class: "card" }, skeletonLines(5));
-
-  // --- Add users ---
-  const addIn = h("input", { class: "input", placeholder: "Discord user IDs, separated by space or comma", style: "flex:1;min-width:220px" });
-  const addBtn = h("button", { class: "btn" }, icon("user-plus", 14), "Add to list");
-  addBtn.addEventListener("click", () => act(addBtn, async () => {
-    const ids = addIn.value.split(/[\s,]+/).filter(Boolean);
-    if (!ids.length) return toast("Enter at least one user ID.", "warn");
-    const d = await gApi("POST", "/captcha/users", { userIds: ids });
-    addIn.value = "";
-    toast(`Added ${d.added}.` + (d.skippedBotsOrOwner ? ` ${d.skippedBotsOrOwner} skipped (bots or you).` : ""));
-    load();
-  }));
-
-  main.append(
-    h("div", { class: "card" }, sectionLabel("Grant a pass"),
-      h("p", { class: "muted small" }, "Duration applies to every pass you grant in the list below."),
-      h("div", { class: "row", style: "gap:8px;flex-wrap:wrap;align-items:center" },
-        h("span", { class: "muted small" }, "Pass is valid:"), dur)),
-    h("div", { class: "card" }, sectionLabel("Add users to the captcha list"),
-      h("p", { class: "muted small" }, "In Discord: enable Developer Mode, right-click a user → Copy User ID. Bots and you are never checked."),
-      h("div", { class: "row", style: "gap:8px;flex-wrap:wrap" }, addIn, addBtn)),
-    listCard, setCard);
-
-  const grant = (id, name) => act(null, async () => {
-    const minutes = dur.value === "" ? undefined : Number(dur.value);
-    const d = await gApi("POST", "/captcha/grant", { userId: id, minutes });
-    toast(d.until ? `${name} is verified until ${new Date(d.until).toLocaleString()}.` : `${name} may run one action without a captcha.`);
-    load();
-  });
-  const requireAgain = (id, name) => act(null, async () => {
-    await gApi("POST", "/captcha/require", { userId: id });
-    toast(`${name} will solve the captcha again on their next action.`); load();
-  });
-  const removeUser = (id, name) => act(null, async () => {
-    if (!await confirmDialog("Remove from the captcha list?", `${name} will no longer be asked for a captcha.`, "Remove")) return;
-    await gApi("POST", "/captcha/users/remove", { userIds: [id] });
-    toast(`${name} removed from the list.`); load();
-  });
-
-  const badge = u => {
-    if (u.status === "blocked") return h("span", { class: "badge lock", title: "Blocked after failing" }, icon("clock", 12), u.until ? "blocked · " + fmtRelative(u.until) : "blocked");
-    if (u.status === "verified") return h("span", { class: "chip ok", title: "Passed the captcha" }, icon("user-check", 12), u.until ? "ok · " + fmtRelative(u.until) : "ok");
-    if (u.status === "pending") return h("span", { class: "chip", title: "A captcha is open in the chat" }, "solving…");
-    return h("span", { class: "chip muted" }, "waiting");
-  };
-
-  function renderList(d) {
-    if (!d.users.length) { listCard.replaceChildren(emptyState("shield-check", "The captcha list is empty", "Add users above or via /super-panel in Discord.")); return; }
-    listCard.replaceChildren(
-      sectionLabel(`On the captcha list · ${d.count}/${d.max}`),
-      h("div", { class: "list" }, d.users.map(u => h("div", { class: "list-row", style: "gap:8px;align-items:center" },
-        h("div", { class: "grow" }, member(u.member)),
-        badge(u),
-        h("button", { class: "btn sm", title: "Mark as verified (clears any block)", onclick: () => grant(u.member.id, u.member.name) }, icon("user-check", 14), "Grant pass"),
-        u.status === "verified" || u.status === "blocked"
-          ? h("button", { class: "btn sm ghost", title: "Require the captcha again", onclick: () => requireAgain(u.member.id, u.member.name) }, "Require again")
-          : null,
-        h("button", { class: "btn sm ghost icon-only", title: "Remove from the list", onclick: () => removeUser(u.member.id, u.member.name) }, icon("trash-2", 14))))));
-  }
-
-  function renderSettings(s) {
-    const num = (val, min, max, w = 90) => h("input", { type: "number", min: String(min), max: String(max), value: String(val), style: `width:${w}px` });
-    const validity = num(s.validityMinutes, 0, 10080);
-    const attempts = num(s.maxAttempts, 1, 10, 70);
-    const block = num(s.blockMinutes, 1, 1440);
-    const length = num(s.codeLength, s.minLength, s.maxLength, 70);
-    const distortion = num(s.distortionPercent, 0, 100, 70);
-    const timeLimit = num(s.timeLimitSeconds, 0, 3600);
-    const mirror = toggle(s.mirror, "Mirror each character");
-    const timeoutOnFail = toggle(s.timeoutOnFail, "Also Discord-timeout and disconnect from voice on failure");
-    const field = (label, input, hint) => h("div", { class: "field", style: "margin:0 16px 10px 0;display:inline-block;vertical-align:top" },
-      h("div", { class: "muted small", style: "margin-bottom:4px" }, label), input, hint ? h("div", { class: "muted small" }, hint) : null);
-
-    const save = h("button", { class: "btn primary" }, icon("check", 14), "Save settings");
-    save.addEventListener("click", () => act(save, async () => {
-      const s2 = await gApi("PUT", "/captcha/settings", {
-        validityMinutes: +validity.value, maxAttempts: +attempts.value, blockMinutes: +block.value,
-        codeLength: +length.value, distortionPercent: +distortion.value, timeLimitSeconds: +timeLimit.value,
-        mirror: mirror.cb.checked, timeoutOnFail: timeoutOnFail.cb.checked
-      });
-      toast("Captcha settings saved.");
-      renderSettings(s2);
-    }));
-
-    const preview = h("button", { class: "btn" }, icon("eye", 14), "Preview");
-    preview.addEventListener("click", () => act(preview, async () => {
-      const p = await gApi("GET", "/captcha/preview");
-      const d = dialog();
-      d.replaceChildren(
-        h("h2", {}, "🔍 Captcha preview"),
-        h("p", { class: "muted small" }, `This is what listed users see. ${p.howto}`),
-        h("img", { src: p.image, alt: "captcha", style: "max-width:100%;border-radius:8px;background:#fff;padding:6px" }),
-        h("p", { class: "muted small", style: "margin-top:8px" }, "Code: " + p.code),
-        h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Close")));
-      d.showModal();
-    }));
-
-    const reset = h("button", { class: "btn ghost" }, icon("refresh-cw", 14), "Reset verifications");
-    reset.addEventListener("click", () => act(reset, async () => {
-      if (!await confirmDialog("Reset all verifications?", "Everyone on the list must solve the captcha again and all blocks are lifted.", "Reset")) return;
-      await gApi("POST", "/captcha/reset", {});
-      toast("All verifications reset; blocks lifted."); load();
-    }));
-
-    setCard.replaceChildren(
-      sectionLabel("Captcha settings"),
-      h("div", { style: "margin-bottom:6px" },
-        field("Valid after solving, min", validity, "0 = every command"),
-        field("Attempts", attempts),
-        field("Block on fail, min", block),
-        field("Code length", length, `${s.minLength}–${s.maxLength}`),
-        field("Distortion, %", distortion, "0–100"),
-        field("Seconds per picture", timeLimit, "0 = no limit")),
-      mirror.el, timeoutOnFail.el,
-      h("div", { class: "row", style: "gap:8px;flex-wrap:wrap;margin-top:6px" }, save, preview, reset));
-  }
-
-  async function load() {
-    let d;
-    try { d = await gApi("GET", "/captcha"); } catch (e) { listCard.replaceChildren(empty(e.message)); return; }
-    renderList(d);
-    renderSettings(d.settings);
-  }
-  await load();
-}
-
 async function pageAccess(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "🔑 Access"),
     h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
@@ -7276,7 +7131,7 @@ const HELP = {
       "**Stripe color** — the colored line on the left of each panel (the swatch, a #hex code, or ↩ for the default)."
     ]], ["Bot messages", [
       "**💬 Bot messages** — every other text the bot writes: replies, DMs, group posts, ticket messages, reminders, menu placeholders, buttons and window (modal) titles and fields.",
-      "**📝 Texts by module** — a tab per module (LFG, Tickets, Temp Voice, Characters, Welcome & role panels, Birthdays, Verification, General): its panels first, then its bot messages. **All texts** — everything at once, for searching.",
+      "**📝 Texts by module** — a tab per module (LFG, Tickets, Temp Voice, Characters, Welcome & role panels, Birthdays, General): its panels first, then its bot messages. **All texts** — everything at once, for searching.",
       "Search finds a text by its name or words, **Only changed** shows what you edited.",
       "Words in `{braces}` are filled in by the bot — keep them where you need the value. In fields marked “- = hide”, a single `-` removes the line.",
       "Stripe colors of group posts (recruiting / full / closed), tickets, DMs, invites and the verification are set here too.",
