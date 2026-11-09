@@ -12,7 +12,8 @@ namespace LfgBot.Services;
 /// </summary>
 public sealed class LfgStore
 {
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    // Компактный JSON: файл пишется при каждой записи в сбор — меньше текста, быстрее запись
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
     private readonly object _saveLock = new();
     private readonly string _path;
     private readonly ILogger<LfgStore> _logger;

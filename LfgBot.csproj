@@ -9,7 +9,16 @@
     <!-- Небольшой VPS: обычный (workstation) сборщик мусора без фонового потока — меньше памяти, паузы незаметны для бота -->
     <ServerGarbageCollection>false</ServerGarbageCollection>
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <!-- Без ICU (данные локалей ~30 МБ в памяти): все тексты бота свои, даты/числа форматируются явно; libicu на сервере не нужна -->
+    <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Сборщик мусора бережёт память: чаще уплотняет кучу вместо того, чтобы занимать новую (слабый VPS) -->
+    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="5" />
+    <!-- Отдавать неиспользуемую память системе, а не держать её про запас -->
+    <RuntimeHostConfigurationOption Include="System.GC.RetainVM" Value="false" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- Веб-админка (ASP.NET Core) в том же процессе, что и бот -->

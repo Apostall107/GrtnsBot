@@ -197,7 +197,8 @@ public static class LfgRenderer
     }
 
     // ---------- Шаг 4: время ----------
-    private static readonly CultureInfo En = CultureInfo.GetCultureInfo("en-US");
+    // Инвариантная культура = английские названия дней (сборка без ICU — именованных культур нет)
+    private static readonly CultureInfo En = CultureInfo.InvariantCulture;
     public const int DateDaysAhead = 14;
 
     public static Screen TimeStep(LfgDraft d, DateOnly today, DateTimeOffset? startsAt, string zoneName, string? warning = null, bool dmAvailable = true)

@@ -41,6 +41,17 @@ public static class WebPanel
         services.AddSingleton(new WebPanelState(loginConfigured));
         services.AddHttpClient();
         services.AddHttpContextAccessor();
+        // Ответы API (JSON) сжимаются: списки ростера, групп, архива в разы меньше. Самый быстрый уровень — почти без затрат CPU.
+        // Статика сжата заранее (MapStatic), её middleware не трогает. Секретов в теле ответов нет (CSRF — постоянный заголовок).
+        services.AddResponseCompression(o =>
+        {
+            o.EnableForHttps = true;
+            o.MimeTypes = ["application/json", "application/problem+json"];
+            o.Providers.Add<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProvider>();
+            o.Providers.Add<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProvider>();
+        });
+        services.Configure<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProviderOptions>(o => o.Level = System.IO.Compression.CompressionLevel.Fastest);
+        services.Configure<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProviderOptions>(o => o.Level = System.IO.Compression.CompressionLevel.Fastest);
         services.AddSingleton<WebAccessStore>();
         services.AddSingleton<PanelAccess>();
         services.AddSingleton<IAuthorizationHandler, PanelAccessHandler>();
@@ -136,6 +147,7 @@ public static class WebPanel
     public static void UseWebPanel(this WebApplication app)
     {
         app.UseForwardedHeaders();
+        app.UseResponseCompression();
         app.UseAuthentication();
         app.UseAuthorization();
 

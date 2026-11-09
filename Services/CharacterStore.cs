@@ -59,7 +59,8 @@ public sealed class CharacterStore
     public const int MaxPerUser = 24;
     public const int MaxNameLength = 32;
 
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    // Компактный JSON: синхронизация с официальным армори обновляет персонажей часто
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
     private readonly object _lock = new();
     private readonly string _path;
     private readonly Dictionary<string, List<string>> _data;
