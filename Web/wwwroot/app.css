@@ -2871,3 +2871,23 @@ input.switch:checked { animation: switch-glow .5s ease-out; }
 .ach.done .ach-icon { background: radial-gradient(circle, rgba(255, 210, 110, .35), rgba(255, 170, 40, .08)); box-shadow: 0 0 14px rgba(255, 190, 70, .35); }
 .ach.locked .ach-icon { color: var(--text-secondary); font-weight: 800; border: 1px dashed rgba(255, 255, 255, .15); }
 .ach.locked b { color: var(--text-secondary); }
+/* Achievements: ranking */
+.rank-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+.rank-tile { position: relative; padding: 12px 14px; border-radius: 14px; border: 1px solid rgba(167, 139, 250, .22); background: rgba(255, 255, 255, .03); outline: none; cursor: default; }
+.rank-tile:hover, .rank-tile:focus { border-color: rgba(167, 139, 250, .55); z-index: 40; }
+.rank-tile.top1 { border-color: rgba(255, 205, 80, .55); background: linear-gradient(135deg, rgba(255, 200, 70, .14), rgba(255, 255, 255, .02)); }
+.rank-tile.top2 { border-color: rgba(210, 220, 235, .45); background: linear-gradient(135deg, rgba(210, 220, 235, .1), rgba(255, 255, 255, .02)); }
+.rank-tile.top3 { border-color: rgba(215, 140, 80, .45); background: linear-gradient(135deg, rgba(215, 140, 80, .1), rgba(255, 255, 255, .02)); }
+.rank-head { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+.rank-icon { font-size: 18px; }
+.rank-place { display: flex; align-items: baseline; gap: 4px; margin: 6px 0 2px; }
+.rank-place b { font-size: 24px; }
+.rank-medal { font-size: 20px; }
+.rank-pop { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 30; padding: 10px 12px; border-radius: 12px; display: none;
+  background: #191230; border: 1px solid rgba(167, 139, 250, .4); box-shadow: 0 12px 30px rgba(0, 0, 0, .5); min-width: 220px; }
+.rank-tile:hover .rank-pop, .rank-tile:focus .rank-pop { display: block; }
+.rank-pop-title { font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-secondary); margin-bottom: 6px; }
+.rank-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; }
+.rank-row .avatar { width: 22px; height: 22px; border-radius: 50%; flex: none; background: rgba(255, 255, 255, .08); }
+.rank-row .rank-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank-row.me .rank-name { color: #FFD86A; font-weight: 700; }

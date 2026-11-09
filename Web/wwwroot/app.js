@@ -7671,6 +7671,24 @@ async function pageMascot(main) {
 
 // ================= Member: Achievements (the mascot game) =================
 
+/** Ranking: my place per category among everyone on the server; hover a tile for the top 3. */
+function rankingCard(rows) {
+  const medal = r => r === 1 ? "🥇" : r === 2 ? "🥈" : r === 3 ? "🥉" : null;
+  return h("div", { class: "card" }, h("h2", {}, "📊 Ranking"),
+    h("p", { class: "muted small" }, "Your place among everyone on the server who has played. Hover a tile to see the top 3."),
+    h("div", { class: "rank-grid" }, rows.map(r => h("div", { class: `rank-tile${r.rank && r.rank <= 3 ? ` top${r.rank}` : ""}`, tabindex: "0" },
+      h("div", { class: "rank-head" }, h("span", { class: "rank-icon" }, r.icon), h("span", { class: "rank-label" }, r.label)),
+      h("div", { class: "rank-place" }, r.rank ? [medal(r.rank) ? h("span", { class: "rank-medal" }, medal(r.rank)) : null, h("b", {}, `#${r.rank}`), h("span", { class: "muted small" }, ` of ${r.of}`)]
+        : h("span", { class: "muted small" }, r.of ? `not ranked yet · ${r.of} players` : "nobody yet")),
+      h("div", { class: "muted small" }, `you: ${r.value}`),
+      h("div", { class: "rank-pop" }, h("div", { class: "rank-pop-title" }, `Top 3 · ${r.label}`),
+        r.top.length ? r.top.map((t, i) => h("div", { class: `rank-row${t.me ? " me" : ""}` },
+          h("span", { class: "rank-pos" }, ["🥇", "🥈", "🥉"][i]),
+          t.member.avatarUrl ? h("img", { class: "avatar", src: t.member.avatarUrl, alt: "" }) : h("span", { class: "avatar" }),
+          h("span", { class: "rank-name" }, t.member.name), h("b", {}, String(t.value))))
+          : h("div", { class: "muted small" }, "Nobody yet — be the first!"))))));
+}
+
 async function pageAchievements(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "🏆 Achievements"),
     h("button", { class: "btn btn-refresh", title: "Reload", onclick: hardRefresh }, "🔄 Refresh")),
@@ -7687,6 +7705,7 @@ async function pageAchievements(main) {
       statCard("sparkles", "Spells seen", d.spells.reduce((a, s) => a + s.count, 0), `${seen} of ${d.spells.length} different`),
       statCard("star", "Legendary casts", d.legendary, "two spells at once"),
       statCard("trophy", "Achievements", `${got}/${d.total}`, d.escaped ? `it escaped from you ${d.escaped}×` : "")),
+    rankingCard(d.ranking || []),
     h("div", { class: "card" }, h("h2", {}, "📖 Spellbook"),
       h("div", { class: "spellbook" }, d.spells.map(s => h("div", { class: `spell-tile${s.count ? "" : " locked"}`, title: s.count ? `${s.name}: seen ${s.count}×` : "Not seen yet" },
         h("span", { class: "spell-icon" }, s.count ? s.icon : "?"), h("span", { class: "spell-name" }, s.count ? s.name : "???"),

@@ -320,11 +320,39 @@ public static partial class PanelApi
         });
 
         // Achievements tab: my stats and the achievements (locked ones come without title and description)
-        g.MapGet("/achievements", (ulong guildId, ClaimsPrincipal user, [FromServices] MascotStatsStore mascot) =>
+        g.MapGet("/achievements", (ulong guildId, ClaimsPrincipal user, DiscordSocketClient client, [FromServices] MascotStatsStore mascot) =>
         {
-            var s = mascot.Get(guildId, user.UserId()!.Value);
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            var me = user.UserId()!.Value;
+            var s = mascot.Get(guildId, me);
+            // Ranking: where I am among everyone on the server who played, per category; the top 3 for the hover
+            var all = mascot.Players(guildId).Where(x => guild.GetUser(x.UserId) is not null || x.UserId == me).ToList();
+            if (!all.Any(x => x.UserId == me)) all.Add((me, s));
+            object Rank(string key, string label, string icon, Func<MascotStats, int> value)
+            {
+                var mine = value(s);
+                var top = all.Select(x => (x.UserId, V: value(x.Stats))).Where(x => x.V > 0).OrderByDescending(x => x.V).Take(3)
+                    .Select(x => new { member = Member(guild, x.UserId), value = x.V, me = x.UserId == me }).ToList();
+                return new
+                {
+                    key, label, icon, value = mine,
+                    rank = mine > 0 ? 1 + all.Count(x => value(x.Stats) > mine) : (int?)null,
+                    of = all.Count(x => value(x.Stats) > 0),
+                    top
+                };
+            }
+            var ranking = new[]
+            {
+                Rank("caught", "Robots caught", "🤖", x => x.Caught),
+                Rank("quick", "Quick catches", "⚡", x => x.QuickCatches),
+                Rank("spells", "Spells seen", "✨", x => x.Spells.Values.Sum()),
+                Rank("kinds", "Different spells", "📖", x => x.Spells.Count(kv => kv.Value > 0)),
+                Rank("legendary", "Legendary casts", "🌟", x => x.Legendary),
+                Rank("achievements", "Achievements", "🏆", x => MascotStatsStore.All.Count(a => a.Done(x))),
+            };
             return Results.Ok(new
             {
+                ranking,
                 caught = s.Caught, quick = s.QuickCatches, escaped = s.Escaped, legendary = s.Legendary,
                 spells = MascotStatsStore.Spells.Select(x => s.Spells.GetValueOrDefault(x.Key) is var n && n > 0
                     ? new { key = x.Key, icon = x.Icon, name = x.Name, count = n }

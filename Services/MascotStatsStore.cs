@@ -92,6 +92,15 @@ public sealed class MascotStatsStore
             return _data.TryGetValue($"{guildId}:{userId}", out var s) ? JsonSerializer.Deserialize<MascotStats>(JsonSerializer.Serialize(s))! : new MascotStats();
     }
 
+    /// <summary>Everyone on a server who has stats: (user, copy of stats).</summary>
+    public IReadOnlyList<(ulong UserId, MascotStats Stats)> Players(ulong guildId)
+    {
+        var prefix = $"{guildId}:";
+        lock (_lock)
+            return _data.Where(kv => kv.Key.StartsWith(prefix, StringComparison.Ordinal) && ulong.TryParse(kv.Key[prefix.Length..], out _))
+                .Select(kv => (ulong.Parse(kv.Key[prefix.Length..]), JsonSerializer.Deserialize<MascotStats>(JsonSerializer.Serialize(kv.Value))!)).ToList();
+    }
+
     /// <summary>Record an event from the site; returns the member's catches after it (null — ignored: too fast / not valid).</summary>
     public int? Record(ulong guildId, ulong userId, string kind, bool quick, IEnumerable<string>? spells, bool legendary, int? legacyCaught = null)
     {
