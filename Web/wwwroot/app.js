@@ -1395,10 +1395,16 @@ function renderShell() {
     if (!sec || sec.name !== t[4]) { sec = { name: t[4], tabs: [] }; sections.push(sec); }
     sec.tabs.push(t);
   }
+  // Each group has its own icon + tone: a chip in the header, the open tab's group sits in a tinted panel,
+  // folded groups show how many pages they hide
+  const SECTION_LOOK = { "Member": ["user-round", "violet"], "Games": ["gamepad-2", "teal"], "Community": ["users", "green"],
+    "Posts & channels": ["megaphone", "blue"], "Administration": ["settings", "cyan"], "Owner tools": ["crown", "amber"] };
   for (const sec of sections) {
     const active = sec.tabs.some(t => t[0] === state.tab);
-    const group = h("div", { class: `nav-group${folded.has(sec.name) && !active ? " folded" : ""}` });
+    const [secIcon, secTone] = SECTION_LOOK[sec.name] || ["layers", "violet"];
+    const group = h("div", { class: `nav-group tone-${secTone}${active ? " current" : ""}${folded.has(sec.name) && !active ? " folded" : ""}` });
     const head = h("button", { class: "nav-section", type: "button", "aria-expanded": String(!group.classList.contains("folded")),
+      title: collapsed ? sec.name : active ? null : sec.tabs.map(t => t[2]).join(" · "),
       onclick: () => {
         if (active) return; // the open tab's group can't fold
         const isFolded = group.classList.toggle("folded");
@@ -1406,8 +1412,11 @@ function renderShell() {
         if (isFolded) folded.add(sec.name); else folded.delete(sec.name);
         store.set("gb.navFold", JSON.stringify([...folded]));
       } },
-      h("span", { class: "nav-section-text" }, sec.name), active ? null : icon("chevron-down", 13, "nav-fold"));
-    group.append(head, ...sec.tabs.map(navButton));
+      h("span", { class: "nav-chip" }, icon(secIcon, 14)),
+      h("span", { class: "nav-section-text" }, sec.name),
+      active ? h("span", { class: "nav-here", "aria-label": "Current section" })
+        : [h("span", { class: "nav-count" }, String(sec.tabs.length)), icon("chevron-down", 14, "nav-fold")]);
+    group.append(head, h("div", { class: "nav-group-items" }, sec.tabs.map(navButton)));
     navItems.push(group);
   }
   const collapseBtn = h("button", { class: "nav-item nav-collapse", title: collapsed ? "Expand menu" : "Collapse menu",
