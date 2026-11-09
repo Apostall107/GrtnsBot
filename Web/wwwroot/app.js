@@ -1631,7 +1631,7 @@ async function logout() {
   let busy = false, timer = 0;
   function fly(opts) {
     if (busy || document.hidden || !state.me) return schedule();
-    // Sometimes (≈15%) an escape ends with a show: before vanishing it casts a black hole or a fireball
+    // Sometimes (≈15%) a successful escape ends with a show: instead of just leaving the screen it casts a black hole or a fireball
     const forced = opts && typeof opts === "object" ? opts.finale : null;
     const finale = forced || (Math.random() < .15 ? (Math.random() < .5 ? "hole" : "fire") : null);
     const M = BOT; // only our robot flies (the cat is retired)
@@ -1662,7 +1662,7 @@ async function logout() {
     // After 5 runs/dashes it gets tired: slows down and can be caught.
     const NEAR = 55, MAX_ACTS = 5, inside = () => ({ x0: A.left + 4, y0: A.top + 4, x1: A.right - W - 4, y1: A.bottom - H - 4 });
     let ptr = null, raf = 0, last = performance.now(), born = last, entered = false, acts = 0, tired = false;
-    let runUntil = 0, dash = null, done = false, casting = false, traveled = 0;
+    let runUntil = 0, dash = null, done = false, casting = false;
     const onMove = e => { ptr = [e.clientX, e.clientY]; };
     const norm = (x, y) => { const l = Math.hypot(x, y) || 1; return [x / l, y / l]; };
     const tire = () => { if (++acts >= MAX_ACTS) { tired = true; el.classList.add("tired"); el.classList.remove("run"); el.title = "It's tired — catch it!"; } };
@@ -1707,7 +1707,7 @@ async function logout() {
       const running = now < runUntil;
       if (!running) el.classList.remove("run");
       const v = base * (running ? 2 : tired ? .6 : 1) * dt;
-      pos = [pos[0] + dir[0] * v, pos[1] + dir[1] * v]; traveled += v;
+      pos = [pos[0] + dir[0] * v, pos[1] + dir[1] * v];
       if (running) pos = [Math.max(b.x0, Math.min(b.x1, pos[0])), Math.max(b.y0, Math.min(b.y1, pos[1]))];   // no escaping while fleeing
       place();
       // fade with how much of it is on the page; done once it has entered and then left
@@ -1715,7 +1715,12 @@ async function logout() {
       const frac = ix * iy / (W * H);
       el.style.opacity = frac.toFixed(2);
       if (frac > .98) entered = true;
-      if (finale && entered && !running && frac > .98 && traveled > span * .4) return cast(finale);
+      // a successful escape: instead of just slipping off the screen it stops at the edge and casts
+      if (finale && entered && !running && frac < .98) {
+        pos = [Math.max(b.x0, Math.min(b.x1, pos[0])), Math.max(b.y0, Math.min(b.y1, pos[1]))];
+        place(); el.style.opacity = "1";
+        return cast(finale);
+      }
       if ((entered && frac <= 0) || now - born > 120000) end();
     };
     document.addEventListener("pointermove", onMove, { passive: true });
@@ -1834,14 +1839,20 @@ async function logout() {
             const k = [0, .35, .7, 1].map(t => ({ transform: `translate(${Math.cos(a + spin * t) * r * (1 - t)}px, ${Math.sin(a + spin * t) * r * (1 - t)}px) scale(${1.3 - t})`, opacity: t < 1 ? 1 : 0 }));
             s.animate(k, { duration: 1000, easing: "ease-in" }); setTimeout(() => s.remove(), 1000);
           });
-          later(900, () => el.animate([{ transform: el.style.transform }, { transform: `translate(${tx - W / 2}px, ${ty - H / 2}px) rotate(900deg) scale(0)` }],
-            { duration: 1500, easing: "cubic-bezier(.5,0,.9,.4)", fill: "forwards" }));
+          later(2500, () => {   // and the robot blinks out right where it stands
+            const r = box(), px = r.left + r.width / 2, py = r.top + r.height / 2;
+            el.animate([{ transform: el.style.transform, opacity: 1 }, { transform: `${el.style.transform} scale(1.15, .8)`, opacity: 1, offset: .3 }, { transform: `${el.style.transform} scale(0, 1.6)`, opacity: 0 }],
+              { duration: 380, easing: "ease-in", fill: "forwards" });
+            later(300, () => { const ring = fxEl("gb-ring hole", `left:${px}px;top:${py}px`); clean.push(ring);
+              ring.animate([{ transform: "translate(-50%,-50%) scale(0)", opacity: 1 }, { transform: "translate(-50%,-50%) scale(2.2)", opacity: 0 }], { duration: 500, easing: "ease-out", fill: "forwards" });
+              burst(px, py, 12, 60, "blue", 600); });
+          });
           later(3000, () => {
             const flash = fxEl("gb-ring hole", `left:${tx}px;top:${ty}px`);
             flash.animate([{ transform: "translate(-50%,-50%) scale(0)", opacity: 1 }, { transform: "translate(-50%,-50%) scale(9)", opacity: 0 }], { duration: 700, easing: "ease-out", fill: "forwards" });
             burst(tx, ty, 26, D * .45, "blue", 900); clean.push(flash); cracks(tx, ty, D * .5);
           });
-          later(3900, () => { clean.forEach(n => n.remove()); toast("The Greatness bot escaped into a black hole 🌀"); end(); });
+          later(3900, () => { clean.forEach(n => n.remove()); toast("The Greatness bot escaped — and left a black hole behind 🌀"); end(); });
         });
       } else {
         // Fireball: charged in the orb, flies to the middle of the page and explodes with a big flash
@@ -1873,7 +1884,7 @@ async function logout() {
           burst(tx, ty, 40, D * .55, "fire", 1100); cracks(tx, ty, D * .55);
           el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: "forwards" });   // vanishes in the flash
           setTimeout(() => { [flash, core, ring].forEach(n => n.remove()); }, 1250);
-          later(1300, () => { toast("The Greatness bot left with a bang 💥"); end(); });
+          later(1300, () => { toast("The Greatness bot escaped with a bang 💥"); end(); });
         };
       }
     }
@@ -6233,7 +6244,7 @@ async function pageSettings(main) {
     });
     save.addEventListener("click", tracker.save);
     holder.append(tracker.attach(h("div", { class: "card" }, h("h2", {}, "🤖 Easter egg"),
-      h("p", { class: "muted small" }, "Now and then the little Greatness robot flies across the site for everyone on this server. It watches your cursor and hops away when you get close — after a few hops it gets tired and can be caught. While it flies, buttons within 200 px of it don't react. People with 'reduce motion' turned on never see it."),
+      h("p", { class: "muted small" }, "Now and then the little Greatness robot flies across the site for everyone on this server. It watches your cursor and runs away when you get close (dashes past you if cornered) — after a few runs it gets tired and can be caught. Sometimes, when it escapes, it casts a black hole or a fireball on the way out. While it flies, buttons within 200 px of it don't react. People with 'reduce motion' turned on never see it."),
       h("div", { class: "row", style: "align-items:flex-end" }, h("div", { class: "field", style: "margin:0" }, fieldLabel("Every … seconds on average (0 = off)"), h("div", { class: "row" }, secs, human)), save, preview))));
   }
 
