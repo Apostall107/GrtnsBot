@@ -2570,3 +2570,8 @@ input.switch:checked { animation: switch-glow .5s ease-out; }
   background: #15102A; border: 1px solid rgba(176, 156, 255, .3);
   box-shadow: 0 16px 40px rgba(0, 0, 0, .6), 0 0 22px rgba(139, 108, 255, .16); }
 .hint-tip.on { display: block; animation: pop-in .14s ease both; }
+/* Folded groups: no page count, only what waits for you */
+.nav-count:empty { display: none !important; }
+.nav-badge.on, .nav-count[data-tip] { cursor: help; }
+.nav-badge.on:hover, .nav-count[data-tip]:hover { box-shadow: 0 0 0 2px rgba(255, 255, 255, .25), 0 0 14px rgba(240, 106, 154, .7); }
+.hint-tip { max-width: min(380px, calc(100vw - 16px)); }

@@ -1662,18 +1662,42 @@ async function selectGuild(id) {
 // ----- Sidebar helpers: remembered scroll, "needs attention" counters on items
 let navScrollTop = 0;
 const navBadges = { at: 0, data: {}, timer: 0, guild: null };
+/** What a counter means and what to do — shown on hover over the pink badge. */
+function navBadgeTip(key) {
+  const a = navBadges.raw;
+  if (!a) return "";
+  const list = (items, fmt, max = 4) => items.slice(0, max).map(x => "• " + fmt(x)).join("\n") + (items.length > max ? `\n…and ${items.length - max} more` : "");
+  if (key === "tickets") return `${a.tickets.length} ticket(s) wait for a decision:\n` +
+    list(a.tickets, t => `${t.member.name} — ${t.project} (opened ${fmtRelative(t.openedAt)})`) + "\n\nOpen Tickets → Approve or Deny.";
+  if (key === "lfg") return `${a.groups.length} group(s) start within 3 hours and aren't full:\n` +
+    list(a.groups, g => `${g.activity} — ${g.filled}/${g.size}, starts ${fmtRelative(g.startsAt)}${g.reserve ? `, ${g.reserve} in reserve` : ""}`) +
+    "\n\nPing people, move someone from the reserve or change the time.";
+  if (key === "birthdays") return `Birthday today: ${a.birthdays.map(m => m.name).join(", ")}\n\nThe greeting is posted at the set time — check it's turned on in Birthdays → Greeting post.`;
+  if (key === "announce") return `${a.failedPosts.length} post(s) failed in the last 3 days:\n` +
+    list(a.failedPosts, f => `#${f.channel || "unknown"} — ${f.error || "error"}`) + "\n\nUsually the bot lacks permissions in that channel. Fix them and send again from Announcements.";
+  return "";
+}
+
 function applyNavBadges() {
   for (const el of document.querySelectorAll(".nav-item[data-key]")) {
     const n = navBadges.data[el.dataset.key] || 0;
     const b = el.querySelector(".nav-badge");
-    if (b) { b.textContent = n ? String(n > 99 ? "99+" : n) : ""; b.classList.toggle("on", !!n); }
+    if (b) {
+      b.textContent = n ? String(n > 99 ? "99+" : n) : ""; b.classList.toggle("on", !!n);
+      if (n) b.dataset.tip = navBadgeTip(el.dataset.key); else delete b.dataset.tip;
+    }
   }
   // A folded group shows the sum of its counters instead of its page count, so waiting work isn't hidden
   for (const g of document.querySelectorAll(".nav-group")) {
     const sum = [...g.querySelectorAll(".nav-item[data-key]")].reduce((t, el) => t + (navBadges.data[el.dataset.key] || 0), 0);
     g.classList.toggle("has-badge", sum > 0);
+    // A folded group shows only what waits for you (no page count); hover explains it
     const c = g.querySelector(".nav-count");
-    if (c) { if (!c.dataset.pages) c.dataset.pages = c.textContent; c.textContent = sum > 0 ? String(sum) : c.dataset.pages; c.title = sum > 0 ? "Waiting for you in this group" : ""; }
+    if (c) {
+      c.textContent = sum > 0 ? String(sum) : "";
+      const tips = [...g.querySelectorAll(".nav-item[data-key]")].filter(el => navBadges.data[el.dataset.key]).map(el => navBadgeTip(el.dataset.key));
+      if (sum > 0) c.dataset.tip = tips.join("\n\n"); else delete c.dataset.tip;
+    }
   }
 }
 async function loadNavBadges() {
@@ -1681,6 +1705,7 @@ async function loadNavBadges() {
   try {
     const a = await gApi("GET", "/attention");
     navBadges.data = { tickets: a.tickets.length, lfg: a.groups.length, birthdays: a.birthdays.length, announce: a.failedPosts.length };
+    navBadges.raw = a;
     navBadges.at = Date.now(); navBadges.guild = state.guildId;
   } catch { /* badges are optional */ }
   applyNavBadges();
@@ -4150,13 +4175,19 @@ function hint(text) {
     tip.classList.add("on");
     const r = el.getBoundingClientRect(), t = tip.getBoundingClientRect();
     const head = (document.querySelector(".topbar") || { getBoundingClientRect: () => ({ bottom: 0 }) }).getBoundingClientRect().bottom;
+    if (el.closest(".nav")) { // sidebar counters: to the right of the menu
+      tip.style.left = `${Math.min(el.closest(".nav").getBoundingClientRect().right + 10, innerWidth - t.width - 8)}px`;
+      tip.style.top = `${Math.max(head + 6, Math.min(r.top + r.height / 2 - t.height / 2, innerHeight - t.height - 8))}px`;
+      return;
+    }
     const below = r.top - t.height - 10 < head + 6;
     tip.style.left = `${Math.max(8, Math.min(r.left - 10, innerWidth - t.width - 8))}px`;
     tip.style.top = `${below ? r.bottom + 10 : r.top - t.height - 10}px`;
     tip.classList.toggle("below", below);
   };
   const hide = () => { cur = null; tip.classList.remove("on"); };
-  document.addEventListener("pointerover", e => { const el = e.target.closest && e.target.closest(".hint[data-tip]"); if (el && el !== cur) show(el); else if (!el && cur) hide(); });
+  const TIP = ".hint[data-tip], .nav-badge[data-tip], .nav-count[data-tip]";
+  document.addEventListener("pointerover", e => { const el = e.target.closest && e.target.closest(TIP); if (el && el !== cur) show(el); else if (!el && cur) hide(); });
   document.addEventListener("focusin", e => { const el = e.target.closest && e.target.closest(".hint[data-tip]"); if (el) show(el); });
   document.addEventListener("focusout", hide);
   addEventListener("scroll", hide, { passive: true, capture: true });
