@@ -79,20 +79,14 @@ public sealed class BotService(
     private async Task RefreshPanelsAsync()
     {
         var panels = services.GetRequiredService<PanelService>();
-        // No LFG panel remembered on a server (records lost) — look for our panels in the channels and remember them again
-        var texts = services.GetRequiredService<PanelTextStore>();
-        foreach (var guild in client.Guilds.Where(g => texts.GetPosted(g.Id, "lfg").Count == 0))
+        // Panels whose record was lost (e.g. the bot couldn't see the server for a while) are found in the channels and linked again
+        var relinker = services.GetRequiredService<PanelRelinker>();
+        foreach (var guild in client.Guilds)
         {
-            try
-            {
-                var found = await panels.DiscoverAsync(guild);
-                if (found.Values.Sum() > 0) logger.LogInformation("Panels found again on {Guild}: {Found}", guild.Name, string.Join(", ", found.Where(f => f.Value > 0).Select(f => $"{f.Key} {f.Value}")));
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Failed to look for posted panels on {Guild}", guild.Name);
-            }
+            try { await relinker.RelinkAsync(guild); }
+            catch (Exception ex) { logger.LogWarning(ex, "Failed to look for posted panels on {Guild}", guild.Name); }
         }
+
         foreach (var guild in client.Guilds)
         foreach (var def in PanelDefs.All)
         {

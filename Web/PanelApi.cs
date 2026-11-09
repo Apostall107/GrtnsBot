@@ -1013,10 +1013,10 @@ public static partial class PanelApi
         });
 
         // Найти панели, опубликованные до того, как бот начал их запоминать
-        g.MapPost("/discover", async (ulong guildId, DiscordSocketClient client, PanelService panels) =>
+        g.MapPost("/discover", async (ulong guildId, DiscordSocketClient client, [Microsoft.AspNetCore.Mvc.FromServices] PanelRelinker relinker) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
-            return Results.Ok(await panels.DiscoverAsync(guild));
+            return Results.Ok(await relinker.RelinkAsync(guild));
         });
     }
 

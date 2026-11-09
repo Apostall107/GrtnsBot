@@ -90,6 +90,28 @@ public sealed class PanelService(DiscordSocketClient client, PanelTextStore stor
     /// Ищет панели, опубликованные раньше (до запоминания): последние сообщения бота в текстовых каналах
     /// с кнопкой панели. Возвращает число новых найденных по каждой панели.
     /// </summary>
+    /// <summary>Custom ids of all buttons and menus of a message.</summary>
+    public static HashSet<string> CustomIds(IMessage message) => CustomIds(message.Components);
+
+    public static HashSet<string> CustomIds(IEnumerable<IMessageComponent> components) => components
+        .OfType<ActionRowComponent>()
+        .SelectMany(r => r.Components)
+        .Select(c => c switch { ButtonComponent b => b.CustomId, SelectMenuComponent s => s.CustomId, _ => null })
+        .OfType<string>()
+        .ToHashSet();
+
+    /// <summary>A bot message with a module panel's buttons that isn't remembered — remember it (LFG: with a guessed project).</summary>
+    public void Consider(ulong guildId, ulong channelId, ulong messageId, HashSet<string> ids, Dictionary<string, int> found)
+    {
+        foreach (var def in PanelDefs.All)
+            if (ids.Contains(def.MarkerCustomId) && store.Track(guildId, def.Key, channelId, messageId))
+            {
+                found[def.Key] = found.GetValueOrDefault(def.Key) + 1;
+                if (def.Key == "lfg" && GuessLfgProject(guildId, channelId) is { } project)
+                    store.SetPanelProject(guildId, "lfg", messageId, project);
+            }
+    }
+
     public async Task<Dictionary<string, int>> DiscoverAsync(SocketGuild guild, int messagesPerChannel = 50)
     {
         var found = PanelDefs.All.ToDictionary(d => d.Key, _ => 0);
@@ -105,20 +127,7 @@ public sealed class PanelService(DiscordSocketClient client, PanelTextStore stor
                 var messages = await channel.GetMessagesAsync(messagesPerChannel).FlattenAsync();
                 foreach (var message in messages.OfType<IUserMessage>().Where(m => m.Author.Id == client.CurrentUser.Id))
                 {
-                    var ids = message.Components
-                        .OfType<ActionRowComponent>()
-                        .SelectMany(r => r.Components)
-                        .Select(c => (c as ButtonComponent)?.CustomId)
-                        .OfType<string>()
-                        .ToHashSet();
-
-                    foreach (var def in PanelDefs.All)
-                        if (ids.Contains(def.MarkerCustomId) && store.Track(guild.Id, def.Key, channel.Id, message.Id))
-                        {
-                            found[def.Key]++;
-                            if (def.Key == "lfg" && GuessLfgProject(guild.Id, channel.Id) is { } project)
-                                store.SetPanelProject(guild.Id, "lfg", message.Id, project);
-                        }
+                    Consider(guild.Id, channel.Id, message.Id, CustomIds(message), found);
                 }
             }
             catch (Discord.Net.HttpException ex)
