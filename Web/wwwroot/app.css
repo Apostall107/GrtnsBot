@@ -2126,3 +2126,160 @@ dialog[open]::backdrop { animation: fade-in .2s ease; }
 .dash-hidden { display: flex; align-items: center; gap: 6px; margin-top: 12px; }
 @media (max-width: 640px) { .heat-hours, .heat-row { grid-template-columns: 30px repeat(24, 10px); } }
 .danger-num { color: #ff8f99; }
+
+/* =====================================================================
+   GREATNESS · Violet Night — the look of the panel
+   Three materials: matte frosted cards, glossy glass for accents,
+   deep wells for fields. Violet stays dominant, magenta and cyan are
+   only accents. Neon = thin lit edges and glows on what is active.
+   Nothing here animates forever; heavy blur only on a few big surfaces.
+   ===================================================================== */
+:root {
+  --gv-violet: #8B6CFF;
+  --gv-violet-deep: #5B3BE6;
+  --gv-magenta: #E05BD0;
+  --gv-cyan: #4CC9F0;
+  --gv-ink: #0A0912;
+  --gv-card: rgba(23, 20, 38, .72);
+  --gv-card-2: rgba(16, 14, 28, .78);
+  --gv-edge: rgba(176, 156, 255, .22);
+  --gv-sheen: linear-gradient(180deg, rgba(255, 255, 255, .10), rgba(255, 255, 255, .025) 46%, rgba(255, 255, 255, 0) 47%);
+  /* film grain: a tiny static noise tile, kills banding and gives the matte feel */
+  --gv-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .045 0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  --background: #0A0912;
+}
+::selection { background: rgba(139, 108, 255, .45); color: #fff; }
+
+/* Atmosphere: deep violet night with an aurora at the top and a faint arcane grid */
+html { background: var(--gv-ink); }
+body::before {
+  background:
+    radial-gradient(60% 45% at 18% -6%, rgba(123, 77, 255, .42), transparent 70%),
+    radial-gradient(40% 35% at 88% 4%, rgba(224, 91, 208, .20), transparent 70%),
+    radial-gradient(45% 40% at 70% 105%, rgba(76, 201, 240, .12), transparent 70%),
+    radial-gradient(35% 30% at 4% 90%, rgba(123, 77, 255, .14), transparent 70%),
+    linear-gradient(180deg, #0D0B19 0%, #0A0912 45%, #08070F 100%);
+}
+body::after {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background-image: var(--gv-grain),
+    linear-gradient(rgba(139, 108, 255, .035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(139, 108, 255, .035) 1px, transparent 1px);
+  background-size: 140px 140px, 48px 48px, 48px 48px;
+  mask-image: radial-gradient(90% 70% at 50% 0%, #000 30%, transparent 85%);
+  -webkit-mask-image: radial-gradient(90% 70% at 50% 0%, #000 30%, transparent 85%);
+}
+
+/* Top bar & sidebar: glossy dark glass (the two big blurred surfaces) */
+.topbar {
+  background: linear-gradient(180deg, rgba(20, 16, 36, .82), rgba(12, 10, 22, .72));
+  border-bottom: 1px solid rgba(176, 156, 255, .14);
+  box-shadow: 0 1px 0 rgba(139, 108, 255, .10), 0 8px 30px rgba(0, 0, 0, .35);
+}
+.topbar::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(139, 108, 255, .65) 20%, rgba(224, 91, 208, .45) 60%, transparent); }
+.topbar { position: sticky; }
+.brand-name { background: linear-gradient(90deg, #fff, #CDBFFF 55%, #F0A6E8); -webkit-background-clip: text; background-clip: text; color: transparent; letter-spacing: .06em; }
+.brand-logo img { box-shadow: 0 0 0 1px rgba(176, 156, 255, .45), 0 0 18px rgba(139, 108, 255, .6); }
+.nav { background: linear-gradient(180deg, rgba(18, 15, 32, .78), rgba(11, 10, 20, .72)); border-right: 1px solid rgba(176, 156, 255, .10); }
+
+/* Matte frosted cards: tinted, grained, no live blur (cheap), lit gradient rim */
+.card, .stat, .quick-action {
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+  background-color: var(--gv-card);
+  background-image: var(--gv-grain), linear-gradient(180deg, rgba(139, 108, 255, .06), rgba(139, 108, 255, 0) 160px);
+  border-color: transparent;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 14px 40px rgba(3, 2, 10, .45);
+}
+.card::before, .stat-rim, .quick-action::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none;
+  background: linear-gradient(160deg, rgba(190, 172, 255, .42), rgba(176, 156, 255, .10) 28%, rgba(255, 255, 255, .03) 55%, rgba(224, 91, 208, .22));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+}
+.quick-action { position: relative; }
+.card .card, .card .dash-chart, .card .mc-sec, .card .empty-state { background-color: var(--gv-card-2); background-image: none; }
+.card .card::before { opacity: .55; }
+.card > .card-head:first-child:has(h2.with-icon), .card > .card-head:first-child:has(h3.with-icon) {
+  background: linear-gradient(180deg, rgba(255, 255, 255, .045), rgba(255, 255, 255, .01));
+  border-bottom: 1px solid transparent;
+  border-image: linear-gradient(90deg, transparent, color-mix(in srgb, var(--tone, var(--gv-violet)) 55%, transparent) 25%, rgba(176, 156, 255, .10) 75%, transparent) 1;
+}
+
+/* Glossy glass: KPI tiles, hero, attention, dialogs — the "lit" surfaces */
+.stat, .home-hero, .attention-card {
+  background-image: var(--gv-sheen), var(--gv-grain),
+    radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--tone, var(--gv-violet)) 22%, transparent), transparent 60%);
+}
+.stat .value { background: linear-gradient(180deg, #fff 30%, color-mix(in srgb, var(--tone, var(--gv-violet)) 55%, #fff)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+dialog, .user-pop, .mention-pop, .menu-pop, .select-pop {
+  background-color: rgba(20, 16, 34, .86);
+  background-image: var(--gv-sheen), var(--gv-grain);
+  border: 1px solid rgba(176, 156, 255, .24);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .6), 0 0 0 1px rgba(0, 0, 0, .4), 0 0 50px rgba(139, 108, 255, .14);
+  -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%);
+}
+dialog::backdrop { background: radial-gradient(60% 60% at 50% 40%, rgba(40, 24, 80, .55), rgba(5, 4, 10, .82)); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+
+/* Page title: luminous gradient type */
+.page-head h1 { background: linear-gradient(92deg, #FFFFFF 0%, #E2D9FF 45%, #B9A2FF 75%, #F2A9EC 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 0 18px rgba(139, 108, 255, .25)); }
+.page-head h1 .icon { color: #B9A2FF; }
+.page-head h1 .hint { -webkit-text-fill-color: initial; color: var(--text-secondary); }
+
+/* Buttons: primary = glossy violet→magenta with a neon halo; secondary = smoked glass */
+.btn:not(.secondary):not(.ghost):not(.danger):not(.btn-refresh):not(.btn-guide) {
+  background: var(--gv-sheen), linear-gradient(135deg, #9575FF 0%, #6E46F0 55%, #9B47D6 100%);
+  border: 1px solid rgba(214, 200, 255, .35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .25), 0 6px 22px rgba(110, 70, 240, .45), 0 0 0 1px rgba(30, 10, 70, .4);
+  text-shadow: 0 1px 0 rgba(30, 10, 70, .45);
+}
+.btn:not(.secondary):not(.ghost):not(.danger):not(.btn-refresh):not(.btn-guide):hover {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .3), 0 0 0 1px rgba(214, 200, 255, .45), 0 0 26px rgba(139, 108, 255, .75), 0 0 60px rgba(224, 91, 208, .25);
+}
+.btn.secondary { background: var(--gv-sheen), rgba(255, 255, 255, .045); border-color: rgba(190, 172, 255, .16); }
+.btn.secondary:hover { background: var(--gv-sheen), rgba(139, 108, 255, .14); border-color: rgba(190, 172, 255, .4); box-shadow: 0 0 16px rgba(139, 108, 255, .25); }
+.btn.danger { background: var(--gv-sheen), linear-gradient(135deg, #F06A7A, #C93355); border-color: rgba(255, 180, 190, .35); box-shadow: 0 6px 20px rgba(220, 60, 90, .35); }
+
+/* Tabs: active pill lit from inside, with a neon underline */
+.seg, .tabs { background: linear-gradient(180deg, rgba(10, 8, 20, .65), rgba(10, 8, 20, .45)); border-color: rgba(176, 156, 255, .12); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .4); }
+.seg-btn.active, .tabs .btn.active-tab {
+  background: var(--gv-sheen), linear-gradient(180deg, rgba(139, 108, 255, .42), rgba(110, 70, 240, .22)) !important;
+  box-shadow: inset 0 0 0 1px rgba(196, 180, 255, .55), 0 0 18px rgba(139, 108, 255, .35), inset 0 -2px 0 rgba(224, 91, 208, .7) !important;
+  color: #fff !important;
+}
+
+/* Fields: deep wells; focus = neon ring */
+input:not([type=checkbox]):not([type=radio]):not([type=range]), select, textarea, .select-trigger {
+  background: linear-gradient(180deg, rgba(4, 3, 10, .72), rgba(10, 8, 20, .62));
+  border-color: rgba(176, 156, 255, .14);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, .45);
+}
+input:not([type=checkbox]):not([type=radio]):focus, select:focus, textarea:focus, .select-trigger:focus-visible {
+  border-color: rgba(176, 156, 255, .7);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, .45), 0 0 0 3px rgba(139, 108, 255, .22), 0 0 22px rgba(139, 108, 255, .35);
+}
+
+/* Tables: glass header stripe, rows light up on hover */
+.table thead th { background: linear-gradient(180deg, rgba(139, 108, 255, .10), rgba(139, 108, 255, .03)); color: #C9BEFF; letter-spacing: .04em; }
+.table tbody tr:hover { background: linear-gradient(90deg, rgba(139, 108, 255, .10), rgba(139, 108, 255, .02) 70%); }
+
+/* Badges & chips: soft neon */
+.badge { box-shadow: 0 0 12px color-mix(in srgb, currentColor 22%, transparent); }
+.chip { background: linear-gradient(180deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, .03)); border-color: rgba(176, 156, 255, .18); }
+
+/* Sidebar: the open group glows from its edge; the active item is a lit glass bar */
+.nav-group.current { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 0 24px color-mix(in srgb, var(--tone) 14%, transparent); }
+.nav .nav-item.active { background-image: var(--gv-sheen), linear-gradient(90deg, color-mix(in srgb, var(--tone) 30%, transparent), color-mix(in srgb, var(--tone) 6%, transparent) 90%); }
+
+/* Empty states & toasts in the same family */
+.empty-state { border-color: rgba(176, 156, 255, .2); background: linear-gradient(180deg, rgba(139, 108, 255, .05), rgba(139, 108, 255, .015)); }
+.toast { background: var(--gv-sheen), rgba(20, 16, 34, .94); border-color: rgba(176, 156, 255, .22); box-shadow: 0 16px 40px rgba(0, 0, 0, .5), 0 0 24px rgba(139, 108, 255, .18); }
+
+/* Fallback: no mask support → plain thin border */
+@supports not ((mask-composite: exclude) or (-webkit-mask-composite: xor)) {
+  .card::before, .quick-action::before { display: none; }
+  .card, .stat, .quick-action { border-color: rgba(176, 156, 255, .16); }
+}
+.stat { border: 1px solid rgba(176, 156, 255, .16); }
+.stat.clickable:hover { border-color: color-mix(in srgb, var(--tone, var(--gv-violet)) 55%, transparent); }
