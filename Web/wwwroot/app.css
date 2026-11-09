@@ -2588,3 +2588,20 @@ input.switch:checked { animation: switch-glow .5s ease-out; }
 .gv-halo > i { position: absolute; left: -150px; top: -150px; width: 300px; height: 300px; border-radius: 50%; will-change: transform;
   background: radial-gradient(circle, rgba(176, 150, 255, .38) 0%, rgba(160, 120, 255, .18) 25%, rgba(224, 91, 208, .08) 45%, rgba(139, 108, 255, 0) 65%);
   filter: blur(4px); }
+
+/* Easter egg: neon pixel cat */
+.neon-cat { position: fixed; left: 0; top: 0; z-index: 90; cursor: pointer; will-change: transform; }
+.neon-cat svg { display: block; filter: drop-shadow(0 0 6px rgba(139, 108, 255, .9)) drop-shadow(0 0 14px rgba(224, 91, 208, .45)); }
+.neon-cat-bob { animation: cat-bob .45s ease-in-out infinite alternate; }
+.neon-cat-bob.flip svg { transform: scaleX(-1); }
+@keyframes cat-bob { from { transform: translateY(-3px); } to { transform: translateY(3px); } }
+.cat-legs.b { animation: cat-legs .24s steps(1) infinite; }
+.cat-legs.a { animation: cat-legs .24s steps(1) infinite reverse; }
+@keyframes cat-legs { 0% { opacity: 1; } 50% { opacity: 0; } }
+.neon-cat.caught .neon-cat-bob { animation: cat-caught .6s cubic-bezier(.3, 1.4, .5, 1) forwards; }
+@keyframes cat-caught { 0% { transform: scale(1) rotate(0); } 60% { transform: scale(1.4) rotate(300deg); opacity: 1; } 100% { transform: scale(.2) rotate(360deg); opacity: 0; } }
+.cat-spark { position: fixed; z-index: 89; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 1px; pointer-events: none;
+  background: #C9B6FF; box-shadow: 0 0 8px #8B6CFF, 0 0 14px rgba(224, 91, 208, .6); animation: cat-spark .8s ease-out forwards; }
+.cat-spark:nth-child(odd) { background: #F0A6E8; }
+.cat-spark.big { width: 7px; height: 7px; animation: none; }
+@keyframes cat-spark { from { opacity: .95; transform: scale(1); } to { opacity: 0; transform: translateY(6px) scale(.2); } }

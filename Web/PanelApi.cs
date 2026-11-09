@@ -60,7 +60,7 @@ public static partial class PanelApi
             });
 
         // Админ видит все сервера бота, участник — только те, где у него роль «участник»
-        api.MapGet("/guilds", (ClaimsPrincipal user, PanelAccess access, DiscordSocketClient client) => Results.Ok(new
+        api.MapGet("/guilds", (ClaimsPrincipal user, PanelAccess access, DiscordSocketClient client, GuildPrefsStore prefs) => Results.Ok(new
         {
             connection = client.ConnectionState.ToString(),
             latency = client.Latency,
@@ -73,7 +73,8 @@ public static partial class PanelApi
                 name = g.Name,
                 isMember = access.IsMember(user.UserId(), g.Id),
                 iconUrl = g.IconUrl,
-                members = g.MemberCount
+                members = g.MemberCount,
+                mascotMinutes = prefs.Get(g.Id).MascotMinutes
             })
         }));
 
@@ -126,6 +127,7 @@ public static partial class PanelApi
     }
 
     public sealed record SearchRolesBody(List<string>? RoleIds);
+    public sealed record MascotBody(int Minutes);
 
     private static IEnumerable<RouteHandlerBuilder> MapCommonEndpoints(RouteGroupBuilder g)
     {
@@ -152,6 +154,14 @@ public static partial class PanelApi
             if (client.GetGuild(guildId) is null) return GuildNotFound();
             var ids = (body.RoleIds ?? []).Select(ParseId).OfType<ulong>().Distinct().ToList();
             prefs.Update(guildId, p => p.SearchRoleIds = ids);
+            return Results.Ok();
+        }).AddEndpointFilter(Require(PanelPermissions.Settings));
+
+        // Settings → Easter egg: how often the mascot flies by
+        yield return g.MapPut("/mascot", (ulong guildId, MascotBody body, DiscordSocketClient client, GuildPrefsStore prefs) =>
+        {
+            if (client.GetGuild(guildId) is null) return GuildNotFound();
+            prefs.Update(guildId, p => p.MascotMinutes = Math.Clamp(body.Minutes, 0, 1440));
             return Results.Ok();
         }).AddEndpointFilter(Require(PanelPermissions.Settings));
 

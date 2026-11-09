@@ -49,6 +49,8 @@ public sealed class GuildPrefs
     public ulong? MediaChannelId { get; set; }
     /// <summary>Быстрый поиск на сайте (Ctrl+K) ищет людей только с этими ролями; пусто — всех участников.</summary>
     public List<ulong> SearchRoleIds { get; set; } = [];
+    /// <summary>Пасхалка-маскот на сайте: в среднем раз в столько минут (0 — выключен).</summary>
+    public int MascotMinutes { get; set; } = 15;
 }
 
 /// <summary>Проект на официальной оружейной: включён ли, фракция (1 — Elyos, 2 — Asmodians) и сервер по умолчанию.</summary>
