@@ -2283,3 +2283,91 @@ input:not([type=checkbox]):not([type=radio]):focus, select:focus, textarea:focus
 }
 .stat { border: 1px solid rgba(176, 156, 255, .16); }
 .stat.clickable:hover { border-color: color-mix(in srgb, var(--tone, var(--gv-violet)) 55%, transparent); }
+
+/* =====================================================================
+   Violet Night · Glass+ : real frosted glass over drifting colored light,
+   a pointer spotlight on glass, brighter neon edges.
+   Cost is on the viewer's GPU only (blur + transform); off for reduced motion.
+   ===================================================================== */
+/* Drifting light behind everything — big soft color clouds the glass can blur */
+.gv-aurora { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+.gv-aurora i { position: absolute; border-radius: 50%; filter: blur(70px); opacity: .55; will-change: transform; }
+.gv-aurora i:nth-child(1) { width: 46vw; height: 46vw; left: -8vw; top: -14vw; background: radial-gradient(circle, #7B4DFF 0%, rgba(123, 77, 255, 0) 70%); animation: gv-drift-a 38s ease-in-out infinite alternate; }
+.gv-aurora i:nth-child(2) { width: 38vw; height: 38vw; right: -6vw; top: -6vw; background: radial-gradient(circle, #D946C6 0%, rgba(217, 70, 198, 0) 70%); opacity: .38; animation: gv-drift-b 44s ease-in-out infinite alternate; }
+.gv-aurora i:nth-child(3) { width: 42vw; height: 42vw; right: 8vw; bottom: -22vw; background: radial-gradient(circle, #3BB7E8 0%, rgba(59, 183, 232, 0) 70%); opacity: .28; animation: gv-drift-c 52s ease-in-out infinite alternate; }
+.gv-aurora i:nth-child(4) { width: 30vw; height: 30vw; left: 22vw; top: 38vh; background: radial-gradient(circle, #5B3BE6 0%, rgba(91, 59, 230, 0) 70%); opacity: .32; animation: gv-drift-b 60s ease-in-out infinite alternate-reverse; }
+@keyframes gv-drift-a { to { transform: translate(12vw, 10vh) scale(1.15); } }
+@keyframes gv-drift-b { to { transform: translate(-10vw, 14vh) scale(.9); } }
+@keyframes gv-drift-c { to { transform: translate(-14vw, -12vh) scale(1.1); } }
+
+/* Frosted glass: top-level cards and tiles are see-through with a strong blur; nested blocks stay matte */
+.main .card, .stat, .quick-action, .group-mini, .page-head ~ .tabs, .seg {
+  background-color: rgba(28, 20, 54, .34);
+  -webkit-backdrop-filter: blur(22px) saturate(170%); backdrop-filter: blur(22px) saturate(170%);
+}
+.main .card, .stat, .quick-action {
+  background-image:
+    radial-gradient(420px circle at var(--mx, -999px) var(--my, -999px), rgba(176, 150, 255, .16), transparent 45%),
+    linear-gradient(115deg, rgba(255, 255, 255, .085) 0%, rgba(255, 255, 255, .02) 22%, rgba(255, 255, 255, 0) 38%),
+    var(--gv-grain);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .16),          /* lit top edge */
+    inset 1px 0 0 rgba(255, 255, 255, .05),          /* lit left edge */
+    inset 0 -1px 0 rgba(0, 0, 0, .35),               /* shaded bottom */
+    0 18px 50px rgba(4, 2, 14, .55),
+    0 0 0 1px rgba(139, 108, 255, .06),
+    0 0 34px rgba(139, 108, 255, .10);               /* faint neon aura */
+}
+.stat, .home-hero, .attention-card {
+  background-image:
+    radial-gradient(380px circle at var(--mx, -999px) var(--my, -999px), rgba(196, 170, 255, .2), transparent 45%),
+    var(--gv-sheen),
+    radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--tone, var(--gv-violet)) 26%, transparent), transparent 60%),
+    var(--gv-grain);
+}
+.card .card, .card .dash-chart, .card .mc-sec, .card .empty-state, .card .stat {
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+  background-color: rgba(10, 7, 22, .42);
+}
+/* Brighter rim: violet light on the top-left, magenta on the bottom-right */
+.card::before {
+  background: linear-gradient(150deg, rgba(214, 198, 255, .7), rgba(176, 156, 255, .18) 24%, rgba(255, 255, 255, .04) 52%, rgba(224, 91, 208, .45) 100%);
+}
+.card:hover::before { background: linear-gradient(150deg, rgba(230, 220, 255, .9), rgba(176, 156, 255, .28) 24%, rgba(255, 255, 255, .06) 52%, rgba(240, 110, 225, .6) 100%); }
+/* Neon line along the top of each card — longer and brighter */
+.card::after { left: 8%; right: 8%; height: 1px; opacity: 1;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--tone, var(--gv-violet)) 90%, #fff) 50%, transparent);
+  box-shadow: 0 0 12px 1px color-mix(in srgb, var(--tone, var(--gv-violet)) 70%, transparent); }
+
+/* Neon: icon chips, titles, active things glow */
+.tone-chip, .stat-icon, .qa-icon, .es-icon, .mc-sec-ic, .att-ic {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone, var(--gv-violet)) 55%, transparent),
+    0 0 14px color-mix(in srgb, var(--tone, var(--gv-violet)) 55%, transparent),
+    0 0 32px color-mix(in srgb, var(--tone, var(--gv-violet)) 22%, transparent);
+}
+.tone-chip .icon, .stat-icon .icon, .qa-icon .icon { filter: drop-shadow(0 0 5px color-mix(in srgb, var(--tone, var(--gv-violet)) 80%, transparent)); }
+.card-head h2 { text-shadow: 0 0 18px rgba(176, 156, 255, .28); }
+.page-head h1 { filter: drop-shadow(0 0 22px rgba(139, 108, 255, .45)); }
+.page-head h1 .icon { filter: drop-shadow(0 0 10px rgba(185, 162, 255, .9)); }
+.nav .nav-item.active { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 0 22px color-mix(in srgb, var(--tone) 35%, transparent), 0 0 0 1px color-mix(in srgb, var(--tone) 50%, transparent); }
+.nav .nav-item.active::before { box-shadow: 0 0 8px 1px var(--tone), 0 0 20px 3px var(--tone); }
+.btn:not(.secondary):not(.ghost):not(.danger):not(.btn-refresh):not(.btn-guide) { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .28), 0 0 0 1px rgba(30, 10, 70, .4), 0 6px 22px rgba(110, 70, 240, .5), 0 0 30px rgba(139, 108, 255, .35); }
+.btn.btn-refresh { box-shadow: 0 0 14px rgba(34, 197, 139, .25); } .btn.btn-guide { box-shadow: 0 0 14px rgba(245, 185, 66, .22); }
+.status-pill.ok { box-shadow: 0 0 16px rgba(34, 197, 139, .3); }
+.badge { box-shadow: 0 0 14px color-mix(in srgb, currentColor 35%, transparent), inset 0 0 0 1px color-mix(in srgb, currentColor 35%, transparent); }
+.seg-btn.active, .tabs .btn.active-tab { box-shadow: inset 0 0 0 1px rgba(210, 196, 255, .7), 0 0 22px rgba(139, 108, 255, .5), 0 0 44px rgba(139, 108, 255, .2), inset 0 -2px 0 rgba(240, 110, 225, .9) !important; }
+.topbar::after { height: 2px; filter: drop-shadow(0 0 6px rgba(139, 108, 255, .9)); }
+/* Glossy top bar & sidebar: more see-through */
+.topbar { background: linear-gradient(180deg, rgba(24, 18, 46, .62), rgba(14, 11, 28, .48)); -webkit-backdrop-filter: blur(20px) saturate(170%); backdrop-filter: blur(20px) saturate(170%); }
+.nav { background: linear-gradient(180deg, rgba(22, 17, 42, .5), rgba(12, 10, 24, .42)); -webkit-backdrop-filter: blur(20px) saturate(160%); backdrop-filter: blur(20px) saturate(160%); }
+
+@media (prefers-reduced-motion: reduce) { .gv-aurora i { animation: none !important; } }
+/* Phones / weak devices: lighter blur */
+@media (max-width: 640px), (pointer: coarse) {
+  .main .card, .stat, .quick-action, .group-mini { -webkit-backdrop-filter: blur(12px) saturate(150%); backdrop-filter: blur(12px) saturate(150%); }
+  .gv-aurora i { filter: blur(50px); }
+}
+/* Pinned page heading over glass cards: denser glass so the title stays readable */
+.main > .page-head::before { background: linear-gradient(180deg, rgba(18, 13, 38, .92), rgba(18, 13, 38, .8));
+  -webkit-backdrop-filter: blur(20px) saturate(170%); backdrop-filter: blur(20px) saturate(170%);
+  box-shadow: inset 0 -1px 0 rgba(176, 156, 255, .18), 0 10px 30px rgba(4, 2, 14, .35); }

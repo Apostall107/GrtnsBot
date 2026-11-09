@@ -1542,6 +1542,28 @@ async function logout() {
   location.href = "/";
 }
 
+// ----- Glass atmosphere: slowly drifting light behind the glass + a soft spotlight that follows the pointer on cards
+(function glassFx() {
+  if (!document.querySelector(".gv-aurora"))
+    document.body.prepend(h("div", { class: "gv-aurora", "aria-hidden": "true" }, h("i", {}), h("i", {}), h("i", {}), h("i", {})));
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches || matchMedia("(pointer: coarse)").matches) return;
+  let pending = null, last = null;
+  document.addEventListener("pointermove", e => {
+    pending = e;
+    if (pending.__q) return;
+    requestAnimationFrame(() => {
+      const ev = pending; pending = null;
+      const el = ev.target.closest && ev.target.closest(".main .card, .stat, .quick-action, .group-mini, dialog");
+      if (last && last !== el) { last.style.removeProperty("--mx"); last.style.removeProperty("--my"); }
+      last = el;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      el.style.setProperty("--mx", `${Math.round(ev.clientX - r.left)}px`);
+      el.style.setProperty("--my", `${Math.round(ev.clientY - r.top)}px`);
+    });
+  }, { passive: true });
+})();
+
 async function boot() {
   let me;
   try {
