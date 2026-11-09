@@ -2442,3 +2442,15 @@ input:not([type=checkbox]):not([type=radio]):focus, select:focus, textarea:focus
 /* Background light a bit calmer */
 .gv-aurora i { opacity: .38; }
 .gv-aurora i:nth-child(2) { opacity: .22; } .gv-aurora i:nth-child(3) { opacity: .18; } .gv-aurora i:nth-child(4) { opacity: .2; }
+
+/* Pointer light: a fixed GPU layer under the cursor (replaces the per-card light) */
+.gv-spot { position: fixed; left: 0; top: 0; width: 0; height: 0; z-index: 30; pointer-events: none; opacity: 0; transition: opacity .25s ease; will-change: transform; }
+.gv-spot::before { content: ""; position: absolute; left: -180px; top: -180px; width: 360px; height: 360px; border-radius: 50%;
+  background:
+    radial-gradient(circle, rgba(240, 232, 255, .16) 0, rgba(240, 232, 255, 0) 17%),
+    radial-gradient(circle, rgba(206, 188, 255, .20) 0%, rgba(176, 150, 255, .10) 14%, rgba(150, 120, 255, .04) 32%, rgba(139, 108, 255, 0) 50%);
+  mix-blend-mode: screen; }
+.gv-spot.on { opacity: 1; }
+/* The old per-card light layers are no longer driven */
+.main .card, .stat, .quick-action { --mx: -999px; --my: -999px; }
+@media (pointer: coarse), (prefers-reduced-motion: reduce) { .gv-spot { display: none; } }

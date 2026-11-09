@@ -1547,24 +1547,18 @@ async function logout() {
   if (!document.querySelector(".gv-aurora"))
     document.body.prepend(h("div", { class: "gv-aurora", "aria-hidden": "true" }, h("i", {}), h("i", {}), h("i", {}), h("i", {})));
   if (matchMedia("(prefers-reduced-motion: reduce)").matches || matchMedia("(pointer: coarse)").matches) return;
-  // Light follows the pointer; on scroll the page moves under a still pointer, so recompute from its last position
-  let x = -1, y = -1, queued = false, last = null;
-  const update = () => {
-    queued = false;
-    if (x < 0) return;
-    const hit = document.elementFromPoint(x, y);
-    const el = hit && hit.closest && hit.closest(".main .card, .stat, .quick-action, .group-mini, dialog");
-    if (last && last !== el) { last.style.removeProperty("--mx"); last.style.removeProperty("--my"); }
-    last = el;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    el.style.setProperty("--mx", `${Math.round(x - r.left)}px`);
-    el.style.setProperty("--my", `${Math.round(y - r.top)}px`);
-  };
-  const schedule = () => { if (!queued) { queued = true; requestAnimationFrame(update); } };
-  document.addEventListener("pointermove", e => { x = e.clientX; y = e.clientY; schedule(); }, { passive: true });
-  document.addEventListener("scroll", schedule, { passive: true, capture: true }); // window and inner scroll areas
-  document.addEventListener("pointerleave", () => { x = -1; if (last) { last.style.removeProperty("--mx"); last.style.removeProperty("--my"); last = null; } });
+  // Pointer light = one fixed layer moved with transform (GPU only, no repaint of the glass).
+  // It sits under the cursor by itself, so scrolling can't leave it behind; it only shows over glass surfaces.
+  const spot = h("div", { class: "gv-spot", "aria-hidden": "true" });
+  document.body.append(spot);
+  const SEL = ".main .card, .stat, .quick-action, .group-mini";
+  let x = -1, y = -1, queued = false;
+  const over = () => { const el = x < 0 ? null : document.elementFromPoint(x, y); return !!(el && el.closest && el.closest(SEL) && !el.closest("dialog, .user-pop, .menu-pop, .select-pop")); };
+  const frame = () => { queued = false; spot.style.transform = `translate3d(${x}px, ${y}px, 0)`; spot.classList.toggle("on", over()); };
+  document.addEventListener("pointermove", e => { x = e.clientX; y = e.clientY; if (!queued) { queued = true; requestAnimationFrame(frame); } }, { passive: true });
+  let scrollTimer = 0;
+  document.addEventListener("scroll", () => { clearTimeout(scrollTimer); scrollTimer = setTimeout(() => spot.classList.toggle("on", over()), 60); }, { passive: true, capture: true });
+  document.documentElement.addEventListener("pointerleave", () => { x = -1; spot.classList.remove("on"); });
 })();
 
 async function boot() {
