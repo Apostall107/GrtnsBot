@@ -1089,7 +1089,7 @@ let iconizeQueued = false;
 new MutationObserver(() => {
   if (iconizeQueued) return;
   iconizeQueued = true;
-  requestAnimationFrame(() => { iconizeQueued = false; iconizeButtons(document.body); iconizeHeadings(document.body); enhanceControls(document.body); tidyHints(document.body); });
+  requestAnimationFrame(() => { iconizeQueued = false; decorateHeading(document.querySelector("main.main")); iconizeButtons(document.body); iconizeHeadings(document.body); enhanceControls(document.body); tidyHints(document.body); });
 }).observe(document.body, { childList: true, subtree: true });
 
 // ================= Mentions: @ / # suggestions in text fields =================
@@ -1518,8 +1518,8 @@ function renderShell() {
 
 /** Page heading: the section's icon instead of an emoji; Refresh / Guide with icons. */
 function decorateHeading(main) {
-  const head = main.firstElementChild;
-  if (!head || !head.classList.contains("card-head")) return;
+  const head = main && main.querySelector(":scope > .card-head");
+  if (!head || head.querySelector(":scope > .page-actions") || !head.querySelector(":scope > h1")) return;
   head.classList.add("page-head");
   const title = head.querySelector("h1");
   const tab = allTabs.find(t => t[0] === state.tab);
@@ -1527,8 +1527,14 @@ function decorateHeading(main) {
     const text = title.textContent.replace(/^[^\p{L}\p{N}]+/u, "").trim();
     title.replaceChildren(icon(tab[1], 24), text);
   }
-  for (const btn of head.querySelectorAll(".btn-refresh")) btn.replaceChildren(icon("refresh-cw", 16), "Refresh");
-  for (const btn of head.querySelectorAll(".btn-guide")) btn.replaceChildren(icon("circle-help", 16), "Guide");
+  // Same order on every page: title (+ ?) · page actions · Refresh · Guide
+  let refreshBtn = head.querySelector(".btn-refresh");
+  if (!refreshBtn) refreshBtn = h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh });
+  refreshBtn.replaceChildren(icon("refresh-cw", 16), h("span", { class: "btn-text" }, "Refresh"));
+  const guideBtn = head.querySelector(".btn-guide");
+  if (guideBtn) guideBtn.replaceChildren(icon("circle-help", 16), h("span", { class: "btn-text" }, "Guide"));
+  const own = [...head.children].filter(el => el !== title && el !== refreshBtn && el !== guideBtn);
+  head.append(h("div", { class: "page-actions" }, own, refreshBtn, guideBtn));
 }
 
 /** Re-renders the current page only (keeps the shell). */
@@ -2103,7 +2109,7 @@ async function pageLfg(main) {
 
   try {
     const groups = (await gApi("GET", "/lfg/groups")).filter(g => mode === "all" || ofProject(g.projectKey));
-    groupsBody.replaceChildren(groups.length ? h("div", { class: "grid2" }, groups.map(groupCard)) : empty("No active groups."));
+    groupsBody.replaceChildren(groups.length ? groupsBoard(groups, mode === "all" ? projects : [], defKey) : empty("No active groups."));
   } catch (e) { groupsBody.replaceChildren(empty(e.message)); }
 }
 
@@ -3011,6 +3017,61 @@ function slotInfo(s, readyTitle, withNote) {
     withNote && s.comment ? h("div", { class: "slot-comment", title: s.comment }, icon("message-square-text", 12), h("span", {}, s.comment)) : null);
 }
 const slotTools = (...tools) => h("span", { class: "slot-tools" }, tools);
+
+/** Active groups with filters: status, search by member / character / activity, project (General), full groups folded. */
+function groupsBoard(groups, projects = [], defKey = null) {
+  const saved = (() => { try { return JSON.parse(store.get("gb.groupsFilter") || "{}"); } catch { return {}; } })();
+  const f = { status: saved.status || "all", project: saved.project || "", foldFull: saved.foldFull !== false, q: "" };
+  const opened = new Set();
+  const isFull = g => g.filled >= g.size;
+  const startMs = g => g.startsAt ? +new Date(g.startsAt) : 9e15;
+  const statusOf = g => g.started ? "started" : isFull(g) ? "full" : "recruiting";
+  const STATUSES = [["all", "All"], ["recruiting", "Recruiting"], ["started", "Started"], ["full", "Full"]];
+  const keep = () => store.set("gb.groupsFilter", JSON.stringify({ status: f.status, project: f.project, foldFull: f.foldFull }));
+  const text = g => [g.activity, g.owner && g.owner.name, ...g.slots.flatMap(s => s.member ? [s.member.name, s.member.username, s.character] : []),
+    ...g.reserve.flatMap(r => [r.member.name, r.member.username, r.character])].filter(Boolean).join(" ").toLowerCase();
+
+  const segBtns = STATUSES.map(([k, label]) => {
+    const n = k === "all" ? groups.length : groups.filter(g => statusOf(g) === k).length;
+    const b = h("button", { type: "button", class: "seg-btn", "data-k": k }, label, h("span", { class: "seg-badge" }, String(n)));
+    b.addEventListener("click", () => { f.status = k; keep(); draw(); });
+    return b;
+  });
+  const search = h("input", { type: "search", placeholder: "Search a member, character or activity…", "aria-label": "Search groups" });
+  search.addEventListener("input", () => { f.q = search.value.trim().toLowerCase(); draw(); });
+  const projSel = projects.length > 1 ? h("select", { "aria-label": "Project", style: "width:200px" }, h("option", { value: "" }, "All projects"),
+    projects.map(p => h("option", { value: p.key }, p.name))) : null;
+  if (projSel) { projSel.value = f.project; projSel.addEventListener("change", () => { f.project = projSel.value; keep(); draw(); }); }
+  const fold = h("input", { type: "checkbox", class: "switch", checked: f.foldFull });
+  fold.addEventListener("change", () => { f.foldFull = fold.checked; keep(); draw(); });
+  const toolbar = h("div", { class: "groups-toolbar" }, h("div", { class: "seg groups-seg" }, segBtns),
+    h("div", { class: "groups-search" }, icon("search", 15), search), projSel,
+    h("label", { class: "groups-fold", title: "Full and started groups take one line; click to open" }, fold, "Fold full / started"));
+  const body = h("div", {});
+
+  const mini = g => h("button", { type: "button", class: "group-mini", onclick: () => { opened.add(g.id); draw(); } },
+    h("b", { class: "group-mini-name" }, g.activity),
+    g.started ? h("span", { class: "badge wait" }, icon("timer", 12), "Started") : h("span", { class: "badge ok" }, icon("check", 12), "Full"),
+    h("span", { class: "muted small group-mini-meta" }, g.owner ? g.owner.name : "no organizer", " · ", g.startsAt ? fmtDate(g.startsAt) : "no time"),
+    h("span", { class: "group-mini-count" }, `${g.filled}/${g.size}`, g.reserve.length ? ` +${g.reserve.length}` : ""),
+    icon("chevron-down", 15));
+
+  function draw() {
+    segBtns.forEach(b => b.classList.toggle("active", b.dataset.k === f.status));
+    const list = groups.filter(g => (f.status === "all" || statusOf(g) === f.status)
+      && (!f.project || (g.projectKey || defKey) === f.project)
+      && (!f.q || text(g).includes(f.q)));
+    // Recruiting first (they need people), then by start time
+    list.sort((a, b) => (isFull(a) || a.started ? 1 : 0) - (isFull(b) || b.started ? 1 : 0) || startMs(a) - startMs(b));
+    const folded = list.filter(g => f.foldFull && !f.q && (isFull(g) || g.started) && !opened.has(g.id));
+    const open = list.filter(g => !folded.includes(g));
+    body.replaceChildren(!list.length ? empty("No groups match the filter.") : h("div", {},
+      folded.length ? h("div", { class: "group-mini-list" }, folded.map(mini)) : null,
+      open.length ? h("div", { class: "grid2" }, open.map(groupCard)) : null));
+  }
+  draw();
+  return h("div", {}, toolbar, body);
+}
 
 function groupCard(g) {
   const gid = encodeURIComponent(g.id);
@@ -5135,10 +5196,10 @@ async function pageLog(main) {
 // ================= Settings =================
 
 async function pageSettings(main) {
-  main.append(h("h1", {}, "⚙️ Settings"));
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "⚙️ Settings")),
+    h("p", { class: "muted" }, "Time zone, auto-delete and reminder of LFG groups are in LFG → LFG settings."));
   const holder = h("div", {});
   main.append(holder);
-  holder.append(h("p", { class: "muted" }, "Time zone, auto-delete and reminder of LFG groups are in LFG → LFG settings."));
 
   // Backup (owner only)
   if (can("access")) {

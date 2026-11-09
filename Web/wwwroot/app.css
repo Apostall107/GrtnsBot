@@ -1806,3 +1806,41 @@ h1 .hint svg { width: 17px; height: 17px; }
 .toast-timer { position: absolute; left: 0; bottom: 0; height: 2px; width: 100%; background: var(--primary, #8b6cff); transform-origin: left;
   animation: toast-timer linear forwards; }
 @keyframes toast-timer { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+/* Active groups: filter bar and folded (full / started) groups */
+.groups-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 4px 0 14px; }
+.groups-toolbar .groups-seg { margin: 0; }
+.groups-search { position: relative; flex: 1 1 240px; min-width: 0; display: flex; align-items: center; }
+.groups-search > .icon { position: absolute; left: 11px; color: var(--text-secondary); pointer-events: none; }
+.groups-search > input { width: 100%; padding-left: 34px; }
+.groups-fold { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-small); color: var(--text-secondary); cursor: pointer; white-space: nowrap; }
+.group-mini-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr)); gap: 8px; margin-bottom: var(--s4); }
+.group-mini {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; padding: 10px 12px; cursor: pointer; text-align: left;
+  font: inherit; color: var(--text-primary); border-radius: 12px; background: rgba(255, 255, 255, .03); border: 1px solid var(--glass-border, rgba(255,255,255,.08));
+  transition: border-color 160ms ease, background 160ms ease;
+}
+.group-mini:hover { border-color: rgba(139, 108, 255, .45); background: rgba(139, 108, 255, .08); }
+.group-mini > .badge, .group-mini > .icon, .group-mini-count { flex: none; }
+.group-mini-name { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-mini-meta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-mini-count { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 12.5px; }
+@media (max-width: 640px) { .groups-toolbar .groups-seg { width: 100%; overflow-x: auto; } .group-mini-meta { display: none; } .group-mini-name { max-width: none; flex: 1; } }
+
+/* Page heading: the same on every page and it stays at the top while scrolling */
+.main > .page-head {
+  position: sticky; top: var(--header-h); z-index: 20;
+  margin: calc(-1 * var(--s6)) calc(-1 * var(--s8)) var(--s5); padding: 14px var(--s8) 12px;
+  background: linear-gradient(180deg, rgba(10, 12, 20, .92), rgba(10, 12, 20, .78));
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, .06);
+}
+.page-head h1 { font-size: 24px; min-width: 0; }
+.page-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
+@media (max-width: 900px) { .main > .page-head { margin: calc(-1 * var(--s5)) calc(-1 * var(--s5)) var(--s4); padding: 12px var(--s5) 10px; } }
+@media (max-width: 640px) {
+  .main > .page-head { margin: calc(-1 * var(--s4)) calc(-1 * var(--s3)) var(--s4); padding: 10px var(--s3); }
+  .page-head h1 { font-size: 20px; }
+  .page-actions .btn-refresh .btn-text, .page-actions .btn-guide .btn-text { display: none; }
+  .page-actions .btn-refresh, .page-actions .btn-guide { width: 36px; padding: 0; justify-content: center; }
+}
