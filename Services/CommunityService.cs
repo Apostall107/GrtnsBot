@@ -382,6 +382,7 @@ public sealed class CommunityService(
         if (await channel.GetMessageAsync(messageId) is not IUserMessage message)
         {
             store.SetPosted(panel.Id, null, null);
+            audit.FromSystem(panel.GuildId, "roles", "Role panel marked as not posted — its message was deleted in Discord", $"{panel.Title} · #{channel.Name}");
             return "The posted message was deleted — post the panel again.";
         }
 

@@ -11,7 +11,7 @@ namespace LfgBot.Services;
 /// Only panels that are NOT marked as posted are linked, so nothing that is already known is touched.
 /// </summary>
 public sealed class PanelRelinker(DiscordSocketClient client, PanelService panels, CommunityStore roles,
-    TicketPanelStore ticketPanels, TicketPanelService tickets, ChannelPageStore pages, ILogger<PanelRelinker> logger)
+    TicketPanelStore ticketPanels, TicketPanelService tickets, ChannelPageStore pages, AuditLog audit, ILogger<PanelRelinker> logger)
 {
     public async Task<Dictionary<string, int>> RelinkAsync(SocketGuild guild, int messagesPerChannel = 50)
     {
@@ -73,6 +73,8 @@ public sealed class PanelRelinker(DiscordSocketClient client, PanelService panel
             }
         }
 
+        if (found.Values.Sum() > 0)
+            audit.FromSystem(guild.Id, "posts", "Panels found in the channels and linked again", string.Join(", ", found.Select(f => $"{f.Key}: {f.Value}")));
         if (found.Values.Sum() > 0)
             logger.LogInformation("Panels linked again on {Guild}: {Found}", guild.Name, string.Join(", ", found.Select(f => $"{f.Key} {f.Value}")));
         return found;

@@ -66,6 +66,7 @@ builder.Services.AddSingleton<PanelTextStore>();
 builder.Services.AddSingleton<BotTextStore>();
 builder.Services.AddSingleton<PanelService>();
 builder.Services.AddSingleton<PanelRelinker>();
+builder.Services.AddHostedService<AutoBackupService>();
 builder.Services.AddSingleton<LfgPublisher>();
 builder.Services.AddSingleton<CommunityStore>();
 builder.Services.AddSingleton<GuildStatsStore>();

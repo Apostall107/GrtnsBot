@@ -6351,10 +6351,22 @@ async function pageSettings(main) {
       } catch (e) { toast(e.message, "error"); }
       finally { restore.disabled = false; }
     });
+    // Automatic copies made by the bot: after every start (last 5) and once a day (last 14)
+    const autoList = h("div", { class: "muted small" }, "Loading…");
+    api("GET", "/api/backup/auto").then(list => {
+      const kind = n => n.startsWith("auto-start") ? "after a start" : n.startsWith("auto-day") ? "daily" : n.startsWith("pre-restore") ? "before a restore" : "";
+      autoList.replaceChildren(...(list.length ? list.slice(0, 20).map(b => h("div", { class: "row", style: "margin-top:4px;gap:10px" },
+        h("a", { class: "btn ghost sm", href: `/api/backup/auto/${encodeURIComponent(b.name)}`, download: "" }, "⬇️"),
+        h("span", {}, new Date(b.at).toLocaleString()), h("span", { class: "chip" }, kind(b.name)), h("span", { class: "muted" }, `${Math.max(1, Math.round(b.size / 1024))} KB`)))
+        : [h("span", {}, "No automatic copies yet — the first one is made a few seconds after the bot starts.")]));
+    }).catch(e => { autoList.textContent = e.message; });
     holder.append(h("div", { class: "card" }, h("h2", {}, "💾 Backup"),
       h("p", { class: "muted small" }, "All bot data (data/*.json): activities, groups, characters, tickets, archive, settings, access… Site login keys are not included."),
       h("div", { class: "row", style: "margin-bottom:10px" }, download),
-      h("div", { class: "row" }, file, restore)));
+      h("div", { class: "row" }, file, restore),
+      h("h3", { style: "margin-top:16px" }, "Automatic copies"),
+      h("p", { class: "muted small" }, "The bot saves a copy after every start (last 5 kept) and once a day (last 14). Download one and restore it above if something got lost."),
+      autoList));
 
     // Characters: export (JSON for another instance, CSV for spreadsheets) and import of such JSON
     const base = `/api/guilds/${state.guildId}/characters-transfer`;

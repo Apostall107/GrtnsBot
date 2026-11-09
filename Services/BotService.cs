@@ -79,15 +79,18 @@ public sealed class BotService(
     private async Task RefreshPanelsAsync()
     {
         var panels = services.GetRequiredService<PanelService>();
+        // Nothing is checked or forgotten before the servers are fully loaded in the cache
+        await GuildCache.WaitAllAsync(client, TimeSpan.FromMinutes(2));
+
         // Panels whose record was lost (e.g. the bot couldn't see the server for a while) are found in the channels and linked again
         var relinker = services.GetRequiredService<PanelRelinker>();
-        foreach (var guild in client.Guilds)
+        foreach (var guild in client.Guilds.Where(GuildCache.Loaded))
         {
             try { await relinker.RelinkAsync(guild); }
             catch (Exception ex) { logger.LogWarning(ex, "Failed to look for posted panels on {Guild}", guild.Name); }
         }
 
-        foreach (var guild in client.Guilds)
+        foreach (var guild in client.Guilds.Where(GuildCache.Loaded))
         foreach (var def in PanelDefs.All)
         {
             try
@@ -104,7 +107,7 @@ public sealed class BotService(
         // Панели ролей: новые кнопки (например, «My roles») появляются в уже опубликованных
         var community = services.GetRequiredService<CommunityService>();
         var store = services.GetRequiredService<CommunityStore>();
-        foreach (var guild in client.Guilds)
+        foreach (var guild in client.Guilds.Where(GuildCache.Loaded))
         foreach (var panel in store.GetPanels(guild.Id).Where(p => p.MessageId is not null))
         {
             try

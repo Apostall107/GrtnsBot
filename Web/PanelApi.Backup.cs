@@ -13,10 +13,9 @@ namespace LfgBot.Web;
 public static partial class PanelApi
 {
     /// <summary>Ключи входа на сайт (web-keys) и старые копии в архив не попадают и при восстановлении не трогаются.</summary>
-    private static readonly string[] BackupSkipDirs = ["web-keys", "backups"];
+    private static readonly string[] BackupSkipDirs = AutoBackupService.SkipDirs;
 
-    private static string DataDir(IConfiguration config) =>
-        Path.GetFullPath(Path.GetDirectoryName(config["Storage:ActivitiesPath"] ?? "data/activities.json") is { Length: > 0 } d ? d : "data");
+    private static string DataDir(IConfiguration config) => AutoBackupService.DataDir(config);
 
     private static void MapBackup(RouteGroupBuilder g)
     {
@@ -25,6 +24,23 @@ public static partial class PanelApi
             DataFiles.FlushAll(); // в архив — самые свежие данные
             var bytes = ZipData(DataDir(config));
             return Results.File(bytes, "application/zip", $"greatness-bot-data-{DateTime.UtcNow:yyyyMMdd-HHmm}.zip");
+        });
+
+        // Automatic copies (Settings → Backup): list and download
+        g.MapGet("/auto", (IConfiguration config) =>
+        {
+            var dir = AutoBackupService.BackupDir(config);
+            var list = Directory.Exists(dir)
+                ? new DirectoryInfo(dir).GetFiles("*.zip").OrderByDescending(f => f.LastWriteTimeUtc)
+                    .Select(f => new { name = f.Name, size = f.Length, at = new DateTimeOffset(f.LastWriteTimeUtc).ToUnixTimeMilliseconds() }).ToList()
+                : [];
+            return Results.Ok(list);
+        });
+        g.MapGet("/auto/{name}", (string name, IConfiguration config) =>
+        {
+            if (name.Contains('/') || name.Contains('\\') || name.Contains("..") || !name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) return Error("Bad file name.");
+            var path = Path.Combine(AutoBackupService.BackupDir(config), name);
+            return File.Exists(path) ? Results.File(path, "application/zip", name) : Error("This backup no longer exists.");
         });
 
         // Тело запроса — zip-файл. Перед восстановлением текущие данные сохраняются в data/backups/,
@@ -98,21 +114,5 @@ public static partial class PanelApi
         });
     }
 
-    private static byte[] ZipData(string dataDir)
-    {
-        using var ms = new MemoryStream();
-        using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
-        {
-            if (Directory.Exists(dataDir))
-            {
-                foreach (var file in Directory.EnumerateFiles(dataDir, "*.json", SearchOption.AllDirectories))
-                {
-                    var relative = Path.GetRelativePath(dataDir, file).Replace('\\', '/');
-                    if (BackupSkipDirs.Any(d => relative.StartsWith(d + "/", StringComparison.OrdinalIgnoreCase))) continue;
-                    zip.CreateEntryFromFile(file, relative, CompressionLevel.Optimal);
-                }
-            }
-        }
-        return ms.ToArray();
-    }
+    private static byte[] ZipData(string dataDir) => AutoBackupService.Zip(dataDir);
 }

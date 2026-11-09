@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 namespace LfgBot.Services;
 
 /// <summary>Рендер и публикация панелей подпроектов (кнопка на каждую тикет-систему).</summary>
-public sealed class TicketPanelService(DiscordSocketClient client, TicketPanelStore panels, TicketStore tickets, ILogger<TicketPanelService> logger)
+public sealed class TicketPanelService(DiscordSocketClient client, TicketPanelStore panels, TicketStore tickets, AuditLog audit, ILogger<TicketPanelService> logger)
 {
     /// <summary>Тикет-системы панели в её порядке (удалённые пропускаются).</summary>
     public IReadOnlyList<TicketProject> TypesOf(TicketPanel panel)
@@ -53,6 +53,7 @@ public sealed class TicketPanelService(DiscordSocketClient client, TicketPanelSt
         if (await channel.GetMessageAsync(messageId) is not IUserMessage message)
         {
             panels.SetPosted(panel.Id, null, null);
+            audit.FromSystem(panel.GuildId, "tickets", "Ticket panel marked as not posted — its message was deleted in Discord", $"{panel.Title} · #{channel.Name}");
             return;
         }
         var (embed, comps) = Render(panel);

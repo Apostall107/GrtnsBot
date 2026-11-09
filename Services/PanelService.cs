@@ -8,7 +8,7 @@ namespace LfgBot.Services;
 /// Публикует панели модулей (LFG, Tickets, Room controls) со своими текстами и запоминает сообщения,
 /// чтобы после смены текста в веб-админке обновить уже опубликованные панели.
 /// </summary>
-public sealed class PanelService(DiscordSocketClient client, PanelTextStore store, TimeService time, LfgStore lfg, ILogger<PanelService> logger)
+public sealed class PanelService(DiscordSocketClient client, PanelTextStore store, TimeService time, LfgStore lfg, AuditLog audit, ILogger<PanelService> logger)
 {
     /// <summary>Project of an LFG panel nobody linked: the project most of the active groups in its channel belong to.</summary>
     public string? GuessLfgProject(ulong guildId, ulong channelId) =>
@@ -67,6 +67,7 @@ public sealed class PanelService(DiscordSocketClient client, PanelTextStore stor
                 if (await channel.GetMessageAsync(p.MessageId) is not IUserMessage message || message.Author.Id != client.CurrentUser.Id)
                 {
                     store.Untrack(guildId, key, p.MessageId);
+                    audit.FromSystem(guildId, key, "Forgot a panel — its message was deleted in Discord", $"#{channel.Name}");
                     continue;
                 }
 

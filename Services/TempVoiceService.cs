@@ -216,7 +216,7 @@ public sealed class TempVoiceService(
             var channel = client.GetGuild(room.GuildId)?.GetVoiceChannel(room.ChannelId);
             if (channel is null)
             {
-                if (client.GetGuild(room.GuildId) is not null) store.RemoveRoom(room.ChannelId);
+                if (GuildCache.Loaded(client.GetGuild(room.GuildId))) store.RemoveRoom(room.ChannelId);   // only when the server is fully loaded
                 continue;
             }
             await DeleteIfEmptyAsync(channel);
