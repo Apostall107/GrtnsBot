@@ -2628,9 +2628,9 @@ input.switch:checked { animation: switch-glow .5s ease-out; }
 .mascot-robot .gb-sparks circle:nth-child(2) { animation-delay: -.4s; } .mascot-robot .gb-sparks circle:nth-child(3) { animation-delay: -.8s; }
 @keyframes gb-twinkle { from { opacity: .2; } to { opacity: 1; } }
 .mascot-robot svg { filter: drop-shadow(0 0 5px rgba(139, 108, 255, .75)) drop-shadow(0 0 16px rgba(111, 184, 255, .35)); }
-/* Shy robot: hops away from the cursor */
-.mascot-dodge { transition: transform .26s cubic-bezier(.2, 1.4, .4, 1); }
+/* Shy robot: runs from the cursor (legs go faster), dashes when cornered */
+.mascot.run .gb-leg { animation-duration: .22s; }
 .mascot-dodge.hop .mascot-bob { animation: gb-hop .3s ease-out, cat-bob .45s ease-in-out .3s infinite alternate; }
 @keyframes gb-hop { 0% { transform: scale(1, 1); } 35% { transform: scale(.85, 1.15) translateY(-6px); } 100% { transform: scale(1, 1); } }
 .mascot.tired .mascot-bob { animation-duration: 1.6s; }
-.mascot.tired::after { content: "💦"; position: absolute; left: 70%; top: -6px; font-size: 16px; animation: fade-in .3s ease both; pointer-events: none; }
+.mascot.tired::after { content: "💦"; position: absolute; left: 74%; top: 10px; font-size: 16px; animation: fade-in .3s ease both; pointer-events: none; }

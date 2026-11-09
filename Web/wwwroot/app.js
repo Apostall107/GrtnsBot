@@ -1632,64 +1632,95 @@ async function logout() {
   function fly() {
     if (busy || document.hidden || !state.me) return schedule();
     const M = BOT; // only our robot flies (the cat is retired)
-    const A = area();
-    // Any strip of the page: mostly left↔right, sometimes up↕down. While it flies, clicks within 200 px of it are ignored
-    // (so you never hit a button by accident while trying to catch it).
-    let path;
+    const A = area(), W = M.w, H = M.h;
+    // Starts just outside the page area: mostly left↔right, sometimes up↕down. While it flies, clicks within 200 px
+    // of it are ignored (so you never hit a button by accident while trying to catch it).
+    let pos, dir;
     if (Math.random() < .7) {
-      const y = A.top + Math.random() * Math.max(10, A.bottom - A.top - M.h), ltr = Math.random() < .5;
-      path = { dir: ltr ? "right" : "left", from: [ltr ? A.left - 20 : A.right + 10, y], to: [ltr ? A.right + 10 : A.left - 20, y + 4] };
+      const y = A.top + Math.random() * Math.max(10, A.bottom - A.top - H), ltr = Math.random() < .5;
+      pos = [ltr ? A.left - W : A.right, y]; dir = [ltr ? 1 : -1, 0];
     } else {
-      const vw = M.rotate ? M.h : M.w, vh = M.rotate ? M.w : M.h;
-      const x = A.left + 10 + Math.random() * Math.max(10, A.right - A.left - vw - 20), up = Math.random() < .5;
-      path = { dir: up ? "up" : "down", from: [x, up ? A.bottom : A.top - vh], to: [x + 4, up ? A.top - vh : A.bottom] };
+      const x = A.left + 10 + Math.random() * Math.max(10, A.right - A.left - W - 20), up = Math.random() < .5;
+      pos = [x, up ? A.bottom : A.top - H]; dir = [0, up ? -1 : 1];
     }
     busy = true;
-    const dist = Math.hypot(path.to[0] - path.from[0], path.to[1] - path.from[1]), dur = Math.max(4500, dist * 7.5);
-    const turn = M.rotate ? { right: "", left: " flip", up: " up", down: " down" }[path.dir] : "";
+    const span = dir[0] ? A.right - A.left + W : A.bottom - A.top + H;
+    const base = span / Math.max(4500, span * 7.5);          // px per ms — same pace as before
     const el = h("div", { class: `mascot mascot-${M.name}`, title: "Catch me!" });
-    el.innerHTML = `<div class="mascot-dodge"><div class="mascot-bob${turn}">${M.svg}</div></div>`;
+    el.innerHTML = `<div class="mascot-dodge"><div class="mascot-bob">${M.svg}</div></div>`;
+    el.style.opacity = "0";
     document.body.append(el);
-    const dodge = el.firstChild, box = () => dodge.getBoundingClientRect();
-    // Our robot watches the cursor and is shy: when the cursor gets close it hops away (a few times — then it's tired and can be caught).
-    // Checked every frame, so it also reacts when it flies into a resting cursor.
-    const look = el.querySelector(".gb-look");
-    let off = [0, 0], hops = 0, near = false, lastHop = 0, ptr = null, raf = 0;
+    const dodge = el.firstChild, look = el.querySelector(".gb-look"), box = () => el.getBoundingClientRect();
+    const place = () => { el.style.transform = `translate(${pos[0].toFixed(1)}px, ${pos[1].toFixed(1)}px)`; };
+    place();
+
+    // Behaviour: eyes follow the cursor. When the cursor comes close the robot turns and runs the other way
+    // (double speed for 1 s, legs go faster). If it's cornered and can't run away, it dashes past the cursor.
+    // After 5 runs/dashes it gets tired: slows down and can be caught.
+    const NEAR = 55, MAX_ACTS = 5, inside = () => ({ x0: A.left + 4, y0: A.top + 4, x1: A.right - W - 4, y1: A.bottom - H - 4 });
+    let ptr = null, raf = 0, last = performance.now(), born = last, entered = false, acts = 0, tired = false;
+    let runUntil = 0, dash = null, done = false;
     const onMove = e => { ptr = [e.clientX, e.clientY]; };
+    const norm = (x, y) => { const l = Math.hypot(x, y) || 1; return [x / l, y / l]; };
+    const tire = () => { if (++acts >= MAX_ACTS) { tired = true; el.classList.add("tired"); el.classList.remove("run"); el.title = "It's tired — catch it!"; } };
+    const room = (d, b) => {   // free distance along d before the robot hits the edge
+      const tx = d[0] > 0 ? (b.x1 - pos[0]) / d[0] : d[0] < 0 ? (b.x0 - pos[0]) / d[0] : Infinity;
+      const ty = d[1] > 0 ? (b.y1 - pos[1]) / d[1] : d[1] < 0 ? (b.y0 - pos[1]) / d[1] : Infinity;
+      return Math.max(0, Math.min(tx, ty));
+    };
     const tick = now => {
       raf = requestAnimationFrame(tick);
-      if (!ptr || el.classList.contains("caught")) return;
-      const r = box(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-      // eyes look toward the cursor
-      const ey = r.top + r.height * .46, dx = ptr[0] - cx, dy = ptr[1] - ey, L = Math.hypot(dx, dy) || 1, m = Math.min(1, L / 90);
-      if (look) look.style.transform = `translate(${(dx / L * 5 * m).toFixed(1)}px, ${(dy / L * 3.5 * m).toFixed(1)}px)`;
-      // distance from the cursor to the robot's edge (0 = on it)
-      const edge = Math.hypot(Math.max(r.left - ptr[0], 0, ptr[0] - r.right), Math.max(r.top - ptr[1], 0, ptr[1] - r.bottom));
-      if (edge > 110) { near = false; return; }
-      if (edge > 45 || hops >= 5 || (near && now - lastHop < 700)) return;
-      near = true; lastHop = now; hops++;
-      let vx = cx - ptr[0], vy = cy - ptr[1], v = Math.hypot(vx, vy);
-      if (v < 1) { const a = Math.random() * Math.PI * 2; vx = Math.cos(a); vy = Math.sin(a); v = 1; }
-      const jump = 150 + Math.random() * 40;
-      let nx = off[0] + vx / v * jump + (Math.random() * 30 - 15), ny = off[1] + vy / v * jump + (Math.random() * 30 - 15);
-      nx = Math.max(-r.left + off[0] + 8, Math.min(innerWidth - r.right + off[0] - 8, nx));   // stay on screen
-      ny = Math.max(-r.top + off[1] + 64, Math.min(innerHeight - r.bottom + off[1] - 8, ny));
-      off = [Math.max(-260, Math.min(260, nx)), Math.max(-260, Math.min(260, ny))];
-      dodge.style.transform = `translate(${off[0]}px, ${off[1]}px)`;
-      dodge.classList.remove("hop"); void dodge.offsetWidth; dodge.classList.add("hop");
-      if (hops >= 5) { el.classList.add("tired"); el.title = "It's tired — catch it!"; }
+      const dt = Math.min(50, now - last); last = now;
+      if (done) return;
+      const b = inside(), cx = pos[0] + W / 2, cy = pos[1] + H / 2;
+      if (dash) {   // quick hop to a new spot
+        const t = Math.min(1, (now - dash.t0) / 280), k = 1 - Math.pow(1 - t, 3);
+        pos = [dash.from[0] + (dash.to[0] - dash.from[0]) * k, dash.from[1] + (dash.to[1] - dash.from[1]) * k];
+        place(); if (t >= 1) dash = null;
+        return;
+      }
+      if (ptr) {
+        // eyes look toward the cursor
+        const ey = pos[1] + H * .46, dx = ptr[0] - cx, dy = ptr[1] - ey, L = Math.hypot(dx, dy) || 1, m = Math.min(1, L / 90);
+        if (look) look.style.transform = `translate(${(dx / L * 5 * m).toFixed(1)}px, ${(dy / L * 3.5 * m).toFixed(1)}px)`;
+        const edge = Math.hypot(Math.max(pos[0] - ptr[0], 0, ptr[0] - pos[0] - W), Math.max(pos[1] - ptr[1], 0, ptr[1] - pos[1] - H));
+        if (entered && !tired && edge < NEAR) {
+          const away = norm(cx - ptr[0], cy - ptr[1]);
+          if (room(away, b) < 40) {
+            // cornered: dash past the cursor to the other side
+            const through = norm(ptr[0] - cx, ptr[1] - cy), side = Math.random() < .5 ? 1 : -1, perp = [-through[1] * side, through[0] * side];
+            let to = [ptr[0] - W / 2 + through[0] * 150 + perp[0] * 50, ptr[1] - H / 2 + through[1] * 150 + perp[1] * 50];
+            to = [Math.max(b.x0, Math.min(b.x1, to[0])), Math.max(b.y0, Math.min(b.y1, to[1]))];
+            dash = { from: pos.slice(), to, t0: now }; dir = norm(to[0] - pos[0], to[1] - pos[1]);
+            dodge.classList.remove("hop"); void dodge.offsetWidth; dodge.classList.add("hop");
+            runUntil = 0; el.classList.remove("run"); tire();
+            return;
+          }
+          // just turn and run the other way
+          if (now >= runUntil) { tire(); if (!tired) { runUntil = now + 1000; el.classList.add("run"); } }
+          dir = away;
+        }
+      }
+      const running = now < runUntil;
+      if (!running) el.classList.remove("run");
+      const v = base * (running ? 2 : tired ? .6 : 1) * dt;
+      pos = [pos[0] + dir[0] * v, pos[1] + dir[1] * v];
+      if (running) pos = [Math.max(b.x0, Math.min(b.x1, pos[0])), Math.max(b.y0, Math.min(b.y1, pos[1]))];   // no escaping while fleeing
+      place();
+      // fade with how much of it is on the page; done once it has entered and then left
+      const ix = Math.max(0, Math.min(pos[0] + W, A.right) - Math.max(pos[0], A.left)), iy = Math.max(0, Math.min(pos[1] + H, A.bottom) - Math.max(pos[1], A.top));
+      const frac = ix * iy / (W * H);
+      el.style.opacity = frac.toFixed(2);
+      if (frac > .98) entered = true;
+      if ((entered && frac <= 0) || now - born > 120000) end();
     };
     document.addEventListener("pointermove", onMove, { passive: true });
     raf = requestAnimationFrame(tick);
-    const stopWatch = () => { cancelAnimationFrame(raf); document.removeEventListener("pointermove", onMove); };
-    const [fx, fy] = path.from, [tx, ty] = path.to, mx = (fx + tx) / 2, my = (fy + ty) / 2;
-    const anim = el.animate([{ transform: `translate(${fx}px, ${fy}px)`, opacity: 0 }, { opacity: 1, offset: .05 }, { transform: `translate(${mx}px, ${my}px)`, opacity: 1, offset: .5 },
-      { opacity: 1, offset: .95 }, { transform: `translate(${tx}px, ${ty}px)`, opacity: 0 }], { duration: dur, easing: "linear" });
+    const stopWatch = () => { done = true; cancelAnimationFrame(raf); document.removeEventListener("pointermove", onMove); };
     const trail = setInterval(() => {
-      const r = box();
-      const sx = path.dir === "right" ? r.left + 6 : path.dir === "left" ? r.right - 6 : r.left + r.width / 2;
-      const sy = path.dir === "up" ? r.bottom - 6 : path.dir === "down" ? r.top + 6 : r.top + r.height / 2;
-      const s = h("i", { class: `cat-spark${M === BOT && Math.random() < .4 ? " blue" : ""}`, style: `left:${sx + (Math.random() * 10 - 5)}px;top:${sy + (Math.random() * 10 - 5)}px` });
+      if (done || +el.style.opacity < .2) return;
+      const r = box(), sx = r.left + r.width / 2 - dir[0] * 36, sy = r.top + r.height / 2 - dir[1] * 44;
+      const s = h("i", { class: `cat-spark${Math.random() < .4 ? " blue" : ""}`, style: `left:${sx + (Math.random() * 10 - 5)}px;top:${sy + (Math.random() * 10 - 5)}px` });
       document.body.append(s); setTimeout(() => s.remove(), 800);
     }, 55);
     // Click guard: near the mascot (200 px) buttons, links and fields don't react — only the mascot does
@@ -1701,14 +1732,17 @@ async function logout() {
     };
     const EVENTS = ["pointerdown", "mousedown", "pointerup", "mouseup", "click", "dblclick", "contextmenu"];
     EVENTS.forEach(t => document.addEventListener(t, guard, true));
-    const end = () => { clearInterval(trail); EVENTS.forEach(t => document.removeEventListener(t, guard, true)); stopWatch(); el.remove(); busy = false; schedule(); };
-    anim.onfinish = end;
+    let ended = false;
+    function end() {
+      if (ended) return; ended = true;
+      stopWatch(); clearInterval(trail); EVENTS.forEach(t => document.removeEventListener(t, guard, true)); el.remove(); busy = false; schedule();
+    }
     el.addEventListener("click", () => {
-      anim.pause(); clearInterval(trail); stopWatch();
+      stopWatch(); clearInterval(trail);
       const r = box(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
       for (let i = 0; i < 16; i++) {
         const a = i / 16 * Math.PI * 2, d = 40 + Math.random() * 40;
-        const s = h("i", { class: `cat-spark big${M === BOT && i % 3 === 0 ? " blue" : ""}`, style: `left:${cx}px;top:${cy}px` });
+        const s = h("i", { class: `cat-spark big${i % 3 === 0 ? " blue" : ""}`, style: `left:${cx}px;top:${cy}px` });
         document.body.append(s);
         s.animate([{ transform: "translate(0,0) scale(1)", opacity: 1 }, { transform: `translate(${Math.cos(a) * d}px, ${Math.sin(a) * d}px) scale(.2)`, opacity: 0 }], { duration: 700, easing: "ease-out" });
         setTimeout(() => s.remove(), 720);
