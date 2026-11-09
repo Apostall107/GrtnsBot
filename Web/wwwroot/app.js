@@ -1676,9 +1676,15 @@ function renderShell() {
     sw.addEventListener("change", () => { store.set("gb.viewAs", sw.checked ? "member" : ""); state.tab = "home"; store.set("gb.tab", "home"); boot(); });
     return h("label", { class: "menu-item view-as" }, icon("eye", 16), h("span", { style: "flex:1" }, "View as member"), sw);
   })() : null;
+  // Which Discord server the panel works with: only the bot owner switches it (in this menu)
+  const g0 = currentGuild();
+  const serverPick = state.me.isOwner && state.guilds.length > 1
+    ? h("div", { class: "menu-server" }, h("span", { class: "menu-label" }, icon("server", 14), "Server"), h("div", { class: "server-select" }, guildSel)) : null;
   const userPop = h("div", { class: "user-pop", style: "display:none" },
     h("div", { class: "who" }, h("b", {}, state.me.name),
-      h("span", { class: "muted small" }, state.me.viewAsMember ? "Owner · viewing as member" : state.me.isOwner ? "Owner" : isAdmin() ? "Admin access" : "Member")),
+      h("span", { class: "muted small" }, state.me.viewAsMember ? "Owner · viewing as member" : state.me.isOwner ? "Owner" : isAdmin() ? "Admin access" : "Member"),
+      g0 && !serverPick ? h("span", { class: "muted small who-server" }, icon("server", 12), g0.name) : null),
+    serverPick,
     viewAs,
     h("button", { class: "menu-item danger", onclick: logout }, icon("log-out", 16), "Log out"));
   const userBtn = h("button", { class: "user-button", "aria-haspopup": "menu", "aria-expanded": "false" },
@@ -1689,7 +1695,7 @@ function renderShell() {
     userBtn.setAttribute("aria-expanded", open ? "true" : "false");
   };
   userBtn.addEventListener("click", e => { e.stopPropagation(); toggleUser(userPop.style.display === "none"); });
-  document.onclick = e => { if (!userPop.contains(e.target)) toggleUser(false); };
+  document.onclick = e => { if (!userPop.contains(e.target) && !(e.target.closest && e.target.closest(".select-pop"))) toggleUser(false); };
 
   document.getElementById("app").replaceChildren(
     h("header", { class: "topbar" },
@@ -1700,7 +1706,7 @@ function renderShell() {
       h("div", { class: "spacer" }),
       h("button", { type: "button", class: "search-trigger", title: "Search (Ctrl+K)", "aria-label": "Search", onclick: () => quickSearch() },
         icon("search", 16), h("span", { class: "search-trigger-text" }, "Search…"), h("kbd", {}, navigator.platform.includes("Mac") ? "⌘K" : "Ctrl K")),
-      state.guilds.length ? h("div", { class: "server-select" }, icon("server", 16), guildSel) : h("span", { class: "muted" }, "The bot is on no servers"),
+      state.guilds.length ? null : h("span", { class: "muted" }, "The bot is on no servers"),
       h("span", { class: `status-pill ${connected ? "ok" : "bad"}`, title: `Bot: ${state.connection || "unknown"}` },
         h("span", { class: "dot" }), h("span", { class: "label" }, connected ? "Online" : (state.connection || "Offline"))),
       h("div", { class: "user-menu" }, userBtn, userPop)),
