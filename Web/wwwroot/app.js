@@ -984,7 +984,32 @@ function enhanceControls(root) {
   for (const n of root.querySelectorAll("input[type=number]:not([data-enhanced])")) enhanceNumber(n);
   for (const d of root.querySelectorAll("input[type=date]:not([data-enhanced])")) enhanceDate(d);
   for (const t of root.querySelectorAll("input[type=time]:not([data-enhanced])")) enhanceTime(t);
+  for (const ta of root.querySelectorAll("textarea:not([data-autogrow])")) autoGrowSetup(ta);
 }
+
+// ----- Text areas grow with their text (up to 75% of the screen, then they scroll)
+const growObserver = "IntersectionObserver" in window
+  ? new IntersectionObserver(entries => entries.forEach(e => { if (e.isIntersecting) autoGrow(e.target); })) : null;
+function autoGrow(ta) {
+  if (!ta.isConnected || !ta.offsetParent) return;
+  if (!ta.dataset.minH) ta.dataset.minH = String(ta.offsetHeight || 0);
+  const max = Math.round(window.innerHeight * 0.75);
+  ta.style.height = "auto";
+  const want = ta.scrollHeight + (ta.offsetHeight - ta.clientHeight);
+  ta.style.height = Math.min(Math.max(want, Number(ta.dataset.minH)), max) + "px";
+  ta.style.overflowY = want > max ? "auto" : "hidden";
+}
+function autoGrowSetup(ta) {
+  ta.dataset.autogrow = "1";
+  // Value set from code (templates, reset) — catch it too
+  const d = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value");
+  Object.defineProperty(ta, "value", { configurable: true, get() { return d.get.call(this); }, set(v) { d.set.call(this, v); requestAnimationFrame(() => autoGrow(this)); } });
+  if (growObserver) growObserver.observe(ta);
+  autoGrow(ta);
+}
+document.addEventListener("input", e => { if (e.target instanceof HTMLTextAreaElement) autoGrow(e.target); });
+document.addEventListener("focusin", e => { if (e.target instanceof HTMLTextAreaElement) autoGrow(e.target); });
+window.addEventListener("resize", () => document.querySelectorAll("textarea[data-autogrow]").forEach(autoGrow));
 
 /** Card headings: a leading emoji (or a known title) becomes a tone icon chip. */
 const HEADING_EMOJI = { "⚙️": "settings", "🎭": "drama", "🎮": "gamepad-2", "👥": "users", "💾": "database-backup", "📄": "file-text",
