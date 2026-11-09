@@ -27,8 +27,11 @@ class ApiError extends Error {
   constructor(message, status, data) { super(message); this.status = status; this.data = data; }
 }
 
+let apiKeepalive = false;
+
 async function api(method, path, body) {
   const opts = { method, headers: { "X-Panel": "1" }, credentials: "same-origin" };
+  if (apiKeepalive) opts.keepalive = true; // the tab is closing: let pending deletions finish
   // Owner only: «view as member» — the server then answers as for a normal member
   if (store.get("gb.viewAs") === "member") opts.headers["X-View-As"] = "member";
   if (body !== undefined) {
@@ -69,6 +72,51 @@ async function act(button, fn, okText) {
     if (button) button.disabled = false;
   }
 }
+
+// ================= Undo instead of "Are you sure?" =================
+
+/** Toast with an Undo button for a few seconds; onUndo runs if it is pressed. */
+function undoToast(text, onUndo, ms = 6000) {
+  const btn = h("button", { class: "toast-undo", type: "button" }, icon("undo-2", 14), "Undo");
+  const el = h("div", { class: "toast ok has-undo" }, h("span", { class: "toast-text" }, text), btn,
+    h("i", { class: "toast-timer", style: `animation-duration:${ms}ms` }));
+  let done = false;
+  const close = () => { done = true; el.remove(); };
+  btn.addEventListener("click", () => { if (done) return; close(); onUndo(); });
+  document.getElementById("toasts").append(el);
+  setTimeout(() => { if (!done) close(); }, ms);
+}
+
+/** Local list edit (saved later with Save): removed at once, Undo puts it back. */
+function removeLocal(list, i, redraw, text) {
+  const [item] = list.splice(i, 1);
+  redraw();
+  undoToast(text, () => { list.splice(Math.min(i, list.length), 0, item); redraw(); });
+}
+
+const deferredRemovals = new Set();
+/**
+ * Server deletion with Undo: the element disappears right away, the request is sent after 6 s unless Undo is pressed
+ * (or at once when the tab is closed). `after` runs when the deletion went through (usually a refresh).
+ */
+function removeWithUndo(el, text, run, after) {
+  if (el) el.classList.add("removing");
+  const job = { fired: false, timer: 0 };
+  job.fire = async () => {
+    if (job.fired) return;
+    job.fired = true; clearTimeout(job.timer); deferredRemovals.delete(job);
+    try { await run(); if (after) after(); }
+    catch (e) { if (el) el.classList.remove("removing"); toast(e.message || String(e), "error"); }
+  };
+  job.timer = setTimeout(job.fire, 6000);
+  deferredRemovals.add(job);
+  undoToast(text, () => {
+    if (job.fired) return;
+    job.fired = true; clearTimeout(job.timer); deferredRemovals.delete(job);
+    if (el) el.classList.remove("removing");
+  });
+}
+window.addEventListener("pagehide", () => { apiKeepalive = true; for (const j of [...deferredRemovals]) j.fire(); });
 
 // ================= Unsaved changes: one sticky bar for the whole page (Save all / Discard) =================
 
@@ -237,9 +285,7 @@ function roleChip(r, onRemove) {
   return h("span", { class: `chip${r.exists === false ? " warn" : ""}` },
     roleIconEl(r, 15) || h("span", { class: "swatch", style: r.color ? `background:${r.color}` : null }),
     `@${r.name}`,
-    onRemove ? h("button", { title: "Remove", onclick: async () => {
-      if (await confirmDialog(`Remove @${r.name}?`, "It is removed from this list (saved when you save the form).", "Remove")) onRemove();
-    } }, "×") : null);
+    onRemove ? h("button", { title: "Remove", onclick: () => onRemove() }, "×") : null);
 }
 
 function empty(text) { return h("div", { class: "empty" }, text); }
@@ -1537,10 +1583,9 @@ async function pageAnnounce(main) {
   const drawPing = () => {
     everyoneSel.value = ping.everyone;
     const chips = [
-      ...ping.roles.map((r, i) => roleChip(r, () => { ping.roles.splice(i, 1); drawPing(); })),
-      ...ping.users.map((m, i) => h("span", { class: "chip" }, `@${m.name}`, h("button", { title: "Remove", onclick: async () => {
-        if (await confirmDialog(`Don't ping ${m.name}?`, "Removed from the ping list.", "Remove")) { ping.users.splice(i, 1); drawPing(); }
-      } }, "×")))];
+      ...ping.roles.map((r, i) => roleChip(r, () => removeLocal(ping.roles, i, drawPing, `@${r.name} won't be pinged.`))),
+      ...ping.users.map((m, i) => h("span", { class: "chip" }, `@${m.name}`, h("button", { title: "Remove", onclick: () =>
+        removeLocal(ping.users, i, drawPing, `${m.name} won't be pinged.`) }, "×")))];
     pingChips.replaceChildren(...(chips.length ? chips : [h("span", { class: "muted small" }, "Nobody — add roles or people below.")]));
   };
   const addRoles = h("button", { class: "btn secondary", type: "button" }, "➕ Roles…");
@@ -1708,10 +1753,8 @@ async function pageAnnounce(main) {
           }), "Template renamed.") !== undefined) refresh();
         });
         const del = h("button", { class: "btn ghost" }, "Delete");
-        del.addEventListener("click", async () => {
-          if (!await confirmDialog(`Delete the template «${t.name}»?`, "Posts already sent or scheduled are not affected.", "Delete")) return;
-          if (await act(del, () => gApi("DELETE", `/announce/templates/${t.key}`), "Template deleted.") !== undefined) refresh();
-        });
+        del.addEventListener("click", () => removeWithUndo(del.closest("tr"), `Template «${t.name}» deleted.`,
+          () => gApi("DELETE", `/announce/templates/${t.key}`), refresh));
         return h("tr", {}, h("td", {}, h("b", {}, t.name)),
           h("td", {}, t.channel ? `# ${t.channel}` : h("span", { class: "muted small" }, "any")),
           h("td", { class: "small" }, t.content.length > 90 ? t.content.slice(0, 90) + "…" : t.content),
@@ -1788,10 +1831,8 @@ async function pageAnnounce(main) {
           if (!await confirmDialog("Delete this post in Discord?", `${p.messages} message(s) in ${where(p)} will be deleted.`, "Delete")) return;
           if (await act(null, () => gApi("POST", `/announce/${p.id}/delete-messages`), r => `Deleted ${r.deleted} message(s).`) !== undefined) refresh();
         } } : null,
-        { icon: "x", label: "Remove from this list", onclick: async () => {
-          if (!await confirmDialog("Remove from the list?", "Only the record here is removed — the messages in Discord stay.", "Remove")) return;
-          if (await act(null, () => gApi("DELETE", `/announce/${p.id}`), "Removed.") !== undefined) refresh();
-        } }
+        { icon: "x", label: "Remove from this list", onclick: () => removeWithUndo(more.closest("tr"),
+          "Removed from the list (the messages in Discord stay).", () => gApi("DELETE", `/announce/${p.id}`), refresh) }
       ].filter(Boolean));
       return h("tr", {},
         h("td", {}, fmtDate(p.sentAt), p.sendAt ? h("div", { class: "muted small" }, "scheduled") : null),
@@ -1884,10 +1925,8 @@ async function pageLfg(main) {
     h("tbody", {}, actList.map(a => {
       const edit = h("button", { class: "btn secondary icon-only sm", title: "Edit", "aria-label": "Edit", onclick: () => activityDialog(a) }, icon("pencil", 15));
       const rm = h("button", { class: "btn ghost icon-only sm danger-text", title: "Remove", "aria-label": "Remove" }, icon("trash-2", 15));
-      rm.addEventListener("click", async () => {
-        if (!await confirmDialog(`Remove ${a.name}?`, "Groups that are already posted are not affected.", "Remove")) return;
-        if (await act(rm, () => gApi("DELETE", `/lfg/activities/${encodeURIComponent(a.key)}`), "Activity removed.") !== undefined) refresh();
-      });
+      rm.addEventListener("click", () => removeWithUndo(rm.closest("tr"), `${a.name} removed.`,
+        () => gApi("DELETE", `/lfg/activities/${encodeURIComponent(a.key)}`), refresh));
       return h("tr", {}, h("td", {}, a.name, mode === "project" && !a.projectKey ? h("div", {}, shared.cloneNode(true)) : null),
         h("td", {}, roleChip(a.role)), h("td", {}, a.minGs != null ? h("span", { class: "chip" }, `GS ${a.minGs}+`) : h("span", { class: "muted" }, "—")),
         projects.length ? h("td", {}, moveSel(a)) : null, h("td", { class: "actions" }, edit, " ", rm));
@@ -1989,9 +2028,8 @@ async function pageLfg(main) {
     const info = h("div", { class: "muted small" });
     const label = c => `${c.voice ? "🔊" : "#"} ${c.name}`;
     const draw = () => chips.replaceChildren(...(list.length ? list.map((c, i) =>
-      h("span", { class: `chip${c.exists === false ? " warn" : ""}` }, label(c), h("button", { title: "Remove", onclick: async () => {
-        if (await confirmDialog(`Stop duplicating to ${label(c)}?`, "Saved when you press Save. Copies already posted stay.", "Remove")) { list.splice(i, 1); draw(); }
-      } }, "×"))) : [h("span", { class: "muted small" }, "No channels.")]));
+      h("span", { class: `chip${c.exists === false ? " warn" : ""}` }, label(c), h("button", { title: "Remove", onclick: () =>
+        removeLocal(list, i, draw, `No more copies to ${label(c)} (after Save).`) }, "×"))) : [h("span", { class: "muted small" }, "No channels.")]));
     const add = h("select", {}, h("option", { value: "" }, "+ Add channel…"),
       h("optgroup", { label: "Text channels" }, state.channels.text.filter(c => c.canPost).map(c => h("option", { value: c.id }, `# ${c.name}`))),
       h("optgroup", { label: "Voice channels (their chat)" }, state.channels.voice.map(c => h("option", { value: `v${c.id}` }, `🔊 ${c.name}`))));
@@ -2442,10 +2480,8 @@ async function renderRecurring(card, acts, templates = [], projects = [], projec
       const edit = h("button", { class: "btn secondary" }, "Edit");
       edit.addEventListener("click", () => recurringDialog(acts, r, templates, projects, projectKey));
       const rm = h("button", { class: "btn ghost" }, "Delete");
-      rm.addEventListener("click", async () => {
-        if (!await confirmDialog(`Delete the ${r.activity} schedule?`, "Groups that are already posted stay.", "Delete")) return;
-        if (await act(rm, () => gApi("DELETE", `/lfg/recurring/${r.id}`), "Schedule deleted.") !== undefined) refresh();
-      });
+      rm.addEventListener("click", () => removeWithUndo(rm.closest("tr"), `${r.activity} schedule deleted.`,
+        () => gApi("DELETE", `/lfg/recurring/${r.id}`), refresh));
       return h("tr", {},
         h("td", {}, r.activity, h("div", { class: "muted small" }, r.channel ? `#${r.channel}` : "deleted channel", ` · ${r.slots.length} slots`,
           r.noOrganizer ? " · 🤖 no organizer" : r.owner ? ` · by ${r.owner.name}` : "")),
@@ -2724,9 +2760,8 @@ async function renderClasses(card, projectList = [], projectKey = store.get("gb.
       if (useRole) useRole.addEventListener("click", () => importIcons(useRole, [r]));
       return h("div", { class: "class-row" }, h("div", { class: "class-role" }, roleChip(r.role)), prev, iconInput, pick,
         useRole || h("span", {}), slotToggles(r),
-        h("button", { class: "btn ghost icon-only sm danger-text", title: "Remove", "aria-label": "Remove", onclick: async () => {
-          if (await confirmDialog(`Remove @${r.role.name} from classes?`, "Saved when you press Save classes.", "Remove")) { rows.splice(i, 1); draw(); }
-        } }, icon("trash-2", 15)));
+        h("button", { class: "btn ghost icon-only sm danger-text", title: "Remove", "aria-label": "Remove", onclick: () =>
+          removeLocal(rows, i, draw, `@${r.role.name} removed from classes (after Save).`) }, icon("trash-2", 15)));
     }));
   };
   // Several class roles at once
@@ -2794,10 +2829,8 @@ function renderTemplates(card, acts, templates, projectKey = null, mode = "all")
         const act = acts.find(a => a.key === t.activityKey);
         const edit = h("button", { class: "btn secondary", onclick: () => templateDialog(acts, t, t.projectKey || null) }, "Edit");
         const rm = h("button", { class: "btn ghost" }, "Delete");
-        rm.addEventListener("click", async () => {
-          if (!await confirmDialog(`Delete the template ${t.name}?`, "Posted groups are not affected.", "Delete")) return;
-          if (await act(rm, () => gApi("DELETE", `/lfg/templates/${t.key}`), "Template deleted.") !== undefined) refresh();
-        });
+        rm.addEventListener("click", () => removeWithUndo(rm.closest("tr"), `Template ${t.name} deleted.`,
+          () => gApi("DELETE", `/lfg/templates/${t.key}`), refresh));
         return h("tr", {},
           h("td", {}, h("b", {}, t.name), mode === "project" && !t.projectKey ? h("span", { class: "badge wait", style: "margin-left:6px" }, "🌐 all projects") : null,
             h("div", { class: "muted small" }, act ? act.name : (t.customActivity || "custom"))),
@@ -3019,9 +3052,8 @@ function groupCard(g) {
           g.started ? attendanceButton(s, `/lfg/groups/${gid}/attendance`) : null,
           tool("pencil", "Change character", rename(s.member, s.character)),
           (!g.owner || s.member.id !== g.owner.id) ? tool("arrow-right", "Move to reserve", () => roster("toReserve", s.member, "Moved to the reserve.")) : null,
-          (!g.owner || s.member.id !== g.owner.id) ? tool("x", "Remove from the group", async () => {
-            if (await confirmDialog(`Remove ${s.member.name}?`, "Their slot becomes free.", "Remove")) roster("remove", s.member, "Removed.");
-          }) : null))
+          (!g.owner || s.member.id !== g.owner.id) ? tool("x", "Remove from the group", e => removeWithUndo(e.currentTarget.closest(".slot"), `${s.member.name} removed from the group.`,
+            () => gApi("POST", `/lfg/groups/${gid}/roster`, { action: "remove", userId: s.member.id }), refresh)) : null))
       : h("div", { class: "slot open" }, h("span", { class: "slot-num" }, i + 1), rolePill(s.slotRole), slotReqMark(s),
           h("span", { class: "slot-open-text" }, icon("circle-plus", 14), "Open slot")))),
     g.reserve.length ? h("details", { class: "reserve", open: true }, h("summary", {}, icon("clock", 14), `Reserve · ${g.reserve.length}`),
@@ -3029,9 +3061,8 @@ function groupCard(g) {
         rolePill(r.role || "All"), slotInfo(r, null, true), slotTools(
         tool("arrow-left", "Move into the group (sends a DM)", () => roster("promote", r.member, "Moved into the group, DM sent.")),
         tool("pencil", "Change character", rename(r.member, r.character)),
-        tool("x", "Remove from the reserve", async () => {
-          if (await confirmDialog(`Remove ${r.member.name} from the reserve?`, "They are taken out of this group.", "Remove")) roster("removeReserve", r.member, "Removed from the reserve.");
-        })))))) : null,
+        tool("x", "Remove from the reserve", e => removeWithUndo(e.currentTarget.closest(".slot"), `${r.member.name} removed from the reserve.`,
+          () => gApi("POST", `/lfg/groups/${gid}/roster`, { action: "removeReserve", userId: r.member.id }), refresh))))))) : null,
     h("div", { class: "group-actions" },
       h("a", { class: "btn secondary", href: g.jumpUrl, target: "_blank", rel: "noopener" }, icon("external-link", 15), "Open in Discord"),
       g.voiceUrl ? h("a", { class: "btn secondary voice-btn", href: g.voiceUrl, target: "_blank", rel: "noopener", title: "Open the group's voice room in Discord" }, icon("volume-2", 15), "Voice room") : null,
@@ -3545,9 +3576,8 @@ function questionEditor(p) {
       });
       syncBd();
       const up = h("button", { class: "btn ghost", type: "button", title: "Up", disabled: i === 0, onclick: () => { [qs[i - 1], qs[i]] = [qs[i], qs[i - 1]]; draw(); } }, "↑");
-      const del = h("button", { class: "btn ghost", type: "button", title: "Remove", onclick: async () => {
-        if (await confirmDialog("Remove this question?", "Saved when you press Save.", "Remove")) { qs.splice(i, 1); draw(); }
-      } }, "✖");
+      const del = h("button", { class: "btn ghost icon-only sm danger-text", type: "button", title: "Remove", "aria-label": "Remove", onclick: () =>
+        removeLocal(qs, i, draw, "Question removed (after Save).") }, icon("trash-2", 15));
       return h("div", { class: "question-row" }, h("span", { class: "q-num" }, `${i + 1}`), label, hint,
         h("div", { class: "q-opts" },
           h("label", { class: "row small" }, req, "required"), h("label", { class: "row small" }, long, "long"),
@@ -5577,9 +5607,8 @@ function playCard(g) {
     h("div", { class: "roster" }, g.reserve.map(r => h("div", { class: "slot taken reserve-row" },
       rolePill(r.role || "All"), slotInfo(r, null, false), slotTools(
       org ? tool("arrow-left", "Move into the group (sends a DM)", () => roster$("promote", r.member, "Moved into the group, DM sent.")) : null,
-      org ? tool("x", "Remove from the reserve", async () => {
-        if (await confirmDialog(`Remove ${r.member.name} from the reserve?`, "They are taken out of this group.", "Remove")) roster$("removeReserve", r.member, "Removed from the reserve.");
-      }) : null))))) : null;
+      org ? tool("x", "Remove from the reserve", e => removeWithUndo(e.currentTarget.closest(".slot"), `${r.member.name} removed from the reserve.`,
+        () => gApi("POST", `/me/groups/${gid}/roster`, { action: "removeReserve", userId: r.member.id }), refresh)) : null))))) : null;
 
   const closeBtn = org ? h("button", { class: "btn danger" }, icon("trash-2", 15), "Close group") : null;
   if (closeBtn) closeBtn.addEventListener("click", async () => {
@@ -5812,10 +5841,8 @@ async function pageChars(main) {
     });
     save.addEventListener("click", tracker.save);
     const rm = h("button", { class: "btn danger" }, icon("trash-2", 15), "Remove");
-    rm.addEventListener("click", async () => {
-      if (!await confirmDialog(`Remove ${c.name}?`, "The character, its class and note are deleted.", "Remove")) return;
-      if (await act(rm, () => gApi("DELETE", `/me/characters/${encodeURIComponent(c.name)}${pq}`), "Removed.") !== undefined) refresh();
-    });
+    rm.addEventListener("click", () => removeWithUndo(rm.closest(".card"), `${c.name} removed.`,
+      () => gApi("DELETE", `/me/characters/${encodeURIComponent(c.name)}${pq}`), refresh));
     // Rename: class, note, GS and active groups follow the new name
     const rename = h("button", { class: "btn ghost icon-only sm", title: "Rename", "aria-label": `Rename ${c.name}` }, icon("pencil", 15));
     rename.addEventListener("click", async () => {
@@ -6120,11 +6147,8 @@ async function pageBirthdays(main) {
       h("div", { class: "row", style: "gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px" }, uid, day, h("span", { class: "muted" }, "."), month, year, add));
   }
 
-  const removePerson = (id, name) => act(null, async () => {
-    if (!await confirmDialog("Remove this birthday?", `${name}'s date will be deleted.`, "Remove")) return;
-    await gApi("DELETE", `/birthdays/people/${id}`);
-    toast(`${name}'s birthday removed.`); load();
-  });
+  const removePerson = (id, name, el) => removeWithUndo(el, `${name}'s birthday removed.`,
+    () => gApi("DELETE", `/birthdays/people/${id}`), load);
 
   // Поздравительный пост в заданное время: упоминает КАЖДОГО именинника, шаблоны по очереди/случайно
   function renderGreeting(gr) {
@@ -6258,7 +6282,7 @@ async function pageBirthdays(main) {
         h("span", { class: "chip" }, fmt(p)),
         p.inDays === 0 ? h("span", { class: "chip ok", title: "Birthday today" }, "🎂 today")
           : h("span", { class: "muted small" }, p.inDays === 1 ? "tomorrow" : `in ${p.inDays} d`),
-        h("button", { class: "btn sm ghost icon-only", title: "Remove", onclick: () => removePerson(p.member.id, p.member.name) }, icon("trash-2", 14))))));
+        h("button", { class: "btn sm ghost icon-only", title: "Remove", onclick: e => removePerson(p.member.id, p.member.name, e.currentTarget.closest("tr")) }, icon("trash-2", 14))))));
   }
 
   async function load() {
