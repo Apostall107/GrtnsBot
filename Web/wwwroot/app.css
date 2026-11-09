@@ -2737,3 +2737,137 @@ input.switch:checked { animation: switch-glow .5s ease-out; }
 .menu-summon { padding: 8px 10px; border-top: 1px solid var(--border, rgba(255,255,255,.08)); }
 .menu-summon .menu-label { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
 .summon-row .btn.sm { min-width: 36px; padding: 4px 8px; font-size: 16px; line-height: 1; }
+/* ===== More mascot spells ===== */
+.gb-legend { inset: 0; z-index: 94; box-shadow: inset 0 0 140px 30px rgba(255, 200, 80, .55), inset 0 0 40px 6px rgba(255, 240, 180, .6); }
+.mascot.cast-legend svg { filter: drop-shadow(0 0 10px rgba(255, 210, 90, .95)) drop-shadow(0 0 26px rgba(255, 170, 40, .7)) !important; }
+/* per-spell orb colour while casting */
+.mascot.cast-ice .gb-orb-glow, .mascot.cast-water .gb-orb-glow { fill: #8FE3FF; }
+.mascot.cast-meteor .gb-orb-glow { fill: #FF7A2A; }
+.mascot.cast-seal .gb-orb-glow, .mascot.cast-fireworks .gb-orb-glow { fill: #FFD25A; }
+.mascot.cast-acid .gb-orb-glow { fill: #7CFF4F; }
+.mascot.cast-laser .gb-orb-glow { fill: #FF3B4E; }
+.mascot.cast-claws .gb-orb-glow { fill: #2A0F4A; }
+.mascot.cast-glitch .gb-orb-glow { fill: #00FFC8; }
+.mascot.cast-sakura .gb-orb-glow { fill: #FF9ACB; }
+/* charge orbs */
+.gb-charge.ice, .gb-charge.water { background: radial-gradient(circle, #FFFFFF 0, #D6F4FF 30%, rgba(120, 210, 255, .75) 55%, rgba(80, 170, 255, 0) 72%); }
+.gb-charge.meteor { background: radial-gradient(circle, #FFF4D0 0, #FFB24A 30%, rgba(255, 90, 30, .75) 55%, rgba(200, 40, 10, 0) 72%); }
+.gb-charge.seal, .gb-charge.fireworks { background: radial-gradient(circle, #FFFFFF 0, #FFE9A3 30%, rgba(255, 196, 60, .75) 55%, rgba(255, 160, 40, 0) 72%); }
+.gb-charge.acid { background: radial-gradient(circle, #F0FFE0 0, #A6FF7A 30%, rgba(90, 230, 60, .75) 55%, rgba(60, 200, 40, 0) 72%); }
+.gb-charge.laser { background: radial-gradient(circle, #FFFFFF 0, #FFB0B8 25%, rgba(255, 50, 70, .8) 55%, rgba(220, 20, 40, 0) 72%); }
+.gb-charge.claws { background: radial-gradient(circle, #1A0830 0, #2D1052 35%, rgba(140, 90, 255, .7) 58%, rgba(100, 50, 220, 0) 74%); }
+.gb-charge.glitch { background: conic-gradient(#ff0050, #00ff9c, #2f6bff, #ffe600, #ff0050); border-radius: 4px; filter: blur(1px); }
+.gb-charge.sakura { background: radial-gradient(circle, #FFFFFF 0, #FFD3E8 30%, rgba(255, 150, 200, .75) 55%, rgba(255, 120, 190, 0) 72%); }
+/* rings */
+.gb-ring.ice, .gb-ring.water { border: 4px solid rgba(210, 240, 255, .95); box-shadow: 0 0 22px rgba(120, 200, 255, .85); }
+.gb-ring.seal, .gb-ring.fireworks { border: 4px solid rgba(255, 225, 140, .95); box-shadow: 0 0 26px rgba(255, 190, 60, .9), inset 0 0 14px rgba(255, 200, 90, .6); }
+.gb-ring.acid { border: 4px solid rgba(170, 255, 130, .95); box-shadow: 0 0 22px rgba(100, 240, 60, .85); }
+.gb-ring.laser { border: 4px solid rgba(255, 140, 150, .95); box-shadow: 0 0 22px rgba(255, 40, 60, .85); }
+.gb-ring.claws { border: 4px solid rgba(160, 120, 255, .9); box-shadow: 0 0 22px rgba(60, 20, 120, .95); }
+.gb-ring.glitch { border: 3px dashed #00ffc8; box-shadow: 3px 0 0 #ff0050, -3px 0 0 #2f6bff; }
+.gb-ring.sakura { border: 4px solid rgba(255, 190, 225, .95); box-shadow: 0 0 22px rgba(255, 130, 190, .85); }
+/* sparks */
+.cat-spark.ice, .cat-spark.water { background: #EAF8FF; box-shadow: 0 0 8px #8FD8FF; border-radius: 50%; }
+.cat-spark.gold { background: #FFE6A0; box-shadow: 0 0 8px #FFC44A, 0 0 16px rgba(255, 170, 40, .6); }
+.cat-spark.acid { background: #D2FFB8; box-shadow: 0 0 8px #6CFF3C; border-radius: 50%; }
+.cat-spark.laser { background: #FFE1E4; box-shadow: 0 0 8px #FF2E46, 0 0 14px rgba(255, 40, 60, .7); }
+.cat-spark.shadow { background: #3A1A66; box-shadow: 0 0 8px #8C5CFF; }
+.cat-spark.petal { background: #FFC2DE; box-shadow: 0 0 6px #FF8AC0; border-radius: 0 100% 0 100%; }
+/* ice */
+.gb-frostvig { inset: 0; z-index: 95; background: radial-gradient(ellipse at center, rgba(200, 235, 255, 0) 42%, rgba(190, 230, 255, .3) 72%, rgba(235, 248, 255, .62) 100%); }
+.gb-frost { left: 0; top: 0; z-index: 96; overflow: visible; }
+.gb-frost path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.gb-frost .gl { stroke: rgba(150, 215, 255, .35); filter: blur(2px); }
+.gb-frost .hi { stroke: rgba(240, 250, 255, .95); }
+/* water drops (they slightly magnify what's under them) */
+.gb-drop { z-index: 96; border-radius: 50% 50% 50% 50% / 58% 58% 42% 42%;
+  background: radial-gradient(circle at 34% 28%, rgba(255, 255, 255, .85) 0 9%, rgba(210, 235, 255, .22) 26%, rgba(140, 190, 240, .12) 62%, rgba(80, 140, 220, .3) 100%);
+  box-shadow: inset 0 -3px 4px rgba(255, 255, 255, .35), inset 0 2px 3px rgba(0, 20, 60, .3), 0 2px 3px rgba(0, 0, 0, .35);
+  backdrop-filter: blur(1px) brightness(1.18) saturate(1.2); }
+.gb-drop .trail { position: absolute; left: 50%; bottom: 60%; width: 30%; margin-left: -15%; border-radius: 3px;
+  background: linear-gradient(rgba(190, 225, 255, 0), rgba(190, 225, 255, .35)); transform: translateY(-100%); }
+/* meteor */
+.gb-meteor { width: 90px; height: 90px; border-radius: 46% 54% 50% 50%; will-change: transform;
+  background: radial-gradient(circle at 35% 30%, #FFE7B0 0, #FF9A3C 22%, #8A3A16 52%, #3A1A0C 80%);
+  box-shadow: 0 0 40px 14px rgba(255, 120, 40, .85), 0 0 90px 30px rgba(255, 70, 20, .45); }
+.gb-smoke { z-index: 95; border-radius: 50%; background: radial-gradient(circle, rgba(70, 64, 72, .65) 0, rgba(55, 50, 58, .35) 55%, rgba(50, 45, 52, 0) 72%); filter: blur(6px); }
+.gb-cracks.meteor .hi { animation: gb-cool 2.8s ease-out forwards; }
+.gb-cracks.meteor .sh { stroke: rgba(20, 6, 0, .85); }
+.gb-cracks.meteor .gl { stroke: rgba(255, 110, 30, .45); animation: gb-ember 2.8s ease-out forwards; }
+.gb-cracks.meteor path.pit { fill: rgba(16, 4, 0, .92); stroke: #FF7A1A; stroke-width: 4; filter: drop-shadow(0 0 8px rgba(255, 120, 30, .9)); }
+/* tidal wave */
+.gb-wave { z-index: 95; overflow: visible; will-change: transform; filter: drop-shadow(0 -6px 18px rgba(120, 200, 255, .5)); }
+.gb-wave .foam { fill: none; stroke: rgba(245, 252, 255, .95); stroke-width: 7; stroke-linecap: round; filter: blur(1px); }
+.gb-wave .foam.thin { stroke-width: 3; stroke: rgba(230, 245, 255, .6); }
+/* seal of Greatness */
+.gb-seal { z-index: 96; overflow: visible; transform-origin: center; filter: drop-shadow(0 0 10px rgba(255, 200, 80, .9)) drop-shadow(0 0 30px rgba(255, 170, 40, .5)); }
+.gb-seal .ring { fill: none; stroke: #FFD86A; stroke-width: 2.4; }
+.gb-seal .ring.thin { stroke-width: .9; stroke: rgba(255, 220, 130, .85); }
+.gb-seal .tri { fill: none; stroke: rgba(255, 215, 110, .9); stroke-width: 1.2; }
+.gb-seal .runes { fill: #FFE7A0; font-size: 11px; letter-spacing: 2px; }
+.gb-seal .g { fill: #FFE08A; font: 900 38px/1 Georgia, serif; text-anchor: middle; }
+.gb-seal .spin { transform-origin: 0 0; animation: gb-spin 6s linear infinite; }
+.gb-seal .spin.rev { animation-direction: reverse; animation-duration: 9s; }
+.gb-seal.imprint { filter: drop-shadow(0 0 6px rgba(255, 150, 40, .8)); }
+.gb-seal.imprint .ring, .gb-seal.imprint .tri { stroke: #E2A24A; }
+.gb-seal.imprint .runes, .gb-seal.imprint .g { fill: #E9B25C; }
+.gb-seal.imprint .spin { animation: none; }
+/* acid */
+.gb-cloud { z-index: 95; border-radius: 50%; background: radial-gradient(circle, rgba(140, 255, 100, .5) 0, rgba(90, 210, 60, .3) 50%, rgba(60, 170, 40, 0) 72%); filter: blur(10px); }
+.gb-acidball { width: 20px; height: 20px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #F0FFE0 0, #8CFF5A 35%, #2E9A12 80%); box-shadow: 0 0 14px rgba(110, 255, 60, .9); }
+.gb-cracks.acid .hi { stroke: #D6FFBC; }
+.gb-cracks.acid .sh { stroke: rgba(5, 25, 0, .75); }
+.gb-cracks.acid .gl { stroke: rgba(110, 255, 70, .5); animation: gb-ember 3s ease-out forwards; }
+.gb-cracks.acid path.pit { fill: rgba(6, 18, 2, .92); stroke: #7CFF4F; stroke-width: 2.5; filter: drop-shadow(0 0 6px rgba(110, 255, 60, .9)); }
+/* orbital beam */
+.gb-beam { width: 30px; z-index: 97; border-radius: 0 0 15px 15px; will-change: transform, height;
+  background: linear-gradient(90deg, rgba(255, 40, 60, 0), rgba(255, 60, 80, .75) 28%, #FFFFFF 50%, rgba(255, 60, 80, .75) 72%, rgba(255, 40, 60, 0));
+  box-shadow: 0 0 30px 10px rgba(255, 40, 60, .55); }
+.gb-beamhit { width: 70px; height: 70px; z-index: 97; border-radius: 50%; background: radial-gradient(circle, #FFFFFF 0, #FFC0C6 22%, rgba(255, 50, 70, .8) 45%, rgba(255, 30, 50, 0) 70%); }
+.gb-scorch { left: 0; top: 0; z-index: 96; overflow: visible; }
+.gb-scorch path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.gb-scorch .gl { stroke: rgba(255, 70, 40, .5); stroke-width: 22; filter: blur(5px); animation: gb-ember 3.4s ease-out forwards; }
+.gb-scorch .sh { stroke: rgba(25, 5, 0, .85); stroke-width: 12; }
+.gb-scorch .hi { stroke-width: 4; animation: gb-cool-red 3.4s ease-out forwards; }
+@keyframes gb-cool-red { 0% { stroke: #FFF4F0; } 25% { stroke: #FF4E3A; } 70% { stroke: #8A1E10; } 100% { stroke: #2E0C06; } }
+/* shadow claws */
+.gb-shadow { left: 0; top: 0; z-index: 96; overflow: visible; }
+.gb-shadow path { fill: none; stroke-linecap: round; }
+.gb-shadow .tg { stroke: rgba(120, 70, 255, .35); filter: blur(6px); }
+.gb-shadow .tb { stroke: #12071F; }
+.gb-shadow .tc { stroke: #2A1247; }
+.gb-claw { left: 0; top: 0; z-index: 97; overflow: visible; }
+.gb-claw path { fill: none; stroke-linecap: round; }
+.gb-claw .sg { stroke: rgba(170, 120, 255, .55); stroke-width: 16; filter: blur(4px); }
+.gb-claw .sh { stroke: rgba(0, 0, 0, .75); stroke-width: 9; }
+.gb-claw .hi { stroke: #F3EEFF; stroke-width: 3.5; }
+/* glitch */
+.gb-glitch { z-index: 97; overflow: hidden; background: repeating-linear-gradient(0deg, rgba(255, 255, 255, .06) 0 1px, transparent 1px 3px); mix-blend-mode: normal; }
+.gb-glitch > i { position: absolute; left: 0; right: 0; }
+.gb-deadpx { z-index: 97; image-rendering: pixelated; }
+.gb-deadpx.block { mix-blend-mode: difference; }
+/* sakura */
+.gb-petal { z-index: 96; border-radius: 0 100% 0 100%; background: linear-gradient(135deg, #FFE3F0, #FF9ACB 70%, #F06AA8); box-shadow: 0 1px 3px rgba(120, 20, 60, .3); will-change: transform; }
+/* fireworks */
+.gb-rocket { width: 6px; height: 16px; z-index: 97; border-radius: 3px; background: linear-gradient(#FFF6D0, #FFB84A); box-shadow: 0 0 10px #FFC44A; }
+.gb-fw { width: 5px; height: 5px; z-index: 97; border-radius: 50%; }
+.gb-confetti { width: 7px; height: 11px; z-index: 96; border-radius: 1px; }
+.gb-glitter { width: 4px; height: 4px; z-index: 96; border-radius: 50%; box-shadow: 0 0 8px currentColor; animation: gb-twinkle .4s ease-in-out infinite alternate; }
+/* Achievements */
+.spellbook { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.spell-tile { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(167, 139, 250, .28);
+  background: linear-gradient(135deg, rgba(139, 108, 255, .14), rgba(224, 91, 208, .06)); }
+.spell-tile .spell-icon { font-size: 22px; width: 28px; text-align: center; }
+.spell-tile .spell-name { flex: 1; font-weight: 600; font-size: 13px; }
+.spell-tile .spell-count { font-size: 12px; color: var(--text-secondary); }
+.spell-tile.locked { border-style: dashed; border-color: rgba(255, 255, 255, .12); background: rgba(255, 255, 255, .02); }
+.spell-tile.locked .spell-icon { color: var(--text-secondary); font-weight: 800; }
+.spell-tile.locked .spell-name { color: var(--text-secondary); }
+.ach-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.ach { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px; border: 1px solid rgba(255, 255, 255, .08); background: rgba(255, 255, 255, .025); }
+.ach .ach-icon { flex: none; width: 44px; height: 44px; display: grid; place-items: center; font-size: 22px; border-radius: 12px; background: rgba(255, 255, 255, .05); }
+.ach .ach-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ach.done { border-color: rgba(255, 200, 90, .35); background: linear-gradient(135deg, rgba(255, 196, 80, .12), rgba(139, 108, 255, .08)); }
+.ach.done .ach-icon { background: radial-gradient(circle, rgba(255, 210, 110, .35), rgba(255, 170, 40, .08)); box-shadow: 0 0 14px rgba(255, 190, 70, .35); }
+.ach.locked .ach-icon { color: var(--text-secondary); font-weight: 800; border: 1px dashed rgba(255, 255, 255, .15); }
+.ach.locked b { color: var(--text-secondary); }

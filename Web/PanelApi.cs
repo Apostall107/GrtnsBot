@@ -157,13 +157,13 @@ public static partial class PanelApi
             return Results.Ok();
         }).AddEndpointFilter(Require(PanelPermissions.Settings));
 
-        // Settings → Easter egg: how often the mascot flies by
+        // Owner tools → Mascot: how often the mascot flies by (owner only)
         yield return g.MapPut("/mascot", (ulong guildId, MascotBody body, DiscordSocketClient client, GuildPrefsStore prefs) =>
         {
             if (client.GetGuild(guildId) is null) return GuildNotFound();
             prefs.Update(guildId, p => p.MascotSeconds = Math.Clamp(body.Seconds, 0, 7 * 86400));
             return Results.Ok();
-        }).AddEndpointFilter(Require(PanelPermissions.Settings));
+        }).AddEndpointFilter(Require(PanelPermissions.Access));
 
         yield return g.MapGet("/roles", (ulong guildId, DiscordSocketClient client) =>
         {

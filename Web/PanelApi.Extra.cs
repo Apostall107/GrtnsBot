@@ -933,7 +933,7 @@ public static partial class PanelApi
         ("PUT", "/access/{userId}", "access", "Set panel access"),
         ("DELETE", "/access/{userId}", "access", "Removed panel access"),
         ("PUT", "/settings/", "settings", "Changed bot settings"),
-        ("PUT", "/mascot", "settings", "Changed the mascot (easter egg) frequency"),
+        ("PUT", "/mascot", "access", "Changed the mascot (easter egg) frequency"),
         ("PUT", "/search-roles", "settings", "Changed the roles for quick search"),
         ("PUT", "/lfg/settings/", "lfg", "Changed LFG settings (time zone, auto-delete, reminder)"),
         ("POST", "/backup/restore", "settings", "Uploaded a data backup"),
@@ -1006,6 +1006,7 @@ public static partial class PanelApi
         var suffix = pattern.Replace("/api/guilds/{guildId}", "").Replace("/api", "");
         if (!suffix.EndsWith('/') && suffix == "/settings") suffix = "/settings/";
         if (suffix.EndsWith("/preview", StringComparison.Ordinal) || suffix.EndsWith("/screens", StringComparison.Ordinal)) return await next(ctx); // предпросмотр ничего не меняет
+        if (suffix == "/me/mascot") return await next(ctx); // easter egg stats — not an admin-worthy action
         var def = Array.Find(AuditActions, a => a.Method == http.Request.Method && a.Suffix == suffix);
 
         string? details = null;

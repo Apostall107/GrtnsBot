@@ -312,6 +312,30 @@ public static partial class PanelApi
         });
 
         // Сводка сервера для главной участника (только числа, без подробностей)
+        // The site mascot: the member caught the robot / saw it escape (with the spells it cast)
+        g.MapPost("/mascot", (ulong guildId, MascotEventBody body, ClaimsPrincipal user, [FromServices] MascotStatsStore mascot) =>
+        {
+            mascot.Record(guildId, user.UserId()!.Value, body.Kind ?? "", body.Quick, body.Spells, body.Legendary);
+            return Results.Ok();
+        });
+
+        // Achievements tab: my stats and the achievements (locked ones come without title and description)
+        g.MapGet("/achievements", (ulong guildId, ClaimsPrincipal user, [FromServices] MascotStatsStore mascot) =>
+        {
+            var s = mascot.Get(guildId, user.UserId()!.Value);
+            return Results.Ok(new
+            {
+                caught = s.Caught, quick = s.QuickCatches, escaped = s.Escaped, legendary = s.Legendary,
+                spells = MascotStatsStore.Spells.Select(x => s.Spells.GetValueOrDefault(x.Key) is var n && n > 0
+                    ? new { key = x.Key, icon = x.Icon, name = x.Name, count = n }
+                    : new { key = x.Key, icon = "❔", name = "???", count = 0 }),
+                total = MascotStatsStore.All.Count,
+                achievements = MascotStatsStore.All.Select(a => a.Done(s)
+                    ? new { id = a.Id, unlocked = true, icon = a.Icon, title = a.Title, description = a.Description }
+                    : new { id = a.Id, unlocked = false, icon = "❔", title = "???", description = "Hidden achievement" })
+            });
+        });
+
         g.MapGet("/summary", (ulong guildId, DiscordSocketClient client, LfgStore lfg, TicketStore tickets, TempVoiceStore voice,
             GuildStatsStore stats, [Microsoft.AspNetCore.Mvc.FromServices] TimeService time,
             [Microsoft.AspNetCore.Mvc.FromServices] TicketArchiveStore archive) =>
@@ -704,6 +728,7 @@ public static partial class PanelApi
 }
 
 public sealed record MemberRolesBody(List<string>? RoleIds);
+public sealed record MascotEventBody(string? Kind, bool Quick, List<string>? Spells, bool Legendary);
 public sealed record JoinBody(string? Role, string? Character);
 public sealed record CharacterBody(string? Name);
 public sealed record CharacterProfileBody(string? ClassRoleId, string? Comment, int? Gs = null, int? Race = null, int? ServerId = null);

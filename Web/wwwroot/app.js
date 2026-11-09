@@ -1512,6 +1512,7 @@ const allTabs = [
   ["home", "house", "Home", "member", "Member"],
   ["play", "users-round", "Groups", "member", "Member"],
   ["chars", "user-round", "My characters", "member", "Member"],
+  ["achievements", "trophy", "Achievements", "member", "Member"],
   ["schedule", "calendar-clock", "Calendar", "member", "Member"],
   ["roster", "users", "Guild roster", "member", "Member"],
   ["lfg", "swords", "LFG", "lfg", "Games"],
@@ -1529,7 +1530,8 @@ const allTabs = [
   ["log", "scroll-text", "Log", "log", "Administration"],
   ["settings", "settings", "Settings", "settings", "Administration"],
   ["access", "key-round", "Access", "access", "Owner tools"],
-  ["voicenow", "headphones", "Voice now", "access", "Owner tools"]
+  ["voicenow", "headphones", "Voice now", "access", "Owner tools"],
+  ["mascot", "bot", "Mascot", "access", "Owner tools"]
 ];
 const currentGuild = () => state.guilds.find(g => g.id === state.guildId);
 const isAdmin = () => !!(state.me && state.me.isAdmin);
@@ -1541,7 +1543,7 @@ const can = perm => {
   if (perm === "content") return state.me.permissions.includes("texts") || state.me.permissions.includes("posts");
   return state.me.permissions.includes(perm);
 };
-const MEMBER_TABS = ["home", "play", "chars"];
+const MEMBER_TABS = ["home", "play", "chars", "achievements"];
 const visibleTabs = () => allTabs.filter(t => can(t[3]));
 const PERM_LABELS = { lfg: "LFG", guild: "Guild", tickets: "Tickets", voice: "Temp Voice", welcome: "Welcome", roles: "Role panels", texts: "Panel texts", posts: "Posts", announce: "Announcements", pages: "Channel pages", media: "Media library", birthdays: "Birthdays", log: "Log", settings: "Settings" };
 const PERM_ICONS = { lfg: "swords", guild: "calendar", tickets: "ticket", voice: "headphones", welcome: "door-open", roles: "user-plus", texts: "file-pen-line", posts: "pin", announce: "megaphone", pages: "layers", birthdays: "cake", log: "scroll-text", settings: "settings" };
@@ -1615,12 +1617,14 @@ async function logout() {
 // ----- Easter egg: now and then our little Greatness robot (from the bot's icon) flies across the page.
 // It flies over the page area (not the sidebar); while it flies, clicks within 200 px of it are ignored.
 // The robot's escape spells (key, emoji, name) — also used by the owner's "Summon" buttons
-const SPELLS = [["hole", "🌀", "Black hole"], ["fire", "🔥", "Fireball"], ["bolt", "⚡", "Lightning"], ["rock", "🪨", "Stone barrage"], ["air", "🌪️", "Tornado"]];
+const SPELLS = [["hole", "🌀", "Black hole"], ["fire", "🔥", "Fireball"], ["bolt", "⚡", "Lightning"], ["rock", "🪨", "Stone barrage"], ["air", "🌪️", "Tornado"],
+  ["ice", "❄️", "Ice storm"], ["meteor", "☄️", "Meteor"], ["water", "🌊", "Tidal wave"], ["seal", "👑", "Seal of Greatness"], ["acid", "☠️", "Acid cloud"],
+  ["laser", "🔴", "Orbital beam"], ["claws", "🖤", "Shadow claws"], ["glitch", "📺", "Glitch"], ["sakura", "🌸", "Sakura storm"], ["fireworks", "🎆", "Fireworks"]];
 /** Owner only: summon the robot now — it will surely cast the chosen spell when it escapes. */
 function summonButtons(after) {
   const go = kind => { if (after) after(); window.__mascotFinale && window.__mascotFinale(kind); };
   return h("div", { class: "row summon-row", style: "gap:6px;flex-wrap:wrap" },
-    [...SPELLS, ["random", "🎲", "Random spell"]].map(([k, e, n]) => h("button", { type: "button", class: "btn secondary sm", title: `Summon — casts: ${n}`, onclick: () => go(k) }, e)));
+    [...SPELLS, ["legend", "🌟", "LEGENDARY (two spells at once)"], ["random", "🎲", "Random spell"]].map(([k, e, n]) => h("button", { type: "button", class: "btn secondary sm", title: `Summon — casts: ${n}`, onclick: () => go(k) }, e)));
 }
 (function mascots() {
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
@@ -1639,13 +1643,13 @@ function summonButtons(after) {
   };
   let busy = false, timer = 0;
   function fly(opts) {
-    // Often (40%) a successful escape ends with a show: instead of just leaving the screen it casts a spell.
+    // Often (40%) a successful escape ends with a show: instead of just leaving the screen it casts a spell (1% — a legendary cast: two at once).
     // The owner can summon it with a guaranteed spell (opts.finale: a spell or "random").
     let forced = opts && typeof opts === "object" ? opts.finale : null;
     if (forced && busy) return toast("The robot is already flying — wait until it's gone.", "warn");
     if (busy || document.hidden || !state.me) return schedule();
     if (forced === "random") forced = SPELLS[Math.floor(Math.random() * SPELLS.length)][0];
-    const finale = forced || (Math.random() < .4 ? SPELLS[Math.floor(Math.random() * SPELLS.length)][0] : null);
+    const roll = Math.random(), finale = forced || (roll < .01 ? "legend" : roll < .4 ? SPELLS[Math.floor(Math.random() * SPELLS.length)][0] : null);
     const M = BOT; // only our robot flies (the cat is retired)
     const A = area(), W = M.w, H = M.h;
     // Starts just outside the page area: mostly left↔right, sometimes up↕down. While it flies, clicks within 200 px
@@ -1674,7 +1678,7 @@ function summonButtons(after) {
     // After 5 runs/dashes it gets tired: slows down and can be caught.
     const NEAR = 55, MAX_ACTS = 5, inside = () => ({ x0: A.left + 4, y0: A.top + 4, x1: A.right - W - 4, y1: A.bottom - H - 4 });
     let ptr = null, raf = 0, last = performance.now(), born = last, entered = false, acts = 0, tired = false;
-    let runUntil = 0, dash = null, done = false, casting = false;
+    let runUntil = 0, dash = null, done = false, casting = false, caughtIt = false, castKinds = [], castLegend = false;
     const onMove = e => { ptr = [e.clientX, e.clientY]; };
     const norm = (x, y) => { const l = Math.hypot(x, y) || 1; return [x / l, y / l]; };
     const tire = () => { if (++acts >= MAX_ACTS) { tired = true; el.classList.add("tired"); el.classList.remove("run"); el.title = "It's tired — catch it!"; } };
@@ -1754,8 +1758,11 @@ function summonButtons(after) {
     const EVENTS = ["pointerdown", "mousedown", "pointerup", "mouseup", "click", "dblclick", "contextmenu"];
     EVENTS.forEach(t => document.addEventListener(t, guard, true));
     let ended = false;
+    // Achievements: the member caught it / saw it escape (with the spells it cast) — counted on the server
+    const report = body => { if (state.guildId) gApi("POST", "/me/mascot", body).catch(() => { /* just a game */ }); };
     function end() {
       if (ended) return; ended = true;
+      if (!caughtIt && entered) report({ kind: "escaped", spells: castKinds, legendary: castLegend });
       stopWatch(); clearInterval(trail); EVENTS.forEach(t => document.removeEventListener(t, guard, true)); el.remove(); busy = false; schedule();
     }
     // ---- The finale spells (pure DOM/CSS, a few seconds, never block clicks) ----
@@ -1777,7 +1784,9 @@ function summonButtons(after) {
       hole: { n: [9, 12], pit: .26, rings: [.4, .58, .78], branch: .1, layers: ["sh", "hi"] },
       fire: { n: [11, 15], pit: .11, rings: [.2, .36, .56, .76], branch: .12, layers: ["gl", "sh", "hi"] },
       bolt: { n: [20, 26], pit: .05, rings: [.13, .24, .37, .52, .68, .85], branch: .3, layers: ["gl", "sh", "hi"] },
-      rock: { n: [7, 10], pit: .3, rings: [.55, .8], branch: .18, layers: ["sh", "hi"], w: 1.7 }
+      rock: { n: [7, 10], pit: .3, rings: [.55, .8], branch: .18, layers: ["sh", "hi"], w: 1.7 },
+      meteor: { n: [12, 16], pit: .2, rings: [.3, .5, .72], branch: .14, layers: ["gl", "sh", "hi"], w: 1.6 },
+      acid: { n: [4, 7], pit: .36, rings: [.62], branch: .1, layers: ["gl", "sh", "hi"], w: 1.3 }
     };
     function cracks(x, y, R, kind) {
       const cfg = CRACK[kind] || CRACK.fire;
@@ -1844,6 +1853,67 @@ function summonButtons(after) {
       }, 70);
       setTimeout(() => { clearInterval(zap); svg.remove(); }, ALL + 200);
     }
+    // Water drops on the "glass": they magnify a little, hang, then run down leaving a trail
+    function waterDrops(n, at) {
+      for (let i = 0; i < n; i++) {
+        const [x, y] = at(i), sz = 9 + Math.random() * 18, wait = 200 + Math.random() * 1400, fall = 50 + Math.random() * 170;
+        const d = h("div", { class: "gb-fx gb-drop", style: `left:${x}px;top:${y}px;width:${sz}px;height:${sz * 1.12}px` }, h("i", { class: "trail" }));
+        document.body.append(d);
+        d.animate([{ transform: "translate(-50%,-50%) scale(.2)", opacity: 0 }, { transform: "translate(-50%,-50%) scale(1)", opacity: 1, offset: .05 },
+          { transform: "translate(-50%,-50%) scale(1)", opacity: 1, offset: (wait + 200) / (wait + 2600) },
+          { transform: `translate(-50%, calc(-50% + ${fall}px)) scale(.85, 1.05)`, opacity: .9, offset: .9 },
+          { transform: `translate(-50%, calc(-50% + ${fall + 10}px)) scale(.7)`, opacity: 0 }], { duration: wait + 2600, easing: "ease-in", fill: "forwards" });
+        d.firstChild.animate([{ height: "0px" }, { height: "0px", offset: (wait + 200) / (wait + 2600) }, { height: `${fall}px` }], { duration: wait + 2600, easing: "ease-in", fill: "forwards" });
+        setTimeout(() => d.remove(), wait + 2700);
+      }
+    }
+    // Smoke puffs rising and spreading
+    function smoke(x, y, n, spread) {
+      for (let i = 0; i < n; i++) {
+        const s = h("div", { class: "gb-fx gb-smoke", style: `left:${x + (Math.random() - .5) * spread}px;top:${y + (Math.random() - .5) * spread * .5}px;width:${40 + Math.random() * 50}px;height:${40 + Math.random() * 50}px` });
+        document.body.append(s);
+        const dur = 1800 + Math.random() * 1400;
+        s.animate([{ transform: "translate(-50%,-50%) scale(.4)", opacity: 0 }, { transform: "translate(-50%,-50%) scale(1)", opacity: .75, offset: .15 },
+          { transform: `translate(calc(-50% + ${(Math.random() - .5) * 60}px), calc(-50% - ${60 + Math.random() * 90}px)) scale(2.4)`, opacity: 0 }], { duration: dur, easing: "ease-out", fill: "forwards" });
+        setTimeout(() => s.remove(), dur + 50);
+      }
+    }
+    // Frost ferns growing from the page edges inward (ice storm); they melt into drops
+    function frost(A) {
+      const NS = "http://www.w3.org/2000/svg", svg = document.createElementNS(NS, "svg");
+      svg.setAttribute("class", "gb-fx gb-frost"); svg.setAttribute("width", innerWidth); svg.setAttribute("height", innerHeight);
+      const paths = [];
+      const fern = (p, ang, len, depth) => {
+        const pts = [p]; let a = ang, q = p;
+        const steps = 5 + Math.floor(len / 30);
+        for (let i = 0; i < steps; i++) {
+          a += (Math.random() - .5) * .25;
+          q = [q[0] + Math.cos(a) * len / steps, q[1] + Math.sin(a) * len / steps]; pts.push(q);
+          if (depth > 0 && i > 0 && i % 2 === 0) for (const side of [-1, 1])
+            if (Math.random() < .8) fern(q, a + side * (.6 + Math.random() * .4), len * (.28 + Math.random() * .2) * (1 - i / steps), depth - 1);
+        }
+        paths.push([pts, depth]);
+      };
+      const W = A.right - A.left, Hh = A.bottom - A.top, n = 44;
+      for (let i = 0; i < n; i++) {
+        const side = i % 4, t = Math.random();
+        const [p, ang] = side === 0 ? [[A.left + t * W, A.top], Math.PI / 2] : side === 1 ? [[A.left + t * W, A.bottom], -Math.PI / 2]
+          : side === 2 ? [[A.left, A.top + t * Hh], 0] : [[A.right, A.top + t * Hh], Math.PI];
+        fern(p, ang + (Math.random() - .5) * .9, 90 + Math.random() * Math.min(W, Hh) * .32, 2);
+      }
+      for (const [pts, depth] of paths) {
+        let L = 0; for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+        const d = "M" + pts.map(q => q.map(v => v.toFixed(1)).join(",")).join("L");
+        for (const cls of ["gl", "hi"]) {
+          const pa = document.createElementNS(NS, "path"); pa.setAttribute("d", d); pa.setAttribute("class", cls);
+          pa.setAttribute("stroke-width", (cls === "gl" ? 5 : 1.2) + depth * .6); pa.style.strokeDasharray = `${L} ${L}`; svg.append(pa);
+          pa.animate([{ strokeDashoffset: L }, { strokeDashoffset: 0 }], { duration: 600 + Math.random() * 700, delay: (2 - depth) * 180, easing: "ease-out", fill: "both" });
+        }
+      }
+      document.body.append(svg);
+      svg.animate([{ opacity: 1 }, { opacity: 1, offset: .35 }, { opacity: 0 }], { duration: 4300, easing: "ease-in", fill: "forwards" });
+      setTimeout(() => svg.remove(), 4400);
+    }
     // Dirt splat on the "glass" (tornado): an irregular blob with drips and specks that slowly slides down and fades
     function mud(x, y, size) {
       const blob = h("div", { class: "gb-fx gb-mud", style: `left:${x}px;top:${y}px;width:${size}px;height:${size * (.75 + Math.random() * .4)}px;` +
@@ -1866,22 +1936,41 @@ function summonButtons(after) {
     }
     function cast(kind) {
       casting = true; clearInterval(trail);
-      el.classList.remove("run"); el.classList.add("cast", `cast-${kind}`); el.style.pointerEvents = "none"; el.title = "";
+      const legendary = kind === "legend", keys = SPELLS.map(x => x[0]), pick = () => keys[Math.floor(Math.random() * keys.length)];
+      let kinds = [kind];
+      if (legendary) { const a = pick(); let b = pick(); while (b === a) b = pick(); kinds = [a, b]; }
+      castKinds = kinds; castLegend = legendary;
+      el.classList.remove("run"); el.classList.add("cast", ...kinds.map(k => `cast-${k}`)); if (legendary) el.classList.add("cast-legend");
+      el.style.pointerEvents = "none"; el.title = "";
       if (look) look.style.transform = "translate(0px, -2px)";
       const tx = (A.left + A.right) / 2, ty = (A.top + A.bottom) / 2, D = Math.min(Math.max(A.right - A.left, A.bottom - A.top) * .8, 1100);
       const ox = pos[0] + W * 104 / 120, oy = pos[1] + H * 104 / 163;   // the orb in the robot's hand
       const later = (ms, fn) => setTimeout(() => { if (!ended) fn(); }, ms);
-      const charge = fxEl(`gb-charge ${kind}`, `left:${ox}px;top:${oy}px`);
-      charge.animate([{ transform: "translate(-50%,-50%) scale(.2)", opacity: 0 }, { transform: "translate(-50%,-50%) scale(1.6)", opacity: 1 }], { duration: 900, easing: "ease-in", fill: "forwards" });
-      const clean = [charge];
+      const shared = [];
+      let pending = kinds.length, vanished = false;
+      // the robot disappears once, whichever spell gets there first
       const blinkOut = (ring, spark) => {
+        if (vanished) return; vanished = true;
         const r = box(), px = r.left + r.width / 2, py = r.top + r.height / 2;
         el.animate([{ transform: el.style.transform, opacity: 1 }, { transform: `${el.style.transform} scale(1.15, .8)`, opacity: 1, offset: .3 }, { transform: `${el.style.transform} scale(0, 1.6)`, opacity: 0 }],
           { duration: 380, easing: "ease-in", fill: "forwards" });
-        later(300, () => { const rg = fxEl(`gb-ring ${ring}`, `left:${px}px;top:${py}px`); clean.push(rg);
+        later(300, () => { const rg = fxEl(`gb-ring ${ring}`, `left:${px}px;top:${py}px`); shared.push(rg);
           rg.animate([{ transform: "translate(-50%,-50%) scale(0)", opacity: 1 }, { transform: "translate(-50%,-50%) scale(2.2)", opacity: 0 }], { duration: 500, easing: "ease-out", fill: "forwards" });
           burst(px, py, 12, 60, spark, 600); });
       };
+      const vanishFlash = () => { if (vanished) return; vanished = true; el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: "forwards" }); };
+      const name = k => { const x = SPELLS.find(y => y[0] === k); return x ? `${x[1]} ${x[2]}` : k; };
+      const finish = msg => {
+        if (--pending > 0) return;
+        shared.forEach(n => n.remove());
+        toast(legendary ? `🌟 LEGENDARY CAST! ${kinds.map(name).join(" + ")} — the Greatness bot escaped!` : msg);
+        end();
+      };
+      if (legendary) {   // golden aura around the whole screen
+        const aura = fxEl("gb-legend");
+        aura.animate([{ opacity: 0 }, { opacity: 1, offset: .15 }, { opacity: .6, offset: .5 }, { opacity: 1, offset: .7 }, { opacity: 0 }], { duration: 3800, fill: "forwards" });
+        setTimeout(() => aura.remove(), 3900);
+      }
       // a jagged lightning bolt from a to b (with a few side branches), flickering for `dur` ms
       const zig = (a, b, depth, k) => {
         if (!depth) return [a, b];
@@ -1908,6 +1997,10 @@ function summonButtons(after) {
         svg.animate([{ opacity: 0 }, { opacity: 1, offset: .08 }, { opacity: .15, offset: .22 }, { opacity: 1, offset: .32 }, { opacity: .45, offset: .5 }, { opacity: 1, offset: .62 }, { opacity: 0 }], { duration: dur, fill: "forwards" });
         setTimeout(() => svg.remove(), dur + 50);
       };
+      const run = kind => {
+      const charge = fxEl(`gb-charge ${kind}`, `left:${ox}px;top:${oy}px`);
+      charge.animate([{ transform: "translate(-50%,-50%) scale(.2)", opacity: 0 }, { transform: "translate(-50%,-50%) scale(1.6)", opacity: 1 }], { duration: 900, easing: "ease-in", fill: "forwards" });
+      const clean = [charge];
       if (kind === "rock") {
         // Stone barrage: a volley of rocks from the orb; every hit punches a small hole with little cracks
         const N = 11 + Math.floor(Math.random() * 4);
@@ -1933,7 +2026,7 @@ function summonButtons(after) {
           }, dur);
         });
         later(700 + N * 110 + 600, () => blinkOut("rock", "dust"));
-        later(700 + N * 110 + 1300, () => { clean.forEach(n => n.remove()); toast("The Greatness bot escaped under a hail of stones 🪨"); end(); });
+        later(700 + N * 110 + 1300, () => { clean.forEach(n => n.remove()); finish("The Greatness bot escaped under a hail of stones 🪨"); });
       } else if (kind === "air") {
         // Tornado: a bluish twister grows in the middle of the page, sways, flings dirt on the "glass" and dissolves
         later(700, () => {
@@ -1969,7 +2062,7 @@ function summonButtons(after) {
             mud(tx + Math.cos(a) * r * D * .65, ty + Math.sin(a) * r * D * .45, 40 + Math.random() * 85);
           });
           later(1500, () => blinkOut("air", "air"));
-          later(2700, () => { clean.forEach(n => n.remove()); toast("The Greatness bot escaped on a whirlwind 🌪️"); end(); });
+          later(2700, () => { clean.forEach(n => n.remove()); finish("The Greatness bot escaped on a whirlwind 🌪️"); });
         });
       } else if (kind === "bolt") {
         // Lightning: the robot calls it with a bolt from its orb up to the sky, then a violet strike hits the middle of the page
@@ -1990,7 +2083,7 @@ function summonButtons(after) {
         });
         later(1450, () => strike([tx + (Math.random() * 300 - 150), -20], [tx + (Math.random() * 40 - 20), ty], 260, .6));   // an after-strike
         later(1600, () => blinkOut("bolt", "volt"));
-        later(2300, () => { clean.forEach(n => n.remove()); toast("The Greatness bot escaped — with a thunderclap ⚡"); end(); });
+        later(2300, () => { clean.forEach(n => n.remove()); finish("The Greatness bot escaped — with a thunderclap ⚡"); });
       } else if (kind === "hole") {
         // Black hole: grows in the middle of the page, swallows sparks and then the robot, collapses with a flash
         later(800, () => {
@@ -2015,8 +2108,312 @@ function summonButtons(after) {
             flash.animate([{ transform: "translate(-50%,-50%) scale(0)", opacity: 1 }, { transform: "translate(-50%,-50%) scale(9)", opacity: 0 }], { duration: 700, easing: "ease-out", fill: "forwards" });
             burst(tx, ty, 26, D * .45, "blue", 900); clean.push(flash); cracks(tx, ty, D * .5, "hole");
           });
-          later(3900, () => { clean.forEach(n => n.remove()); toast("The Greatness bot escaped — and left a black hole behind 🌀"); end(); });
+          later(3900, () => { clean.forEach(n => n.remove()); finish("The Greatness bot escaped — and left a black hole behind 🌀"); });
         });
+      } else if (kind === "ice") {
+        // Ice storm: the page edges freeze over with frost ferns; the frost melts into drops that run down
+        later(700, () => {
+          charge.remove();
+          const vig = fxEl("gb-frostvig");
+          vig.animate([{ opacity: 0 }, { opacity: 1, offset: .2 }, { opacity: 1, offset: .5 }, { opacity: 0 }], { duration: 4300, fill: "forwards" });
+          setTimeout(() => vig.remove(), 4400);
+          frost(A);
+          burst(ox, oy, 16, 80, "ice", 800);
+          for (let i = 0; i < 26; i++) later(i * 40, () => burst(A.left + Math.random() * (A.right - A.left), A.top + Math.random() * (A.bottom - A.top), 1, 30, "ice", 900));
+          setTimeout(() => waterDrops(16, () => {   // melting
+            const e = Math.floor(Math.random() * 4), W2 = A.right - A.left, H2 = A.bottom - A.top;
+            return e === 0 ? [A.left + Math.random() * W2, A.top + Math.random() * 90] : e === 1 ? [A.left + Math.random() * W2, A.bottom - 60 - Math.random() * 80]
+              : e === 2 ? [A.left + Math.random() * 110, A.top + Math.random() * H2] : [A.right - Math.random() * 110, A.top + Math.random() * H2];
+          }), 1900);
+        });
+        later(1700, () => blinkOut("ice", "ice"));
+        later(2500, () => { clean.forEach(n => n.remove()); finish("The Greatness bot escaped in an ice storm ❄️"); });
+      } else if (kind === "meteor") {
+        // Meteor: a flaming rock falls from a corner and smashes into the middle — a glowing crater and smoke
+        later(700, () => {
+          charge.remove();
+          const fromLeft = Math.random() < .5, sx = fromLeft ? A.left - 140 : A.right + 140, sy = A.top - 200;
+          const m = fxEl("gb-meteor", "left:0;top:0"); clean.push(m);
+          const t0 = performance.now(), dur = 850;
+          const step = now => {
+            if (ended) return;
+            const t = Math.min(1, (now - t0) / dur), k = Math.pow(t, 1.5), x = sx + (tx - sx) * k, y = sy + (ty - sy) * k;
+            m.style.transform = `translate(${x}px, ${y}px) translate(-50%,-50%) rotate(${t * 540}deg) scale(${.7 + t * .6})`;
+            for (let i = 0; i < 2; i++) {
+              const sp = h("i", { class: "cat-spark fire", style: `left:${x + Math.random() * 30 - 15}px;top:${y + Math.random() * 30 - 15}px` });
+              document.body.append(sp); setTimeout(() => sp.remove(), 800);
+            }
+            if (Math.random() < .25) smoke(x, y, 1, 20);
+            if (t < 1) requestAnimationFrame(step); else impact();
+          };
+          requestAnimationFrame(step);
+        });
+        const impact = () => {
+          clean.forEach(n => n.remove());
+          const flash = fxEl("gb-flash", `background: radial-gradient(circle at ${tx}px ${ty}px, rgba(255,250,230,.98) 0, rgba(255,170,70,.8) ${D * .15}px, rgba(255,90,30,.4) ${D * .4}px, rgba(255,60,20,0) ${D * .8}px)`);
+          flash.animate([{ opacity: 0 }, { opacity: 1, offset: .1 }, { opacity: 0 }], { duration: 1000, easing: "ease-out", fill: "forwards" });
+          for (const [sc, du] of [[16, 900], [10, 1300]]) {
+            const ring = fxEl("gb-ring fire", `left:${tx}px;top:${ty}px`);
+            ring.animate([{ transform: "translate(-50%,-50%) scale(0)", opacity: 1 }, { transform: `translate(-50%,-50%) scale(${sc})`, opacity: 0 }], { duration: du, easing: "cubic-bezier(.1,.6,.3,1)", fill: "forwards" });
+            setTimeout(() => ring.remove(), du + 50);
+          }
+          burst(tx, ty, 50, D * .55, "fire", 1100); burst(tx, ty, 30, D * .35, "dust", 1000);
+          cracks(tx, ty, D * .5, "meteor"); smoke(tx, ty, 12, 160);
+          setTimeout(() => flash.remove(), 1050);
+          blinkOut("fire", "fire");
+          later(1300, () => finish("The Greatness bot escaped — and a meteor fell ☄️"));
+        };
+      } else if (kind === "water") {
+        // Tidal wave: a translucent wave with foam rolls across the page and leaves drops on the glass
+        later(700, () => {
+          charge.remove();
+          const NS = "http://www.w3.org/2000/svg", Wd = (A.right - A.left) * 1.2, Hw = (A.bottom - A.top) * .8;
+          const svg = document.createElementNS(NS, "svg");
+          svg.setAttribute("class", "gb-fx gb-wave"); svg.setAttribute("width", Wd); svg.setAttribute("height", Hw); svg.setAttribute("viewBox", `0 0 ${Wd} ${Hw}`);
+          svg.style.left = `${A.left - Wd}px`; svg.style.top = `${A.bottom - Hw}px`;
+          let top = `M0,${Hw}`, crest = "";
+          for (let x = 0; x <= Wd; x += 20) {
+            const y = Hw * .18 + Math.sin(x / Wd * Math.PI * 5) * 26 + Math.sin(x / Wd * Math.PI * 13) * 9 + (x > Wd * .82 ? (x - Wd * .82) * .9 : 0);
+            top += ` L${x},${y.toFixed(1)}`; crest += `${crest ? " L" : "M"}${x},${y.toFixed(1)}`;
+          }
+          svg.innerHTML = `<defs><linearGradient id="gbWave" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(140,210,255,.75)"/><stop offset=".35" stop-color="rgba(60,140,240,.55)"/><stop offset="1" stop-color="rgba(20,70,190,.35)"/></linearGradient></defs>
+            <path d="${top} L${Wd},${Hw} Z" fill="url(#gbWave)"/><path d="${crest}" class="foam"/><path d="${crest}" class="foam thin" transform="translate(0 14)"/>`;
+          document.body.append(svg); clean.push(svg);
+          const dx = A.right - A.left + Wd;
+          svg.animate([{ transform: `translate(0, ${Hw * .45}px)` }, { transform: `translate(${dx * .5}px, 0)`, offset: .5 }, { transform: `translate(${dx}px, ${Hw * .3}px)` }],
+            { duration: 1600, easing: "ease-in-out", fill: "forwards" });
+          for (let i = 0; i < 14; i++) later(i * 100, () => burst(A.left + (i / 14) * (A.right - A.left), A.bottom - Hw * .55 - Math.random() * 60, 4, 50, "water", 700));
+          later(900, () => waterDrops(20, () => [A.left + Math.random() * (A.right - A.left), A.top + Math.random() * (A.bottom - A.top) * .85]));
+        });
+        later(1500, () => blinkOut("water", "water"));
+        later(2500, () => { clean.forEach(n => n.remove()); finish("The Greatness bot escaped on a tidal wave 🌊"); });
+      } else if (kind === "seal") {
+        // Seal of Greatness: a golden rune circle with the G spins up over the page and is stamped onto the glass
+        later(700, () => {
+          charge.remove();
+          const S = Math.min(D * .75, 620), NS = "http://www.w3.org/2000/svg", svg = document.createElementNS(NS, "svg");
+          svg.setAttribute("class", "gb-fx gb-seal"); svg.setAttribute("width", S); svg.setAttribute("height", S); svg.setAttribute("viewBox", "-100 -100 200 200");
+          svg.style.left = `${tx - S / 2}px`; svg.style.top = `${ty - S / 2}px`;
+          const runes = "ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚾᛁᛃᛇᛈᛉᛊᛏᛒᛖᛗᛚᛜᛞᛟ".repeat(2);
+          const tri = (r, rot) => [0, 1, 2].map(i => { const a = rot + i * Math.PI * 2 / 3 - Math.PI / 2; return `${(Math.cos(a) * r).toFixed(1)},${(Math.sin(a) * r).toFixed(1)}`; }).join(" ");
+          svg.innerHTML = `<defs><path id="gbRunePath" d="M0,-80 A80,80 0 1,1 -0.1,-80"/></defs>
+            <circle r="94" class="ring"/><circle r="86" class="ring thin"/><circle r="70" class="ring thin"/>
+            <g class="spin"><text class="runes"><textPath href="#gbRunePath">${runes}</textPath></text></g>
+            <g class="spin rev"><polygon points="${tri(66, 0)}" class="tri"/><polygon points="${tri(66, Math.PI)}" class="tri"/></g>
+            <circle r="34" class="ring"/><text class="g" y="13">G</text>`;
+          document.body.append(svg);
+          svg.animate([{ transform: "scale(.2) rotate(-140deg)", opacity: 0 }, { transform: "scale(1) rotate(0deg)", opacity: 1, offset: .55 },
+            { transform: "scale(1) rotate(0deg)", opacity: 1, offset: .82 }, { transform: "scale(1.14)", opacity: 1, offset: .9 }, { transform: "scale(.97)", opacity: 1 }],
+            { duration: 1600, easing: "ease-out", fill: "forwards" });
+          later(1550, () => {   // the stamp
+            const flash = fxEl("gb-flash", `background: radial-gradient(circle at ${tx}px ${ty}px, rgba(255,245,200,.9) 0, rgba(255,200,80,.55) ${S * .3}px, rgba(255,180,60,0) ${S * .75}px)`);
+            flash.animate([{ opacity: 0 }, { opacity: 1, offset: .15 }, { opacity: 0 }], { duration: 700, fill: "forwards" });
+            setTimeout(() => flash.remove(), 750);
+            const ring = fxEl("gb-ring seal", `left:${tx}px;top:${ty}px`);
+            ring.animate([{ transform: "translate(-50%,-50%) scale(0)", opacity: 1 }, { transform: "translate(-50%,-50%) scale(9)", opacity: 0 }], { duration: 800, easing: "ease-out", fill: "forwards" });
+            setTimeout(() => ring.remove(), 850);
+            burst(tx, ty, 36, S * .6, "gold", 900);
+            svg.classList.add("imprint");   // the trace: a glowing imprint that slowly fades
+            svg.animate([{ opacity: 1 }, { opacity: .85, offset: .2 }, { opacity: 0 }], { duration: 3400, easing: "ease-in", fill: "forwards", composite: "replace" });
+            setTimeout(() => svg.remove(), 3500);
+          });
+        });
+        later(2250, () => blinkOut("seal", "gold"));
+        later(2900, () => { clean.forEach(n => n.remove()); finish("The Greatness bot escaped — sealed with Greatness 👑"); });
+      } else if (kind === "acid") {
+        // Acid cloud: a toxic green cloud spits acid drops that burn little holes into the glass
+        later(700, () => {
+          charge.remove();
+          for (let i = 0; i < 8; i++) {
+            const a = Math.random() * Math.PI * 2, r = Math.random() * D * .18, sz = D * (.22 + Math.random() * .18);
+            const c = fxEl("gb-cloud", `left:${tx + Math.cos(a) * r}px;top:${ty + Math.sin(a) * r}px;width:${sz}px;height:${sz * .75}px`); clean.push(c);
+            c.animate([{ transform: "translate(-50%,-50%) scale(.2)", opacity: 0 }, { transform: "translate(-50%,-50%) scale(1)", opacity: 1, offset: .3 },
+              { transform: `translate(calc(-50% + ${(Math.random() - .5) * 120}px), calc(-50% + ${(Math.random() - .5) * 60}px)) scale(1.5)`, opacity: 0 }],
+              { duration: 2700, easing: "ease-out", fill: "forwards" });
+          }
+          for (let i = 0; i < 13; i++) later(250 + i * 85, () => {
+            const a = Math.random() * Math.PI * 2, r = .25 + Math.random() * .75, x = tx + Math.cos(a) * r * D * .55, y = ty + Math.sin(a) * r * D * .4;
+            const b = fxEl("gb-acidball", `left:${tx}px;top:${ty}px`);
+            b.animate([{ transform: "translate(-50%,-50%) scale(.4)" }, { transform: `translate(calc(-50% + ${x - tx}px), calc(-50% + ${y - ty}px)) scale(1.3)` }], { duration: 380, easing: "ease-in", fill: "forwards" });
+            setTimeout(() => {
+              b.remove(); if (ended) return;
+              cracks(x, y, 40 + Math.random() * 35, "acid"); burst(x, y, 9, 34, "acid", 700);
+              for (let k = 0; k < 6; k++) setTimeout(() => burst(x + (Math.random() - .5) * 20, y + (Math.random() - .5) * 20, 1, 18, "acid", 600), k * 220);   // fizz
+            }, 380);
+          });
+        });
+        later(1900, () => blinkOut("acid", "acid"));
+        later(2700, () => { clean.forEach(n => n.remove()); finish("The Greatness bot escaped in a cloud of acid ☠️"); });
+      } else if (kind === "laser") {
+        // Orbital beam: a red beam from above sweeps across the page and burns a scorched line into the glass
+        later(700, () => {
+          charge.remove();
+          const sgn = Math.random() < .5 ? 1 : -1, p1 = [tx - D * .45, ty - sgn * D * .16], p2 = [tx + D * .45, ty + sgn * D * .16];
+          const beam = fxEl("gb-beam", "left:0;top:0"), hit = fxEl("gb-beamhit", "left:0;top:0"); clean.push(beam, hit);
+          const NS = "http://www.w3.org/2000/svg", svg = document.createElementNS(NS, "svg");
+          svg.setAttribute("class", "gb-fx gb-scorch"); svg.setAttribute("width", innerWidth); svg.setAttribute("height", innerHeight);
+          const layers = ["gl", "sh", "hi"].map(c => { const pa = document.createElementNS(NS, "path"); pa.setAttribute("class", c); svg.append(pa); return pa; });
+          document.body.append(svg);
+          const pts = [], t0 = performance.now(), dur = 1000;
+          const step = now => {
+            if (ended) return;
+            const t = Math.min(1, (now - t0) / dur), e = t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+            const x = p1[0] + (p2[0] - p1[0]) * e + (Math.random() - .5) * 4, y = p1[1] + (p2[1] - p1[1]) * e + (Math.random() - .5) * 4;
+            beam.style.transform = `translate(${x - 15}px, -20px)`; beam.style.height = `${y + 20}px`;
+            hit.style.transform = `translate(${x}px, ${y}px) translate(-50%,-50%) scale(${.9 + Math.random() * .3})`;
+            pts.push([x, y]);
+            const d = "M" + pts.map(q => q.map(v => v.toFixed(1)).join(",")).join("L");
+            layers.forEach(l => l.setAttribute("d", d));
+            const sp = h("i", { class: "cat-spark laser", style: `left:${x}px;top:${y}px` }); document.body.append(sp);
+            sp.animate([{ transform: "translate(0,0)", opacity: 1 }, { transform: `translate(${(Math.random() - .5) * 90}px, ${-20 - Math.random() * 70}px)`, opacity: 0 }], { duration: 500 });
+            setTimeout(() => sp.remove(), 520);
+            if (t < 1) requestAnimationFrame(step);
+            else { beam.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 250, fill: "forwards" }); hit.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 250, fill: "forwards" }); smoke(x, y, 4, 40); }
+          };
+          requestAnimationFrame(step);
+          svg.animate([{ opacity: 1 }, { opacity: 1, offset: .35 }, { opacity: 0 }], { duration: 4200, easing: "ease-in", fill: "forwards" });
+          setTimeout(() => svg.remove(), 4300);
+        });
+        later(1500, () => blinkOut("laser", "laser"));
+        later(2200, () => { clean.forEach(n => n.remove()); finish("The Greatness bot escaped — the orbital beam fired 🔴"); });
+      } else if (kind === "claws") {
+        // Shadow claws: dark tentacles crawl in from the edges, then a claw slashes across the page — deep scratches stay
+        later(700, () => {
+          charge.remove();
+          const NS = "http://www.w3.org/2000/svg", svg = document.createElementNS(NS, "svg");
+          svg.setAttribute("class", "gb-fx gb-shadow"); svg.setAttribute("width", innerWidth); svg.setAttribute("height", innerHeight);
+          const dim = fxEl("gb-dim", `background: radial-gradient(ellipse at ${tx}px ${ty}px, rgba(10,4,20,.15) 0, rgba(8,2,18,.55) ${D * .6}px, rgba(4,0,10,.8) ${D}px)`);
+          dim.animate([{ opacity: 0 }, { opacity: 1, offset: .25 }, { opacity: 1, offset: .7 }, { opacity: 0 }], { duration: 2600, fill: "forwards" });
+          clean.push(dim);
+          const tent = [];
+          for (let i = 0; i < 8; i++) {
+            const side = i % 4, t = .15 + Math.random() * .7, W2 = A.right - A.left, H2 = A.bottom - A.top;
+            const s0 = side === 0 ? [A.left + t * W2, A.top - 10] : side === 1 ? [A.left + t * W2, A.bottom + 10] : side === 2 ? [A.left - 10, A.top + t * H2] : [A.right + 10, A.top + t * H2];
+            const e = [s0[0] + (tx - s0[0]) * (.45 + Math.random() * .2), s0[1] + (ty - s0[1]) * (.45 + Math.random() * .2)];
+            const nx = -(e[1] - s0[1]), ny = e[0] - s0[0], L = Math.hypot(nx, ny) || 1, w1 = (Math.random() - .5) * .5, w2 = (Math.random() - .5) * .5;
+            const c1 = [s0[0] + (e[0] - s0[0]) * .33 + nx * w1, s0[1] + (e[1] - s0[1]) * .33 + ny * w1], c2 = [s0[0] + (e[0] - s0[0]) * .66 + nx * w2, s0[1] + (e[1] - s0[1]) * .66 + ny * w2];
+            const d = `M${s0.join(",")} C${c1.join(",")} ${c2.join(",")} ${e.join(",")}`;
+            for (const [cls, sw] of [["tg", 34], ["tb", 20], ["tc", 9]]) {
+              const pa = document.createElementNS(NS, "path"); pa.setAttribute("d", d); pa.setAttribute("class", cls); pa.setAttribute("stroke-width", sw); svg.append(pa); tent.push(pa);
+            }
+          }
+          document.body.append(svg); clean.push(svg);
+          tent.forEach(pa => { const L = pa.getTotalLength(); pa.style.strokeDasharray = `${L} ${L}`;
+            pa.animate([{ strokeDashoffset: L }, { strokeDashoffset: 0, offset: .35 }, { strokeDashoffset: 0, offset: .75 }, { strokeDashoffset: L }], { duration: 2400, easing: "ease-in-out", fill: "forwards" }); });
+          later(900, () => {   // the slash
+            const ns = document.createElementNS(NS, "svg");
+            ns.setAttribute("class", "gb-fx gb-claw"); ns.setAttribute("width", innerWidth); ns.setAttribute("height", innerHeight);
+            const tilt = (Math.random() - .5) * .5;
+            for (let i = 0; i < 4; i++) {
+              const off = (i - 1.5) * D * .07, a = [tx - D * .34 + off, ty - D * .3 + tilt * 100], b = [tx + D * .3 + off, ty + D * .3 - tilt * 100];
+              const c = [(a[0] + b[0]) / 2 + D * .08, (a[1] + b[1]) / 2 - D * .06];
+              const d = `M${a.join(",")} Q${c.join(",")} ${b.join(",")}`;
+              for (const cls of ["sg", "sh", "hi"]) {
+                const pa = document.createElementNS(NS, "path"); pa.setAttribute("d", d); pa.setAttribute("class", cls); ns.append(pa);
+                const L = pa.getTotalLength(); pa.style.strokeDasharray = `${L} ${L}`;
+                pa.animate([{ strokeDashoffset: L }, { strokeDashoffset: 0, offset: .05 }, { strokeDashoffset: 0, offset: .35 }, { strokeDashoffset: -L }],
+                  { duration: 3600, delay: i * 40, easing: "ease-in-out", fill: "both" });
+              }
+            }
+            document.body.append(ns); setTimeout(() => ns.remove(), 3800);
+            const flash = fxEl("gb-flash", `background: radial-gradient(circle at ${tx}px ${ty}px, rgba(220,200,255,.55) 0, rgba(140,90,255,.25) ${D * .3}px, rgba(100,50,220,0) ${D * .7}px)`);
+            flash.animate([{ opacity: 0 }, { opacity: 1, offset: .15 }, { opacity: 0 }], { duration: 500, fill: "forwards" }); setTimeout(() => flash.remove(), 550);
+            burst(tx, ty, 26, D * .4, "shadow", 800);
+          });
+        });
+        later(1600, () => blinkOut("claws", "shadow"));
+        later(2400, () => { clean.forEach(n => n.remove()); finish("The Greatness bot escaped into the shadows 🖤"); });
+      } else if (kind === "glitch") {
+        // Glitch: the page "breaks" — shifted colour slices, scanlines, noise; dead pixels stay and get fixed one by one
+        later(700, () => {
+          charge.remove();
+          const box2 = fxEl("gb-glitch", `left:${A.left}px;top:${A.top}px;width:${A.right - A.left}px;height:${A.bottom - A.top}px`); clean.push(box2);
+          const slices = Array.from({ length: 16 }, () => { const sl = h("i"); box2.append(sl); return sl; });
+          const shuffle = () => slices.forEach(sl => {
+            const top = Math.random() * 100, hgt = 1 + Math.random() * 9;
+            sl.style.cssText = `top:${top}%;height:${hgt}%;transform:translateX(${(Math.random() - .5) * 60}px);` +
+              `backdrop-filter:hue-rotate(${Math.floor(Math.random() * 360)}deg) saturate(${2 + Math.random() * 3}) contrast(1.6)${Math.random() < .3 ? " invert(1)" : ""};` +
+              `background:${["rgba(255,0,80,.18)", "rgba(0,255,200,.16)", "rgba(60,120,255,.18)", "rgba(255,255,255,.08)"][Math.floor(Math.random() * 4)]}`;
+          });
+          shuffle();
+          const tick2 = setInterval(shuffle, 80); setTimeout(() => clearInterval(tick2), 1200);
+          box2.animate([{ opacity: 0 }, { opacity: 1, offset: .05 }, { opacity: .3, offset: .3 }, { opacity: 1, offset: .4 }, { opacity: 1, offset: .85 }, { opacity: 0 }], { duration: 1250, fill: "forwards" });
+          // the trace: dead pixels and stuck colour blocks, repaired one by one
+          const colors = ["#ff0050", "#00ff9c", "#2f6bff", "#ffffff", "#ffe600", "#ff00ff"];
+          for (let i = 0; i < 70; i++) {
+            const big = i < 10, w = big ? 18 + Math.random() * 60 : 3 + Math.random() * 5, hh = big ? 5 + Math.random() * 12 : w;
+            const px = h("div", { class: `gb-fx gb-deadpx${big ? " block" : ""}`, style: `left:${A.left + Math.random() * (A.right - A.left)}px;top:${A.top + Math.random() * (A.bottom - A.top)}px;width:${w}px;height:${hh}px;background:${colors[Math.floor(Math.random() * colors.length)]}` });
+            document.body.append(px);
+            const life = 1400 + Math.random() * 3200;
+            px.animate([{ opacity: 0 }, { opacity: 1, offset: .02 }, { opacity: 1, offset: .96 }, { opacity: 0 }], { duration: life, fill: "forwards", easing: "steps(1)" });
+            setTimeout(() => px.remove(), life);
+          }
+        });
+        later(1500, () => blinkOut("glitch", "volt"));
+        later(2100, () => { clean.forEach(n => n.remove()); finish("The Greatness bot escaped — have you tried turning it off and on again? 📺"); });
+      } else if (kind === "sakura") {
+        // Sakura storm: a whirl of petals; some stick to the glass and slide down one by one
+        later(700, () => {
+          charge.remove();
+          const tint = fxEl("gb-dim", `background: radial-gradient(circle at ${tx}px ${ty}px, rgba(255,170,210,.22) 0, rgba(255,140,200,.1) ${D * .5}px, rgba(255,140,200,0) ${D}px)`);
+          tint.animate([{ opacity: 0 }, { opacity: 1, offset: .2 }, { opacity: 1, offset: .7 }, { opacity: 0 }], { duration: 2600, fill: "forwards" }); clean.push(tint);
+          for (let i = 0; i < 90; i++) {
+            const sz = 10 + Math.random() * 10, petal = h("div", { class: "gb-fx gb-petal", style: `left:${ox}px;top:${oy}px;width:${sz}px;height:${sz * .7}px` });
+            document.body.append(petal);
+            const stick = i < 34, a0 = Math.random() * Math.PI * 2, spin = (Math.random() < .5 ? 1 : -1) * (2 + Math.random() * 2), R = D * (.15 + Math.random() * .35);
+            const fx2 = stick ? A.left + Math.random() * (A.right - A.left) : tx + Math.cos(a0 + spin) * R * 1.6, fy2 = stick ? A.top + Math.random() * (A.bottom - A.top) : ty + Math.sin(a0 + spin) * R * 1.2;
+            const k = [0, .33, .66].map((t, j) => ({ transform: `translate(${tx - ox + Math.cos(a0 + spin * t) * R * (.4 + t)}px, ${ty - oy + Math.sin(a0 + spin * t) * R * .7 * (.4 + t)}px) rotate(${j * 240}deg)`, opacity: 1 }));
+            const dur = 1500 + Math.random() * 700;
+            petal.animate([{ transform: "translate(0,0) rotate(0deg)", opacity: 0 }, ...k, { transform: `translate(${fx2 - ox}px, ${fy2 - oy}px) rotate(${720 + Math.random() * 180}deg)`, opacity: stick ? 1 : 0 }],
+              { duration: dur, delay: i * 12, easing: "ease-out", fill: "forwards" });
+            if (stick) {   // stuck on the glass: slides down later
+              const wait = dur + i * 12 + 300 + Math.random() * 2400;
+              setTimeout(() => petal.animate([{ transform: `translate(${fx2 - ox}px, ${fy2 - oy}px) rotate(760deg)`, opacity: 1 }, { transform: `translate(${fx2 - ox + (Math.random() - .5) * 30}px, ${fy2 - oy + 90 + Math.random() * 80}px) rotate(${790 + Math.random() * 90}deg)`, opacity: 0 }],
+                { duration: 1300, easing: "ease-in", fill: "forwards" }), wait);
+              setTimeout(() => petal.remove(), wait + 1350);
+            } else setTimeout(() => petal.remove(), dur + i * 12 + 50);
+          }
+        });
+        later(1700, () => blinkOut("sakura", "petal"));
+        later(2500, () => { clean.forEach(n => n.remove()); finish("The Greatness bot escaped in a sakura storm 🌸"); });
+      } else if (kind === "fireworks") {
+        // Fireworks: rockets burst over the page; confetti and glitter settle down
+        const palette = [["#ff4d6d", "#ffd166"], ["#7cf2ff", "#ffffff"], ["#b892ff", "#ff7bd5"], ["#7dff9b", "#fff07a"], ["#ffa64d", "#ff4d4d"]];
+        later(700, () => charge.remove());
+        for (let r = 0; r < 7; r++) later(650 + r * 230, () => {
+          const x = A.left + (A.right - A.left) * (.12 + Math.random() * .76), y = A.top + (A.bottom - A.top) * (.12 + Math.random() * .35);
+          const rk = fxEl("gb-rocket", `left:${x}px;top:${A.bottom}px`);
+          rk.animate([{ transform: "translate(-50%,0)" }, { transform: `translate(-50%, ${y - A.bottom}px)` }], { duration: 520, easing: "cubic-bezier(.2,.7,.4,1)", fill: "forwards" });
+          for (let k = 0; k < 8; k++) setTimeout(() => burst(x + (Math.random() - .5) * 6, A.bottom + (y - A.bottom) * (k / 8), 1, 12, "gold", 500), k * 60);
+          setTimeout(() => {
+            rk.remove(); if (ended) return;
+            const [c1, c2] = palette[Math.floor(Math.random() * palette.length)];
+            const flash = fxEl("gb-flash", `background: radial-gradient(circle at ${x}px ${y}px, rgba(255,255,255,.35) 0, rgba(255,255,255,0) 160px)`);
+            flash.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 400, fill: "forwards" }); setTimeout(() => flash.remove(), 420);
+            for (let i = 0; i < 48; i++) {
+              const a = i / 48 * Math.PI * 2 + Math.random() * .1, rr = 90 + Math.random() * 90;
+              const p = h("i", { class: "gb-fx gb-fw", style: `left:${x}px;top:${y}px;background:${i % 2 ? c1 : c2};box-shadow:0 0 8px ${i % 2 ? c1 : c2}` });
+              document.body.append(p);
+              p.animate([{ transform: "translate(-50%,-50%) scale(1.2)", opacity: 1 }, { transform: `translate(calc(-50% + ${Math.cos(a) * rr}px), calc(-50% + ${Math.sin(a) * rr}px)) scale(1)`, opacity: 1, offset: .55 },
+                { transform: `translate(calc(-50% + ${Math.cos(a) * rr * 1.1}px), calc(-50% + ${Math.sin(a) * rr * 1.1 + 60}px)) scale(.4)`, opacity: 0 }], { duration: 1300, easing: "cubic-bezier(.1,.7,.4,1)", fill: "forwards" });
+              setTimeout(() => p.remove(), 1350);
+            }
+          }, 520);
+        });
+        later(2300, () => {   // confetti and glitter settle
+          const cols = ["#ff4d6d", "#ffd166", "#7cf2ff", "#b892ff", "#7dff9b", "#ffffff"];
+          for (let i = 0; i < 60; i++) {
+            const x = A.left + Math.random() * (A.right - A.left), y = A.top + Math.random() * (A.bottom - A.top) * .5, glitter = i % 3 === 0;
+            const c = h("i", { class: `gb-fx ${glitter ? "gb-glitter" : "gb-confetti"}`, style: `left:${x}px;top:${y}px;background:${cols[i % cols.length]}` });
+            document.body.append(c);
+            const dur = 2500 + Math.random() * 1800, fall = 120 + Math.random() * 260;
+            c.animate([{ transform: "translate(0,0) rotate(0deg)", opacity: 0 }, { transform: `translate(${(Math.random() - .5) * 40}px, ${fall * .3}px) rotate(${Math.random() * 360}deg)`, opacity: 1, offset: .15 },
+              { transform: `translate(${(Math.random() - .5) * 80}px, ${fall}px) rotate(${360 + Math.random() * 360}deg)`, opacity: 0 }], { duration: dur, easing: "ease-in", fill: "forwards" });
+            setTimeout(() => c.remove(), dur + 50);
+          }
+        });
+        later(2200, () => blinkOut("fireworks", "gold"));
+        later(2900, () => { clean.forEach(n => n.remove()); finish("The Greatness bot escaped with a fireworks show 🎆"); });
       } else {
         // Fireball: charged in the orb, flies to the middle of the page and explodes with a big flash
         later(900, () => {
@@ -2045,11 +2442,13 @@ function summonButtons(after) {
           const ring = fxEl("gb-ring fire", `left:${tx}px;top:${ty}px`);
           ring.animate([{ transform: "translate(-50%,-50%) scale(0)", opacity: 1 }, { transform: "translate(-50%,-50%) scale(14)", opacity: 0 }], { duration: 1000, easing: "cubic-bezier(.1,.6,.3,1)", fill: "forwards" });
           burst(tx, ty, 40, D * .55, "fire", 1100); cracks(tx, ty, D * .55, "fire");
-          el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: "forwards" });   // vanishes in the flash
+          vanishFlash();   // vanishes in the flash
           setTimeout(() => { [flash, core, ring].forEach(n => n.remove()); }, 1250);
-          later(1300, () => { toast("The Greatness bot escaped with a bang 💥"); end(); });
+          later(1300, () => finish("The Greatness bot escaped with a bang 💥"));
         };
       }
+      };
+      kinds.forEach((k, i) => i ? later(i * 450, () => run(k)) : run(k));
     }
     el.addEventListener("click", () => {
       if (casting) return;
@@ -2063,6 +2462,7 @@ function summonButtons(after) {
         setTimeout(() => s.remove(), 720);
       }
       el.classList.add("caught");
+      caughtIt = true; report({ kind: "caught", quick: !tired });
       let n = 0; try { n = Number(localStorage.getItem("gb.mascotsCaught") || localStorage.getItem("gb.catsCaught") || 0) + 1; localStorage.setItem("gb.mascotsCaught", String(n)); } catch { /* private mode */ }
       toast(`${M.lines[Math.floor(Math.random() * M.lines.length)]}${n > 1 ? ` (caught: ${n})` : ""}`);
       setTimeout(end, 650);
@@ -2300,8 +2700,6 @@ function renderShell() {
       g0 && !serverPick ? h("span", { class: "muted small who-server" }, icon("server", 12), g0.name) : null),
     serverPick,
     viewAs,
-    state.me.isOwner && !state.me.viewAsMember && !matchMedia("(prefers-reduced-motion: reduce)").matches
-      ? h("div", { class: "menu-summon" }, h("span", { class: "menu-label" }, icon("sparkles", 14), "Summon the robot (sure spell)"), summonButtons(() => toggleUser(false))) : null,
     h("button", { class: "menu-item danger", onclick: logout }, icon("log-out", 16), "Log out"));
   const userBtn = h("button", { class: "user-button", "aria-haspopup": "menu", "aria-expanded": "false" },
     state.me.avatarUrl ? h("img", { class: "avatar", src: state.me.avatarUrl, alt: "" }) : h("span", { class: "avatar" }),
@@ -2330,7 +2728,7 @@ function renderShell() {
 
   if (!state.guildId) { main.append(empty("No servers available for your account.")); return; }
   if (!visibleTabs().length) { main.append(empty("You have no sections on this server. Ask an admin for the member role.")); return; }
-  const page = { home: pageHome, content: pageContent, play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, guild: pageGuild, schedule: pageSchedule, roster: pageMemberRoster, tickets: pageTickets, voice: pageVoice, welcome: pageWelcome, roles: pageRoles, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess, voicenow: pageVoiceNow, birthdays: pageBirthdays, pages: pageChannelPages, media: pageMedia }[state.tab];
+  const page = { home: pageHome, content: pageContent, play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, guild: pageGuild, schedule: pageSchedule, roster: pageMemberRoster, tickets: pageTickets, voice: pageVoice, welcome: pageWelcome, roles: pageRoles, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess, voicenow: pageVoiceNow, birthdays: pageBirthdays, pages: pageChannelPages, media: pageMedia, mascot: pageMascot, achievements: pageAchievements }[state.tab];
   page(main);
   addGuideButton(main, state.tab);
   decorateHeading(main);
@@ -6391,29 +6789,6 @@ async function pageSettings(main) {
   const holder = h("div", {});
   main.append(holder);
 
-  // Easter egg: how often a mascot flies across the screen (seconds, 0 = off)
-  if (can("settings")) {
-    const g = currentGuild() || {};
-    const secs = h("input", { type: "number", min: "0", max: "604800", step: "1", value: String(g.mascotSeconds ?? 900), style: "width:140px", "aria-label": "Seconds" });
-    const human = h("span", { class: "muted small" });
-    const say = () => { const v = Number(secs.value) || 0; human.textContent = !v ? "off" : v < 120 ? `≈ every ${v} s` : v < 7200 ? `≈ every ${Math.round(v / 60)} min` : `≈ every ${(v / 3600).toFixed(1)} h`; };
-    secs.addEventListener("input", say); say();
-    const save = h("button", { class: "btn" }, "Save");
-    const preview = h("button", { class: "btn secondary", title: "Let one fly right now" }, icon("sparkles", 15), "Show now");
-    preview.addEventListener("click", () => window.__neonCat && window.__neonCat());
-    const tracker = track("Easter egg", () => secs.value, async () => {
-      const v = Math.max(0, Math.round(Number(secs.value) || 0));
-      const ok = await act(save, () => gApi("PUT", "/mascot", { seconds: v }), "Saved.") !== undefined;
-      if (ok) { g.mascotSeconds = v; window.__neonCatReschedule && window.__neonCatReschedule(); }
-      return ok;
-    });
-    save.addEventListener("click", tracker.save);
-    holder.append(tracker.attach(h("div", { class: "card" }, h("h2", {}, "🤖 Easter egg"),
-      h("p", { class: "muted small" }, "Now and then the little Greatness robot flies across the site for everyone on this server. It watches your cursor and runs away when you get close (dashes past you if cornered) — after a few runs it gets tired and can be caught. Sometimes, when it escapes, it casts a spell on the way out — a black hole, a fireball, lightning, a stone barrage or a tornado. While it flies, buttons within 200 px of it don't react. People with 'reduce motion' turned on never see it."),
-      h("div", { class: "row", style: "align-items:flex-end" }, h("div", { class: "field", style: "margin:0" }, fieldLabel("Every … seconds on average (0 = off)"), h("div", { class: "row" }, secs, human)), save, preview),
-      state.me.isOwner ? h("div", { class: "field", style: "margin:14px 0 0" }, fieldLabel("Owner: summon now with a guaranteed spell when it escapes (only you see it)"), summonButtons()) : null)));
-  }
-
   // Quick search (Ctrl+K): which members it finds
   if (can("settings")) {
     const card = h("div", { class: "card" }, h("h2", {}, "🔍 Quick search"),
@@ -7249,6 +7624,65 @@ async function pageChars(main) {
 // ================= Voice now (bot owner only) =================
 
 /** Who is in which voice channel right now — every channel the bot knows, hidden ones too. Refreshes itself. */
+// ================= Owner tools: Mascot (only the bot owner) =================
+
+async function pageMascot(main) {
+  const g = currentGuild() || {};
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "🤖 Mascot")),
+    h("p", { class: "muted small" }, "Only you (the bot owner) see this page. The little Greatness robot flies across the site for everyone on this server, runs away from the cursor, gets tired and can be caught. When it escapes it often casts a spell (40%; 1% — a legendary cast of two spells at once). Members collect what they saw in Member → Achievements."));
+  // How often
+  const secs = h("input", { type: "number", min: "0", max: "604800", step: "1", value: String(g.mascotSeconds ?? 900), style: "width:140px", "aria-label": "Seconds" });
+  const human = h("span", { class: "muted small" });
+  const say = () => { const v = Number(secs.value) || 0; human.textContent = !v ? "off" : v < 120 ? `≈ every ${v} s` : v < 7200 ? `≈ every ${Math.round(v / 60)} min` : `≈ every ${(v / 3600).toFixed(1)} h`; };
+  secs.addEventListener("input", say); say();
+  const save = h("button", { class: "btn" }, "Save");
+  const tracker = track("Mascot", () => secs.value, async () => {
+    const v = Math.max(0, Math.round(Number(secs.value) || 0));
+    const ok = await act(save, () => gApi("PUT", "/mascot", { seconds: v }), "Saved.") !== undefined;
+    if (ok) { g.mascotSeconds = v; window.__neonCatReschedule && window.__neonCatReschedule(); }
+    return ok;
+  });
+  save.addEventListener("click", tracker.save);
+  main.append(tracker.attach(h("div", { class: "card" }, h("h2", {}, "⏱️ How often"),
+    h("p", { class: "muted small" }, "While it flies, buttons within 200 px of it don't react. People with 'reduce motion' turned on never see it."),
+    h("div", { class: "row", style: "align-items:flex-end" }, h("div", { class: "field", style: "margin:0" }, fieldLabel("Every … seconds on average (0 = off)"), h("div", { class: "row" }, secs, human)), save))));
+  // Summon
+  const preview = h("button", { class: "btn secondary" }, icon("sparkles", 15), "Let it fly (normal)");
+  preview.addEventListener("click", () => window.__neonCat && window.__neonCat());
+  main.append(h("div", { class: "card" }, h("h2", {}, "✨ Summon now"),
+    h("p", { class: "muted small" }, "Only on your screen. With a spell button the robot surely casts that spell when it escapes (if you catch it — no spell). Works even when the mascot is off."),
+    h("div", { class: "row", style: "margin-bottom:10px" }, preview),
+    summonButtons(), h("div", { class: "muted small", style: "margin-top:8px" }, SPELLS.map(s => `${s[1]} ${s[2]}`).join(" · ") + " · 🌟 Legendary · 🎲 Random")));
+}
+
+// ================= Member: Achievements (the mascot game) =================
+
+async function pageAchievements(main) {
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "🏆 Achievements"),
+    h("button", { class: "btn btn-refresh", title: "Reload", onclick: hardRefresh }, "🔄 Refresh")),
+    h("p", { class: "muted small" }, "Now and then a little robot flies across the site. Catch it, or watch it escape — sometimes it casts a spell on the way out. Hidden achievements show what to do only once you've earned them."));
+  const body = h("div", {}, h("div", { class: "card" }, skeletonLines(4)));
+  main.append(body);
+  let d;
+  try { d = await gApi("GET", "/me/achievements"); } catch (e) { body.replaceChildren(errorState(e.message)); return; }
+  const got = d.achievements.filter(a => a.unlocked).length;
+  const seen = d.spells.filter(s => s.count > 0).length;
+  body.replaceChildren(
+    h("div", { class: "stats" },
+      statCard("bot", "Robots caught", d.caught, d.quick ? `${d.quick} before it got tired` : "catch it when it flies by"),
+      statCard("sparkles", "Spells seen", d.spells.reduce((a, s) => a + s.count, 0), `${seen} of ${d.spells.length} different`),
+      statCard("star", "Legendary casts", d.legendary, "two spells at once"),
+      statCard("trophy", "Achievements", `${got}/${d.total}`, d.escaped ? `it escaped from you ${d.escaped}×` : "")),
+    h("div", { class: "card" }, h("h2", {}, "📖 Spellbook"),
+      h("div", { class: "spellbook" }, d.spells.map(s => h("div", { class: `spell-tile${s.count ? "" : " locked"}`, title: s.count ? `${s.name}: seen ${s.count}×` : "Not seen yet" },
+        h("span", { class: "spell-icon" }, s.count ? s.icon : "?"), h("span", { class: "spell-name" }, s.count ? s.name : "???"),
+        s.count ? h("span", { class: "spell-count" }, `×${s.count}`) : null)))),
+    h("div", { class: "card" }, h("h2", {}, `🏆 Achievements · ${got}/${d.total}`),
+      h("div", { class: "ach-grid" }, d.achievements.map(a => h("div", { class: `ach${a.unlocked ? " done" : " locked"}` },
+        h("span", { class: "ach-icon" }, a.unlocked ? a.icon : "?"),
+        h("div", { class: "ach-text" }, h("b", {}, a.unlocked ? a.title : "???"), h("span", { class: "muted small" }, a.unlocked ? a.description : "Hidden achievement")))))));
+}
+
 async function pageVoiceNow(main) {
   const body = h("div", {}, h("div", { class: "card" }, skeletonLines(4)));
   const stamp = h("span", { class: "muted small" });
