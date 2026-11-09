@@ -122,6 +122,7 @@ public static partial class PanelApi
         // Общие данные сервера — только для админов (у участника свой раздел /me)
         foreach (var endpoint in MapCommonEndpoints(g)) endpoint.AddEndpointFilter(RequireAnyAdmin);
         foreach (var endpoint in MapMemberCard(g)) endpoint.AddEndpointFilter(RequireAnyAdmin);
+        foreach (var endpoint in MapDashboard(g)) endpoint.AddEndpointFilter(RequireAnyAdmin);
     }
 
     private static IEnumerable<RouteHandlerBuilder> MapCommonEndpoints(RouteGroupBuilder g)

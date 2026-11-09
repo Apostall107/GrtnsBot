@@ -2127,35 +2127,260 @@ async function attentionCard(holder, go) {
 
 async function pageOverview(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "Dashboard"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
-  const holder = h("div", {}, h("div", { class: "stats" }, [0, 1, 2, 3].map(() => skeletonStat())));
-  main.append(holder);
   const go = tab => can(tab) ? () => { state.tab = tab; store.set("gb.tab", tab); renderShell(); } : null;
-  try {
-    const o = await gApi("GET", "/overview");
-    const connected = state.connection === "Connected";
-    const attention = h("div", {});
-    attentionCard(attention, go);
-    holder.replaceChildren(
-      attention,
-      sectionLabel(o.guild.name),
-      h("div", { class: "stats" },
-        statCard("users", "Members", o.guild.members, "on the server", null, o.trends.members),
-        statCard("swords", "LFG groups", o.lfg.groups, `${o.lfg.activities} activities`, go("lfg")),
-        statCard("ticket", "Open tickets", o.tickets.open, `${o.tickets.projects} projects`, go("tickets"), o.trends.tickets),
-        statCard("headphones", "Active rooms", o.voice.rooms, `${o.voice.creators} 'join to create' channels`, go("voice"))),
-      sectionLabel("Bot"),
-      h("div", { class: "card" }, cardHead("bot", "Bot status"),
-        h("div", { class: "row" },
-          state.me.viewAsMember ? h("button", { class: "view-as-pill", title: "Back to my own view",
-        onclick: () => { store.set("gb.viewAs", ""); boot(); } }, icon("eye", 14), "Member view", icon("x", 13)) : null,
-      h("span", { class: `status-pill ${connected ? "ok" : "bad"}` }, h("span", { class: "dot" }), connected ? "Connected to Discord" : (state.connection || "Offline")),
-          state.bot ? h("span", { class: "chip" }, icon("bot", 13), state.bot.name) : null),
-        h("p", { class: "muted small", style: "margin-top:12px" }, "Changes made here apply immediately — the panel uses the same data as the bot in Discord.")),
-      sectionLabel("Sections"),
-      h("div", { class: "quick-actions" }, allTabs.filter(t => t[3] !== "member" && t[0] !== "overview" && can(t[3])).map(([key, ic, label]) =>
-        h("button", { class: `quick-action ${toneOf(ic)}`, onclick: async () => { if (!await leavePage()) return; state.tab = key; store.set("gb.tab", key); renderShell(); } },
-          h("span", { class: "qa-icon" }, icon(ic, 18)), h("span", { class: "qa-text" }, h("b", {}, label), h("span", { class: "muted small" }, "Open"))))));
-  } catch (e) { holder.replaceChildren(errorState(e.message)); }
+  const attention = h("div", {});
+  attentionCard(attention, go);
+  const PERIODS = [[30, "30 days"], [90, "90 days"], [180, "6 months"], [365, "Year"], [0, "All time"]];
+  let days = Number(store.get("gb.dashDays") || 90);
+  if (!PERIODS.some(p => p[0] === days)) days = 90;
+  const segBtns = PERIODS.map(([d, label]) => h("button", { type: "button", class: `seg-btn${d === days ? " active" : ""}`, onclick: () => {
+    days = d; store.set("gb.dashDays", String(d)); segBtns.forEach((b, i) => b.classList.toggle("active", PERIODS[i][0] === d)); load(); } }, label));
+  const body = h("div", {}, h("div", { class: "stats" }, [0, 1, 2, 3].map(() => skeletonStat())));
+  const connected = state.connection === "Connected";
+  const footer = h("div", {},
+    sectionLabel("Bot"),
+    h("div", { class: "card" }, cardHead("bot", "Bot status"),
+      h("div", { class: "row" },
+        state.me.viewAsMember ? h("button", { class: "view-as-pill", title: "Back to my own view",
+          onclick: () => { store.set("gb.viewAs", ""); boot(); } }, icon("eye", 14), "Member view", icon("x", 13)) : null,
+        h("span", { class: `status-pill ${connected ? "ok" : "bad"}` }, h("span", { class: "dot" }), connected ? "Connected to Discord" : (state.connection || "Offline")),
+        state.bot ? h("span", { class: "chip" }, icon("bot", 13), state.bot.name) : null)),
+    sectionLabel("Sections"),
+    h("div", { class: "quick-actions" }, allTabs.filter(t => t[3] !== "member" && t[0] !== "overview" && can(t[3])).map(([key, ic, label]) =>
+      h("button", { class: `quick-action ${toneOf(ic)}`, onclick: async () => { if (!await leavePage()) return; state.tab = key; store.set("gb.tab", key); renderShell(); } },
+        h("span", { class: "qa-icon" }, icon(ic, 18)), h("span", { class: "qa-text" }, h("b", {}, label), h("span", { class: "muted small" }, "Open"))))));
+  main.append(attention, h("div", { class: "dash-bar" }, h("div", { class: "seg dash-seg" }, segBtns), h("span", { class: "muted small dash-since" })), body, footer);
+
+  async function load() {
+    body.style.opacity = ".55";
+    let d;
+    try { d = await gApi("GET", `/dashboard?days=${days}`); } catch (e) { body.replaceChildren(errorState(e.message)); body.style.opacity = ""; return; }
+    body.style.opacity = "";
+    renderDashboard(body, d, go);
+  }
+  load();
+}
+
+// ----- Dashboard: charts (plain SVG, one axis, hover tooltips) -----
+
+const DASH = { a: "#4A90E8", b: "#1FA06C", c: "#8A6CF0", d: "#C2841A" }; // validated for the dark surface
+const fmtBucket = (key, monthly) => {
+  const [y, m, dd] = key.split("-").map(Number);
+  const dt = new Date(y, m - 1, dd || 1);
+  return monthly ? dt.toLocaleDateString(undefined, { month: "short", year: "2-digit" }) : dt.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+};
+let chartTipEl = null;
+function chartTip(e, html) {
+  if (!chartTipEl) { chartTipEl = h("div", { class: "chart-tip" }); document.body.append(chartTipEl); }
+  if (!html) { chartTipEl.style.display = "none"; return; }
+  chartTipEl.replaceChildren(...html);
+  chartTipEl.style.display = "block";
+  const r = chartTipEl.getBoundingClientRect();
+  chartTipEl.style.left = Math.min(e.clientX + 14, innerWidth - r.width - 8) + "px";
+  chartTipEl.style.top = Math.max(e.clientY - r.height - 10, 8) + "px";
+}
+const svgEl = (tag, attrs) => { const n = document.createElementNS("http://www.w3.org/2000/svg", tag); for (const [k, v] of Object.entries(attrs || {})) n.setAttribute(k, v); return n; };
+const niceMax = v => { if (v <= 5) return 5; const p = Math.pow(10, Math.floor(Math.log10(v))); return Math.ceil(v / p * 2) / 2 * p; };
+
+/** Bars per period bucket; series = [{key, label, color}], rows = [{key(bucket), [series.key]: n}] */
+function barChart(rows, series, monthly, height = 180, W = 640) {
+  const H = height, L = 34, B = 22, T = 8;
+  const max = niceMax(Math.max(1, ...rows.flatMap(r => series.map(s => r[s.key] || 0))));
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, class: "chart", width: W, height: H });
+  for (let i = 0; i <= 4; i++) {
+    const y = T + (H - T - B) * (1 - i / 4);
+    svg.append(svgEl("line", { x1: L, x2: W, y1: y, y2: y, class: "grid" }));
+    const t = svgEl("text", { x: L - 6, y: y + 4, class: "axis", "text-anchor": "end" }); t.textContent = Math.round(max * i / 4); svg.append(t);
+  }
+  const slot = (W - L) / Math.max(rows.length, 1), gap = 2;
+  const bw = Math.max(2, Math.min(26, (slot * .72 - gap * (series.length - 1)) / series.length));
+  const every = Math.ceil(rows.length / Math.max(2, Math.floor((W - L) / 70)));
+  rows.forEach((r, i) => {
+    const x0 = L + slot * i + (slot - (bw * series.length + gap * (series.length - 1))) / 2;
+    series.forEach((s, j) => {
+      const v = r[s.key] || 0, hh = (H - T - B) * v / max;
+      if (v > 0) svg.append(svgEl("path", { d: roundTop(x0 + j * (bw + gap), H - B - hh, bw, hh), fill: s.color, class: "bar" }));
+    });
+    const hit = svgEl("rect", { x: L + slot * i, y: T, width: slot, height: H - T - B, class: "hit" });
+    hit.addEventListener("mousemove", e => chartTip(e, [h("b", {}, fmtBucket(r.key, monthly)),
+      ...series.map(s => h("div", { class: "tip-row" }, h("i", { style: `background:${s.color}` }), s.label, h("b", {}, String(r[s.key] || 0))))]));
+    hit.addEventListener("mouseleave", () => chartTip());
+    svg.append(hit);
+    if (i % every === 0) { const t = svgEl("text", { x: L + slot * i + slot / 2, y: H - 6, class: "axis", "text-anchor": "middle" }); t.textContent = fmtBucket(r.key, monthly); svg.append(t); }
+  });
+  return svg;
+}
+function roundTop(x, y, w, hh) {
+  const r = Math.min(4, w / 2, hh);
+  return `M${x},${y + hh}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + hh}Z`;
+}
+
+/** Line + soft area for one daily series [{date, value}] */
+function lineChart(points, color, label, height = 170, W = 640) {
+  const H = height, L = 44, B = 22, T = 10;
+  const vals = points.map(p => p.value);
+  let min = Math.min(...vals), max = Math.max(...vals);
+  const pad = Math.max(1, Math.round((max - min) * .15)); min = Math.max(0, min - pad); max = max + pad;
+  const X = i => L + (W - L - 6) * (points.length === 1 ? .5 : i / (points.length - 1));
+  const Y = v => T + (H - T - B) * (1 - (v - min) / (max - min || 1));
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, class: "chart", width: W, height: H });
+  for (let i = 0; i <= 3; i++) {
+    const v = min + (max - min) * i / 3, y = Y(v);
+    svg.append(svgEl("line", { x1: L, x2: W, y1: y, y2: y, class: "grid" }));
+    const t = svgEl("text", { x: L - 6, y: y + 4, class: "axis", "text-anchor": "end" }); t.textContent = Math.round(v); svg.append(t);
+  }
+  const id = "g" + Math.random().toString(36).slice(2, 8);
+  const defs = svgEl("defs"); const lg = svgEl("linearGradient", { id, x1: 0, x2: 0, y1: 0, y2: 1 });
+  lg.append(svgEl("stop", { offset: "0", "stop-color": color, "stop-opacity": ".28" }), svgEl("stop", { offset: "1", "stop-color": color, "stop-opacity": "0" }));
+  defs.append(lg); svg.append(defs);
+  const pts = points.map((p, i) => `${X(i).toFixed(1)},${Y(p.value).toFixed(1)}`);
+  svg.append(svgEl("path", { d: `M${X(0)},${H - B}L${pts.join("L")}L${X(points.length - 1)},${H - B}Z`, fill: `url(#${id})` }));
+  svg.append(svgEl("polyline", { points: pts.join(" "), fill: "none", stroke: color, "stroke-width": 2, "stroke-linejoin": "round", "vector-effect": "non-scaling-stroke" }));
+  const dot = svgEl("circle", { r: 4, fill: color, stroke: "#161a28", "stroke-width": 2, style: "display:none" });
+  const cross = svgEl("line", { y1: T, y2: H - B, class: "cross", style: "display:none" });
+  svg.append(cross, dot);
+  const every = Math.ceil(points.length / Math.max(2, Math.floor((W - L) / 80)));
+  points.forEach((p, i) => { if ((i % every === 0 && points.length - 1 - i >= every * .6) || i === points.length - 1) { const t = svgEl("text", { x: X(i), y: H - 6, class: "axis", "text-anchor": i === 0 ? "start" : i === points.length - 1 ? "end" : "middle" }); t.textContent = fmtBucket(p.date, false); svg.append(t); } });
+  const hit = svgEl("rect", { x: L, y: T, width: W - L, height: H - T - B, class: "hit" });
+  hit.addEventListener("mousemove", e => {
+    const r = svg.getBoundingClientRect(); const fx = (e.clientX - r.left) / r.width * W;
+    const i = Math.max(0, Math.min(points.length - 1, Math.round((fx - L) / (W - L - 6) * (points.length - 1))));
+    dot.setAttribute("cx", X(i)); dot.setAttribute("cy", Y(points[i].value)); dot.style.display = ""; cross.setAttribute("x1", X(i)); cross.setAttribute("x2", X(i)); cross.style.display = "";
+    chartTip(e, [h("b", {}, new Date(points[i].date).toLocaleDateString()), h("div", { class: "tip-row" }, h("i", { style: `background:${color}` }), label, h("b", {}, String(points[i].value)))]);
+  });
+  hit.addEventListener("mouseleave", () => { dot.style.display = cross.style.display = "none"; chartTip(); });
+  svg.append(hit);
+  return svg;
+}
+
+/** Draws a chart at the real width of its box and redraws when the box changes size (text never stretches). */
+function fitChart(draw) {
+  const box = h("div", { class: "chart-box" });
+  let last = 0;
+  const ro = new ResizeObserver(() => {
+    const w = Math.round(box.clientWidth);
+    if (!w || Math.abs(w - last) < 4) return;
+    last = w; box.replaceChildren(draw(w));
+  });
+  ro.observe(box);
+  return box;
+}
+
+/** Horizontal bars for a top list. */
+function hBars(items, color, unit = "") {
+  const max = Math.max(1, ...items.map(i => i.value));
+  return h("div", { class: "hbars" }, items.map(i => h("div", { class: "hbar" },
+    h("span", { class: "hbar-label", title: i.label }, i.label),
+    h("span", { class: "hbar-track" }, h("i", { style: `width:${Math.max(3, 100 * i.value / max)}%;background:${color}` })),
+    h("b", { class: "hbar-val" }, `${i.value}${unit}`), i.sub ? h("span", { class: "muted small hbar-sub" }, i.sub) : null)));
+}
+
+/** Weekday × hour heat map (local time of the server). */
+function heatMap(heat) {
+  const max = Math.max(1, ...heat.flat());
+  const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  return h("div", { class: "heat" },
+    h("div", { class: "heat-hours" }, h("span", {}), ...Array.from({ length: 24 }, (_, hr) => h("span", {}, hr % 3 === 0 ? String(hr) : ""))),
+    ...heat.map((row, d) => h("div", { class: "heat-row" }, h("span", { class: "heat-day" }, DAYS[d]),
+      ...row.map((n, hr) => { const c = h("span", { class: "heat-cell", style: n ? `--a:${(.15 + .85 * n / max).toFixed(2)}` : "" });
+        c.addEventListener("mousemove", e => chartTip(e, [h("b", {}, `${DAYS[d]} ${String(hr).padStart(2, "0")}:00`), h("div", {}, `${n} group(s)`)]));
+        c.addEventListener("mouseleave", () => chartTip()); return c; }))));
+}
+
+function kpi(ic, label, value, sub, delta, onClick) {
+  const deltaEl = delta == null ? null : h("span", { class: `kpi-delta ${delta > 0 ? "up" : delta < 0 ? "down" : "flat"}`, title: "Compared with the previous period of the same length" },
+    delta > 0 ? `▲ ${delta}%` : delta < 0 ? `▼ ${Math.abs(delta)}%` : "= 0%");
+  return h(onClick ? "button" : "div", { class: `stat ${toneOf(ic)}${onClick ? " clickable" : ""}`, onclick: onClick || null },
+    h("div", { class: "stat-top" }, h("span", { class: "label" }, label), h("span", { class: "stat-icon" }, icon(ic, 16))),
+    h("div", { class: "value" }, value), h("div", { class: "sub" }, sub, deltaEl ? " " : null, deltaEl));
+}
+const pctChange = (now, prev) => prev == null || prev < 5 ? null : Math.round(100 * (now - prev) / prev);
+
+function renderDashboard(body, d, go) {
+  const per = d.days ? `last ${d.days} days` : "all time";
+  const legend = series => h("div", { class: "chart-legend" }, series.map(s => h("span", {}, h("i", { style: `background:${s.color}` }), s.label)));
+  const notEnough = [];
+  const since = ms => ms ? new Date(ms).toLocaleDateString() : null;
+  // Period longer than the data we have: say from when
+  const bar = body.parentElement && body.parentElement.querySelector(".dash-since");
+  const m = d.members, t = d.tickets, l = d.lfg;
+
+  const stats = h("div", { class: "stats" },
+    kpi("users", "Members", String(m.now), m.change == null ? "on the server" : `${m.change >= 0 ? "+" : ""}${m.change} in ${per}`, null),
+    kpi("activity", "Active members", String(m.active7), `${m.now ? Math.round(100 * m.active7 / m.now) : 0}% wrote or talked in 7 days · ${m.active30} in 30`, null),
+    kpi("user-plus", "Joined", String(m.joined), per, pctChange(m.joined, m.joinedPrev)),
+    can("tickets") ? kpi("ticket", "Tickets created", String(t.created), `${t.processed} processed · ${t.openNow} open now`, pctChange(t.created, t.createdPrev), go("tickets")) : null,
+    can("lfg") ? kpi("swords", "LFG groups", String(l.groups), `${l.players} player(s) · ${per}`, pctChange(l.groups, l.groupsPrev), go("lfg")) : null);
+
+  const sections = [];
+  // Members
+  const series = m.series.map(s => ({ date: s.date, value: s.members }));
+  const activeSeries = m.series.filter(s => s.active7 != null).map(s => ({ date: s.date, value: s.active7 }));
+  const memberBlocks = [];
+  if (series.length >= 7) memberBlocks.push(h("div", { class: "dash-chart" }, h("h3", {}, "Members on the server"), fitChart(w => lineChart(series, DASH.a, "members", 170, w))));
+  else notEnough.push(`member chart (${series.length}/7 daily snapshots)`);
+  if (activeSeries.length >= 7) memberBlocks.push(h("div", { class: "dash-chart" }, h("h3", {}, "Active in the last 7 days"), fitChart(w => lineChart(activeSeries, DASH.b, "active", 170, w))));
+  if (m.joinsBy.length >= 2) memberBlocks.push(h("div", { class: "dash-chart" }, h("h3", {}, `Joined per ${d.monthly ? "month" : "week"}`),
+    fitChart(w => barChart(m.joinsBy.map(x => ({ key: x.key, joined: x.count })), [{ key: "joined", label: "joined", color: DASH.c }], d.monthly, 170, w))));
+  if (memberBlocks.length) sections.push(h("div", { class: "card dash-card" }, cardHead("users", "Members"), h("div", { class: "dash-grid" }, memberBlocks)));
+
+  // Tickets
+  if (can("tickets")) {
+    if (t.created + t.processed >= 3) {
+      const decided = t.approved + t.denied;
+      const outcome = h("div", { class: "outcome" },
+        h("div", { class: "outcome-bar" },
+          t.approved ? h("i", { class: "ok", style: `flex:${t.approved}`, title: `${t.approved} approved` }) : null,
+          t.denied ? h("i", { class: "no", style: `flex:${t.denied}`, title: `${t.denied} denied` }) : null,
+          t.closed ? h("i", { class: "un", style: `flex:${t.closed}`, title: `${t.closed} closed without a decision` }) : null),
+        h("div", { class: "outcome-legend" },
+          h("span", {}, icon("circle-check", 13), `${t.approved} approved`), h("span", {}, icon("circle-x", 13), `${t.denied} denied`),
+          h("span", {}, icon("circle-dot", 13), `${t.closed} closed`)));
+      const facts = h("div", { class: "dash-facts" },
+        h("div", {}, h("b", {}, String(t.created)), h("span", {}, "created")),
+        h("div", {}, h("b", {}, String(t.processed)), h("span", {}, "processed")),
+        h("div", {}, h("b", {}, decided ? `${Math.round(100 * t.approved / decided)}%` : "—"), h("span", {}, "approved of decided")),
+        h("div", {}, h("b", {}, t.medianHours == null ? "—" : t.medianHours < 48 ? `${t.medianHours} h` : `${Math.round(t.medianHours / 24)} d`), h("span", {}, "median time to a decision")));
+      const blocks = [h("div", { class: "dash-chart wide" }, h("h3", {}, `Created vs processed per ${d.monthly ? "month" : "week"}`),
+        legend([{ label: "created", color: DASH.a }, { label: "processed", color: DASH.b }]),
+        fitChart(w => barChart(t.by, [{ key: "created", label: "created", color: DASH.a }, { key: "processed", label: "processed", color: DASH.b }], d.monthly, 190, w)))];
+      if (t.projects.length) blocks.push(h("div", { class: "dash-chart" }, h("h3", {}, "Processed by project"),
+        hBars(t.projects.map(p => ({ label: p.name, value: p.total, sub: `${p.approved}✓ ${p.denied}✗` })), DASH.c)));
+      if (t.reviewers.length) blocks.push(h("div", { class: "dash-chart" }, h("h3", {}, "Who decides"),
+        h("div", { class: "dash-people" }, t.reviewers.map(r => h("div", { class: "dash-person" }, member(r.member),
+          h("span", { class: "muted small" }, r.medianHours == null ? "" : `~${r.medianHours < 48 ? r.medianHours + " h" : Math.round(r.medianHours / 24) + " d"}`), h("b", {}, String(r.count)))))));
+      sections.push(h("div", { class: "card dash-card" }, cardHead("ticket", "Tickets"), facts, outcome, h("div", { class: "dash-grid" }, blocks)));
+    } else notEnough.push("tickets (fewer than 3 in this period)");
+  }
+
+  // LFG
+  if (can("lfg")) {
+    if (l.groups >= 3) {
+      const facts = h("div", { class: "dash-facts" },
+        h("div", {}, h("b", {}, String(l.groups)), h("span", {}, "groups")),
+        h("div", {}, h("b", {}, String(l.players)), h("span", {}, "different players")),
+        h("div", {}, h("b", {}, l.fill == null ? "—" : `${l.fill}%`), h("span", {}, "seats filled")),
+        h("div", { title: `${l.marked} marked seat(s)` }, h("b", {}, l.attendance == null ? "—" : `${l.attendance}%`), h("span", {}, "came (of marked)")));
+      const blocks = [h("div", { class: "dash-chart wide" }, h("h3", {}, `Groups and people per ${d.monthly ? "month" : "week"}`),
+        legend([{ label: "groups", color: DASH.c }, { label: "people in them", color: DASH.d }]),
+        fitChart(w => barChart(l.by, [{ key: "groups", label: "groups", color: DASH.c }, { key: "people", label: "people", color: DASH.d }], d.monthly, 190, w)))];
+      if (l.activities.length) blocks.push(h("div", { class: "dash-chart" }, h("h3", {}, "Popular activities"),
+        hBars(l.activities.map(a => ({ label: a.name, value: a.groups, sub: `~${a.avgFilled} ppl` })), DASH.c)));
+      if (l.organizers.length) blocks.push(h("div", { class: "dash-chart" }, h("h3", {}, "Top organizers"),
+        h("div", { class: "dash-people" }, l.organizers.map(o => h("div", { class: "dash-person" }, member(o.member), h("b", {}, String(o.count)))))));
+      if (l.groups >= 15) blocks.push(h("div", { class: "dash-chart wide" }, h("h3", {}, "When groups play (server time)"), heatMap(l.heat)));
+      else notEnough.push("play-time map (needs 15+ groups)");
+      sections.push(h("div", { class: "card dash-card" }, cardHead("swords", "LFG"), facts, h("div", { class: "dash-grid" }, blocks)));
+    } else notEnough.push("LFG (fewer than 3 groups in this period)");
+  }
+
+  if (bar) {
+    const s = d.dataSince, firsts = [s.snapshot ? new Date(s.snapshot).getTime() : null, s.ticket, s.lfg].filter(Boolean);
+    const oldest = firsts.length ? Math.min(...firsts) : null;
+    bar.textContent = d.days && oldest && oldest > Date.now() - d.days * 864e5 ? `Data is collected since ${since(oldest)} — the period is shorter in fact.` : "";
+  }
+  body.replaceChildren(...[stats, ...sections,
+    notEnough.length ? h("div", { class: "muted small dash-hidden" }, icon("eye-off", 13), `Hidden until there is enough data: ${notEnough.join(" · ")}.`) : null].filter(Boolean));
 }
 
 // ================= LFG =================
@@ -3144,30 +3369,40 @@ function templateDialog(acts, t, projectKey = null) {
 // ----- LFG statistics (admin) -----
 
 async function renderStats(card, projectKey = null) {
-  const period = h("select", {}, [[7, "Last 7 days"], [30, "Last 30 days"], [90, "Last 90 days"], [0, "All time"]]
-    .map(([v, l]) => h("option", { value: v, selected: v === 30 }, l)));
+  const saved = Number(store.get("gb.lfgStatsDays") || 90);
+  const period = h("select", { "aria-label": "Period" }, [[30, "Last 30 days"], [90, "Last 90 days"], [180, "Last 6 months"], [365, "Last year"], [0, "All time"]]
+    .map(([v, l]) => h("option", { value: v, selected: v === saved }, l)));
   const body = h("div", {});
   const load = async () => {
-    body.replaceChildren(h("div", { class: "muted" }, "Loading…"));
+    store.set("gb.lfgStatsDays", period.value);
+    body.style.opacity = ".55";
     let st;
-    try { st = await gApi("GET", `/lfg/stats?days=${period.value}${projectKey ? `&project=${encodeURIComponent(projectKey)}` : ""}`); } catch (e) { body.replaceChildren(errorState(e.message)); return; }
-    const table = (title, rows, cols) => h("div", {}, h("h3", {}, title), rows.length
-      ? h("table", { class: "table" }, h("tbody", {}, rows.map(r => h("tr", {}, cols.map(c => h("td", {}, c(r)))))))
-      : empty("—"));
+    try { st = await gApi("GET", `/lfg/stats?days=${period.value}${projectKey ? `&project=${encodeURIComponent(projectKey)}` : ""}`); } catch (e) { body.replaceChildren(errorState(e.message)); body.style.opacity = ""; return; }
+    body.style.opacity = "";
+    if (st.groups < 3) { body.replaceChildren(emptyState("chart-column", "Not enough groups yet", `${st.groups} group(s) in this period — statistics appear from 3 closed groups. Try a longer period.`)); return; }
     const rel = p => p.reliability === null ? "—" : `${p.reliability}%`;
+    const people = (title, rows, value) => h("div", { class: "dash-chart" }, h("h3", {}, title), rows.length
+      ? h("div", { class: "dash-people" }, rows.map(r => h("div", { class: "dash-person" }, member(r.member), ...value(r)))) : empty("—"));
     body.replaceChildren(
-      h("div", { class: "stats" },
-        h("div", { class: "stat" }, h("div", { class: "label" }, "Groups"), h("div", { class: "value" }, st.groups)),
-        h("div", { class: "stat" }, h("div", { class: "label" }, "Attendance marks"), h("div", { class: "value" }, st.attendanceMarked))),
-      h("div", { class: "grid2" },
-        table("By activity", st.activities, [a => a.name, a => `${a.groups} groups`, a => `avg ${a.avgFilled} players`]),
-        table("Top players", st.topPlayers, [p => member(p.member), p => `${p.groups} groups`, p => `came ${p.attended}`, rel]),
-        table("Top organizers", st.topOrganizers, [p => member(p.member), p => `${p.organized} organized`]),
-        table("Most no-shows", st.noShows, [p => member(p.member), p => `${p.noShows} no-show`, rel])));
+      h("div", { class: "dash-facts" },
+        h("div", {}, h("b", {}, String(st.groups)), h("span", {}, "groups")),
+        h("div", {}, h("b", {}, String(st.players)), h("span", {}, "different players")),
+        h("div", {}, h("b", {}, st.fill == null ? "—" : `${st.fill}%`), h("span", {}, "seats filled")),
+        h("div", { title: `${st.attendanceMarked} marked seat(s)` }, h("b", {}, st.attendance == null ? "—" : `${st.attendance}%`), h("span", {}, "came (of marked)"))),
+      h("div", { class: "dash-grid" },
+        st.by.length >= 2 ? h("div", { class: "dash-chart wide" }, h("h3", {}, `Groups and people per ${st.monthly ? "month" : "week"}`),
+          h("div", { class: "chart-legend" }, h("span", {}, h("i", { style: `background:${DASH.c}` }), "groups"), h("span", {}, h("i", { style: `background:${DASH.d}` }), "people in them")),
+          fitChart(w => barChart(st.by, [{ key: "groups", label: "groups", color: DASH.c }, { key: "people", label: "people", color: DASH.d }], st.monthly, 180, w))) : null,
+        h("div", { class: "dash-chart" }, h("h3", {}, "By activity"),
+          hBars(st.activities.slice(0, 10).map(a => ({ label: a.name, value: a.groups, sub: `~${a.avgFilled} ppl` })), DASH.c)),
+        people("Top players", st.topPlayers.slice(0, 10), p => [h("span", { class: "muted small" }, `came ${p.attended} · ${rel(p)}`), h("b", {}, String(p.groups))]),
+        people("Top organizers", st.topOrganizers, p => [h("b", {}, String(p.organized))]),
+        people("Most no-shows", st.noShows, p => [h("span", { class: "muted small" }, rel(p)), h("b", { class: "danger-num" }, String(p.noShows))]),
+        st.groups >= 15 ? h("div", { class: "dash-chart wide" }, h("h3", {}, "When groups play (server time)"), heatMap(st.heat)) : null));
   };
   period.addEventListener("change", load);
   card.replaceChildren(h("div", { class: "card-head" }, h("h2", {}, "📈 Statistics"), period),
-    h("p", { class: "muted small" }, "From closed and expired groups. Reliability = came / (came + no-show) of marked attendance."), body);
+    h("p", { class: "muted small" }, "From closed and expired groups. Reliability = came / (came + no-show) of marked attendance. Short on data? Pick a longer period."), body);
   load();
 }
 

@@ -352,7 +352,7 @@ public static partial class PanelApi
 
         // ----- Статистика -----
         g.MapGet("/stats", (ulong guildId, int? days, string? project, DiscordSocketClient client, LfgHistoryStore history,
-            LfgProjectStore projects) =>
+            LfgProjectStore projects, [Microsoft.AspNetCore.Mvc.FromServices] TimeService time) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var since = days is > 0 ? DateTimeOffset.UtcNow.AddDays(-days.Value) : (DateTimeOffset?)null;
@@ -364,8 +364,24 @@ public static partial class PanelApi
                 list = list.Where(e => (e.ProjectKey ?? def) == project).ToList();
             }
             var players = LfgStats.Players(list);
+            var monthly = days is not > 0 || days > 190;
+            string Bucket(DateTimeOffset t)
+            {
+                var d = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(t, time.Zone).DateTime);
+                return monthly ? $"{d.Year:D4}-{d.Month:D2}" : d.AddDays(-(((int)d.DayOfWeek + 6) % 7)).ToString("yyyy-MM-dd");
+            }
+            var heat = new int[7, 24];
+            foreach (var e in list) { var lt = TimeZoneInfo.ConvertTime(e.StartsAt ?? e.ClosedAt, time.Zone); heat[((int)lt.DayOfWeek + 6) % 7, lt.Hour]++; }
+            var marks = list.SelectMany(e => e.Members).Where(m => m.Attended is not null).ToList();
+            var seatsAll = list.Sum(e => Math.Max(e.Size, e.Members.Count));
             return Results.Ok(new
             {
+                monthly,
+                players = list.SelectMany(e => e.Members.Select(m => m.UserId)).Distinct().Count(),
+                fill = seatsAll == 0 ? (double?)null : Math.Round(100.0 * list.Sum(e => e.Members.Count) / seatsAll),
+                attendance = marks.Count == 0 ? (double?)null : Math.Round(100.0 * marks.Count(m => m.Attended == true) / marks.Count),
+                by = list.GroupBy(e => Bucket(e.ClosedAt)).OrderBy(x => x.Key).Select(x => new { key = x.Key, groups = x.Count(), people = x.Sum(e => e.Members.Count) }),
+                heat = Enumerable.Range(0, 7).Select(d => Enumerable.Range(0, 24).Select(hh => heat[d, hh]).ToArray()),
                 groups = list.Count,
                 attendanceMarked = list.Sum(e => e.Members.Count(m => m.Attended is not null)),
                 activities = list.GroupBy(e => e.Activity).OrderByDescending(x => x.Count())

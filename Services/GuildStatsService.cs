@@ -14,6 +14,9 @@ public sealed class GuildDaySnapshot
     public string Date { get; set; } = "";
     public int Members { get; set; }
     public int OpenTickets { get; set; }
+    /// <summary>Писали или были в войсе за 7 / 30 дней (null — снимок сделан до этого поля).</summary>
+    public int? Active7 { get; set; }
+    public int? Active30 { get; set; }
     public DateTimeOffset TakenAt { get; set; }
 }
 
@@ -86,6 +89,7 @@ public sealed class GuildStatsService(
     DiscordSocketClient client,
     GuildStatsStore store,
     TicketStore tickets,
+    MemberActivityStore activity,
     TimeService time,
     ILogger<GuildStatsService> logger) : BackgroundService
 {
@@ -125,6 +129,8 @@ public sealed class GuildStatsService(
             Date = GuildStatsStore.Key(today),
             Members = guild.MemberCount,
             OpenTickets = tickets.GetTickets(guild.Id).Count,
+            Active7 = activity.CountActive(guild.Id, DateTimeOffset.UtcNow.AddDays(-7), id => guild.GetUser(id) is not null),
+            Active30 = activity.CountActive(guild.Id, DateTimeOffset.UtcNow.AddDays(-30), id => guild.GetUser(id) is not null),
             TakenAt = DateTimeOffset.UtcNow
         });
     }

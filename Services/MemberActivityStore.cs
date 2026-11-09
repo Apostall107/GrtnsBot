@@ -56,6 +56,20 @@ public sealed class MemberActivityStore
         _dirty = true;
     }
 
+    /// <summary>Сколько участников сервера писали или были в войсе после since.</summary>
+    public int CountActive(ulong guildId, DateTimeOffset since, Func<ulong, bool>? isMember = null)
+    {
+        var prefix = $"{guildId}:";
+        var n = 0;
+        foreach (var (key, a) in _data)
+        {
+            if (!key.StartsWith(prefix, StringComparison.Ordinal) || a.Last is not { } last || last < since) continue;
+            if (isMember is not null && (!ulong.TryParse(key.AsSpan(prefix.Length), out var uid) || !isMember(uid))) continue;
+            n++;
+        }
+        return n;
+    }
+
     public MemberActivity? Get(ulong guildId, ulong userId) => _data.TryGetValue(Key(guildId, userId), out var a) ? a : null;
 
     public void SaveIfDirty()
