@@ -54,6 +54,8 @@ public sealed class MascotStatsStore
     public static readonly string[] GradeNames = ["Poor", "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic"];
     /// <summary>Most achievements: geometric, from 5 doubling each grade.</summary>
     public static readonly int[] PowerTiers = [5, 10, 20, 40, 80, 160, 320];
+    /// <summary>Each single spell: an easier climb.</summary>
+    public static readonly int[] SpellTiers = [1, 2, 3, 5, 7, 10, 15];
     /// <summary>Legendary casts (and each legendary combination).</summary>
     public static readonly int[] LegendTiers = [1, 2, 3, 4, 5, 7, 10];
 
@@ -71,13 +73,13 @@ public sealed class MascotStatsStore
             new("quick", "general", "⚡", "Quick Hands", "Catch the robot {0} times before it gets tired.", PowerTiers, s => s.QuickCatches),
             new("escaped", "general", "💨", "It Got Away", "Let the robot escape {0} times.", PowerTiers, s => s.Escaped),
             new("spells", "general", "✨", "Spellbound", "See {0} spells in total.", PowerTiers, Total),
-            new("kinds", "general", "📖", "Grimoire", "See {0} different spells.", [1, 2, 4, 8, 15], Seen),
+            new("kinds", "general", "📖", "Grimoire", "See {0} different spells.", [1, 3, 5, 7, 10, 13, 15], Seen),
             new("legend", "legend", "🌟", "Legendary!", "Witness {0} legendary casts — two spells at once.", LegendTiers, s => s.Legendary),
         };
         for (var i = 0; i < Spells.Length; i++)
         {
             var key = Spells[i].Key;
-            list.Add(new($"spell-{key}", "spells", Spells[i].Icon, SpellTitles[i], $"See the robot cast {Spells[i].Name} {{0}} times.", PowerTiers, s => s.Spells.GetValueOrDefault(key)));
+            list.Add(new($"spell-{key}", "spells", Spells[i].Icon, SpellTitles[i], $"See the robot cast {Spells[i].Name} {{0}} times.", SpellTiers, s => s.Spells.GetValueOrDefault(key)));
         }
         for (var i = 0; i < Spells.Length; i++)
         for (var j = i + 1; j < Spells.Length; j++)
