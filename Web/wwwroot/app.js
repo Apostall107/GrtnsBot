@@ -1725,7 +1725,13 @@ function renderShell() {
     // Tooltip only when the menu is collapsed to icons (labels are visible otherwise)
     class: `nav-item tone-${NAV_TONES[key] || "violet"}${state.tab === key ? " active" : ""}`, "data-key": key, "data-label": label, "aria-label": label,
     "aria-current": state.tab === key ? "page" : null,
-    onclick: async () => { if (!await leavePage()) return; state.tab = key; store.set("gb.tab", key); closeDrawer(); renderShell(); }
+    onclick: async () => {
+      if (!await leavePage()) return;
+      // Going to a page of another group: that group opens, all the others fold
+      const from = (allTabs.find(t => t[0] === state.tab) || [])[4], to = (allTabs.find(t => t[0] === key) || [])[4];
+      if (to && from !== to) store.set("gb.navFold", JSON.stringify(sections.map(sc => sc.name).filter(n => n !== to)));
+      state.tab = key; store.set("gb.tab", key); closeDrawer(); renderShell();
+    }
   }, icon(ic, 18), h("span", { class: "nav-label" }, label), h("span", { class: "nav-badge" }));
   // Groups fold by a click on their title (remembered); "Owner tools" is folded by default; the active tab's group stays open
   const folded = (() => { try { return new Set(JSON.parse(store.get("gb.navFold") || '["Owner tools"]')); } catch { return new Set(["Owner tools"]); } })();
