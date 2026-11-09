@@ -125,6 +125,8 @@ public static partial class PanelApi
         foreach (var endpoint in MapDashboard(g)) endpoint.AddEndpointFilter(RequireAnyAdmin);
     }
 
+    public sealed record SearchRolesBody(List<string>? RoleIds);
+
     private static IEnumerable<RouteHandlerBuilder> MapCommonEndpoints(RouteGroupBuilder g)
     {
         yield return g.MapGet("/overview", (ulong guildId, DiscordSocketClient client, ActivityStore activities, LfgStore lfg,
@@ -140,6 +142,18 @@ public static partial class PanelApi
                 voice = new { creators = voice.GetCreators(guildId).Count, rooms = LiveRooms(guild, voice).Count }
             });
         });
+
+        // Settings → Quick search: which roles Ctrl+K searches people in
+        yield return g.MapGet("/search-roles", (ulong guildId, DiscordSocketClient client, GuildPrefsStore prefs) =>
+            client.GetGuild(guildId) is not { } guild ? GuildNotFound()
+            : Results.Ok(new { roles = prefs.Get(guildId).SearchRoleIds.Select(id => Role(guild, id)) }));
+        yield return g.MapPut("/search-roles", (ulong guildId, SearchRolesBody body, DiscordSocketClient client, GuildPrefsStore prefs) =>
+        {
+            if (client.GetGuild(guildId) is null) return GuildNotFound();
+            var ids = (body.RoleIds ?? []).Select(ParseId).OfType<ulong>().Distinct().ToList();
+            prefs.Update(guildId, p => p.SearchRoleIds = ids);
+            return Results.Ok();
+        }).AddEndpointFilter(Require(PanelPermissions.Settings));
 
         yield return g.MapGet("/roles", (ulong guildId, DiscordSocketClient client) =>
         {
@@ -181,15 +195,18 @@ public static partial class PanelApi
             return Results.Ok(new { text, voice = voiceChannels, categories });
         });
 
-        yield return g.MapGet("/members", (ulong guildId, string? q, DiscordSocketClient client) =>
+        yield return g.MapGet("/members", (ulong guildId, string? q, string? scope, DiscordSocketClient client, GuildPrefsStore prefs) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            // Ctrl+K: only people with the roles chosen in Settings (if any)
+            var only = scope == "search" ? prefs.Get(guildId).SearchRoleIds : [];
             var query = (q ?? "").Trim();
             bool Has(string? text) => text is not null && text.Contains(query, StringComparison.OrdinalIgnoreCase);
             bool Starts(string? text) => text is not null && text.StartsWith(query, StringComparison.OrdinalIgnoreCase);
             // Ник на сервере, глобальное имя и логин; сначала те, что начинаются с запроса
             var list = guild.Users
                 .Where(u => !u.IsBot)
+                .Where(u => only.Count == 0 || u.Roles.Any(r => only.Contains(r.Id)))
                 .Where(u => query.Length == 0 || Has(u.DisplayName) || Has(u.GlobalName) || Has(u.Username))
                 .OrderByDescending(u => query.Length > 0 && (Starts(u.DisplayName) || Starts(u.GlobalName) || Starts(u.Username)))
                 .ThenBy(u => u.DisplayName)

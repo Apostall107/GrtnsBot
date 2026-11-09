@@ -47,6 +47,8 @@ public sealed class GuildPrefs
 
     /// <summary>Служебный канал медиатеки: картинки и гифки для постов лежат там вложениями (на сервере бота — ничего).</summary>
     public ulong? MediaChannelId { get; set; }
+    /// <summary>Быстрый поиск на сайте (Ctrl+K) ищет людей только с этими ролями; пусто — всех участников.</summary>
+    public List<ulong> SearchRoleIds { get; set; } = [];
 }
 
 /// <summary>Проект на официальной оружейной: включён ли, фракция (1 — Elyos, 2 — Asmodians) и сервер по умолчанию.</summary>

@@ -2253,7 +2253,7 @@ async function quickSearch() {
     clearTimeout(timer);
     const q = input.value.trim();
     if (q.length < 2 || !isAdmin()) { members = []; return; }
-    timer = setTimeout(async () => { members = await gApi("GET", `/members?q=${encodeURIComponent(q)}`).catch(() => []); if (input.value.trim() === q) draw(); }, 220);
+    timer = setTimeout(async () => { members = await gApi("GET", `/members?q=${encodeURIComponent(q)}&scope=search`).catch(() => []); if (input.value.trim() === q) draw(); }, 220);
   });
   input.addEventListener("keydown", e => {
     if (e.key === "ArrowDown") { e.preventDefault(); active = Math.min(active + 1, items.length - 1); mark(); list.children[active]?.scrollIntoView({ block: "nearest" }); }
@@ -5915,6 +5915,24 @@ async function pageSettings(main) {
     h("p", { class: "muted" }, "Time zone, auto-delete and reminder of LFG groups are in LFG → LFG settings."));
   const holder = h("div", {});
   main.append(holder);
+
+  // Quick search (Ctrl+K): which members it finds
+  if (can("settings")) {
+    const card = h("div", { class: "card" }, h("h2", {}, "🔍 Quick search"),
+      h("p", { class: "muted small" }, "Ctrl+K on the site finds people only with these roles (for example the guild member roles). Empty — everyone on the server."),
+      h("div", { class: "muted" }, "Loading…"));
+    holder.append(card);
+    gApi("GET", "/search-roles").then(d => {
+      const roles = roleListEditor(d.roles || []);
+      const save = h("button", { class: "btn" }, "Save");
+      const body = () => ({ roleIds: roles.value() });
+      const tracker = track("Quick search roles", () => JSON.stringify(body()), async () =>
+        await act(save, () => gApi("PUT", "/search-roles", body()), "Quick search roles saved.") !== undefined);
+      save.addEventListener("click", tracker.save);
+      card.lastChild.replaceWith(h("div", {}, h("div", { class: "field" }, fieldLabel("Search people with roles"), roles.el), save));
+      tracker.attach(card);
+    }).catch(e => card.lastChild.replaceWith(errorState(e.message)));
+  }
 
   // Backup (owner only)
   if (can("access")) {
