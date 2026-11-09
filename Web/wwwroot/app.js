@@ -1547,18 +1547,35 @@ async function logout() {
   if (!document.querySelector(".gv-aurora"))
     document.body.prepend(h("div", { class: "gv-aurora", "aria-hidden": "true" }, h("i", {}), h("i", {}), h("i", {}), h("i", {})));
   if (matchMedia("(prefers-reduced-motion: reduce)").matches || matchMedia("(pointer: coarse)").matches) return;
-  // Pointer light = one fixed layer moved with transform (GPU only, no repaint of the glass).
-  // It sits under the cursor by itself, so scrolling can't leave it behind; it only shows over glass surfaces.
-  const spot = h("div", { class: "gv-spot", "aria-hidden": "true" });
-  document.body.append(spot);
+  // Pointer light inside the card under the cursor: a glow + a lit piece of the rim, both moved with transform
+  // (composited layers — the glass itself is not repainted, so it keeps up while moving and scrolling) and clipped to the card.
   const SEL = ".main .card, .stat, .quick-action, .group-mini";
-  let x = -1, y = -1, queued = false;
-  const over = () => { const el = x < 0 ? null : document.elementFromPoint(x, y); return !!(el && el.closest && el.closest(SEL) && !el.closest("dialog, .user-pop, .menu-pop, .select-pop")); };
-  const frame = () => { queued = false; spot.style.transform = `translate3d(${x}px, ${y}px, 0)`; spot.classList.toggle("on", over()); };
-  document.addEventListener("pointermove", e => { x = e.clientX; y = e.clientY; if (!queued) { queued = true; requestAnimationFrame(frame); } }, { passive: true });
-  let scrollTimer = 0;
-  document.addEventListener("scroll", () => { clearTimeout(scrollTimer); scrollTimer = setTimeout(() => spot.classList.toggle("on", over()), 60); }, { passive: true, capture: true });
-  document.documentElement.addEventListener("pointerleave", () => { x = -1; spot.classList.remove("on"); });
+  const glow = h("i", { class: "gv-glow" }), rimDot = h("i", {});
+  const light = h("div", { class: "gv-light", "aria-hidden": "true" }, glow, h("div", { class: "gv-rim" }, rimDot));
+  let x = -1, y = -1, queued = false, host = null;
+  const frame = () => {
+    queued = false;
+    const hit = x < 0 ? null : document.elementFromPoint(x, y);
+    let el = hit && hit.closest && !hit.closest("dialog, .user-pop, .menu-pop, .select-pop, .page-head") ? hit.closest(SEL) : null;
+    // nested card → light the outer glass card
+    while (el && el.parentElement && el.parentElement.closest(SEL)) el = el.parentElement.closest(SEL);
+    if (el !== host) {
+      light.classList.remove("on");
+      host = el;
+      if (!el) return;
+      el.append(light);
+      void light.offsetWidth;
+    }
+    const r = el.getBoundingClientRect();
+    const lx = x - r.left, ly = y - r.top;
+    glow.style.transform = `translate3d(${lx}px, ${ly}px, 0)`;
+    rimDot.style.transform = `translate3d(${lx}px, ${ly}px, 0)`;
+    light.classList.add("on");
+  };
+  const schedule = () => { if (!queued) { queued = true; requestAnimationFrame(frame); } };
+  document.addEventListener("pointermove", e => { x = e.clientX; y = e.clientY; schedule(); }, { passive: true });
+  document.addEventListener("scroll", schedule, { passive: true, capture: true });
+  document.documentElement.addEventListener("pointerleave", () => { x = -1; schedule(); });
 })();
 
 async function boot() {
@@ -1582,6 +1599,11 @@ async function boot() {
     toast(e.message, "error");
   }
 
+  // Tab icon = the bot's avatar straight from Discord (falls back to /favicon.png); a new URL also beats a cached "no icon"
+  if (state.bot && state.bot.avatarUrl) {
+    const link = document.querySelector('link[rel="icon"]');
+    if (link) { link.removeAttribute("type"); link.href = state.bot.avatarUrl; }
+  }
   const saved = store.get("gb.guild");
   state.guildId = state.guilds.some(g => g.id === saved) ? saved : (state.guilds[0] && state.guilds[0].id) || null;
   if (!visibleTabs().some(t => t[0] === state.tab)) state.tab = (visibleTabs()[0] || ["overview"])[0];

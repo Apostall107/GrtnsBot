@@ -2454,3 +2454,41 @@ input:not([type=checkbox]):not([type=radio]):focus, select:focus, textarea:focus
 /* The old per-card light layers are no longer driven */
 .main .card, .stat, .quick-action { --mx: -999px; --my: -999px; }
 @media (pointer: coarse), (prefers-reduced-motion: reduce) { .gv-spot { display: none; } }
+
+/* Pinned page heading: light see-through glass like the rest (no dark slab) */
+.main > .page-head::before {
+  background: linear-gradient(180deg, rgba(26, 19, 52, .66), rgba(26, 19, 52, .5));
+  -webkit-backdrop-filter: blur(28px) saturate(150%); backdrop-filter: blur(28px) saturate(150%);
+  box-shadow: inset 0 -1px 0 rgba(176, 156, 255, .14);
+}
+
+/* ===== Less milky: darker glass for content, the light stays behind at the edges ===== */
+.main .card, .stat, .quick-action, .group-mini {
+  background-color: rgba(14, 10, 28, .58);
+  -webkit-backdrop-filter: blur(24px) saturate(125%); backdrop-filter: blur(24px) saturate(125%);
+}
+/* Data cards (tables, lists, charts): denser so the text sits on a calm dark background */
+.main .card:has(.table, .dash-grid, .list) { background-color: rgba(11, 8, 22, .74); }
+.main .card .card, .main .card .dash-chart { background-color: rgba(6, 4, 14, .35); }
+.table thead th { background: linear-gradient(180deg, rgba(139, 108, 255, .08), rgba(139, 108, 255, .02)); }
+.gv-aurora i:nth-child(1) { opacity: .3; }
+.gv-aurora i:nth-child(4) { opacity: .1; }
+
+/* Pointer light v3: inside the hovered card only (glow + lit rim), moved by transform */
+.gv-spot { display: none !important; }
+.main > .page-head { animation: none; } /* an opacity animation made the heading a backdrop root — its glass didn't blur */
+.group-mini, .stat { position: relative; }
+.gv-light { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 1; opacity: 0; transition: opacity .2s ease; }
+.gv-light.on { opacity: 1; }
+.gv-light::before { content: ""; position: absolute; inset: 0; border-radius: inherit; overflow: hidden; }
+.gv-glow { position: absolute; left: -170px; top: -170px; width: 340px; height: 340px; border-radius: 50%; will-change: transform; mix-blend-mode: screen;
+  background:
+    radial-gradient(circle, rgba(240, 232, 255, .15) 0, rgba(240, 232, 255, 0) 16%),
+    radial-gradient(circle, rgba(206, 188, 255, .19) 0%, rgba(176, 150, 255, .09) 15%, rgba(150, 120, 255, .035) 32%, rgba(139, 108, 255, 0) 50%); }
+.gv-light { overflow: hidden; }
+.gv-rim { position: absolute; inset: 0; border-radius: inherit; padding: 1px; overflow: hidden;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); }
+.gv-rim > i { position: absolute; left: -130px; top: -130px; width: 260px; height: 260px; border-radius: 50%; will-change: transform;
+  background: radial-gradient(circle, rgba(240, 232, 255, .95) 0%, rgba(200, 180, 255, .55) 22%, rgba(176, 150, 255, 0) 60%); }
+@media (pointer: coarse), (prefers-reduced-motion: reduce) { .gv-light { display: none; } }

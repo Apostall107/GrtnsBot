@@ -172,7 +172,7 @@ public static class WebPanel
             ctx.Response.Headers.CacheControl = bytes is null ? "no-cache" : "public, max-age=3600";
             return Results.Bytes(bytes ?? defaultIcon, "image/png");
         });
-        app.MapGet("/favicon.ico", () => Results.Redirect("/favicon.png"));
+        app.MapMethods("/favicon.ico", ["GET", "HEAD"], () => Results.Redirect("/favicon.png?v=3"));
 
         PanelApi.Map(app);
     }
