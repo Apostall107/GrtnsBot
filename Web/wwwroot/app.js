@@ -2714,19 +2714,20 @@ async function renderClasses(card, projectList = [], projectKey = store.get("gb.
   };
   const draw = () => {
     list.replaceChildren(...rows.map((r, i) => {
-      const icon = h("input", { value: r.icon || "", placeholder: "emoji or <:name:id>", style: "width:180px" });
-      const prev = h("span", {}, preview(r.icon));
-      icon.addEventListener("input", () => { r.icon = icon.value; prev.replaceChildren(preview(icon.value)); });
-      const pick = h("select", {}, h("option", { value: "" }, "pick emoji…"),
+      const iconInput = h("input", { value: r.icon || "", placeholder: "emoji or <:name:id>", title: "Class icon: an emoji or <:name:id>" });
+      const prev = h("span", { class: "class-prev", title: "How the icon looks" }, preview(r.icon));
+      iconInput.addEventListener("input", () => { r.icon = iconInput.value; prev.replaceChildren(preview(iconInput.value)); });
+      const pick = h("select", { style: "width:100%", "aria-label": "Pick a server emoji" }, h("option", { value: "" }, "Pick emoji…"),
         data.emojis.map(e => h("option", { value: e.code }, `:${e.name}:${e.app ? "  (bot)" : ""}`)));
-      pick.addEventListener("change", () => { if (pick.value) { r.icon = icon.value = pick.value; prev.replaceChildren(preview(pick.value)); } });
+      pick.addEventListener("change", () => { if (pick.value) { r.icon = iconInput.value = pick.value; prev.replaceChildren(preview(pick.value)); } });
       const ri = roleIcons[r.roleId];
       const useRole = ri ? h("button", { class: "btn secondary", title: "Use this role's icon from Discord" }, roleIconEl(ri), "Role icon") : null;
       if (useRole) useRole.addEventListener("click", () => importIcons(useRole, [r]));
-      return h("div", { class: "row question-row" }, roleChip(r.role), prev, icon, pick, useRole, slotToggles(r),
-        h("button", { class: "btn ghost", title: "Remove", onclick: async () => {
+      return h("div", { class: "class-row" }, h("div", { class: "class-role" }, roleChip(r.role)), prev, iconInput, pick,
+        useRole || h("span", {}), slotToggles(r),
+        h("button", { class: "btn ghost icon-only sm danger-text", title: "Remove", "aria-label": "Remove", onclick: async () => {
           if (await confirmDialog(`Remove @${r.role.name} from classes?`, "Saved when you press Save classes.", "Remove")) { rows.splice(i, 1); draw(); }
-        } }, "✖"));
+        } }, icon("trash-2", 15)));
     }));
   };
   // Several class roles at once
