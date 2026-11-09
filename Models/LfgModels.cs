@@ -309,6 +309,8 @@ public sealed class LfgGroup
     public ulong? VoiceChannelId { get; set; }
     /// <summary>Сообщение-напоминание бота, удаляется вместе с постом.</summary>
     public ulong? ReminderMessageId { get; set; }
+    /// <summary>Прочие служебные сообщения бота под постом (перенос из резерва, хвост упоминаний напоминания) — удаляются вместе с постом.</summary>
+    public List<ulong> NoticeMessageIds { get; set; } = [];
 
     /// <summary>Сериализует изменения состава и обновление сообщения.</summary>
     [JsonIgnore] public SemaphoreSlim Gate { get; } = new(1, 1);

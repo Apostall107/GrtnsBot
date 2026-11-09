@@ -168,11 +168,14 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
                 if (await GetChannelAsync(group.ChannelId) is { } channel)
                 {
                     var role = slot.TakenAs ?? slot.Role;
-                    await channel.SendMessageAsync(Tx.Get(group.GuildId, "lfg.autoPromoted", ("user", $"<@{userId}>"),
+                    var notice = await channel.SendMessageAsync(Tx.Get(group.GuildId, "lfg.autoPromoted", ("user", $"<@{userId}>"),
                             ("activity", Format.Sanitize(group.ActivityName)), ("role", $"{role.Emoji()} **{role.Label()}**"),
                             ("name", Format.Sanitize(slot.CharacterName ?? "-"))),
                         allowedMentions: new AllowedMentions { UserIds = [userId] },
                         messageReference: new MessageReference(group.MessageId, failIfNotExists: false));
+                    // Удалится вместе с постом сбора
+                    lock (group.NoticeMessageIds) group.NoticeMessageIds.Add(notice.Id);
+                    store.SaveGroups();
                 }
             }
             catch (Exception e)
@@ -454,9 +457,12 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
                     messageReference: new MessageReference(group.MessageId, failIfNotExists: false));
                 group.ReminderMessageId = message.Id;
                 foreach (var chunk in members.Skip(60).Chunk(80))
-                    await channel.SendMessageAsync(string.Join(" ", chunk.Select(id => $"<@{id}>")),
+                {
+                    var extra = await channel.SendMessageAsync(string.Join(" ", chunk.Select(id => $"<@{id}>")),
                         allowedMentions: new AllowedMentions { UserIds = chunk.ToList() },
                         messageReference: new MessageReference(group.MessageId, failIfNotExists: false));
+                    lock (group.NoticeMessageIds) group.NoticeMessageIds.Add(extra.Id);
+                }
             }
 
             store.SaveGroups();
@@ -570,7 +576,9 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
         }
 
         if (await GetChannelAsync(group.ChannelId) is not { } channel) return;
-        foreach (var id in new[] { (ulong?)group.MessageId, group.ReminderMessageId })
+        List<ulong> notices;
+        lock (group.NoticeMessageIds) notices = group.NoticeMessageIds.ToList();
+        foreach (var id in new[] { (ulong?)group.MessageId, group.ReminderMessageId }.Concat(notices.Select(n => (ulong?)n)))
         {
             if (id is not { } messageId || messageId == 0) continue;
             try { await channel.DeleteMessageAsync(messageId); }
