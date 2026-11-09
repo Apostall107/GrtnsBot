@@ -1581,8 +1581,9 @@ async function logout() {
   // Pointer light inside the card under the cursor: a glow + a lit piece of the rim, both moved with transform
   // (composited layers — the glass itself is not repainted, so it keeps up while moving and scrolling) and clipped to the card.
   const SEL = ".main .card, .stat, .quick-action, .group-mini";
-  const glow = h("i", { class: "gv-glow" }), rimDot = h("i", {});
-  const light = h("div", { class: "gv-light", "aria-hidden": "true" }, glow, h("div", { class: "gv-rim" }, rimDot));
+  // Only the edges light up near the cursor: a bright line on the rim + a soft halo just outside it (no light inside the card)
+  const rimDot = h("i", {}), haloDot = h("i", {});
+  const light = h("div", { class: "gv-light", "aria-hidden": "true" }, h("div", { class: "gv-halo" }, haloDot), h("div", { class: "gv-rim" }, rimDot));
   let x = -1, y = -1, queued = false, host = null;
   const frame = () => {
     queued = false;
@@ -1600,8 +1601,8 @@ async function logout() {
     if (!el) return;
     const r = el.getBoundingClientRect();
     const lx = x - r.left, ly = y - r.top;
-    glow.style.transform = `translate3d(${lx}px, ${ly}px, 0)`;
     rimDot.style.transform = `translate3d(${lx}px, ${ly}px, 0)`;
+    haloDot.style.transform = `translate3d(${lx + 10}px, ${ly + 10}px, 0)`;
     light.classList.add("on");
   };
   const schedule = () => { if (!queued) { queued = true; requestAnimationFrame(frame); } };
