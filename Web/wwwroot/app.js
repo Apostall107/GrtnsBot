@@ -324,6 +324,16 @@ async function memberCard(userId) {
   const date = ms => ms ? new Date(ms).toLocaleDateString() : "—";
   const ago = ms => ms ? fmtRelative(ms) : "never";
   const none = text => h("div", { class: "mc-none" }, text);
+  // Long lists: first 3, the rest behind "Show all"
+  const capped = (rows, n = 3) => {
+    const box = h("div", { class: "mc-list" }, rows.slice(0, n));
+    if (rows.length > n) {
+      const more = h("button", { type: "button", class: "mc-more" }, icon("chevron-down", 14), `Show all ${rows.length}`);
+      more.addEventListener("click", () => { box.replaceChildren(...rows); });
+      box.append(more);
+    }
+    return box;
+  };
   const sec = (ic, tone, title, count, body) => h("section", { class: `mc-sec tone-${tone}` },
     h("h3", {}, h("span", { class: "mc-sec-ic" }, icon(ic, 14)), title, count != null ? h("span", { class: "mc-count" }, String(count)) : null), body);
   const stat = (ic, label, value, cls = "") => h("div", { class: `mc-stat ${cls}` }, h("span", { class: "mc-stat-ic" }, icon(ic, 15)),
@@ -343,21 +353,29 @@ async function memberCard(userId) {
           onclick: () => { navigator.clipboard?.writeText(m.id); toast("ID copied."); } }, m.id)),
         m.onServer ? null : h("span", { class: "badge lock" }, "left the server")),
       h("a", { class: "btn secondary sm mc-discord", href: `https://discord.com/users/${m.id}`, target: "_blank", rel: "noopener" }, icon("external-link", 14), "Discord")),
-    c.roles.length ? h("div", { class: "chip-wrap mc-roles" }, c.roles.map(r => roleChip(r))) : null,
+    c.roles.length ? (() => {
+      const box = h("div", { class: "chip-wrap mc-roles" }, c.roles.slice(0, 6).map(r => roleChip(r)));
+      if (c.roles.length > 6) {
+        const more = h("button", { type: "button", class: "chip mc-more-roles", title: c.roles.slice(6).map(r => "@" + r.name).join(", ") }, `+${c.roles.length - 6}`);
+        more.addEventListener("click", () => box.replaceChildren(...c.roles.map(r => roleChip(r))));
+        box.append(more);
+      }
+      return box;
+    })() : null,
     h("div", { class: "mc-stats" },
       stat("calendar", "joined", date(c.joinedAt)),
       stat("message-square-text", "last message", ago(c.lastMessage)),
-      stat("headphones", c.voiceNow ? "in voice now" : "last voice", c.voiceNow ? c.voiceNow : ago(c.lastVoice), c.voiceNow ? "live" : ""),
+      stat("headphones", c.voiceNow ? `in ${c.voiceNow}` : "last voice", c.voiceNow ? "in voice now" : ago(c.lastVoice), c.voiceNow ? "live" : ""),
       stat("cake", "birthday", bd, c.birthday ? "pink" : "")),
     h("div", { class: "mc-grid" },
-      sec("user-round", "cyan", "Characters", c.characters.length, c.characters.length ? h("div", { class: "mc-list" }, c.characters.map(ch =>
-        h("div", { class: "mc-row" }, h("b", {}, ch.name), ch.classRole ? roleChip(ch.classRole) : null,
-          h("span", { class: "muted small" }, ch.project), h("span", { class: "spacer" }),
-          ch.gs ? h("span", { class: "gs" }, `GS ${ch.gs}`) : null, ch.cp ? h("span", { class: "gs cp" }, `CP ${fmtCp(ch.cp)}`) : null))) : none("No characters yet.")),
-      sec("swords", "violet", "Groups now", c.groups.length, c.groups.length ? h("div", { class: "mc-list" }, c.groups.map(g =>
-        h("div", { class: "mc-row" }, h("b", {}, g.activity), g.organizer ? h("span", { class: "badge ok" }, icon("crown", 12), "organizer") : null,
-          g.reserve ? h("span", { class: "badge wait" }, "reserve") : null, g.character ? h("span", { class: "muted small" }, g.character) : null,
-          h("span", { class: "spacer" }), h("span", { class: "muted small" }, g.startsAt ? fmtDate(g.startsAt) : "no time")))) : none("Not in any group right now.")),
+      sec("user-round", "cyan", "Characters", c.characters.length, c.characters.length ? capped(c.characters.map(ch =>
+        h("div", { class: "mc-row" }, h("div", { class: "mc-row-main" }, h("b", { title: ch.name }, ch.name), h("span", { class: "muted small" }, ch.classRole ? `@${ch.classRole.name} · ${ch.project}` : ch.project)),
+          h("div", { class: "mc-row-side" }, ch.gs ? h("span", { class: "gs" }, `GS ${ch.gs}`) : null, ch.cp ? h("span", { class: "gs cp" }, `CP ${fmtCp(ch.cp)}`) : null)))) : none("No characters yet.")),
+      sec("swords", "violet", "Groups now", c.groups.length, c.groups.length ? capped(c.groups.map(g =>
+        h("div", { class: "mc-row" }, h("div", { class: "mc-row-main" }, h("b", { title: g.activity }, g.activity),
+          h("span", { class: "muted small" }, [g.character, g.startsAt ? fmtDate(g.startsAt) : "no time"].filter(Boolean).join(" · "))),
+          h("div", { class: "mc-row-side" }, g.organizer ? h("span", { class: "badge ok", title: "Organizer" }, icon("crown", 12)) : null,
+            g.reserve ? h("span", { class: "badge wait" }, "reserve") : null)))) : none("Not in any group right now.")),
       sec("calendar-clock", "teal", "Attendance · 90 days", null, at ? h("div", {},
         h("div", { class: "mc-att" },
           h("div", { class: "mc-att-bar" }, h("i", { class: "ok", style: `width:${at.groups ? 100 * at.attended / at.groups : 0}%` }),
@@ -365,12 +383,13 @@ async function memberCard(userId) {
           h("b", { class: "mc-att-rate" }, at.rate == null ? "—" : `${at.rate}%`)),
         h("div", { class: "muted small" }, `${at.groups} group(s) · ${at.organized} organized · ${at.attended} came · ${at.noShows} no-show · ${at.unmarked} unmarked`))
         : none("No groups in the last 90 days.")),
-      sec("ticket", "amber", "Tickets", c.openTickets.length + c.pastTickets.length, c.openTickets.length || c.pastTickets.length ? h("div", { class: "mc-list" },
-        c.openTickets.map(t => h("div", { class: "mc-row" }, h("b", {}, t.project), h("span", { class: "badge recruiting" }, "open"),
-          h("span", { class: "spacer" }), h("span", { class: "muted small" }, fmtRelative(t.openedAt)))),
-        c.pastTickets.map(t => { const [cls, label] = OUT[t.outcome] || ["wait", t.outcome];
-          return h("div", { class: "mc-row" }, h("span", {}, t.project), h("span", { class: `badge ${cls}` }, label),
-            t.by ? h("span", { class: "muted small" }, `by ${t.by}`) : null, h("span", { class: "spacer" }), h("span", { class: "muted small" }, date(t.closedAt))); }))
+      sec("ticket", "amber", "Tickets", c.openTickets.length + c.pastTickets.length, c.openTickets.length || c.pastTickets.length ? capped([
+        ...c.openTickets.map(t => h("div", { class: "mc-row" }, h("div", { class: "mc-row-main" }, h("b", { title: t.project }, t.project),
+          h("span", { class: "muted small" }, `opened ${fmtRelative(t.openedAt)}`)), h("div", { class: "mc-row-side" }, h("span", { class: "badge recruiting" }, "open")))),
+        ...c.pastTickets.map(t => { const [cls, label] = OUT[t.outcome] || ["wait", t.outcome];
+          return h("div", { class: "mc-row" }, h("div", { class: "mc-row-main" }, h("b", { title: t.project }, t.project),
+            h("span", { class: "muted small", title: t.by ? `by ${t.by}` : "" }, [date(t.closedAt), t.by ? `by ${t.by}` : null].filter(Boolean).join(" · "))),
+            h("div", { class: "mc-row-side" }, h("span", { class: `badge ${cls}` }, label))); })])
         : none("No tickets."))));
 }
 
