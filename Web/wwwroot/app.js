@@ -4273,12 +4273,14 @@ function rolePanelEditor(p, emojis, groups = [], defaultProject = "") {
 
 // ================= Panel texts =================
 
-async function pageTexts(main) {
-  main.append(h("div", { class: "card-head" }, h("h1", {}, "📝 Panel texts"),
-    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
-  main.append(h("p", { class: "muted" },
-    "Edit the text of the panels the bot posts and the button labels of group posts and tickets. Saving updates what is already posted. ",
-    "Panels posted before this feature are unknown to the bot — click “Find posted panels” once to pick them up."));
+async function pageTexts(main, keys = null) {
+  if (!keys) {
+    main.append(h("div", { class: "card-head" }, h("h1", {}, "📝 Panel texts"),
+      h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
+    main.append(h("p", { class: "muted" },
+      "Edit the text of the panels the bot posts and the button labels of group posts and tickets. Saving updates what is already posted. ",
+      "Panels posted before this feature are unknown to the bot — click “Find posted panels” once to pick them up."));
+  }
 
   const discover = h("button", { class: "btn secondary" }, "🔍 Find posted panels");
   discover.addEventListener("click", async () => {
@@ -4293,7 +4295,7 @@ async function pageTexts(main) {
   const holder = h("div", {}, h("div", { class: "muted" }, "Loading…"));
   main.append(holder);
   try {
-    const panels = await gApi("GET", "/texts");
+    const panels = (await gApi("GET", "/texts")).filter(p => !keys || keys.includes(p.key));
     holder.replaceChildren(...panels.map(textCard));
   } catch (e) { holder.replaceChildren(empty(e.message)); }
 }
@@ -4402,17 +4404,20 @@ const BOT_TEXT_ICONS = [["LFG — group post", "swords"], ["LFG — creating", "
   ["Tickets — creating", "clipboard-list"], ["Tickets — approve", "shield-check"], ["Temp voice", "headphones"],
   ["Characters", "users"], ["Verification", "bot"]];
 
-async function pageBotTexts(main) {
-  main.append(h("div", { class: "card-head" }, h("h1", {}, "💬 Bot messages"),
-    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
-  main.append(h("p", { class: "muted" },
-    "Every text the bot writes to members — replies, DMs, group posts, ticket messages, menus, buttons and windows — and the stripe colors of its messages. ",
-    "Words in {braces} are filled in by the bot. Empty field = default text; in fields marked “- = hide” a single - removes the line."));
+async function pageBotTexts(main, groupFilter = null) {
+  if (!groupFilter) {
+    main.append(h("div", { class: "card-head" }, h("h1", {}, "💬 Bot messages"),
+      h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
+    main.append(h("p", { class: "muted" },
+      "Every text the bot writes to members — replies, DMs, group posts, ticket messages, menus, buttons and windows — and the stripe colors of its messages. ",
+      "Words in {braces} are filled in by the bot. Empty field = default text; in fields marked “- = hide” a single - removes the line."));
+  }
 
   const holder = h("div", {}, skeletonLines(4));
   main.append(holder);
   let items;
   try { items = await gApi("GET", "/texts/bot"); } catch (e) { holder.replaceChildren(empty(e.message)); return; }
+  if (groupFilter) items = items.filter(i => groupFilter(i.group));
 
   const dirty = new Map(); // key → new value ("" = back to default)
   const rows = [];
@@ -4444,7 +4449,9 @@ async function pageBotTexts(main) {
     const ic = (BOT_TEXT_ICONS.find(([p]) => g.name.startsWith(p)) || [, "message-square-text"])[1];
     const body = h("div", { class: "bt-list" });
     const badge = h("span", { class: "badge wait" });
-    const head = h("button", { type: "button", class: "bt-head" }, toneChip(ic, 16), h("b", {}, g.name),
+    // Внутри модуля название группы без префикса модуля («LFG — signing up» → «Signing up»)
+    const shown = groupFilter && groupFilter !== ALL_TEXT_GROUPS && /\s—\s/.test(g.name) ? g.name.replace(/^[^—]+—\s*/, "").replace(/^./, c => c.toUpperCase()) : g.name;
+    const head = h("button", { type: "button", class: "bt-head" }, toneChip(ic, 16), h("b", {}, shown),
       h("span", { class: "muted small" }, `${g.items.length} texts`), badge, h("span", { class: "bt-chevron" }, icon("chevron-down", 18)));
     const card = h("div", { class: "card bt-card" }, head, body);
     // Group post / ticket message texts: the bot builds a sample message with the unsaved texts
@@ -5257,20 +5264,61 @@ async function applyDialog() {
 
 // ================= Admin: panels & posts =================
 
+/** Тексты по модулям: в каждом — тексты панелей модуля и все его сообщения бота. «All» — всё сразу (поиск по всему). */
+const TEXT_MODULES = [
+  ["lfg", "LFG", "swords", ["lfg", "lfgpost"], g => g.startsWith("LFG")],
+  ["tickets", "Tickets", "ticket", ["tickets", "ticketmsg"], g => g.startsWith("Tickets")],
+  ["voice", "Temp Voice", "headphones", ["rooms"], g => g.startsWith("Temp voice")],
+  ["chars", "Characters", "users", [], g => g.startsWith("Characters")],
+  ["community", "Welcome & role panels", "door-open", [], g => g.startsWith("Welcome")],
+  ["birthdays", "Birthdays", "cake", [], g => g.startsWith("Birthdays")],
+  ["captcha", "Verification", "shield-check", [], g => g.startsWith("Verification")],
+];
+const TEXT_MODULE_OTHER = g => !TEXT_MODULES.some(m => m[4](g));
+const ALL_TEXT_GROUPS = () => true;
+
 async function pageContent(main) {
   const saved = store.get("gb.content");
-  const sub = saved === "posts" && can("posts") ? "posts" : saved === "bottexts" && can("texts") ? "bottexts" : can("texts") ? "texts" : "posts";
-  const tabsRow = h("div", { class: "tabs" },
-    can("texts") ? h("button", { class: `btn secondary${sub === "texts" ? " active-tab" : ""}`, onclick: () => { store.set("gb.content", "texts"); refresh(); } }, "📝 Panel texts") : null,
-    can("texts") ? h("button", { class: `btn secondary${sub === "bottexts" ? " active-tab" : ""}`, onclick: () => { store.set("gb.content", "bottexts"); refresh(); } }, "💬 Bot messages") : null,
+  const sub = saved === "posts" && can("posts") ? "posts" : can("texts") ? "texts" : "posts";
+  const top = h("div", { class: "tabs" },
+    can("texts") ? h("button", { class: `btn secondary${sub === "texts" ? " active-tab" : ""}`, onclick: () => { store.set("gb.content", "texts"); refresh(); } }, "📝 Texts by module") : null,
     can("posts") ? h("button", { class: `btn secondary${sub === "posts" ? " active-tab" : ""}`, onclick: () => { store.set("gb.content", "posts"); refresh(); } }, "📌 Posts & messages") : null);
-  main.append(h("div", { class: "card-head" }, h("h1", {}, "📌 Panels & posts")), tabsRow);
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "📌 Panels & posts"),
+    h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")), top);
   const inner = h("div", {});
   main.append(inner);
-  await (sub === "texts" ? pageTexts(inner) : sub === "bottexts" ? pageBotTexts(inner) : pagePosts(inner));
-  // The section's own heading becomes a sub-heading
-  const h1 = inner.querySelector("h1");
-  if (h1) h1.replaceWith(h("h2", { class: "sub-title" }, h1.textContent.replace(/^[^\p{L}\p{N}]+/u, "")));
+  if (sub === "posts") {
+    await pagePosts(inner);
+    const h1 = inner.querySelector("h1");
+    if (h1) h1.replaceWith(h("h2", { class: "sub-title" }, h1.textContent.replace(/^[^\p{L}\p{N}]+/u, "")));
+    return;
+  }
+
+  // Модуль: вкладки второго уровня (как подпроекты в тикетах)
+  const mods = [...TEXT_MODULES, ["general", "General", "settings", [], TEXT_MODULE_OTHER], ["all", "All texts", "search", null, null]];
+  let mod = store.get("gb.textsModule") || "lfg";
+  if (!mods.some(m => m[0] === mod)) mod = "lfg";
+  inner.append(h("div", { class: "tabs sub-tabs" }, mods.map(([k, label, ic]) =>
+    h("button", { class: `btn secondary sm${k === mod ? " active-tab" : ""}`, onclick: async () => { if (!await leavePage()) return; store.set("gb.textsModule", k); renderShell(); } },
+      icon(ic, 14), label))));
+  inner.append(h("p", { class: "muted small" },
+    "Each module has its panels (the posted messages with buttons) and its bot messages — replies, DMs, posts, menus, buttons, windows and stripe colors. ",
+    "Words in {braces} are filled in by the bot. Empty field = default text; “- = hide” fields: a single - removes the line. Saving updates what is already posted."));
+
+  const m = mods.find(x => x[0] === mod);
+  if (mod === "all") {
+    inner.append(sectionLabel("Panels"));
+    await pageTexts(inner, ["lfg", "lfgpost", "tickets", "ticketmsg", "rooms"]);
+    inner.append(sectionLabel("Bot messages"));
+    await pageBotTexts(inner, ALL_TEXT_GROUPS);
+    return;
+  }
+  if (m[3].length) {
+    inner.append(sectionLabel(`${m[1]} — panels`));
+    await pageTexts(inner, m[3]);
+  }
+  inner.append(sectionLabel(`${m[1]} — bot messages`));
+  await pageBotTexts(inner, m[4]);
 }
 
 // ================= Member: groups =================
@@ -5962,7 +6010,7 @@ async function pageBirthdays(main) {
           h("div", { class: "field" }, h("label", {}, "Text"), text),
           h("div", { class: "grid2" }, h("div", { class: "field" }, h("label", {}, "Button text"), btnText),
             h("div", { class: "field" }, h("label", {}, "Color"), color.el)),
-          h("p", { class: "muted small" }, "The title links to the bot website (“ | Bot Website” is added, like on the other panels). The window and replies after pressing the button are in Panels & posts → Bot messages → “Birthdays — /birthday”.")),
+          h("p", { class: "muted small" }, "The title links to the bot website (“ | Bot Website” is added, like on the other panels). The window and replies after pressing the button are in Panels & posts → Texts by module → Birthdays.")),
         h("div", { class: "editor-preview" }, preview)),
       h("div", { class: "row", style: "gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px" }, ch, post, save, remove));
   }
@@ -6978,7 +7026,7 @@ const HELP = {
     panel: [["Using it", [
       "**New role panel** → 1. Message, 2. items (+ Button / + Reaction / + List item, then pick the roles each one gives), 3. how it works → **Create**. The preview updates as you type.",
       "On a panel card: **Post / Repost** in a channel, **Edit** (a posted panel updates at once), **Copy**, **Delete** (removes the message too).",
-      "Texts of the bot's answers and the hints: Panels & posts → 💬 Bot messages → Welcome & role panels."
+      "Texts of the bot's answers and the hints: Panels & posts → 📝 Texts by module → Welcome & role panels."
     ]]]
   },
   texts: {
@@ -6992,7 +7040,8 @@ const HELP = {
       "**Stripe color** — the colored line on the left of each panel (the swatch, a #hex code, or ↩ for the default)."
     ]], ["Bot messages", [
       "**💬 Bot messages** — every other text the bot writes: replies, DMs, group posts, ticket messages, reminders, menu placeholders, buttons and window (modal) titles and fields.",
-      "Grouped by module; search finds a text by its name or words, **Only changed** shows what you edited.",
+      "**📝 Texts by module** — a tab per module (LFG, Tickets, Temp Voice, Characters, Welcome & role panels, Birthdays, Verification, General): its panels first, then its bot messages. **All texts** — everything at once, for searching.",
+      "Search finds a text by its name or words, **Only changed** shows what you edited.",
       "Words in `{braces}` are filled in by the bot — keep them where you need the value. In fields marked “- = hide”, a single `-` removes the line.",
       "Stripe colors of group posts (recruiting / full / closed), tickets, DMs, invites and the verification are set here too.",
       "**Save** in the bar at the bottom saves everything at once; texts of group posts and ticket messages update the active posts right away. ↩ returns one text to the default, **Reset all to default** — every text."
