@@ -310,49 +310,68 @@ document.addEventListener("click", e => {
 
 async function memberCard(userId) {
   const d = dialog();
+  // The dialog element is shared: drop the look of whatever used it before (search, wide editors)
+  d.classList.remove("qs-dialog", "wide", "xwide", "page-dialog");
   d.classList.add("member-card-dialog");
   d.onclose = () => d.classList.remove("member-card-dialog");
-  d.replaceChildren(h("div", { class: "muted" }, "Loading…"));
+  d.replaceChildren(h("div", { class: "mc-loading" }, h("span", { class: "mc-avatar mc-skel" }), h("div", { class: "muted" }, "Loading…")));
   if (!d.open) d.showModal();
   let c;
   try { c = await gApi("GET", `/members/${userId}/card`); } catch (e) { d.replaceChildren(empty(e.message)); return; }
   const m = c.member;
+  const accent = (c.roles.find(r => r.color && r.color !== "#000000" && r.color !== "#99aab5") || {}).color || "#8b6cff";
+  d.style.setProperty("--mc", accent);
   const date = ms => ms ? new Date(ms).toLocaleDateString() : "—";
   const ago = ms => ms ? fmtRelative(ms) : "never";
-  const sec = (ic, title, ...body) => h("section", { class: "mc-sec" }, h("h3", {}, icon(ic, 15), title), ...body);
-  const stat = (label, value, cls = "") => h("div", { class: `mc-stat ${cls}` }, h("b", {}, value), h("span", {}, label));
-  const bd = c.birthday ? `${String(c.birthday.day).padStart(2, "0")}.${String(c.birthday.month).padStart(2, "0")}${c.birthday.year ? "." + c.birthday.year : ""}` : null;
+  const none = text => h("div", { class: "mc-none" }, text);
+  const sec = (ic, tone, title, count, body) => h("section", { class: `mc-sec tone-${tone}` },
+    h("h3", {}, h("span", { class: "mc-sec-ic" }, icon(ic, 14)), title, count != null ? h("span", { class: "mc-count" }, String(count)) : null), body);
+  const stat = (ic, label, value, cls = "") => h("div", { class: `mc-stat ${cls}` }, h("span", { class: "mc-stat-ic" }, icon(ic, 15)),
+    h("div", { class: "mc-stat-body" }, h("b", { title: value }, value), h("span", {}, label)));
+  const bd = c.birthday ? `${String(c.birthday.day).padStart(2, "0")}.${String(c.birthday.month).padStart(2, "0")}${c.birthday.year ? "." + c.birthday.year : ""}` : "—";
   const OUT = { approved: ["ok", "Approved"], denied: ["lock", "Denied"], closed: ["wait", "Closed"] };
+  const at = c.attendance;
   d.replaceChildren(
+    h("div", { class: "mc-banner" },
+      h("button", { class: "btn ghost icon-only sm mc-close", title: "Close", "aria-label": "Close", onclick: () => d.close() }, icon("x", 16))),
     h("div", { class: "mc-head" },
-      m.avatarUrl ? h("img", { class: "mc-avatar", src: m.avatarUrl, alt: "" }) : h("span", { class: "mc-avatar" }),
-      h("div", { class: "mc-who" }, h("h2", {}, m.name), h("div", { class: "muted small" }, m.username ? `@${m.username}` : "", " · ", m.id),
+      h("div", { class: `mc-avatar-wrap${c.voiceNow ? " in-voice" : ""}` },
+        m.avatarUrl ? h("img", { class: "mc-avatar", src: m.avatarUrl, alt: "" }) : h("span", { class: "mc-avatar" }),
+        c.voiceNow ? h("span", { class: "mc-voice-dot", title: `In voice: ${c.voiceNow}` }, icon("volume-2", 11)) : null),
+      h("div", { class: "mc-who" }, h("h2", {}, m.name),
+        h("div", { class: "mc-handle" }, m.username ? `@${m.username}` : "", h("span", { class: "mc-id", title: "Copy ID",
+          onclick: () => { navigator.clipboard?.writeText(m.id); toast("ID copied."); } }, m.id)),
         m.onServer ? null : h("span", { class: "badge lock" }, "left the server")),
-      h("a", { class: "btn secondary sm", href: `https://discord.com/users/${m.id}`, target: "_blank", rel: "noopener" }, icon("external-link", 14), "Discord"),
-      h("button", { class: "btn ghost icon-only sm", title: "Close", "aria-label": "Close", onclick: () => d.close() }, icon("x", 16))),
-    h("div", { class: "mc-stats" },
-      stat("joined", date(c.joinedAt)), stat("last message", ago(c.lastMessage)), stat("last voice", c.voiceNow ? `🔊 ${c.voiceNow}` : ago(c.lastVoice)),
-      stat("birthday", bd || "—")),
+      h("a", { class: "btn secondary sm mc-discord", href: `https://discord.com/users/${m.id}`, target: "_blank", rel: "noopener" }, icon("external-link", 14), "Discord")),
     c.roles.length ? h("div", { class: "chip-wrap mc-roles" }, c.roles.map(r => roleChip(r))) : null,
-    sec("user-round", `Characters · ${c.characters.length}`, c.characters.length ? h("div", { class: "mc-list" }, c.characters.map(ch =>
-      h("div", { class: "mc-row" }, h("b", {}, ch.name), ch.classRole ? roleChip(ch.classRole) : null,
-        h("span", { class: "muted small" }, ch.project), h("span", { class: "spacer" }),
-        ch.gs ? h("span", { class: "gs" }, `GS ${ch.gs}`) : null, ch.cp ? h("span", { class: "gs cp" }, `CP ${fmtCp(ch.cp)}`) : null))) : h("div", { class: "muted small" }, "No characters.")),
-    sec("swords", `Groups now · ${c.groups.length}`, c.groups.length ? h("div", { class: "mc-list" }, c.groups.map(g =>
-      h("div", { class: "mc-row" }, h("b", {}, g.activity), g.organizer ? h("span", { class: "badge ok" }, icon("crown", 12), "organizer") : null,
-        g.reserve ? h("span", { class: "badge wait" }, "reserve") : null, g.character ? h("span", { class: "muted small" }, g.character) : null,
-        h("span", { class: "spacer" }), h("span", { class: "muted small" }, g.startsAt ? fmtDate(g.startsAt) : "no time")))) : h("div", { class: "muted small" }, "Not in any group.")),
-    sec("calendar-clock", "Attendance · 90 days", c.attendance ? h("div", { class: "mc-stats" },
-      stat("groups", String(c.attendance.groups)), stat("organized", String(c.attendance.organized)),
-      stat("came", String(c.attendance.attended), "ok"), stat("no-show", String(c.attendance.noShows), c.attendance.noShows ? "no" : ""),
-      stat("reliability", c.attendance.rate == null ? "—" : `${c.attendance.rate}%`)) : h("div", { class: "muted small" }, "No groups in the last 90 days.")),
-    sec("ticket", "Tickets", c.openTickets.length || c.pastTickets.length ? h("div", { class: "mc-list" },
-      c.openTickets.map(t => h("div", { class: "mc-row" }, h("b", {}, t.project), h("span", { class: "badge recruiting" }, "open"),
-        h("span", { class: "spacer" }), h("span", { class: "muted small" }, fmtRelative(t.openedAt)))),
-      c.pastTickets.map(t => { const [cls, label] = OUT[t.outcome] || ["wait", t.outcome];
-        return h("div", { class: "mc-row" }, h("span", {}, t.project), h("span", { class: `badge ${cls}` }, label),
-          t.by ? h("span", { class: "muted small" }, `by ${t.by}`) : null, h("span", { class: "spacer" }), h("span", { class: "muted small" }, date(t.closedAt))); }))
-      : h("div", { class: "muted small" }, "No tickets.")));
+    h("div", { class: "mc-stats" },
+      stat("calendar", "joined", date(c.joinedAt)),
+      stat("message-square-text", "last message", ago(c.lastMessage)),
+      stat("headphones", c.voiceNow ? "in voice now" : "last voice", c.voiceNow ? c.voiceNow : ago(c.lastVoice), c.voiceNow ? "live" : ""),
+      stat("cake", "birthday", bd, c.birthday ? "pink" : "")),
+    h("div", { class: "mc-grid" },
+      sec("user-round", "cyan", "Characters", c.characters.length, c.characters.length ? h("div", { class: "mc-list" }, c.characters.map(ch =>
+        h("div", { class: "mc-row" }, h("b", {}, ch.name), ch.classRole ? roleChip(ch.classRole) : null,
+          h("span", { class: "muted small" }, ch.project), h("span", { class: "spacer" }),
+          ch.gs ? h("span", { class: "gs" }, `GS ${ch.gs}`) : null, ch.cp ? h("span", { class: "gs cp" }, `CP ${fmtCp(ch.cp)}`) : null))) : none("No characters yet.")),
+      sec("swords", "violet", "Groups now", c.groups.length, c.groups.length ? h("div", { class: "mc-list" }, c.groups.map(g =>
+        h("div", { class: "mc-row" }, h("b", {}, g.activity), g.organizer ? h("span", { class: "badge ok" }, icon("crown", 12), "organizer") : null,
+          g.reserve ? h("span", { class: "badge wait" }, "reserve") : null, g.character ? h("span", { class: "muted small" }, g.character) : null,
+          h("span", { class: "spacer" }), h("span", { class: "muted small" }, g.startsAt ? fmtDate(g.startsAt) : "no time")))) : none("Not in any group right now.")),
+      sec("calendar-clock", "teal", "Attendance · 90 days", null, at ? h("div", {},
+        h("div", { class: "mc-att" },
+          h("div", { class: "mc-att-bar" }, h("i", { class: "ok", style: `width:${at.groups ? 100 * at.attended / at.groups : 0}%` }),
+            h("i", { class: "no", style: `width:${at.groups ? 100 * at.noShows / at.groups : 0}%` })),
+          h("b", { class: "mc-att-rate" }, at.rate == null ? "—" : `${at.rate}%`)),
+        h("div", { class: "muted small" }, `${at.groups} group(s) · ${at.organized} organized · ${at.attended} came · ${at.noShows} no-show · ${at.unmarked} unmarked`))
+        : none("No groups in the last 90 days.")),
+      sec("ticket", "amber", "Tickets", c.openTickets.length + c.pastTickets.length, c.openTickets.length || c.pastTickets.length ? h("div", { class: "mc-list" },
+        c.openTickets.map(t => h("div", { class: "mc-row" }, h("b", {}, t.project), h("span", { class: "badge recruiting" }, "open"),
+          h("span", { class: "spacer" }), h("span", { class: "muted small" }, fmtRelative(t.openedAt)))),
+        c.pastTickets.map(t => { const [cls, label] = OUT[t.outcome] || ["wait", t.outcome];
+          return h("div", { class: "mc-row" }, h("span", {}, t.project), h("span", { class: `badge ${cls}` }, label),
+            t.by ? h("span", { class: "muted small" }, `by ${t.by}`) : null, h("span", { class: "spacer" }), h("span", { class: "muted small" }, date(t.closedAt))); }))
+        : none("No tickets."))));
 }
 
 /** Подтверждение опасного действия вводом слова (имени): кнопка активна, только когда введено верно. */
@@ -1949,6 +1968,7 @@ const searchCache = { at: 0, guild: null, groups: [], tickets: [] };
 async function quickSearch() {
   const d = dialog();
   if (d.open && d.classList.contains("qs-dialog")) return;
+  d.classList.remove("member-card-dialog", "wide", "xwide", "page-dialog");
   d.classList.add("qs-dialog");
   d.onclose = () => d.classList.remove("qs-dialog");
   const input = h("input", { type: "search", placeholder: "Search pages, members, groups, tickets…", autocomplete: "off", "aria-label": "Search" });
