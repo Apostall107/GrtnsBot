@@ -7679,7 +7679,9 @@ function achievementsCard(d) {
       h("span", { class: "ach-icon" }, a.icon),
       h("div", { class: "ach-text" },
         h("div", { class: "ach-top" }, h("b", {}, a.title), h("span", { class: "ach-grade" }, a.gradeName)),
-        small ? null : h("span", { class: "muted small" }, a.next ? a.description : `${a.description} — max grade!`),
+        // what was done for the current grade, then how far the next one is
+        small ? null : h("span", { class: "muted small" }, a.description),
+        h("span", { class: "ach-next" }, a.next ? `${a.value} / ${a.next} → ${a.nextGrade || "next grade"}` : `${a.value} · max grade!`),
         h("div", { class: "ach-bar", title: a.next ? `${a.value} / ${a.next}` : `${a.value}` },
           h("i", { style: `width:${a.next ? Math.min(100, Math.round((a.value - a.prev) / (a.next - a.prev) * 100)) : 100}%` })),
         h("span", { class: "ach-pips" }, Array.from({ length: a.maxGrade }, (_, i) => h("i", { class: i < a.grade ? `on g${i + 1}` : "" })))))

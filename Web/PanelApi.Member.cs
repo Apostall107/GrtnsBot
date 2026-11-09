@@ -371,7 +371,7 @@ public static partial class PanelApi
                     return new
                     {
                         id = a.Id, group = a.Group, unlocked = true, icon = a.Icon, title = a.Title, grade = g, gradeName = MascotStatsStore.GradeNames[g - 1],
-                        description = string.Format(a.Description, next ?? a.Tiers[^1]), value = v, prev = a.Tiers[g - 1], next, maxGrade = a.Tiers.Length
+                        description = string.Format(a.Description, a.Tiers[g - 1]), nextGrade = next is null ? null : MascotStatsStore.GradeNames[g], value = v, prev = a.Tiers[g - 1], next, maxGrade = a.Tiers.Length
                     };
                 })
             });
