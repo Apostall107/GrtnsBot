@@ -404,7 +404,7 @@ public static partial class PanelApi
                 Rank("spells", "Spells seen", "✨", x => x.Spells.Values.Sum()),
                 Rank("kinds", "Different spells", "📖", x => x.Spells.Count(kv => kv.Value > 0)),
                 Rank("legendary", "Legendary casts", "🌟", x => x.Legendary),
-                Rank("achievements", "Achievement grades", "🏆", x => MascotStatsStore.All.Sum(a => a.Grade(x))),
+                Rank("achievements", "Grade points", "🏆", x => MascotStatsStore.All.Sum(a => a.Points(x))),
             };
             return Results.Ok(new
             {
@@ -415,15 +415,16 @@ public static partial class PanelApi
                     : new { key = x.Key, icon = "❔", name = "???", count = 0 }),
                 total = MascotStatsStore.All.Count,
                 grades = MascotStatsStore.GradeNames,
-                points = MascotStatsStore.All.Sum(a => a.Grade(s)),
-                maxPoints = MascotStatsStore.All.Sum(a => a.Tiers.Length),
+                points = MascotStatsStore.All.Sum(a => a.Points(s)),
+                maxPoints = MascotStatsStore.All.Sum(a => a.MaxPoints),
+                multipliers = new[] { 1, 2, 5, 50 },
                 // graded: grade 1..7 (rarity colour), progress to the next grade; locked ones come without any text
                 achievements = MascotStatsStore.All.Select(a =>
                 {
                     var g = a.Grade(s);
                     // General and Guild ones are open goals: shown even before they're earned; the rest stay hidden ???
                     if (g == 0) return a.Group is "general" or "guild"
-                        ? new { id = a.Id, group = a.Group, unlocked = false, visible = true, tierClass = a.Group == "spells" || a.Id == "kinds" ? 2 : 1, icon = a.Icon, title = a.Title,
+                        ? new { id = a.Id, group = a.Group, unlocked = false, visible = true, tierClass = a.TierClass, icon = a.Icon, title = a.Title,
                             description = string.Format(a.Description, a.Tiers[0]).Replace(" 1 times", " once"), value = a.Value(s), next = a.Tiers[0], maxGrade = a.Tiers.Length }
                         : (object)new { id = a.Id, group = a.Group, unlocked = false };
                     var v = a.Value(s);
@@ -435,7 +436,7 @@ public static partial class PanelApi
                     {
                         // achievement class: I — common climbs (×2 from 5), II — rare (single spells, Grimoire), III — legendary casts
                         // IV — anything with the ultra-rare poop barrage
-                        tierClass = a.Id.Contains(MascotStatsStore.UltraRare) ? 4 : ReferenceEquals(a.Tiers, MascotStatsStore.LegendTiers) || a.Group is "legend" or "combos" ? 3 : a.Group == "spells" || a.Id == "kinds" ? 2 : 1,
+                        tierClass = a.TierClass, points = a.Points(s),
                         id = a.Id, group = a.Group, unlocked = true, icon = a.Icon, title = a.Title, grade = g, gradeName = MascotStatsStore.GradeNames[g - 1],
                         rank = 1 + vals.Count(x => x.V > v), of = vals.Count, top,
                         description = string.Format(a.Description, a.Tiers[g - 1]).Replace(" 1 times", " once"), nextGrade = next is null ? null : MascotStatsStore.GradeNames[g], value = v, prev = a.Tiers[g - 1], next, maxGrade = a.Tiers.Length

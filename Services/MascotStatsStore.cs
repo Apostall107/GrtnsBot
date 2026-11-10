@@ -73,6 +73,16 @@ public sealed class MascotStats
 public sealed record MascotAchievement(string Id, string Group, string Icon, string Title, string Description, int[] Tiers, Func<MascotStats, int> Value)
 {
     public int Grade(MascotStats s) { var v = Value(s); return Tiers.Count(t => v >= t); }
+
+    /// <summary>Achievement class: I common, II rare (single spells, Grimoire), III legendary (legendary casts, special robots), IV ultra rare (the poop barrage).</summary>
+    public int TierClass => Id.Contains(MascotStatsStore.UltraRare) ? 4
+        : ReferenceEquals(Tiers, MascotStatsStore.LegendTiers) || Group is "legend" or "combos" ? 3
+        : Group == "spells" || Id == "kinds" ? 2 : 1;
+
+    /// <summary>Grade points per grade by class: I ×1, II ×2, III ×5, IV ×50.</summary>
+    public int Multiplier => TierClass switch { 4 => 50, 3 => 5, 2 => 2, _ => 1 };
+    public int Points(MascotStats s) => Grade(s) * Multiplier;
+    public int MaxPoints => Tiers.Length * Multiplier;
     public bool Done(MascotStats s) => Grade(s) > 0;
 }
 
