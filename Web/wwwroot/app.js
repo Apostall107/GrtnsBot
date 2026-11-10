@@ -8333,6 +8333,42 @@ function rankingCard(rows) {
           : h("div", { class: "muted small" }, "Nobody yet — be the first!"))))));
 }
 
+/** Everyone on the server by grade points (opened from the Achievements card); my row is highlighted and scrolled to. */
+function leaderboardDialog(d) {
+  const rows = d.leaderboard || [], top = Math.max(1, ...rows.map(r => r.points)), my = rows.find(r => r.me);
+  const dlg = dialog();
+  dlg.classList.remove("qs-dialog", "wide", "xwide", "page-dialog", "member-card-dialog");
+  dlg.classList.add("lb-dialog");
+  dlg.onclose = () => dlg.classList.remove("lb-dialog");
+  const medal = r => ["🥇", "🥈", "🥉"][r - 1];
+  const search = h("input", { type: "search", class: "lb-search", placeholder: "Find a player…", "aria-label": "Find a player" });
+  const list = h("div", { class: "lb-list" });
+  const draw = () => {
+    const q = search.value.trim().toLowerCase();
+    const shown = rows.filter(r => !q || (r.member.name || "").toLowerCase().includes(q));
+    list.replaceChildren(...(shown.length ? shown.map(r => h("div", { class: `lb-row${r.me ? " me" : ""}${r.rank <= 3 && r.points > 0 ? ` top${r.rank}` : ""}` },
+      h("span", { class: "lb-pos" }, r.points > 0 && r.rank <= 3 ? medal(r.rank) : r.points > 0 ? `#${r.rank}` : "—"),
+      r.member.avatarUrl ? h("img", { class: "avatar", src: r.member.avatarUrl, alt: "" }) : h("span", { class: "avatar" }),
+      h("div", { class: "lb-who" },
+        h("div", { class: "lb-name" }, h("span", { class: "lb-nm" }, r.member.name), r.me ? h("span", { class: "lb-you" }, "you") : null),
+        h("div", { class: "lb-bar" }, h("i", { style: `width:${(r.points / top * 100).toFixed(1)}%` }))),
+      h("div", { class: "lb-meta", title: `${r.unlocked} achievements unlocked${r.mythic ? ` · ${r.mythic} at Mythic grade` : ""}` },
+        h("b", {}, r.points.toLocaleString()), h("span", { class: "muted small" }, `🏆 ${r.unlocked}${r.mythic ? ` · 💎 ${r.mythic}` : ""}`))))
+      : [h("div", { class: "muted", style: "padding:12px" }, q ? "Nobody by that name." : "Nobody has grade points yet.")]));
+  };
+  search.addEventListener("input", draw);
+  draw();
+  dlg.replaceChildren(
+    h("div", { class: "lb-head" }, h("h2", {}, "🏅 Leaderboard · grade points"),
+      h("button", { class: "btn ghost icon-only", title: "Close", "aria-label": "Close", onclick: () => dlg.close() }, "✕")),
+    h("p", { class: "muted small" }, my && my.points > 0 ? `You're #${my.rank} of ${rows.filter(r => r.points > 0).length} with ${my.points.toLocaleString()} points.` : "Earn achievements to get on the board.",
+      " Points = grade × tier multiplier, summed over all achievements. 🏆 unlocked · 💎 at Mythic grade."),
+    search, list);
+  if (!dlg.open) dlg.showModal();
+  const mine = list.querySelector(".lb-row.me");
+  if (mine) mine.scrollIntoView({ block: "center" });
+}
+
 async function pageAchievements(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "🏆 Achievements"),
     h("button", { class: "btn btn-refresh", title: "Reload", onclick: hardRefresh }, "🔄 Refresh")),
@@ -8348,7 +8384,8 @@ async function pageAchievements(main) {
       statCard("bot", "Robots caught", d.caught, d.quick ? `${d.quick} before it got tired` : "catch it when it flies by"),
       statCard("sparkles", "Spells seen", d.spells.reduce((a, s) => a + s.count, 0), `${seen} of ${d.spells.length} different`),
       statCard("star", "Legendary casts", d.legendary, "two spells at once"),
-      statCard("trophy", "Achievements", `${got}/${d.achievements.length}`, `${d.points ?? 0} of ${d.maxPoints ?? 0} grade points`)),
+      statCard("trophy", "Achievements", `${got}/${d.achievements.length}`,
+        [`${d.points ?? 0} of ${d.maxPoints ?? 0} grade points`, h("span", { class: "stat-link" }, "🏅 Leaderboard ›")], () => leaderboardDialog(d))),
     rankingCard(d.ranking || []),
     h("div", { class: "card" }, h("h2", {}, "📖 Spellbook"),
       h("div", { class: "spellbook" }, d.spells.map(s => h("div", { class: `spell-tile${s.count ? "" : " locked"}`, title: s.count ? `${s.name}: seen ${s.count}×` : "Not seen yet" },

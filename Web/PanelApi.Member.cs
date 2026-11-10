@@ -406,9 +406,18 @@ public static partial class PanelApi
                 Rank("legendary", "Legendary casts", "🌟", x => x.Legendary),
                 Rank("achievements", "Grade points", "🏆", x => MascotStatsStore.All.Sum(a => a.Points(x))),
             };
+            // Full leaderboard by grade points (the Achievements card opens it): everyone with points, plus me; ties share a place
+            var board = all.Select(x => (x.UserId, Points: MascotStatsStore.All.Sum(a => a.Points(x.Stats)), Unlocked: MascotStatsStore.All.Count(a => a.Grade(x.Stats) > 0),
+                    Mythic: MascotStatsStore.All.Count(a => a.Grade(x.Stats) >= MascotStatsStore.GradeNames.Length)))
+                .Where(x => x.Points > 0 || x.UserId == me).OrderByDescending(x => x.Points).ThenByDescending(x => x.Unlocked).ToList();
+            var leaderboard = board.Select(x => new
+            {
+                rank = 1 + board.Count(y => y.Points > x.Points), member = Member(guild, x.UserId), points = x.Points,
+                unlocked = x.Unlocked, mythic = x.Mythic, me = x.UserId == me
+            });
             return Results.Ok(new
             {
-                ranking,
+                ranking, leaderboard,
                 caught = s.Caught, quick = s.QuickCatches, escaped = s.Escaped, legendary = s.Legendary,
                 spells = MascotStatsStore.Spells.Select(x => s.Spells.GetValueOrDefault(x.Key) is var n && n > 0
                     ? new { key = x.Key, icon = x.Icon, name = x.Name, count = n }
