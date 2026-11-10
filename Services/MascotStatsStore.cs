@@ -84,13 +84,20 @@ public sealed class MascotStatsStore
         ("hole", "🌀", "Black hole"), ("fire", "🔥", "Fireball"), ("bolt", "⚡", "Lightning"), ("rock", "🪨", "Stone barrage"),
         ("air", "🌪️", "Tornado"), ("ice", "❄️", "Ice storm"), ("meteor", "☄️", "Meteor"), ("water", "🌊", "Tidal wave"),
         ("seal", "👑", "Seal of Greatness"), ("acid", "☠️", "Acid cloud"), ("laser", "🔴", "Orbital beam"), ("claws", "🖤", "Shadow claws"),
-        ("glitch", "📺", "Glitch"), ("sakura", "🌸", "Sakura storm"), ("fireworks", "🎆", "Fireworks")
+        ("glitch", "📺", "Glitch"), ("sakura", "🌸", "Sakura storm"), ("fireworks", "🎆", "Fireworks"),
+        ("lava", "🌋", "Eruption"), ("bubbles", "🫧", "Bubbles"), ("eclipse", "🌑", "Eclipse"), ("spores", "🍄", "Spores"), ("portal", "🌌", "Portal"),
+        ("pixel", "👾", "Pixel art"), ("printer", "📠", "Printer"), ("banhammer", "🔨", "Banhammer"), ("money", "💸", "Money rain"), ("swarm", "🐝", "Swarm"),
+        ("rainbow", "🌈", "Rainbow"), ("leaves", "🍂", "Leaf storm"), ("tomato", "🍅", "Tomatoes"), ("poop", "💩", "Poop barrage")
     ];
+    /// <summary>The ultra-rare spell (5× rarer): its achievements are one-time, straight to Mythic, Tier IV.</summary>
+    public const string UltraRare = "poop";
 
     private static readonly string[] SpellTitles =
     [
         "Event Horizon", "Feel the Heat", "Thunderstruck", "Rock Bottom", "Gone with the Wind", "Brain Freeze", "Extinction Event",
-        "Wet Screen", "Sealed with Greatness", "Toxic", "Orbital Strike", "Scratched", "Have You Tried Turning It Off", "Hanami", "Celebration"
+        "Wet Screen", "Sealed with Greatness", "Toxic", "Orbital Strike", "Scratched", "Have You Tried Turning It Off", "Hanami", "Celebration",
+        "The Floor Is Lava", "Bubble Trouble", "Total Eclipse", "Fungal Bloom", "Now You See Me", "8-Bit Dreams", "Paper Jam", "Banned!", "Make It Rain",
+        "Buzzing", "Prismatic", "Autumn Breeze", "Tough Crowd", "Code Brown"
     ];
 
     /// <summary>Grades: grey, white, green, blue, purple, gold, orange.</summary>
@@ -153,21 +160,26 @@ public sealed class MascotStatsStore
             new("registered", "guild", "🪪", "Welcome to Greatness", "Register a character in My characters.", Once, s => Math.Min(1, s.Characters)),
             new("birthday", "guild", "🎂", "Birthday Registered", "Tell the bot your birthday.", Once, s => s.HasBirthday),
             new("spells", "general", "✨", "Spellbound", "See {0} spells in total.", PowerTiers, Total),
-            new("kinds", "general", "📖", "Grimoire", "See {0} different spells.", [1, 3, 5, 7, 10, 13, 15], Seen),
+            new("kinds", "general", "📖", "Grimoire", "See {0} different spells.", [1, 5, 10, 15, 20, 25, Spells.Length], Seen),
             new("legend", "legend", "🌟", "Legendary!", "Witness {0} legendary casts — two spells at once.", LegendTiers, s => s.Legendary),
         };
         for (var i = 0; i < Spells.Length; i++)
         {
             var key = Spells[i].Key;
-            list.Add(new($"spell-{key}", "spells", Spells[i].Icon, SpellTitles[i], $"See the robot cast {Spells[i].Name} {{0}} times.", SpellTiers, s => s.Spells.GetValueOrDefault(key)));
+            list.Add(key == UltraRare
+                ? new($"spell-{key}", "spells", Spells[i].Icon, SpellTitles[i], $"See the robot cast {Spells[i].Name} (ultra rare).", Once, s => Math.Min(1, s.Spells.GetValueOrDefault(key)))
+                : new($"spell-{key}", "spells", Spells[i].Icon, SpellTitles[i], $"See the robot cast {Spells[i].Name} {{0}} times.", SpellTiers, s => s.Spells.GetValueOrDefault(key)));
         }
         for (var i = 0; i < Spells.Length; i++)
         for (var j = i + 1; j < Spells.Length; j++)
         {
             var (a, b) = (Spells[i], Spells[j]);
             var combo = ComboKey(a.Key, b.Key);
-            list.Add(new($"combo-{combo}", "combos", $"{a.Icon}{b.Icon}", $"{a.Name} + {b.Name}", $"Witness the legendary cast {a.Name} + {b.Name} {{0}} times.",
-                LegendTiers, s => s.LegendCombos.GetValueOrDefault(combo)));
+            list.Add(a.Key == UltraRare || b.Key == UltraRare
+                ? new($"combo-{combo}", "combos", $"{a.Icon}{b.Icon}", $"{a.Name} + {b.Name}", $"Witness the ultra-rare legendary cast {a.Name} + {b.Name}.",
+                    Once, s => Math.Min(1, s.LegendCombos.GetValueOrDefault(combo)))
+                : new($"combo-{combo}", "combos", $"{a.Icon}{b.Icon}", $"{a.Name} + {b.Name}", $"Witness the legendary cast {a.Name} + {b.Name} {{0}} times.",
+                    LegendTiers, s => s.LegendCombos.GetValueOrDefault(combo)));
         }
         return list;
     }

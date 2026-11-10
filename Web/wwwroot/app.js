@@ -1619,7 +1619,17 @@ async function logout() {
 // The robot's escape spells (key, emoji, name) — also used by the owner's "Summon" buttons
 const SPELLS = [["hole", "🌀", "Black hole"], ["fire", "🔥", "Fireball"], ["bolt", "⚡", "Lightning"], ["rock", "🪨", "Stone barrage"], ["air", "🌪️", "Tornado"],
   ["ice", "❄️", "Ice storm"], ["meteor", "☄️", "Meteor"], ["water", "🌊", "Tidal wave"], ["seal", "👑", "Seal of Greatness"], ["acid", "☠️", "Acid cloud"],
-  ["laser", "🔴", "Orbital beam"], ["claws", "🖤", "Shadow claws"], ["glitch", "📺", "Glitch"], ["sakura", "🌸", "Sakura storm"], ["fireworks", "🎆", "Fireworks"]];
+  ["laser", "🔴", "Orbital beam"], ["claws", "🖤", "Shadow claws"], ["glitch", "📺", "Glitch"], ["sakura", "🌸", "Sakura storm"], ["fireworks", "🎆", "Fireworks"],
+  ["lava", "🌋", "Eruption"], ["bubbles", "🫧", "Bubbles"], ["eclipse", "🌑", "Eclipse"], ["spores", "🍄", "Spores"], ["portal", "🌌", "Portal"],
+  ["pixel", "👾", "Pixel art"], ["printer", "📠", "Printer"], ["banhammer", "🔨", "Banhammer"], ["money", "💸", "Money rain"], ["swarm", "🐝", "Swarm"],
+  ["rainbow", "🌈", "Rainbow"], ["leaves", "🍂", "Leaf storm"], ["tomato", "🍅", "Tomatoes"], ["poop", "💩", "Poop barrage", .2]];
+/** A random spell, weighted (the poop barrage is 5× rarer than the rest); `not` — a key to skip. */
+function pickSpell(not) {
+  const list = SPELLS.filter(x => x[0] !== not), total = list.reduce((a, x) => a + (x[3] ?? 1), 0);
+  let r = Math.random() * total;
+  for (const x of list) { r -= x[3] ?? 1; if (r <= 0) return x[0]; }
+  return list[0][0];
+}
 /** Achievements: site activity — a visit (once a day), quick search, Member tabs (each once). Fire and forget. */
 const siteTrack = (() => {
   const seen = new Set();
@@ -1661,9 +1671,9 @@ function summonButtons(after) {
     let forced = opts && typeof opts === "object" ? opts.finale : null;
     if (forced && busy) return toast("The robot is already flying — wait until it's gone.", "warn");
     if (busy || document.hidden || !state.me) return schedule();
-    if (forced === "random") forced = SPELLS[Math.floor(Math.random() * SPELLS.length)][0];
+    if (forced === "random") forced = pickSpell();
     // Escape: 40% a spell (1% legendary). Caught: 1.5× more — 60% (1.5% legendary), it strikes back as it vanishes.
-    const rollSpell = k => { const r = Math.random(); return r < .01 * k ? "legend" : r < .4 * k ? SPELLS[Math.floor(Math.random() * SPELLS.length)][0] : null; };
+    const rollSpell = k => { const r = Math.random(); return r < .01 * k ? "legend" : r < .4 * k ? pickSpell() : null; };
     const finale = forced || rollSpell(1);
     const M = BOT; // only our robot flies (the cat is retired)
     const A = area(), W = M.w, H = M.h;
@@ -1876,10 +1886,10 @@ function summonButtons(after) {
       setTimeout(() => { clearInterval(zap); svg.remove(); }, ALL + 200);
     }
     // Water drops on the "glass": they magnify a little, hang, then run down leaving a trail
-    function waterDrops(n, at) {
+    function waterDrops(n, at, variant) {
       for (let i = 0; i < n; i++) {
         const [x, y] = at(i), sz = 9 + Math.random() * 18, wait = 200 + Math.random() * 1400, fall = 50 + Math.random() * 170;
-        const d = h("div", { class: "gb-fx gb-drop", style: `left:${x}px;top:${y}px;width:${sz}px;height:${sz * 1.12}px` }, h("i", { class: "trail" }));
+        const d = h("div", { class: `gb-fx gb-drop${variant ? ` ${variant}` : ""}`, style: `left:${x}px;top:${y}px;width:${sz}px;height:${sz * 1.12}px` }, h("i", { class: "trail" }));
         document.body.append(d);
         d.animate([{ transform: "translate(-50%,-50%) scale(.2)", opacity: 0 }, { transform: "translate(-50%,-50%) scale(1)", opacity: 1, offset: .05 },
           { transform: "translate(-50%,-50%) scale(1)", opacity: 1, offset: (wait + 200) / (wait + 2600) },
@@ -1937,8 +1947,8 @@ function summonButtons(after) {
       setTimeout(() => svg.remove(), 4400);
     }
     // Dirt splat on the "glass" (tornado): an irregular blob with drips and specks that slowly slides down and fades
-    function mud(x, y, size) {
-      const blob = h("div", { class: "gb-fx gb-mud", style: `left:${x}px;top:${y}px;width:${size}px;height:${size * (.75 + Math.random() * .4)}px;` +
+    function mud(x, y, size, variant) {
+      const blob = h("div", { class: `gb-fx gb-mud${variant ? ` ${variant}` : ""}`, style: `left:${x}px;top:${y}px;width:${size}px;height:${size * (.75 + Math.random() * .4)}px;` +
         `border-radius:${[0, 0, 0, 0].map(() => 22 + Math.floor(Math.random() * 56)).join("% ")}% / ${[0, 0, 0, 0].map(() => 22 + Math.floor(Math.random() * 56)).join("% ")}%;` +
         "transform:translate(-50%,-50%)" });
       for (let i = 0; i < 2 + Math.floor(Math.random() * 3); i++) {   // lobes: a splat, not a ball
@@ -1958,9 +1968,9 @@ function summonButtons(after) {
     }
     function cast(kind) {
       casting = true; clearInterval(trail);
-      const legendary = kind === "legend", keys = SPELLS.map(x => x[0]), pick = () => keys[Math.floor(Math.random() * keys.length)];
+      const legendary = kind === "legend";
       let kinds = [kind];
-      if (legendary) { const a = pick(); let b = pick(); while (b === a) b = pick(); kinds = [a, b]; }
+      if (legendary) { const a = pickSpell(); kinds = [a, pickSpell(a)]; }
       castKinds = kinds; castLegend = legendary;
       el.classList.remove("run"); el.classList.add("cast", ...kinds.map(k => `cast-${k}`)); if (legendary) el.classList.add("cast-legend");
       el.style.pointerEvents = "none"; el.title = "";
@@ -2437,6 +2447,304 @@ function summonButtons(after) {
         });
         later(2200, () => blinkOut("fireworks", "gold"));
         later(2900, () => { clean.forEach(n => n.remove()); finish("The Greatness bot escaped with a fireworks show 🎆"); });
+      } else if (kind === "lava") {
+        // Eruption: a lava fountain bursts from the bottom; glowing blobs land on the glass and cool into black rock
+        later(700, () => {
+          charge.remove();
+          const bx = tx + (Math.random() - .5) * D * .3, by = A.bottom;
+          const glow = fxEl("gb-flash", `background: radial-gradient(ellipse at ${bx}px ${by}px, rgba(255,140,40,.7) 0, rgba(255,70,20,.35) ${D * .25}px, rgba(255,60,20,0) ${D * .6}px)`);
+          glow.animate([{ opacity: 0 }, { opacity: 1, offset: .2 }, { opacity: 0 }], { duration: 1900, fill: "forwards" }); setTimeout(() => glow.remove(), 1950);
+          for (let i = 0; i < 16; i++) later(i * 70, () => {
+            const x = bx + (Math.random() - .5) * D * 1.1, y = A.top + (A.bottom - A.top) * (.15 + Math.random() * .6), sz = 22 + Math.random() * 30;
+            const b = fxEl("gb-lavaball", `left:${bx}px;top:${by}px;width:${sz * .6}px;height:${sz * .6}px`);
+            const peak = Math.min(y, A.top + 40) - 30;
+            b.animate([{ transform: "translate(-50%,-50%)" }, { transform: `translate(calc(-50% + ${(x - bx) * .5}px), calc(-50% + ${peak - by}px))`, offset: .5 },
+              { transform: `translate(calc(-50% + ${x - bx}px), calc(-50% + ${y - by}px)) scale(1.3)` }], { duration: 650, easing: "cubic-bezier(.3,0,.7,1)", fill: "forwards" });
+            setTimeout(() => {
+              b.remove(); if (ended) return;
+              burst(x, y, 6, 30, "fire", 500);
+              const splat = h("div", { class: "gb-fx gb-lava", style: `left:${x}px;top:${y}px;width:${sz}px;height:${sz * (.7 + Math.random() * .4)}px;border-radius:${[0, 0, 0, 0].map(() => 30 + Math.floor(Math.random() * 40)).join("% ")}%` });
+              document.body.append(splat);
+              splat.animate([{ transform: "translate(-50%,-50%) scale(.3)", opacity: 0 }, { transform: "translate(-50%,-50%) scale(1)", opacity: 1, offset: .05 }, { transform: "translate(-50%,-50%) scale(1)", opacity: 1, offset: .8 },
+                { transform: "translate(-50%, calc(-50% + 30px)) scale(.6)", opacity: 0 }], { duration: 4200, easing: "ease-in", fill: "forwards" });
+              setTimeout(() => splat.remove(), 4300);
+            }, 650);
+          });
+          for (let k = 0; k < 10; k++) later(k * 60, () => burst(bx, by - 10, 4, 120, "fire", 700));
+        });
+        later(1700, () => blinkOut("fire", "fire"));
+        later(2500, () => { clean.forEach(n => n.remove()); finish("The Greatness bot escaped — the floor is lava 🌋"); });
+      } else if (kind === "bubbles") {
+        // Bubbles: a swarm of iridescent soap bubbles floats up and pops — rainbow rings dry on the glass
+        later(600, () => charge.remove());
+        for (let i = 0; i < 46; i++) later(600 + i * 35, () => {
+          const sz = 18 + Math.random() * 44, b = fxEl("gb-bubble", `left:${ox}px;top:${oy}px;width:${sz}px;height:${sz}px`);
+          const x = A.left + Math.random() * (A.right - A.left), y = A.top + Math.random() * (A.bottom - A.top) * .85, dur = 1100 + Math.random() * 900;
+          b.animate([{ transform: "translate(-50%,-50%) scale(.2)" }, { transform: `translate(calc(-50% + ${(x - ox) * .5 + (Math.random() - .5) * 80}px), calc(-50% + ${(y - oy) * .5}px)) scale(.9)`, offset: .5 },
+            { transform: `translate(calc(-50% + ${x - ox}px), calc(-50% + ${y - oy}px)) scale(1)` }], { duration: dur, easing: "ease-out", fill: "forwards" });
+          setTimeout(() => {
+            b.remove(); if (ended) return;
+            burst(x, y, 6, sz * .7, "water", 350);
+            if (Math.random() < .55) {
+              const ring = h("div", { class: "gb-fx gb-bubblering", style: `left:${x}px;top:${y}px;width:${sz}px;height:${sz}px` });
+              document.body.append(ring);
+              ring.animate([{ opacity: .9 }, { opacity: .7, offset: .3 }, { opacity: 0 }], { duration: 3600, fill: "forwards" }); setTimeout(() => ring.remove(), 3650);
+            }
+          }, dur);
+        });
+        later(1800, () => blinkOut("water", "water"));
+        later(2700, () => { clean.forEach(n => n.remove()); finish("The Greatness bot escaped in a cloud of bubbles 🫧"); });
+      } else if (kind === "eclipse") {
+        // Eclipse: a dark disc covers the light, the corona blazes — an afterimage stays in your eyes
+        later(700, () => {
+          charge.remove();
+          const R = Math.min(D * .22, 200);
+          const dark = fxEl("gb-dim", `background: radial-gradient(circle at ${tx}px ${ty}px, rgba(0,0,0,.6) 0, rgba(2,0,10,.85) ${R * 2}px, rgba(0,0,6,.92) 100%)`);
+          dark.animate([{ opacity: 0 }, { opacity: 1, offset: .3 }, { opacity: 1, offset: .75 }, { opacity: 0 }], { duration: 2400, fill: "forwards" });
+          const sun = fxEl("gb-eclipse", `left:${tx}px;top:${ty}px;width:${R * 2}px;height:${R * 2}px`);
+          sun.animate([{ transform: "translate(-50%,-50%) scale(.6)", opacity: 0 }, { transform: "translate(-50%,-50%) scale(1)", opacity: 1, offset: .3 }, { transform: "translate(-50%,-50%) scale(1.05)", opacity: 1, offset: .75 },
+            { transform: "translate(-50%,-50%) scale(1.2)", opacity: 0 }], { duration: 2400, fill: "forwards" });
+          clean.push(dark, sun);
+          later(1700, () => {   // the afterimage
+            const ai = h("div", { class: "gb-fx gb-afterimage", style: `left:${tx}px;top:${ty}px;width:${R * 2.4}px;height:${R * 2.4}px` });
+            document.body.append(ai);
+            ai.animate([{ opacity: 0 }, { opacity: .85, offset: .1 }, { opacity: .5, offset: .5 }, { opacity: 0 }], { duration: 4000, fill: "forwards" }); setTimeout(() => ai.remove(), 4050);
+          });
+        });
+        later(1700, () => blinkOut("claws", "shadow"));
+        later(2700, () => { clean.forEach(n => n.remove()); finish("The Greatness bot escaped in a total eclipse 🌑"); });
+      } else if (kind === "spores") {
+        // Spores: glowing spores drift over the page, little luminous mushrooms sprout; the glowing mould fades
+        later(700, () => {
+          charge.remove();
+          for (let i = 0; i < 60; i++) {
+            const s = h("i", { class: "gb-fx gb-spore", style: `left:${ox}px;top:${oy}px` }); document.body.append(s);
+            const x = A.left + Math.random() * (A.right - A.left), y = A.top + Math.random() * (A.bottom - A.top), dur = 1600 + Math.random() * 1400;
+            s.animate([{ transform: "translate(0,0)", opacity: 0 }, { transform: `translate(${(x - ox) * .5 + (Math.random() - .5) * 120}px, ${(y - oy) * .5 - 40}px)`, opacity: 1, offset: .4 },
+              { transform: `translate(${x - ox}px, ${y - oy}px)`, opacity: 0 }], { duration: dur, delay: i * 15, easing: "ease-out", fill: "forwards" });
+            setTimeout(() => s.remove(), dur + i * 15 + 50);
+          }
+          const spots = [[A.left + 30, A.bottom - 10], [A.right - 30, A.bottom - 10], [A.left + 30, A.top + 60], [A.right - 30, A.top + 60], [tx, A.bottom - 10]];
+          spots.forEach(([x, y], k) => later(500 + k * 150, () => {
+            for (let j = 0; j < 4; j++) {
+              const mx = x + (Math.random() - .5) * 90, sz = 18 + Math.random() * 18;
+              const m = h("div", { class: "gb-fx gb-shroom", style: `left:${mx}px;top:${y - (k > 1 && k < 4 ? -sz : 0)}px;width:${sz}px;height:${sz}px;${k > 1 && k < 4 ? "transform-origin:top;rotate:180deg" : ""}` }, h("i"), h("b"));
+              document.body.append(m);
+              m.animate([{ scale: "0" }, { scale: "1.1", offset: .08 }, { scale: "1", offset: .12 }, { scale: "1", opacity: 1, offset: .75 }, { scale: ".8", opacity: 0 }], { duration: 4200, fill: "forwards" });
+              setTimeout(() => m.remove(), 4250);
+            }
+            const mould = h("div", { class: "gb-fx gb-mould", style: `left:${x}px;top:${y}px;width:160px;height:110px` }); document.body.append(mould);
+            mould.animate([{ opacity: 0 }, { opacity: 1, offset: .15 }, { opacity: 1, offset: .5 }, { opacity: 0 }], { duration: 4200, fill: "forwards" }); setTimeout(() => mould.remove(), 4250);
+          }));
+        });
+        later(1800, () => blinkOut("acid", "acid"));
+        later(2700, () => { clean.forEach(n => n.remove()); finish("The Greatness bot escaped in a cloud of spores 🍄"); });
+      } else if (kind === "portal") {
+        // Portal: two rune portals open; sparks jump between them, the robot slips through — burnt rings stay
+        later(700, () => {
+          charge.remove();
+          const S = Math.min(D * .3, 260), p1 = [tx - D * .32, ty], p2 = [tx + D * .32, ty];
+          const rings = [p1, p2].map(([x, y], i) => {
+            const r = fxEl(`gb-portal ${i ? "b" : "a"}`, `left:${x}px;top:${y}px;width:${S}px;height:${S * 1.25}px`);
+            r.animate([{ transform: "translate(-50%,-50%) scale(0)" }, { transform: "translate(-50%,-50%) scale(1)", offset: .2 }, { transform: "translate(-50%,-50%) scale(1)", offset: .8 }, { transform: "translate(-50%,-50%) scale(.2)", opacity: 0 }],
+              { duration: 2300, easing: "ease-out", fill: "forwards" });
+            clean.push(r); return r;
+          });
+          for (let i = 0; i < 18; i++) later(300 + i * 70, () => {
+            const [a, b] = i % 2 ? [p1, p2] : [p2, p1], s = h("i", { class: "cat-spark big shadow", style: `left:${a[0]}px;top:${a[1] + (Math.random() - .5) * S * .8}px` });
+            document.body.append(s);
+            s.animate([{ transform: "translate(0,0) scale(1.3)", opacity: 1 }, { transform: `translate(${b[0] - a[0]}px, ${(Math.random() - .5) * 60}px) scale(.4)`, opacity: .2 }], { duration: 420, easing: "ease-in" });
+            setTimeout(() => s.remove(), 430);
+          });
+          later(2200, () => [p1, p2].forEach(([x, y]) => {   // burnt rune rings
+            const t = h("div", { class: "gb-fx gb-portal burnt", style: `left:${x}px;top:${y}px;width:${S}px;height:${S * 1.25}px;transform:translate(-50%,-50%)` });
+            document.body.append(t);
+            t.animate([{ opacity: .9 }, { opacity: .7, offset: .3 }, { opacity: 0 }], { duration: 3400, fill: "forwards" }); setTimeout(() => t.remove(), 3450);
+          }));
+          void rings;
+        });
+        later(1500, () => blinkOut("claws", "shadow"));
+        later(2500, () => { clean.forEach(n => n.remove()); finish("The Greatness bot escaped through a portal 🌌"); });
+      } else if (kind === "pixel") {
+        // Pixel art: the page turns 8-bit for a moment; a few big stuck pixels come back one by one
+        later(700, () => {
+          charge.remove();
+          const box3 = fxEl("gb-pixelate", `left:${A.left}px;top:${A.top}px;width:${A.right - A.left}px;height:${A.bottom - A.top}px`); clean.push(box3);
+          const pal = ["#0f380f", "#306230", "#8bac0f", "#9bbc0f", "#e0f8d0", "#ff004d", "#29adff", "#ffec27"];
+          for (let i = 0; i < 90; i++) {
+            const w = 16 * (1 + Math.floor(Math.random() * 4));
+            box3.append(h("i", { style: `left:${Math.floor(Math.random() * (A.right - A.left) / 16) * 16}px;top:${Math.floor(Math.random() * (A.bottom - A.top) / 16) * 16}px;width:${w}px;height:${w}px;background:${pal[Math.floor(Math.random() * pal.length)]}` }));
+          }
+          box3.animate([{ opacity: 0 }, { opacity: 1, offset: .1 }, { opacity: 1, offset: .8 }, { opacity: 0 }], { duration: 1500, fill: "forwards", easing: "steps(6)" });
+          later(1300, () => {
+            for (let i = 0; i < 24; i++) {
+              const w = 16 * (1 + Math.floor(Math.random() * 2)), px = h("div", { class: "gb-fx gb-deadpx", style: `left:${A.left + Math.floor(Math.random() * (A.right - A.left) / 16) * 16}px;top:${A.top + Math.floor(Math.random() * (A.bottom - A.top) / 16) * 16}px;width:${w}px;height:${w}px;background:${pal[Math.floor(Math.random() * pal.length)]};opacity:.85` });
+              document.body.append(px);
+              const life = 600 + Math.random() * 3200;
+              px.animate([{ opacity: .85 }, { opacity: .85, offset: .95 }, { opacity: 0 }], { duration: life, easing: "steps(1)", fill: "forwards" }); setTimeout(() => px.remove(), life);
+            }
+          });
+        });
+        later(1600, () => blinkOut("glitch", "volt"));
+        later(2300, () => { clean.forEach(n => n.remove()); finish("The Greatness bot escaped in 8-bit 👾"); });
+      } else if (kind === "printer") {
+        // Printer: a paper tape prints GREATNESS from the top, tears into scraps; some stick to the glass
+        later(700, () => {
+          charge.remove();
+          const L = (A.bottom - A.top) * .7, tape = fxEl("gb-tape", `left:${tx}px;top:${A.top}px;height:${L}px`);
+          tape.innerHTML = Array.from({ length: Math.ceil(L / 26) }, () => "<span>GREATNESS</span>").join("");
+          tape.animate([{ clipPath: "inset(0 0 100% 0)" }, { clipPath: "inset(0 0 0 0)" }], { duration: 1000, easing: "steps(18)", fill: "forwards" });
+          clean.push(tape);
+          later(1150, () => {
+            tape.remove();
+            const n = 9;
+            for (let i = 0; i < n; i++) {
+              const y = A.top + (i + .5) * L / n, stick = i % 2 === 0;
+              const sc = h("div", { class: "gb-fx gb-scrap", style: `left:${tx}px;top:${y}px;height:${L / n}px` }, h("span", {}, "GREATNESS"));
+              document.body.append(sc);
+              const fx2 = (Math.random() - .5) * D * .8, fy2 = stick ? (Math.random() - .5) * 120 : (A.bottom - y) + 60, rot = (Math.random() - .5) * 120;
+              sc.animate([{ transform: "translate(-50%,-50%) rotate(0deg)" }, { transform: `translate(calc(-50% + ${fx2}px), calc(-50% + ${fy2}px)) rotate(${rot}deg)`, opacity: stick ? 1 : 0 }],
+                { duration: 700 + Math.random() * 300, easing: "cubic-bezier(.2,.7,.4,1)", fill: "forwards" });
+              const life = stick ? 1200 + Math.random() * 2600 : 1000;
+              if (stick) setTimeout(() => sc.animate([{ opacity: 1 }, { opacity: 0, translate: "0 60px" }], { duration: 700, fill: "forwards" }), life);
+              setTimeout(() => sc.remove(), life + 750);
+            }
+          });
+        });
+        later(1700, () => blinkOut("seal", "gold"));
+        later(2400, () => { clean.forEach(n => n.remove()); finish("The Greatness bot escaped — paper jam 📠"); });
+      } else if (kind === "banhammer") {
+        // Banhammer: a giant hammer slams the middle of the page — cracks and a BANNED stamp
+        later(700, () => {
+          charge.remove();
+          const S = Math.min(D * .5, 420), hm = fxEl("gb-hammer", `left:${tx}px;top:${ty}px;width:${S}px;height:${S}px`); hm.append(h("i", { class: "handle" }), h("i", { class: "head" }));
+          hm.animate([{ transform: "translate(-20%,-95%) rotate(-75deg)", opacity: 0 }, { transform: "translate(-20%,-95%) rotate(-75deg)", opacity: 1, offset: .35 },
+            { transform: "translate(-20%,-95%) rotate(8deg)", opacity: 1, offset: .55 }, { transform: "translate(-20%,-95%) rotate(0deg)", opacity: 1, offset: .65 }, { transform: "translate(-20%,-95%) rotate(0deg)", opacity: 0 }],
+            { duration: 1500, easing: "cubic-bezier(.6,0,.9,.4)", fill: "forwards" });
+          clean.push(hm);
+          later(820, () => {
+            const flash = fxEl("gb-flash", `background: radial-gradient(circle at ${tx}px ${ty}px, rgba(255,255,255,.9) 0, rgba(255,80,80,.4) ${D * .2}px, rgba(255,60,60,0) ${D * .6}px)`);
+            flash.animate([{ opacity: 0 }, { opacity: 1, offset: .1 }, { opacity: 0 }], { duration: 600, fill: "forwards" }); setTimeout(() => flash.remove(), 650);
+            const ring = fxEl("gb-ring laser", `left:${tx}px;top:${ty}px`);
+            ring.animate([{ transform: "translate(-50%,-50%) scale(0)", opacity: 1 }, { transform: "translate(-50%,-50%) scale(12)", opacity: 0 }], { duration: 800, easing: "ease-out", fill: "forwards" }); setTimeout(() => ring.remove(), 850);
+            burst(tx, ty, 30, D * .4, "dust", 800); cracks(tx, ty, D * .45, "rock");
+            const stamp = h("div", { class: "gb-fx gb-banned", style: `left:${tx}px;top:${ty}px` }, "BANNED");
+            document.body.append(stamp);
+            stamp.animate([{ transform: "translate(-50%,-50%) rotate(-12deg) scale(2.2)", opacity: 0 }, { transform: "translate(-50%,-50%) rotate(-12deg) scale(1)", opacity: 1, offset: .08 },
+              { transform: "translate(-50%,-50%) rotate(-12deg) scale(1)", opacity: 1, offset: .6 }, { transform: "translate(-50%,-50%) rotate(-12deg) scale(1)", opacity: 0 }], { duration: 3400, fill: "forwards" });
+            setTimeout(() => stamp.remove(), 3450);
+          });
+        });
+        later(1700, () => blinkOut("laser", "laser"));
+        later(2400, () => { clean.forEach(n => n.remove()); finish("The Greatness bot escaped — BANNED 🔨"); });
+      } else if (kind === "money") {
+        // Money rain: golden G-coins rain down and bounce; they lie at the bottom and vanish one by one
+        later(600, () => charge.remove());
+        for (let i = 0; i < 44; i++) later(600 + i * 40, () => {
+          const x = A.left + 20 + Math.random() * (A.right - A.left - 40), land = A.bottom - 14 - Math.random() * 30, sz = 22 + Math.random() * 12;
+          const c = fxEl("gb-coin", `left:${x}px;top:${A.top - 40}px;width:${sz}px;height:${sz}px`); c.textContent = "G";
+          const fall = land - (A.top - 40), dur = 800 + Math.random() * 500;
+          c.animate([{ transform: "translate(-50%,0) rotateY(0deg)" }, { transform: `translate(-50%, ${fall}px) rotateY(540deg)`, offset: .75 },
+            { transform: `translate(-50%, ${fall - 26}px) rotateY(630deg)`, offset: .87 }, { transform: `translate(-50%, ${fall}px) rotateY(720deg)` }], { duration: dur, easing: "ease-in", fill: "forwards" });
+          const life = dur + 400 + Math.random() * 3000;
+          setTimeout(() => { if (c.isConnected) c.animate([{ opacity: 1, scale: "1" }, { opacity: 0, scale: "1.5" }], { duration: 250, fill: "forwards" }); }, life);
+          setTimeout(() => c.remove(), life + 260);
+        });
+        later(1900, () => blinkOut("seal", "gold"));
+        later(2600, () => finish("The Greatness bot escaped — and made it rain 💸"));
+      } else if (kind === "swarm") {
+        // Swarm: glowing bees chase your cursor for a moment, then scatter — honey drips on the glass
+        later(700, () => {
+          charge.remove();
+          const bees = Array.from({ length: 34 }, (_, i) => { const b = fxEl("gb-bee", `left:0;top:0`);
+            return { b, x: ox + (Math.random() - .5) * 60, y: oy + (Math.random() - .5) * 60, vx: (Math.random() - .5) * 14, vy: (Math.random() - .5) * 14, r: 30 + Math.random() * 110, ph: Math.random() * 6.3, sp: 120 + Math.random() * 160 }; });
+          clean.push(...bees.map(z => z.b));
+          const t0 = performance.now();
+          const step = now => {
+            if (ended) return;
+            const t = now - t0, target = ptr || [tx, ty], scatter = t > 1700;
+            bees.forEach((z, i) => {
+              // each bee circles the cursor on its own orbit, then they scatter
+              const ax = scatter ? (z.x - tx) * .02 : (target[0] + Math.cos(t / z.sp + z.ph) * z.r - z.x) * .01, ay = scatter ? (z.y - ty) * .02 : (target[1] + Math.sin(t / (z.sp * .8) + z.ph) * z.r * .7 - z.y) * .01;
+              z.vx = (z.vx + ax + (Math.random() - .5) * 2.4) * .93; z.vy = (z.vy + ay + (Math.random() - .5) * 2.4) * .93;
+              z.x += z.vx; z.y += z.vy;
+              z.b.style.transform = `translate(${z.x}px, ${z.y}px) translate(-50%,-50%) scaleX(${z.vx < 0 ? -1 : 1})`;
+            });
+            if (t < 2300) requestAnimationFrame(step);
+          };
+          requestAnimationFrame(step);
+          later(1500, () => waterDrops(10, () => [A.left + Math.random() * (A.right - A.left), A.top + Math.random() * (A.bottom - A.top) * .8], "honey"));
+        });
+        later(1900, () => blinkOut("seal", "gold"));
+        later(2700, () => { clean.forEach(n => n.remove()); finish("The Greatness bot escaped — buzz buzz 🐝"); });
+      } else if (kind === "rainbow") {
+        // Rainbow: a rainbow arcs across the page with sparkles; a prism glare slides over the glass
+        later(700, () => {
+          charge.remove();
+          const NS = "http://www.w3.org/2000/svg", Wd = A.right - A.left, Hh = A.bottom - A.top, svg = document.createElementNS(NS, "svg");
+          svg.setAttribute("class", "gb-fx gb-rainbow"); svg.setAttribute("width", Wd); svg.setAttribute("height", Hh); svg.style.left = `${A.left}px`; svg.style.top = `${A.top}px`;
+          const cols = ["#ff3b3b", "#ff9a2e", "#ffe14a", "#4ade80", "#4f9dff", "#6b5bff", "#b26bff"], R = Math.min(Wd * .48, Hh * .95);
+          cols.forEach((c, i) => {
+            const r = R - i * 14, p = document.createElementNS(NS, "path");
+            p.setAttribute("d", `M${Wd / 2 - r},${Hh} A${r},${r} 0 0 1 ${Wd / 2 + r},${Hh}`); p.setAttribute("stroke", c); p.setAttribute("stroke-width", "15"); p.setAttribute("fill", "none"); svg.append(p);
+            const L = Math.PI * r; p.style.strokeDasharray = `${L} ${L}`;
+            p.animate([{ strokeDashoffset: L }, { strokeDashoffset: 0, offset: .4 }, { strokeDashoffset: 0 }], { duration: 2400, easing: "ease-out", fill: "forwards" });
+          });
+          document.body.append(svg); clean.push(svg);
+          svg.animate([{ opacity: 0 }, { opacity: .9, offset: .1 }, { opacity: .9, offset: .7 }, { opacity: 0 }], { duration: 2400, fill: "forwards" });
+          for (let i = 0; i < 20; i++) later(i * 70, () => burst(A.left + Math.random() * Wd, A.top + Math.random() * Hh * .7, 2, 30, ["gold", "water", "petal", "acid"][i % 4], 700));
+          later(1700, () => {   // prism glare
+            const g = h("div", { class: "gb-fx gb-prism", style: `left:${A.left}px;top:${A.top}px;width:${Wd}px;height:${Hh}px` }); document.body.append(g);
+            g.animate([{ backgroundPosition: "-60% 0", opacity: 0 }, { opacity: .8, offset: .15 }, { backgroundPosition: "160% 0", opacity: 0 }], { duration: 3200, easing: "ease-in-out", fill: "forwards" });
+            setTimeout(() => g.remove(), 3250);
+          });
+        });
+        later(1700, () => blinkOut("sakura", "petal"));
+        later(2500, () => { clean.forEach(n => n.remove()); finish("The Greatness bot escaped over a rainbow 🌈"); });
+      } else if (kind === "leaves") {
+        // Leaf storm: a gust blows autumn leaves across; some stick to the glass and get blown off one by one
+        later(600, () => charge.remove());
+        const fromLeft = Math.random() < .5, cols = ["#d9622b", "#e8a13a", "#b83a1c", "#c98a2b", "#8a4b1e"];
+        for (let i = 0; i < 70; i++) later(600 + i * 22, () => {
+          const sz = 14 + Math.random() * 14, y0 = A.top + Math.random() * (A.bottom - A.top), stick = i % 3 === 0;
+          const lf = h("div", { class: "gb-fx gb-leaf", style: `left:${fromLeft ? A.left - 30 : A.right + 30}px;top:${y0}px;width:${sz}px;height:${sz * .7}px;background:${cols[i % cols.length]}` });
+          document.body.append(lf);
+          const W2 = A.right - A.left + 60, dx = (fromLeft ? 1 : -1) * (stick ? W2 * (.2 + Math.random() * .6) : W2 + 40), dy = (Math.random() - .3) * 160, dur = 900 + Math.random() * 600;
+          lf.animate([{ transform: "translate(0,0) rotate(0deg)" }, { transform: `translate(${dx * .5}px, ${dy * .5 - 40}px) rotate(${360 + Math.random() * 360}deg)`, offset: .5 },
+            { transform: `translate(${dx}px, ${dy}px) rotate(${700 + Math.random() * 360}deg)` }], { duration: dur, easing: "ease-out", fill: "forwards" });
+          if (stick) {
+            const wait = dur + 400 + Math.random() * 2600;
+            setTimeout(() => lf.animate([{ transform: `translate(${dx}px, ${dy}px) rotate(720deg)`, opacity: 1 }, { transform: `translate(${dx + (fromLeft ? 1 : -1) * 260}px, ${dy - 60}px) rotate(1080deg)`, opacity: 0 }],
+              { duration: 700, easing: "ease-in", fill: "forwards" }), wait);
+            setTimeout(() => lf.remove(), wait + 750);
+          } else setTimeout(() => lf.remove(), dur + 50);
+        });
+        later(1600, () => blinkOut("rock", "dust"));
+        later(2400, () => finish("The Greatness bot escaped on an autumn breeze 🍂"));
+      } else if (kind === "tomato" || kind === "poop") {
+        // Tomatoes (and the ultra-rare poop barrage): thrown at the screen — they splat and slowly slide down
+        const poop = kind === "poop";
+        later(600, () => charge.remove());
+        const N = poop ? 16 : 12;
+        for (let i = 0; i < N; i++) later(600 + i * 120, () => {
+          const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()), x = tx + Math.cos(a) * r * D * .5, y = ty + Math.sin(a) * r * D * .36;
+          const b = fxEl(poop ? "gb-throw poop" : "gb-throw tomato", `left:${ox}px;top:${oy}px`); b.textContent = poop ? "💩" : "🍅";
+          const dur = 420 + Math.random() * 140, my = Math.min(oy, y) - 80;
+          b.animate([{ transform: "translate(-50%,-50%) scale(.6) rotate(0deg)" }, { transform: `translate(calc(-50% + ${(x - ox) / 2}px), calc(-50% + ${my - oy}px)) scale(1.1) rotate(200deg)`, offset: .5 },
+            { transform: `translate(calc(-50% + ${x - ox}px), calc(-50% + ${y - oy}px)) scale(1.8) rotate(400deg)` }], { duration: dur, easing: "ease-in", fill: "forwards" });
+          setTimeout(() => {
+            b.remove(); if (ended) return;
+            mud(x, y, 60 + Math.random() * 60, poop ? "poop" : "tomato");
+            burst(x, y, 8, 50, poop ? "dust" : "fire", 500);
+            if (poop) for (let f = 0; f < 3; f++) {   // flies
+              const fly = h("i", { class: "gb-fx gb-fly", style: `left:${x}px;top:${y}px` }); document.body.append(fly);
+              const k = [0, 1, 2, 3, 4].map(j => ({ transform: `translate(${Math.cos(j * 1.6 + f) * 30}px, ${Math.sin(j * 2.1 + f) * 22 - 10}px)` }));
+              fly.animate(k, { duration: 700, iterations: 6, direction: "alternate" }); setTimeout(() => fly.remove(), 4200);
+            }
+          }, dur);
+        });
+        later(600 + N * 120 + 500, () => blinkOut(poop ? "rock" : "laser", poop ? "dust" : "fire"));
+        later(600 + N * 120 + 1100, () => finish(poop ? "💩 ULTRA RARE! The Greatness bot escaped under a… poop barrage" : "The Greatness bot escaped — tough crowd 🍅"));
       } else {
         // Fireball: charged in the orb, flies to the middle of the page and explodes with a big flash
         later(900, () => {
@@ -7664,7 +7972,7 @@ async function pageChars(main) {
 async function pageMascot(main) {
   const g = currentGuild() || {};
   main.append(h("div", { class: "card-head" }, h("h1", {}, "🤖 Mascot")),
-    h("p", { class: "muted small" }, "Only you (the bot owner) see this page. The little Greatness robot flies across the site for everyone on this server, runs away from the cursor, gets tired and can be caught. When it escapes it often casts a spell (40%; 1% — a legendary cast of two spells at once); when it's caught — 1.5× more often (60%; 1.5% legendary). Members collect what they saw in Member → Achievements."));
+    h("p", { class: "muted small" }, "Only you (the bot owner) see this page. The little Greatness robot flies across the site for everyone on this server, runs away from the cursor, gets tired and can be caught. When it escapes it often casts a spell (40%; 1% — a legendary cast of two spells at once); when it's caught — 1.5× more often (60%; 1.5% legendary). The poop barrage is 5× rarer than the other spells. Members collect what they saw in Member → Achievements."));
   // How often
   const secs = h("input", { type: "number", min: "0", max: "604800", step: "1", value: String(g.mascotSeconds ?? 900), style: "width:140px", "aria-label": "Seconds" });
   const human = h("span", { class: "muted small" });
@@ -7704,11 +8012,11 @@ function achievementsCard(d) {
   const grades = d.grades || ["Poor", "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic"];
   const tile = (a, small) => a.unlocked
     ? h("div", { class: `ach done g${a.grade} cls${a.tierClass || 1}${small ? " sm" : ""}`, tabindex: "0" },
-      a.tierClass === 3 ? h("i", { class: "ach-shine" }) : null,
+      a.tierClass >= 3 ? h("i", { class: "ach-shine" }) : null,
       h("span", { class: "ach-icon" }, h("span", { class: "ico" }, a.icon)),
       h("div", { class: "ach-text" },
         h("div", { class: "ach-top" }, h("b", {}, a.title),
-          h("span", { class: "ach-cls", title: ["", "Tier I achievement (common)", "Tier II achievement (rare)", "Tier III achievement (legendary)"][a.tierClass || 1] }, "✦".repeat(a.tierClass || 1)),
+          h("span", { class: "ach-cls", title: ["", "Tier I achievement (common)", "Tier II achievement (rare)", "Tier III achievement (legendary)", "Tier IV achievement (ultra rare)"][a.tierClass || 1] }, "✦".repeat(a.tierClass || 1)),
           h("span", { class: "ach-grade" }, a.gradeName)),
         // what was done for the current grade, then how far the next one is
         small ? null : h("span", { class: "muted small" }, a.description),
@@ -7743,7 +8051,14 @@ function achievementsCard(d) {
       ...(!all && small && hidden ? [h("button", { type: "button", class: "ach locked sm ach-more", onclick: () => draw(true) },
         h("span", { class: "ach-icon" }, "?"), h("div", { class: "ach-text" }, h("b", {}, `+${hidden} hidden`), h("span", { class: "muted small" }, "show")))] : []));
     draw(false);   // the big combination list starts folded: found ones + "+N hidden"
-    return h("div", { class: "ach-group" }, h("h3", {}, `${title} · ${all.filter(a => a.unlocked).length}/${all.length}`), grid);
+    // each block folds (remembered per browser)
+    const fold = `gb.achFold.${key}`, folded = store.get(fold) === "1";
+    const box = h("div", { class: `ach-group${folded ? " folded" : ""}` });
+    const head = h("button", { type: "button", class: "ach-group-head", "aria-expanded": folded ? "false" : "true", onclick: () => {
+      const f = box.classList.toggle("folded"); store.set(fold, f ? "1" : ""); head.setAttribute("aria-expanded", f ? "false" : "true");
+    } }, h("span", { class: "chev" }, "▾"), h("h3", {}, `${title} · ${all.filter(a => a.unlocked).length}/${all.length}`));
+    box.append(head, grid);
+    return box;
   };
   const body = h("div", {});
   const draw = () => {
@@ -7756,7 +8071,7 @@ function achievementsCard(d) {
   };
   const reset = h("button", { type: "button", class: "ach-reset", onclick: () => { selG.clear(); selT.clear(); legend.querySelectorAll(".on").forEach(x => x.classList.remove("on")); legend.classList.remove("filtering"); draw(); } }, "✕ All");
   const legend = h("div", { class: "ach-legend" }, grades.map((n, i) => chip(`ach-chip g${i + 1}`, n, selG, i + 1)),
-    h("span", { class: "ach-legend-sep" }), chip("ach-cls-chip c1", "✦ Tier I", selT, 1), chip("ach-cls-chip c2", "✦✦ Tier II", selT, 2), chip("ach-cls-chip c3", "✦✦✦ Tier III", selT, 3), reset);
+    h("span", { class: "ach-legend-sep" }), chip("ach-cls-chip c1", "✦ Tier I", selT, 1), chip("ach-cls-chip c2", "✦✦ Tier II", selT, 2), chip("ach-cls-chip c3", "✦✦✦ Tier III", selT, 3), chip("ach-cls-chip c4", "✦✦✦✦ Tier IV", selT, 4), reset);
   draw();
   return h("div", { class: "card" }, h("h2", {}, "🏆 Achievements"), legend, body);
 }

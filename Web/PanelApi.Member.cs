@@ -434,7 +434,8 @@ public static partial class PanelApi
                     return new
                     {
                         // achievement class: I — common climbs (×2 from 5), II — rare (single spells, Grimoire), III — legendary casts
-                        tierClass = ReferenceEquals(a.Tiers, MascotStatsStore.LegendTiers) ? 3 : a.Group == "spells" || a.Id == "kinds" ? 2 : 1,
+                        // IV — anything with the ultra-rare poop barrage
+                        tierClass = a.Id.Contains(MascotStatsStore.UltraRare) ? 4 : ReferenceEquals(a.Tiers, MascotStatsStore.LegendTiers) ? 3 : a.Group == "spells" || a.Id == "kinds" ? 2 : 1,
                         id = a.Id, group = a.Group, unlocked = true, icon = a.Icon, title = a.Title, grade = g, gradeName = MascotStatsStore.GradeNames[g - 1],
                         rank = 1 + vals.Count(x => x.V > v), of = vals.Count, top,
                         description = string.Format(a.Description, a.Tiers[g - 1]).Replace(" 1 times", " once"), nextGrade = next is null ? null : MascotStatsStore.GradeNames[g], value = v, prev = a.Tiers[g - 1], next, maxGrade = a.Tiers.Length
