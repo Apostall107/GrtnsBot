@@ -18,14 +18,23 @@ public sealed class TempVoiceService(
     RoomPrefsStore prefs,
     ILogger<TempVoiceService> logger) : IHostedService
 {
-    // Все операции с голосовыми каналами по очереди — без гонок при массовых заходах
+    // Создание комнат — по очереди (без гонок при массовых заходах). Удаление идёт мимо очереди:
+    // пустая комната не должна ждать, пока Discord разрешит переставить каналы.
     private readonly SemaphoreSlim _gate = new(1, 1);
+    // Одна операция дольше этого не держит очередь (rate limit Discord и т.п.) — дальше она доделывается сама
+    private static readonly TimeSpan GateTimeout = TimeSpan.FromSeconds(40);
+    // Страховка: раз в минуту удаляются пустые комнаты, даже если событие выхода потерялось (переподключение и т.п.)
+    private static readonly TimeSpan SweepEvery = TimeSpan.FromSeconds(60);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, DateTime> _emptySince = new();
+    private readonly CancellationTokenSource _stop = new();
+    private bool _orderedOnce;
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
         client.UserVoiceStateUpdated += OnVoiceStateUpdated;
         client.ChannelDestroyed += OnChannelDestroyed;
         client.Ready += OnReady;
+        _ = Task.Run(SweepLoopAsync);
         return Task.CompletedTask;
     }
 
@@ -34,14 +43,70 @@ public sealed class TempVoiceService(
         client.UserVoiceStateUpdated -= OnVoiceStateUpdated;
         client.ChannelDestroyed -= OnChannelDestroyed;
         client.Ready -= OnReady;
+        _stop.Cancel();
         return Task.CompletedTask;
+    }
+
+    private async Task SweepLoopAsync()
+    {
+        using var timer = new PeriodicTimer(SweepEvery);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(_stop.Token))
+            {
+                try { await SweepAsync(); }
+                catch (Exception ex) { logger.LogWarning(ex, "Temp voice sweep failed"); }
+            }
+        }
+        catch (OperationCanceledException) { /* stopping */ }
+    }
+
+    /// <summary>Пустые комнаты (с учётом задержки удаления их создателя) удаляются; комнаты с людьми — не трогаются.</summary>
+    private async Task SweepAsync()
+    {
+        foreach (var room in store.GetAllRooms())
+        {
+            var guild = client.GetGuild(room.GuildId);
+            if (!GuildCache.Loaded(guild)) continue;
+            if (guild!.GetVoiceChannel(room.ChannelId) is not { } channel)
+            {
+                store.RemoveRoom(room.ChannelId);   // удалили вручную, пока бот не видел
+                _emptySince.TryRemove(room.ChannelId, out _);
+                continue;
+            }
+            if (channel.ConnectedUsers.Count > 0) { _emptySince.TryRemove(channel.Id, out _); continue; }
+            var since = _emptySince.GetOrAdd(channel.Id, DateTime.UtcNow);
+            var delay = store.GetCreator(room.CreatorChannelId)?.DeleteDelaySeconds ?? 0;
+            // пустая хотя бы два прохода подряд (новую комнату, куда владельца ещё переносят, не трогаем) и не меньше задержки
+            if (DateTime.UtcNow - since < TimeSpan.FromSeconds(Math.Max(delay, SweepEvery.TotalSeconds * .8))) continue;
+            logger.LogInformation("Temp voice sweep: deleting empty room {Room}", channel.Name);
+            await DeleteIfEmptyAsync(channel, delayed: true);
+        }
     }
 
     // Обработчики не блокируют gateway: работа уходит в фон
     private Task OnVoiceStateUpdated(SocketUser user, SocketVoiceState before, SocketVoiceState after)
     {
         if (before.VoiceChannel?.Id == after.VoiceChannel?.Id) return Task.CompletedTask; // мьют/стрим и т.п.
-        _ = Task.Run(() => RunAsync(() => HandleMoveAsync(user, before.VoiceChannel, after.VoiceChannel)));
+        var (left, joined) = (before.VoiceChannel, after.VoiceChannel);
+        if (joined is not null) _emptySince.TryRemove(joined.Id, out _);
+        // Из своей комнаты в канал-создатель: сначала создание (перенос обратно в свою комнату), потом проверка старой — как раньше
+        if (joined is not null && store.GetCreator(joined.Id) is not null)
+        {
+            _ = Task.Run(() => RunAsync(async () =>
+            {
+                await HandleJoinAsync(user, joined);
+                if (left is not null) await DeleteIfEmptyAsync(left);
+            }));
+            return Task.CompletedTask;
+        }
+        // вышел — проверяем сразу, не дожидаясь очереди создания
+        if (left is not null)
+            _ = Task.Run(async () =>
+            {
+                try { await DeleteIfEmptyAsync(left); }
+                catch (Exception ex) { logger.LogWarning(ex, "Temp voice: could not check room {Room}", left.Name); }
+            });
         return Task.CompletedTask;
     }
 
@@ -54,7 +119,12 @@ public sealed class TempVoiceService(
 
     private Task OnReady()
     {
-        _ = Task.Run(() => RunAsync(CleanupAsync));
+        _ = Task.Run(async () =>
+        {
+            // как и всё остальное: ничего не забываем, пока сервер не загружен целиком
+            await GuildCache.WaitAllAsync(client, TimeSpan.FromMinutes(2));
+            await RunAsync(CleanupAsync);
+        });
         return Task.CompletedTask;
     }
 
@@ -63,7 +133,15 @@ public sealed class TempVoiceService(
         await _gate.WaitAsync();
         try
         {
-            await action();
+            var task = action();
+            if (await Task.WhenAny(task, Task.Delay(GateTimeout)) != task)
+            {
+                // не держим очередь: операция доделается в фоне, ошибка — в лог
+                logger.LogWarning("Temp voice operation still running after {Seconds} s — not waiting for it", GateTimeout.TotalSeconds);
+                _ = task.ContinueWith(t => logger.LogWarning(t.Exception, "Temp voice operation failed"), TaskContinuationOptions.OnlyOnFaulted);
+                return;
+            }
+            await task;
         }
         catch (Exception ex)
         {
@@ -75,15 +153,12 @@ public sealed class TempVoiceService(
         }
     }
 
-    private async Task HandleMoveAsync(SocketUser user, SocketVoiceChannel? left, SocketVoiceChannel? joined)
+    private async Task HandleJoinAsync(SocketUser user, SocketVoiceChannel? joined)
     {
         if (joined is not null && user is SocketGuildUser member && !member.IsBot &&
             store.GetCreator(joined.Id) is { } creator && creator.GuildId == joined.Guild.Id &&
             store.GetRoom(joined.Id) is null)
             await CreateRoomAsync(member, joined, creator);
-
-        if (left is not null)
-            await DeleteIfEmptyAsync(left);
     }
 
     private async Task CreateRoomAsync(SocketGuildUser user, SocketVoiceChannel creatorChannel, TempVoiceCreator creator)
@@ -93,8 +168,17 @@ public sealed class TempVoiceService(
         // Уже есть своя комната от ЭТОГО создателя — переносим туда (комнаты разных создателей независимы)
         if (store.FindRoomByOwner(guild.Id, user.Id, creatorChannel.Id) is { } own && guild.GetVoiceChannel(own.ChannelId) is { } existing)
         {
-            await MoveAsync(user, existing.Id);
-            return;
+            try
+            {
+                _emptySince.TryRemove(existing.Id, out _);
+                await MoveAsync(user, existing.Id);
+                return;
+            }
+            catch (Discord.Net.HttpException)
+            {
+                // её как раз удаляют (была пустой) — делаем новую
+                store.RemoveRoom(existing.Id);
+            }
         }
 
         var botId = client.CurrentUser.Id;
@@ -192,7 +276,10 @@ public sealed class TempVoiceService(
             {
                 await Task.Delay(TimeSpan.FromSeconds(delay));
                 if (client.GetGuild(guildId)?.GetVoiceChannel(channelId) is { } again)
-                    await RunAsync(() => DeleteIfEmptyAsync(again, delayed: true));
+                {
+                    try { await DeleteIfEmptyAsync(again, delayed: true); }
+                    catch (Exception ex) { logger.LogWarning(ex, "Temp voice: could not delete room {Room}", again.Name); }
+                }
             });
             return;
         }
@@ -200,12 +287,20 @@ public sealed class TempVoiceService(
         try
         {
             await channel.DeleteAsync();
+            logger.LogInformation("Temp room {Room} deleted (empty)", channel.Name);
         }
-        catch (Discord.Net.HttpException)
+        catch (Discord.Net.HttpException ex) when (ex.HttpCode == System.Net.HttpStatusCode.NotFound)
         {
             // уже удалён вручную
         }
+        catch (Discord.Net.HttpException ex)
+        {
+            // нет прав, Discord недоступен и т.п. — комнату НЕ забываем: повторит проверка раз в минуту
+            logger.LogWarning(ex, "Could not delete empty temp room {Room} ({Code}) — will retry", channel.Name, ex.DiscordCode?.ToString() ?? ex.HttpCode.ToString());
+            return;
+        }
         store.RemoveRoom(channel.Id);
+        _emptySince.TryRemove(channel.Id, out _);
     }
 
     /// <summary>После перезапуска: удаляем пустые комнаты и забываем удалённые вручную.</summary>
@@ -222,8 +317,11 @@ public sealed class TempVoiceService(
             await DeleteIfEmptyAsync(channel);
         }
 
-        // Наводим порядок во всех категориях, где есть создатели или их комнаты
-        foreach (var guild in client.Guilds)
+        // Наводим порядок во всех категориях, где есть создатели или их комнаты — один раз после старта
+        // (Ready приходит и при каждом переподключении; массовые перестановки упираются в лимиты Discord)
+        if (_orderedOnce) return;
+        _orderedOnce = true;
+        foreach (var guild in client.Guilds.Where(GuildCache.Loaded))
         foreach (var categoryId in store.GetCreators(guild.Id)
                      .SelectMany(c => new[] { guild.GetVoiceChannel(c.ChannelId)?.CategoryId, c.RoomCategoryId ?? guild.GetVoiceChannel(c.ChannelId)?.CategoryId })
                      .Distinct())
