@@ -36,6 +36,8 @@ public sealed class MascotStats
     public bool LastFlightSpell { get; set; }
     public int GoldenSeen { get; set; }    // the golden robot came to me
     public int GoldenCaught { get; set; }
+    public int RainbowCaught { get; set; }
+    public int DoubleSeen { get; set; }    // golden and rainbow at once
 
     // --- the site (tracked by the site) ---
     public int SiteDays { get; set; }
@@ -165,6 +167,8 @@ public sealed class MascotStatsStore
             new("kinds", "general", "📖", "Grimoire", "See {0} different spells.", [1, 5, 10, 15, 20, 25, Spells.Length], Seen),
             new("golden-seen", "legend", "🏆", "Golden Hour", "Meet the golden robot {0} times (it comes after 10 catches in a row).", LegendTiers, s => s.GoldenSeen),
             new("golden-caught", "legend", "👑", "Midas Touch", "Catch the golden robot {0} times.", LegendTiers, s => s.GoldenCaught),
+            new("rainbow-caught", "legend", "🌈", "Prism Catcher", "Catch the rainbow robot {0} times.", LegendTiers, s => s.RainbowCaught),
+            new("golden-rainbow", "legend", "💫", "Double Rainbow", "Meet the golden rainbow robot.", Once, s => Math.Min(1, s.DoubleSeen)),
             new("legend", "legend", "🌟", "Legendary!", "Witness {0} legendary casts — two spells at once.", LegendTiers, s => s.Legendary),
         };
         for (var i = 0; i < Spells.Length; i++)
@@ -238,7 +242,7 @@ public sealed class MascotStatsStore
 
     /// <summary>Record an event from the site; returns the member's catches after it (null — ignored: too fast / not valid).</summary>
     public int? Record(ulong guildId, ulong userId, string kind, bool quick, IEnumerable<string>? spells, bool legendary, int? legacyCaught = null,
-        int dodges = 0, int dashes = 0, bool tired = false, int? hour = null, string? day = null, bool fast = false, bool longChase = false, bool golden = false)
+        int dodges = 0, int dashes = 0, bool tired = false, int? hour = null, string? day = null, bool fast = false, bool longChase = false, bool golden = false, bool rainbow = false)
     {
         lock (_lock)
         {
@@ -254,6 +258,7 @@ public sealed class MascotStatsStore
                 s.Streak++; s.BestStreak = Math.Max(s.BestStreak, s.Streak);
                 if (fast) s.PointBlank++;
                 if (golden) s.GoldenCaught++;
+                if (rainbow) s.RainbowCaught++;
                 if (longChase) s.Marathon++;
                 if (day is { Length: 10 } && day != s.LastCatchDay) { s.CatchDays++; s.LastCatchDay = day; }
                 // once: catches the browser counted before the server kept stats (capped)
@@ -269,6 +274,7 @@ public sealed class MascotStatsStore
             s.Dashes += Math.Clamp(dashes, 0, 10);
             if (tired) s.Exhausted++;
             if (golden) s.GoldenSeen++;
+            if (golden && rainbow) s.DoubleSeen++;
             // spells it cast — when it escaped or, now and then, when it was caught
             var valid = (spells ?? []).Distinct().Where(k => Spells.Any(x => x.Key == k)).Take(2).ToList();
             foreach (var k in valid) s.Spells[k] = s.Spells.GetValueOrDefault(k) + 1;

@@ -316,7 +316,7 @@ public static partial class PanelApi
         g.MapPost("/mascot", (ulong guildId, MascotEventBody body, ClaimsPrincipal user, [FromServices] MascotStatsStore mascot) =>
         {
             var caught = mascot.Record(guildId, user.UserId()!.Value, body.Kind ?? "", body.Quick, body.Spells, body.Legendary, body.Legacy,
-                body.Dodges ?? 0, body.Dashes ?? 0, body.Tired, body.Hour, body.Day, body.Fast, body.Long, body.Golden);
+                body.Dodges ?? 0, body.Dashes ?? 0, body.Tired, body.Hour, body.Day, body.Fast, body.Long, body.Golden, body.Rainbow);
             return Results.Ok(new { caught = caught ?? mascot.Get(guildId, user.UserId()!.Value).Caught });
         });
 
@@ -435,7 +435,7 @@ public static partial class PanelApi
                     {
                         // achievement class: I — common climbs (×2 from 5), II — rare (single spells, Grimoire), III — legendary casts
                         // IV — anything with the ultra-rare poop barrage
-                        tierClass = a.Id.Contains(MascotStatsStore.UltraRare) ? 4 : ReferenceEquals(a.Tiers, MascotStatsStore.LegendTiers) ? 3 : a.Group == "spells" || a.Id == "kinds" ? 2 : 1,
+                        tierClass = a.Id.Contains(MascotStatsStore.UltraRare) ? 4 : ReferenceEquals(a.Tiers, MascotStatsStore.LegendTiers) || a.Group is "legend" or "combos" ? 3 : a.Group == "spells" || a.Id == "kinds" ? 2 : 1,
                         id = a.Id, group = a.Group, unlocked = true, icon = a.Icon, title = a.Title, grade = g, gradeName = MascotStatsStore.GradeNames[g - 1],
                         rank = 1 + vals.Count(x => x.V > v), of = vals.Count, top,
                         description = string.Format(a.Description, a.Tiers[g - 1]).Replace(" 1 times", " once"), nextGrade = next is null ? null : MascotStatsStore.GradeNames[g], value = v, prev = a.Tiers[g - 1], next, maxGrade = a.Tiers.Length
@@ -837,7 +837,7 @@ public static partial class PanelApi
 
 public sealed record MemberRolesBody(List<string>? RoleIds);
 public sealed record MascotEventBody(string? Kind, bool Quick, List<string>? Spells, bool Legendary, int? Legacy = null,
-    int? Dodges = null, int? Dashes = null, bool Tired = false, int? Hour = null, string? Day = null, bool Fast = false, bool Long = false, bool Golden = false);
+    int? Dodges = null, int? Dashes = null, bool Tired = false, int? Hour = null, string? Day = null, bool Fast = false, bool Long = false, bool Golden = false, bool Rainbow = false);
 public sealed record SiteTrackBody(string? What, string? Day, string? Tab);
 public sealed record JoinBody(string? Role, string? Character);
 public sealed record CharacterBody(string? Name);

@@ -3095,3 +3095,15 @@ input.switch:checked { animation: switch-glow .5s ease-out; }
 .ach.sm .ach-icon { width: 38px; height: 38px; font-size: 14px; letter-spacing: -3px; }
 /* any tile: a long name wraps to two lines instead of being cut to "…" */
 .ach .ach-top b { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.25; }
+/* the RAINBOW robot (and the golden rainbow one) */
+.mascot.rainbow svg { animation: gb-rb-hue 1.6s linear infinite; }
+@keyframes gb-rb-hue {
+  from { filter: saturate(2) hue-rotate(0deg) drop-shadow(0 0 8px rgba(255, 90, 90, .9)) drop-shadow(0 0 20px rgba(90, 180, 255, .6)); }
+  to { filter: saturate(2) hue-rotate(360deg) drop-shadow(0 0 8px rgba(255, 90, 90, .9)) drop-shadow(0 0 20px rgba(90, 180, 255, .6)); } }
+.mascot.rainbow.golden svg { animation: gb-rb-gold 1.6s linear infinite; }
+@keyframes gb-rb-gold {
+  from { filter: sepia(1) saturate(3.4) hue-rotate(0deg) brightness(1.15) drop-shadow(0 0 10px rgba(255, 210, 80, .95)); }
+  to { filter: sepia(1) saturate(3.4) hue-rotate(360deg) brightness(1.15) drop-shadow(0 0 10px rgba(255, 210, 80, .95)); } }
+.mascot.rainbow::before { content: ""; position: absolute; inset: -22px; border-radius: 50%; pointer-events: none; opacity: .8;
+  background: conic-gradient(from 0deg, rgba(255, 90, 90, .35), rgba(255, 210, 90, .35), rgba(90, 255, 156, .35), rgba(90, 180, 255, .35), rgba(196, 90, 255, .35), rgba(255, 90, 90, .35));
+  filter: blur(10px); animation: gb-spin 2s linear infinite; }
