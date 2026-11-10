@@ -3107,3 +3107,7 @@ input.switch:checked { animation: switch-glow .5s ease-out; }
 .mascot.rainbow::before { content: ""; position: absolute; inset: -22px; border-radius: 50%; pointer-events: none; opacity: .8;
   background: conic-gradient(from 0deg, rgba(255, 90, 90, .35), rgba(255, 210, 90, .35), rgba(90, 255, 156, .35), rgba(90, 180, 255, .35), rgba(196, 90, 255, .35), rgba(255, 90, 90, .35));
   filter: blur(10px); animation: gb-spin 2s linear infinite; }
+.ach .ach-foot { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.ach .ach-foot .ach-pips { margin-top: 0; }
+.ach .ach-pts { margin-left: auto; font-size: 11px; font-weight: 800; color: var(--gc); white-space: nowrap; }
+.ach-formula { margin: -4px 0 10px; }

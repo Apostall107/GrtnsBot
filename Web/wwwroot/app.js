@@ -8047,7 +8047,8 @@ function achievementsCard(d) {
         h("span", { class: "ach-next" }, a.next ? `${a.value} / ${a.next} → ${a.nextGrade || "next grade"}` : `${a.value} · max grade!`),
         h("div", { class: "ach-bar", title: a.next ? `${a.value} / ${a.next}` : `${a.value}` },
           h("i", { style: `width:${a.next ? Math.min(100, Math.round((a.value - a.prev) / (a.next - a.prev) * 100)) : 100}%` })),
-        h("span", { class: "ach-pips" }, Array.from({ length: a.maxGrade }, (_, i) => h("i", { class: i < a.grade ? `on g${i + 1}` : "" })))),
+        h("div", { class: "ach-foot" }, h("span", { class: "ach-pips" }, Array.from({ length: a.maxGrade }, (_, i) => h("i", { class: i < a.grade ? `on g${i + 1}` : "" }))),
+          a.points != null ? h("span", { class: "ach-pts", title: `${a.grade} grade${a.grade === 1 ? "" : "s"} × ${[0, 1, 2, 10, 50][a.tierClass || 1]} (Tier ${["", "I", "II", "III", "IV"][a.tierClass || 1]})` }, `${a.points} pts`) : null)),
       a.top ? h("div", { class: "rank-pop" }, h("div", { class: "rank-pop-title" }, `Your place: #${a.rank} of ${a.of}`),
         a.top.map((t, i) => h("div", { class: `rank-row${t.me ? " me" : ""}` }, h("span", { class: "rank-pos" }, ["🥇", "🥈", "🥉"][i]),
           t.member.avatarUrl ? h("img", { class: "avatar", src: t.member.avatarUrl, alt: "" }) : h("span", { class: "avatar" }),
@@ -8097,7 +8098,10 @@ function achievementsCard(d) {
   const legend = h("div", { class: "ach-legend" }, grades.map((n, i) => chip(`ach-chip g${i + 1}`, n, selG, i + 1)),
     h("span", { class: "ach-legend-sep" }), chip("ach-cls-chip c1", "✦ Tier I ×1", selT, 1), chip("ach-cls-chip c2", "✦✦ Tier II ×2", selT, 2), chip("ach-cls-chip c3", "✦✦✦ Tier III ×10", selT, 3), chip("ach-cls-chip c4", "✦✦✦✦ Tier IV ×50", selT, 4), reset);
   draw();
-  return h("div", { class: "card" }, h("h2", {}, "🏆 Achievements"), legend, body);
+  const m = d.multipliers || [1, 2, 10, 50];
+  return h("div", { class: "card" }, h("h2", {}, "🏆 Achievements"),
+    h("div", { class: "muted small ach-formula" }, `Grade points = grade (1–7) × tier multiplier: ✦ Tier I ×${m[0]} · ✦✦ Tier II ×${m[1]} · ✦✦✦ Tier III ×${m[2]} · ✦✦✦✦ Tier IV ×${m[3]}. You have ${d.points ?? 0} of ${d.maxPoints ?? 0}.`),
+    legend, body);
 }
 
 /** Ranking: my place per category among everyone on the server; hover a tile for the top 3. */
