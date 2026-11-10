@@ -1681,7 +1681,7 @@ function summonButtons(after) {
     // After 5 runs/dashes it gets tired: slows down and can be caught.
     const NEAR = 55, MAX_ACTS = 5, inside = () => ({ x0: A.left + 4, y0: A.top + 4, x1: A.right - W - 4, y1: A.bottom - H - 4 });
     let ptr = null, raf = 0, last = performance.now(), born = last, entered = false, acts = 0, tired = false;
-    let runUntil = 0, dash = null, done = false, casting = false, caughtIt = false, castKinds = [], castLegend = false;
+    let runUntil = 0, dash = null, done = false, casting = false, caughtIt = false, castKinds = [], castLegend = false, dodges = 0, dashes = 0;
     const onMove = e => { ptr = [e.clientX, e.clientY]; };
     const norm = (x, y) => { const l = Math.hypot(x, y) || 1; return [x / l, y / l]; };
     const tire = () => { if (++acts >= MAX_ACTS) { tired = true; el.classList.add("tired"); el.classList.remove("run"); el.title = "It's tired — catch it!"; } };
@@ -1715,11 +1715,11 @@ function summonButtons(after) {
             to = [Math.max(b.x0, Math.min(b.x1, to[0])), Math.max(b.y0, Math.min(b.y1, to[1]))];
             dash = { from: pos.slice(), to, t0: now }; dir = norm(to[0] - pos[0], to[1] - pos[1]);
             dodge.classList.remove("hop"); void dodge.offsetWidth; dodge.classList.add("hop");
-            runUntil = 0; el.classList.remove("run"); tire();
+            runUntil = 0; el.classList.remove("run"); dashes++; tire();
             return;
           }
           // just turn and run the other way
-          if (now >= runUntil) { tire(); if (!tired) { runUntil = now + 1000; el.classList.add("run"); } }
+          if (now >= runUntil) { dodges++; tire(); if (!tired) { runUntil = now + 1000; el.classList.add("run"); } }
           dir = away;
         }
       }
@@ -1762,7 +1762,12 @@ function summonButtons(after) {
     EVENTS.forEach(t => document.addEventListener(t, guard, true));
     let ended = false;
     // Achievements: the member caught it / saw it escape (with the spells it cast) — counted on the server
-    const report = body => state.guildId ? gApi("POST", "/me/mascot", body).catch(() => null) : Promise.resolve(null);
+    // every report also carries what happened in this flight: dodges, dashes, worn out, my local hour and day
+    const report = body => {
+      if (!state.guildId) return Promise.resolve(null);
+      const d = new Date(), day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      return gApi("POST", "/me/mascot", { ...body, dodges, dashes, tired, hour: d.getHours(), day }).catch(() => null);
+    };
     function end() {
       if (ended) return; ended = true;
       if (!caughtIt && entered) report({ kind: "escaped", spells: castKinds, legendary: castLegend });
@@ -7717,7 +7722,7 @@ function achievementsCard(d) {
   return h("div", { class: "card" }, h("h2", {}, "🏆 Achievements"),
     h("div", { class: "ach-legend" }, grades.map((n, i) => h("span", { class: `ach-chip g${i + 1}` }, n)),
       h("span", { class: "ach-legend-sep" }), h("span", { class: "ach-cls-chip c1" }, "✦ Tier I"), h("span", { class: "ach-cls-chip c2" }, "✦✦ Tier II"), h("span", { class: "ach-cls-chip c3" }, "✦✦✦ Tier III")),
-    group("general", "General"), group("spells", "Spells"), group("legend", "Legendary casts"), group("combos", "Legendary combinations", true));
+    group("general", "General"), group("guild", "Guild"), group("spells", "Spells"), group("legend", "Legendary casts"), group("combos", "Legendary combinations", true));
 }
 
 /** Ranking: my place per category among everyone on the server; hover a tile for the top 3. */

@@ -18,6 +18,25 @@ public sealed class MascotStats
     public DateTimeOffset? Last { get; set; }
     /// <summary>The catches counted only in the browser before the server kept stats were taken over (once).</summary>
     public bool LegacyImported { get; set; }
+
+    // --- more mascot counters (per flight) ---
+    public int Spotted { get; set; }       // robots that flew by while I was on the site
+    public int Dodges { get; set; }        // it ran away from my cursor
+    public int Dashes { get; set; }        // I cornered it — it dashed past me
+    public int Exhausted { get; set; }     // I wore it out (💦)
+    public int NightCatches { get; set; }  // caught 00–06 my time
+    public int MorningCatches { get; set; } // caught 06–10 my time
+    public int Streak { get; set; }        // catches in a row without letting one escape
+    public int BestStreak { get; set; }
+    public int CatchDays { get; set; }     // different days with a catch
+    public string? LastCatchDay { get; set; }
+
+    // --- from the bot (filled per request, not stored) ---
+    [System.Text.Json.Serialization.JsonIgnore] public int GroupsJoined { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore] public int GroupsAttended { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore] public int GroupsOrganized { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore] public int Characters { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore] public int HasBirthday { get; set; }
 }
 
 /// <summary>
@@ -72,6 +91,21 @@ public sealed class MascotStatsStore
             new("caught", "general", "🤖", "Bot Hunter", "Catch the robot {0} times.", PowerTiers, s => s.Caught),
             new("quick", "general", "⚡", "Quick Hands", "Catch the robot {0} times before it gets tired.", PowerTiers, s => s.QuickCatches),
             new("escaped", "general", "💨", "It Got Away", "Let the robot escape {0} times.", PowerTiers, s => s.Escaped),
+            new("spotted", "general", "👀", "Spotter", "See the robot fly by {0} times.", PowerTiers, s => s.Spotted),
+            new("dodges", "general", "🖱️", "Near Miss", "Make the robot run from your cursor {0} times.", PowerTiers, s => s.Dodges),
+            new("dashes", "general", "💥", "Cornered", "Corner the robot so it dashes past you {0} times.", PowerTiers, s => s.Dashes),
+            new("tired", "general", "😮‍💨", "Exhausted", "Wear the robot out {0} times.", PowerTiers, s => s.Exhausted),
+            new("night", "general", "🦉", "Night Owl", "Catch the robot between midnight and 6 am {0} times.", PowerTiers, s => s.NightCatches),
+            new("morning", "general", "🐦", "Early Bird", "Catch the robot between 6 and 10 am {0} times.", PowerTiers, s => s.MorningCatches),
+            new("streak", "general", "🔁", "On a Roll", "Catch the robot {0} times in a row without letting one escape.", PowerTiers, s => s.BestStreak),
+            new("days", "general", "📅", "Daily Visitor", "Catch the robot on {0} different days.", PowerTiers, s => s.CatchDays),
+            new("joined", "guild", "⚔️", "Party Member", "Sign up for {0} groups.", PowerTiers, s => s.GroupsJoined),
+            new("attended", "guild", "✅", "Showed Up", "Be marked as present in {0} groups.", PowerTiers, s => s.GroupsAttended),
+            new("organized", "guild", "📣", "Organizer", "Organize {0} groups.", PowerTiers, s => s.GroupsOrganized),
+            new("roster", "guild", "🧙", "Roster", "Have {0} characters in My characters.", [1, 2, 3, 4, 5, 7, 10], s => s.Characters),
+            // one-time, straight to Mythic (all seven grades at once)
+            new("registered", "guild", "🪪", "Welcome to Greatness", "Register a character in My characters.", [1, 1, 1, 1, 1, 1, 1], s => Math.Min(1, s.Characters)),
+            new("birthday", "guild", "🎂", "Birthday Registered", "Tell the bot your birthday.", [1], s => s.HasBirthday),
             new("spells", "general", "✨", "Spellbound", "See {0} spells in total.", PowerTiers, Total),
             new("kinds", "general", "📖", "Grimoire", "See {0} different spells.", [1, 3, 5, 7, 10, 13, 15], Seen),
             new("legend", "legend", "🌟", "Legendary!", "Witness {0} legendary casts — two spells at once.", LegendTiers, s => s.Legendary),
@@ -119,7 +153,8 @@ public sealed class MascotStatsStore
     }
 
     /// <summary>Record an event from the site; returns the member's catches after it (null — ignored: too fast / not valid).</summary>
-    public int? Record(ulong guildId, ulong userId, string kind, bool quick, IEnumerable<string>? spells, bool legendary, int? legacyCaught = null)
+    public int? Record(ulong guildId, ulong userId, string kind, bool quick, IEnumerable<string>? spells, bool legendary, int? legacyCaught = null,
+        int dodges = 0, int dashes = 0, bool tired = false, int? hour = null, string? day = null)
     {
         lock (_lock)
         {
@@ -130,13 +165,22 @@ public sealed class MascotStatsStore
             s.Last = now;
             if (kind == "caught")
             {
+                if (hour is >= 0 and < 6) s.NightCatches++;
+                else if (hour is >= 6 and < 10) s.MorningCatches++;
+                s.Streak++; s.BestStreak = Math.Max(s.BestStreak, s.Streak);
+                if (day is { Length: 10 } && day != s.LastCatchDay) { s.CatchDays++; s.LastCatchDay = day; }
                 // once: catches the browser counted before the server kept stats (capped)
                 if (!s.LegacyImported) { s.LegacyImported = true; if (legacyCaught is > 0) s.Caught = Math.Max(s.Caught, Math.Min(legacyCaught.Value, 500)); }
                 s.Caught++;
                 if (quick) s.QuickCatches++;
             }
-            else if (kind == "escaped") s.Escaped++;
+            else if (kind == "escaped") { s.Escaped++; s.Streak = 0; }
             else return null;
+            // what happened during the flight (capped: one robot can't give much)
+            s.Spotted++;
+            s.Dodges += Math.Clamp(dodges, 0, 10);
+            s.Dashes += Math.Clamp(dashes, 0, 10);
+            if (tired) s.Exhausted++;
             // spells it cast — when it escaped or, now and then, when it was caught
             var valid = (spells ?? []).Distinct().Where(k => Spells.Any(x => x.Key == k)).Take(2).ToList();
             foreach (var k in valid) s.Spells[k] = s.Spells.GetValueOrDefault(k) + 1;

@@ -315,19 +315,31 @@ public static partial class PanelApi
         // The site mascot: the member caught the robot / saw it escape (with the spells it cast)
         g.MapPost("/mascot", (ulong guildId, MascotEventBody body, ClaimsPrincipal user, [FromServices] MascotStatsStore mascot) =>
         {
-            var caught = mascot.Record(guildId, user.UserId()!.Value, body.Kind ?? "", body.Quick, body.Spells, body.Legendary, body.Legacy);
+            var caught = mascot.Record(guildId, user.UserId()!.Value, body.Kind ?? "", body.Quick, body.Spells, body.Legendary, body.Legacy,
+                body.Dodges ?? 0, body.Dashes ?? 0, body.Tired, body.Hour, body.Day);
             return Results.Ok(new { caught = caught ?? mascot.Get(guildId, user.UserId()!.Value).Caught });
         });
 
         // Achievements tab: my stats and the achievements (locked ones come without title and description)
-        g.MapGet("/achievements", (ulong guildId, ClaimsPrincipal user, DiscordSocketClient client, [FromServices] MascotStatsStore mascot) =>
+        g.MapGet("/achievements", (ulong guildId, ClaimsPrincipal user, DiscordSocketClient client, [FromServices] MascotStatsStore mascot,
+            [FromServices] LfgHistoryStore history, [FromServices] CharacterStore chars, [FromServices] BirthdayStore birthdays) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var me = user.UserId()!.Value;
-            var s = mascot.Get(guildId, me);
-            // Ranking: where I am among everyone on the server who played, per category; the top 3 for the hover
-            var all = mascot.Players(guildId).Where(x => guild.GetUser(x.UserId) is not null || x.UserId == me).ToList();
-            if (!all.Any(x => x.UserId == me)) all.Add((me, s));
+            // Ranking: where I am among everyone on the server who played (the robot or LFG), per category; the top 3 for the hover
+            var lfgStats = LfgStats.Players(history.Get(guildId, null)).ToDictionary(p => p.UserId);
+            var charCount = chars.All(guildId).GroupBy(c => c.UserId).ToDictionary(x => x.Key, x => x.Count());
+            var all = mascot.Players(guildId).ToList();
+            foreach (var id in lfgStats.Keys.Concat(charCount.Keys).Append(me).Distinct())
+                if (!all.Any(x => x.UserId == id)) all.Add((id, new MascotStats()));
+            all = all.Where(x => guild.GetUser(x.UserId) is not null || x.UserId == me).ToList();
+            foreach (var (id, st) in all)
+            {
+                if (lfgStats.TryGetValue(id, out var p)) { st.GroupsJoined = p.Groups; st.GroupsAttended = p.Attended; st.GroupsOrganized = p.Organized; }
+                st.Characters = charCount.GetValueOrDefault(id);
+                st.HasBirthday = birthdays.Of(guildId, id) is null ? 0 : 1;
+            }
+            var s = all.First(x => x.UserId == me).Stats;
             object Rank(string key, string label, string icon, Func<MascotStats, int> value)
             {
                 var mine = value(s);
@@ -374,7 +386,7 @@ public static partial class PanelApi
                     return new
                     {
                         // achievement class: I — common climbs (×2 from 5), II — rare (single spells, Grimoire), III — legendary casts
-                        tierClass = ReferenceEquals(a.Tiers, MascotStatsStore.PowerTiers) ? 1 : ReferenceEquals(a.Tiers, MascotStatsStore.LegendTiers) ? 3 : 2,
+                        tierClass = ReferenceEquals(a.Tiers, MascotStatsStore.LegendTiers) ? 3 : a.Group == "spells" || a.Id == "kinds" ? 2 : 1,
                         id = a.Id, group = a.Group, unlocked = true, icon = a.Icon, title = a.Title, grade = g, gradeName = MascotStatsStore.GradeNames[g - 1],
                         rank = 1 + vals.Count(x => x.V > v), of = vals.Count, top,
                         description = string.Format(a.Description, a.Tiers[g - 1]).Replace(" 1 times", " once"), nextGrade = next is null ? null : MascotStatsStore.GradeNames[g], value = v, prev = a.Tiers[g - 1], next, maxGrade = a.Tiers.Length
@@ -775,7 +787,8 @@ public static partial class PanelApi
 }
 
 public sealed record MemberRolesBody(List<string>? RoleIds);
-public sealed record MascotEventBody(string? Kind, bool Quick, List<string>? Spells, bool Legendary, int? Legacy = null);
+public sealed record MascotEventBody(string? Kind, bool Quick, List<string>? Spells, bool Legendary, int? Legacy = null,
+    int? Dodges = null, int? Dashes = null, bool Tired = false, int? Hour = null, string? Day = null);
 public sealed record JoinBody(string? Role, string? Character);
 public sealed record CharacterBody(string? Name);
 public sealed record CharacterProfileBody(string? ClassRoleId, string? Comment, int? Gs = null, int? Race = null, int? ServerId = null);
