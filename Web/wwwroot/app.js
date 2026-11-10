@@ -1646,7 +1646,7 @@ const siteTrack = (() => {
 function summonButtons(after) {
   const go = kind => { if (after) after(); if (kind === "golden" || kind === "rainbow" || kind === "both") window.__neonCat && window.__neonCat({ golden: kind !== "rainbow", rainbow: kind !== "golden" }); else window.__mascotFinale && window.__mascotFinale(kind); };
   return h("div", { class: "row summon-row", style: "gap:6px;flex-wrap:wrap" },
-    [...SPELLS, ["legend", "🌟", "LEGENDARY (two spells at once)"], ["random", "🎲", "Random spell"], ["golden", "🏆", "GOLDEN robot (always casts, 6% legendary)"], ["rainbow", "🌈", "RAINBOW robot (legendary ×4)"], ["both", "💫", "GOLDEN RAINBOW robot (always casts, legendary ×16)"]].map(([k, e, n]) => h("button", { type: "button", class: "btn secondary sm", title: `Summon — casts: ${n}`, onclick: () => go(k) }, e)));
+    [...SPELLS, ["legend", "🌟", "LEGENDARY (two spells at once)"], ["random", "🎲", "Random spell"], ["golden", "🏆", "GOLDEN robot (always casts, 6% legendary)"], ["rainbow", "🌈", "RAINBOW robot (legendary ×10)"], ["both", "💫", "GOLDEN RAINBOW robot (always casts, 60% legendary)"]].map(([k, e, n]) => h("button", { type: "button", class: "btn secondary sm", title: `Summon — casts: ${n}`, onclick: () => go(k) }, e)));
 }
 (function mascots() {
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
@@ -1680,7 +1680,7 @@ function summonButtons(after) {
     const golden = summonGolden || (streak >= 10 && Math.random() < Math.min(1, .1 * 2 ** (streak - 10)));
     if (golden && !summonGolden) sess.set(streakKey, "0");
     // The RAINBOW robot: +1% for every catch in a row (its own count, starts over when it appears or one escapes).
-    // It can come together with the golden one. Legendary casts ×4 (×16 when golden too).
+    // It can come together with the golden one. Legendary casts ×10 (60% when golden too).
     const rbKey = `gb.mascotRainbow.${state.guildId}`, rbStreak = Number(sess.get(rbKey) || 0);
     // +1% per catch as usual; in the golden zone (10+ catches in a row) +2% more for every catch from the 10th on
     const rainbow = summonRainbow || Math.random() < Math.min(1, rbStreak / 100 + Math.max(0, streak - 9) * .02);
@@ -1688,7 +1688,7 @@ function summonButtons(after) {
     // Escape: 4% a spell, never legendary. Caught: 60% (1.5% legendary) — it strikes back as it vanishes.
     const rollSpell = caught => {
       const r = Math.random();
-      const boost = rainbow ? 4 : 1;
+      const boost = rainbow ? 10 : 1;   // rainbow: legendary ×10 (golden rainbow 60%)
       if (golden) return r < .06 * boost ? "legend" : pickSpell();
       return caught ? (r < .015 * boost ? "legend" : r < .6 ? pickSpell() : null) : (r < .04 ? pickSpell() : null);
     };
@@ -1710,9 +1710,9 @@ function summonButtons(after) {
     const base = span / Math.max(4500, span * 7.5);          // px per ms — same pace as before
     const el = h("div", { class: `mascot mascot-${M.name}${golden ? " golden" : ""}${rainbow ? " rainbow" : ""}`,
       title: golden && rainbow ? "A GOLDEN RAINBOW robot!" : golden ? "A GOLDEN robot — catch it!" : rainbow ? "A RAINBOW robot — catch it!" : "Catch me!" });
-    if (golden && rainbow) toast("💫 A GOLDEN RAINBOW robot appeared! Always casts — legendary ×16!");
+    if (golden && rainbow) toast("💫 A GOLDEN RAINBOW robot appeared! Always casts — 60% legendary!");
     else if (golden) toast("✨ A GOLDEN robot appeared! It surely casts something…");
-    else if (rainbow) toast("🌈 A RAINBOW robot appeared! Legendary casts ×4");
+    else if (rainbow) toast("🌈 A RAINBOW robot appeared! Legendary casts ×10");
     el.innerHTML = `<div class="mascot-dodge"><div class="mascot-bob">${M.svg}</div></div>`;
     el.style.opacity = "0";
     document.body.append(el);
@@ -7997,7 +7997,7 @@ async function pageChars(main) {
 async function pageMascot(main) {
   const g = currentGuild() || {};
   main.append(h("div", { class: "card-head" }, h("h1", {}, "🤖 Mascot")),
-    h("p", { class: "muted small" }, "Only you (the bot owner) see this page. The little Greatness robot flies across the site for everyone on this server, runs away from the cursor, gets tired and can be caught. When it escapes it sometimes casts a spell (4%, never legendary); when it's caught it strikes back much more often (60%; 1.5% — a legendary cast of two spells at once). The poop barrage is 5× rarer than the other spells. After 10 catches in a row a GOLDEN robot may come (10%, doubling with each further catch): it always casts, legendary 6%. A RAINBOW robot comes with +1% for every catch in a row (+2% more per catch once you're in the golden zone, 10+ in a row): legendary ×4 (×16 if it's golden too). Members collect what they saw in Member → Achievements."));
+    h("p", { class: "muted small" }, "Only you (the bot owner) see this page. The little Greatness robot flies across the site for everyone on this server, runs away from the cursor, gets tired and can be caught. When it escapes it sometimes casts a spell (4%, never legendary); when it's caught it strikes back much more often (60%; 1.5% — a legendary cast of two spells at once). The poop barrage is 5× rarer than the other spells. After 10 catches in a row a GOLDEN robot may come (10%, doubling with each further catch): it always casts, legendary 6%. A RAINBOW robot comes with +1% for every catch in a row (+2% more per catch once you're in the golden zone, 10+ in a row): legendary ×10 (60% if it's golden too). Members collect what they saw in Member → Achievements."));
   // How often
   const secs = h("input", { type: "number", min: "0", max: "604800", step: "1", value: String(g.mascotSeconds ?? 900), style: "width:140px", "aria-label": "Seconds" });
   const human = h("span", { class: "muted small" });
