@@ -91,7 +91,8 @@ public sealed class MascotStatsStore
             new("caught", "general", "🤖", "Bot Hunter", "Catch the robot {0} times.", PowerTiers, s => s.Caught),
             new("quick", "general", "⚡", "Quick Hands", "Catch the robot {0} times before it gets tired.", PowerTiers, s => s.QuickCatches),
             new("escaped", "general", "💨", "It Got Away", "Let the robot escape {0} times.", PowerTiers, s => s.Escaped),
-            new("spotted", "general", "👀", "Spotter", "See the robot fly by {0} times.", PowerTiers, s => s.Spotted),
+            // every catch or escape counted before this achievement existed was also a sighting
+            new("spotted", "general", "👀", "Spotter", "See the robot fly by {0} times.", PowerTiers, s => Math.Max(s.Spotted, s.Caught + s.Escaped)),
             new("dodges", "general", "🖱️", "Near Miss", "Make the robot run from your cursor {0} times.", PowerTiers, s => s.Dodges),
             new("dashes", "general", "💥", "Cornered", "Corner the robot so it dashes past you {0} times.", PowerTiers, s => s.Dashes),
             new("tired", "general", "😮‍💨", "Exhausted", "Wear the robot out {0} times.", PowerTiers, s => s.Exhausted),
