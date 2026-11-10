@@ -1642,6 +1642,30 @@ const siteTrack = (() => {
     gApi("POST", "/me/track", { what, day: today(), tab: tab || null }).catch(() => { /* just stats */ });
   };
 })();
+/** Header switch: shows / hides the flying robot mini-game for this user in this browser. */
+function mascotSwitch() {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return null;   // the robot never flies then anyway
+  const g = state.guilds && state.guilds.find(x => x.id === state.guildId);
+  if (g && g.mascotSeconds === 0) return null;                                 // turned off for the whole server
+  const on = store.get("gb.mascotOff") !== "1";
+  const hint = "Flying robot mini-game: now and then a little robot flies across the page — click it to catch it (achievements). " +
+    "Turn off to stop it from appearing. Only for you, in this browser; your achievements are kept.";
+  const state_ = h("span", { class: "mt-state" }, on ? "On" : "Off");
+  const sw = h("input", { type: "checkbox", class: "switch", "aria-label": "Show the flying robot" });
+  sw.checked = on;
+  const wrap = h("label", { class: `mascot-toggle${on ? "" : " off"}`, title: hint },
+    h("span", { class: "mt-ico", "aria-hidden": "true" }, "🤖"),
+    h("span", { class: "mt-text" }, h("span", { class: "mt-name" }, "Flying robot"), state_), sw);
+  sw.addEventListener("change", () => {
+    store.set("gb.mascotOff", sw.checked ? "0" : "1");
+    state_.textContent = sw.checked ? "On" : "Off";
+    wrap.classList.toggle("off", !sw.checked);
+    if (sw.checked) toast("🤖 Flying robot is on — it will show up now and then. Click it to catch it!");
+    else { window.__mascotQuiet && window.__mascotQuiet(); toast("🤖 Flying robot is off — it won't appear for you anymore. Turn it back on here anytime."); }
+  });
+  return wrap;
+}
+
 /** Owner only: summon the robot now — it will surely cast the chosen spell when it escapes. */
 function summonButtons(after) {
   const go = kind => { if (after) after(); if (kind === "golden" || kind === "rainbow" || kind === "both") window.__neonCat && window.__neonCat({ golden: kind !== "rainbow", rainbow: kind !== "golden" }); else window.__mascotFinale && window.__mascotFinale(kind); };
@@ -1663,13 +1687,15 @@ function summonButtons(after) {
     const top = ((document.querySelector(".topbar") || {}).getBoundingClientRect?.().bottom || 56) + 10;
     return { left: r && r.right > 0 && innerWidth > 900 ? r.right : 0, top, right: innerWidth - 12, bottom: innerHeight - 8 };
   };
-  let busy = false, timer = 0;
+  let busy = false, timer = 0, quiet = null;
+  const turnedOff = () => store.get("gb.mascotOff") === "1";   // the header switch: this user, this browser
   function fly(opts) {
     // The owner can summon it with a guaranteed spell (opts.finale: a spell or "random").
     let forced = opts && typeof opts === "object" ? opts.finale : null;
     const summonGolden = !!(opts && typeof opts === "object" && opts.golden), summonRainbow = !!(opts && typeof opts === "object" && opts.rainbow);
     if ((forced || summonGolden || summonRainbow) && busy) return toast("The robot is already flying — wait until it's gone.", "warn");
     if (busy || document.hidden || !state.me) return schedule();
+    if (turnedOff() && !forced && !summonGolden && !summonRainbow) return schedule();
     if (forced === "random") forced = pickSpell();
     // The GOLDEN robot: after 10 catches in a row (counted in this browser session) there's a 10% chance, doubling with every further
     // catch (20%, 40%, 80%, 100%); when it appears the count starts over. It always casts, legendary 4× as often (6%).
@@ -1859,6 +1885,8 @@ function summonButtons(after) {
       if (!caughtIt && entered) { report({ kind: "escaped", spells: castKinds, legendary: castLegend, golden, rainbow }); sess.set(streakKey, "0"); sess.set(rbKey, "0"); sess.set(runKey, "0"); }
       stopWatch(); clearInterval(trail); EVENTS.forEach(t => document.removeEventListener(t, guard, true)); el.remove(); busy = false; schedule();
     }
+    // Switched off in the header while flying: it just disappears — not counted as an escape, the streak stays
+    quiet = () => { if (ended) return; ended = true; stopWatch(); clearInterval(trail); EVENTS.forEach(t => document.removeEventListener(t, guard, true)); el.remove(); busy = false; };
     // ---- The finale spells (pure DOM/CSS, a few seconds, never block clicks) ----
     const fxEl = (cls, style) => { const d = h("div", { class: `gb-fx ${cls}`, style: style || "" }); document.body.append(d); return d; };
     const burst = (x, y, n, dist, cls, dur) => {
@@ -2916,7 +2944,8 @@ function summonButtons(after) {
   window.__neonCat = fly;
   window.__mascotFinale = kind => fly({ finale: kind });   // owner summon / test hook: a spell key or "random"
   window.__neonCatReschedule = () => schedule(false);
-  window.__mascotStart = () => schedule(true);   // started from boot(), once the server's frequency is known
+  window.__mascotStart = () => schedule(true);
+  window.__mascotQuiet = () => { if (quiet) quiet(); quiet = null; };   // started from boot(), once the server's frequency is known
 })();
 
 async function boot() {
@@ -3154,6 +3183,7 @@ function renderShell() {
         onclick: () => layout.classList.toggle("drawer-open") }, icon("menu", 20)),
       h("div", { class: "brand" }, h("span", { class: "brand-logo" }, h("img", { src: "/favicon.png", alt: "" })),
         h("span", { class: "brand-text" }, h("span", { class: "brand-name" }, "Greatness Bot"))),
+      mascotSwitch(),
       h("div", { class: "spacer" }),
       h("button", { type: "button", class: "search-trigger", title: "Search (Ctrl+K)", "aria-label": "Search", onclick: () => quickSearch() },
         icon("search", 16), h("span", { class: "search-trigger-text" }, "Search…"), h("kbd", {}, navigator.platform.includes("Mac") ? "⌘K" : "Ctrl K")),
