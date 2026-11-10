@@ -75,9 +75,7 @@ public sealed class GuildPrefsStore
     public GuildPrefsStore(IConfiguration config)
     {
         _path = config["Storage:GuildPrefsPath"] ?? "data/guild-prefs.json";
-        _data = File.Exists(_path)
-            ? JsonSerializer.Deserialize<Dictionary<ulong, GuildPrefs>>(File.ReadAllText(_path)) ?? new()
-            : new();
+        _data = DataFiles.Load<Dictionary<ulong, GuildPrefs>>(_path) ?? new();
     }
 
     /// <summary>Копия настроек сервера (нет записи — значения по умолчанию).</summary>
@@ -140,9 +138,7 @@ public sealed class UserDmStore
     {
         _guild = guild;
         _path = config["Storage:UserDmPath"] ?? "data/user-dm.json";
-        _off = File.Exists(_path)
-            ? JsonSerializer.Deserialize<Dictionary<string, HashSet<string>>>(File.ReadAllText(_path)) ?? new()
-            : new();
+        _off = DataFiles.Load<Dictionary<string, HashSet<string>>>(_path) ?? new();
     }
 
     private static string Key(ulong guildId, ulong userId) => $"{guildId}:{userId}";

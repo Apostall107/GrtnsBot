@@ -87,9 +87,7 @@ public sealed class BirthdayStore
     public BirthdayStore(IConfiguration config)
     {
         _path = config["Storage:BirthdaysPath"] ?? "data/birthdays.json";
-        _data = File.Exists(_path)
-            ? JsonSerializer.Deserialize<Dictionary<ulong, GuildBirthdays>>(File.ReadAllText(_path)) ?? new()
-            : new();
+        _data = DataFiles.Load<Dictionary<ulong, GuildBirthdays>>(_path) ?? new();
     }
 
     public GuildBirthdays Get(ulong guildId)

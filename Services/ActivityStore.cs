@@ -20,9 +20,7 @@ public sealed class ActivityStore
     public ActivityStore(IConfiguration config)
     {
         _path = config["Storage:ActivitiesPath"] ?? "data/activities.json";
-        _data = File.Exists(_path)
-            ? JsonSerializer.Deserialize<Dictionary<ulong, List<Activity>>>(File.ReadAllText(_path)) ?? new()
-            : new();
+        _data = DataFiles.Load<Dictionary<ulong, List<Activity>>>(_path) ?? new();
     }
 
     public IReadOnlyList<Activity> Get(ulong guildId)

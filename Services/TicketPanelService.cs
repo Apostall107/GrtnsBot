@@ -52,6 +52,7 @@ public sealed class TicketPanelService(DiscordSocketClient client, TicketPanelSt
         if (client.GetGuild(panel.GuildId)?.GetTextChannel(channelId) is not { } channel) return;
         if (await channel.GetMessageAsync(messageId) is not IUserMessage message)
         {
+            if (!SafetyValve.Allow(panel.GuildId, "forget-panel", 3, TimeSpan.FromHours(1), "forgetting posted panels whose messages Discord reports as gone")) return;
             panels.SetPosted(panel.Id, null, null);
             audit.FromSystem(panel.GuildId, "tickets", "Ticket panel marked as not posted — its message was deleted in Discord", $"{panel.Title} · #{channel.Name}");
             return;

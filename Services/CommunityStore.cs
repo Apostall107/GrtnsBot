@@ -15,9 +15,7 @@ public sealed class CommunityStore
     public CommunityStore(IConfiguration config)
     {
         _path = config["Storage:CommunityPath"] ?? "data/community.json";
-        _data = File.Exists(_path)
-            ? JsonSerializer.Deserialize<CommunityData>(File.ReadAllText(_path)) ?? new()
-            : new();
+        _data = DataFiles.Load<CommunityData>(_path) ?? new();
         // Старый формат (до разделения на Welcome и Role panels) — перенести один раз
         var migrated = false;
         foreach (var w in _data.Welcome) migrated |= w.Migrate();

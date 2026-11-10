@@ -46,9 +46,7 @@ public sealed class LfgHistoryStore
     public LfgHistoryStore(IConfiguration config)
     {
         _path = config["Storage:LfgHistoryPath"] ?? "data/lfg-history.json";
-        _data = File.Exists(_path)
-            ? JsonSerializer.Deserialize<List<LfgHistoryEntry>>(File.ReadAllText(_path)) ?? []
-            : [];
+        _data = DataFiles.Load<List<LfgHistoryEntry>>(_path) ?? [];
     }
 
     /// <summary>Записать сбор при закрытии. Повторно один и тот же сбор не пишется.</summary>

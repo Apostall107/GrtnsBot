@@ -22,9 +22,7 @@ public sealed class AdminStore
     {
         _owner = owner;
         _path = config["Storage:AdminsPath"] ?? "data/admins.json";
-        _data = File.Exists(_path)
-            ? JsonSerializer.Deserialize<Dictionary<ulong, List<ulong>>>(File.ReadAllText(_path)) ?? new()
-            : new();
+        _data = DataFiles.Load<Dictionary<ulong, List<ulong>>>(_path) ?? new();
     }
 
     public IReadOnlyList<ulong> GetRoles(ulong guildId)

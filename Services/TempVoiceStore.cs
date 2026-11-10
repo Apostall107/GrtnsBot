@@ -15,9 +15,7 @@ public sealed class TempVoiceStore
     public TempVoiceStore(IConfiguration config)
     {
         _path = config["Storage:TempVoicePath"] ?? "data/tempvoice.json";
-        _data = File.Exists(_path)
-            ? JsonSerializer.Deserialize<TempVoiceData>(File.ReadAllText(_path)) ?? new()
-            : new();
+        _data = DataFiles.Load<TempVoiceData>(_path) ?? new();
     }
 
     // ---------- Создатели ----------

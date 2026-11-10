@@ -50,9 +50,7 @@ public sealed class LfgProjectStore
     public LfgProjectStore(IConfiguration config)
     {
         _path = config["Storage:LfgSetupPath"] ?? "data/lfg-setup.json";
-        _data = File.Exists(_path)
-            ? JsonSerializer.Deserialize<Dictionary<ulong, GuildLfgSetup>>(File.ReadAllText(_path)) ?? new()
-            : new();
+        _data = DataFiles.Load<Dictionary<ulong, GuildLfgSetup>>(_path) ?? new();
     }
 
     public IReadOnlyList<LfgProject> GetProjects(ulong guildId)

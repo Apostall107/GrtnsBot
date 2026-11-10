@@ -64,10 +64,9 @@ public sealed class LfgStore
 
     private void Load()
     {
-        if (!File.Exists(_path)) return;
         try
         {
-            var groups = JsonSerializer.Deserialize<List<LfgGroup>>(File.ReadAllText(_path)) ?? [];
+            var groups = DataFiles.Load<List<LfgGroup>>(_path) ?? [];
             foreach (var group in groups.Where(g => !g.IsClosed))
                 Groups[group.Id] = group;
             _logger.LogInformation("Loaded {Count} LFG groups from {Path}", Groups.Count, _path);

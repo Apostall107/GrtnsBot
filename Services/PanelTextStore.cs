@@ -177,9 +177,7 @@ public sealed class PanelTextStore
     {
         Instance = this;
         _path = config["Storage:PanelsPath"] ?? "data/panels.json";
-        _data = File.Exists(_path)
-            ? JsonSerializer.Deserialize<Dictionary<ulong, GuildPanels>>(File.ReadAllText(_path)) ?? new()
-            : new();
+        _data = DataFiles.Load<Dictionary<ulong, GuildPanels>>(_path) ?? new();
     }
 
     /// <summary>Черновой текст панели для предпросмотра на сайте (действует только внутри <see cref="Preview"/>).</summary>

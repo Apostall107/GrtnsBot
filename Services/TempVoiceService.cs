@@ -70,6 +70,7 @@ public sealed class TempVoiceService(
             if (!GuildCache.Loaded(guild)) continue;
             if (guild!.GetVoiceChannel(room.ChannelId) is not { } channel)
             {
+                if (!SafetyValve.Allow(room.GuildId, "tempvoice-forget", 10, TimeSpan.FromHours(1), "forgetting temp rooms whose channels are gone")) continue;
                 store.RemoveRoom(room.ChannelId);   // удалили вручную, пока бот не видел
                 _emptySince.TryRemove(room.ChannelId, out _);
                 continue;
@@ -79,6 +80,8 @@ public sealed class TempVoiceService(
             var delay = store.GetCreator(room.CreatorChannelId)?.DeleteDelaySeconds ?? 0;
             // пустая хотя бы два прохода подряд (новую комнату, куда владельца ещё переносят, не трогаем) и не меньше задержки
             if (DateTime.UtcNow - since < TimeSpan.FromSeconds(Math.Max(delay, SweepEvery.TotalSeconds * .8))) continue;
+            // voice states lost after a reconnect would make every room look empty — never wipe many at once
+            if (!SafetyValve.Allow(room.GuildId, "tempvoice-sweep", 15, TimeSpan.FromMinutes(10), "deleting temp rooms that look empty")) continue;
             logger.LogInformation("Temp voice sweep: deleting empty room {Room}", channel.Name);
             await DeleteIfEmptyAsync(channel, delayed: true);
         }
@@ -311,9 +314,13 @@ public sealed class TempVoiceService(
             var channel = client.GetGuild(room.GuildId)?.GetVoiceChannel(room.ChannelId);
             if (channel is null)
             {
-                if (GuildCache.Loaded(client.GetGuild(room.GuildId))) store.RemoveRoom(room.ChannelId);   // only when the server is fully loaded
+                if (GuildCache.Loaded(client.GetGuild(room.GuildId)) &&
+                    SafetyValve.Allow(room.GuildId, "tempvoice-forget", 10, TimeSpan.FromHours(1), "forgetting temp rooms whose channels are gone"))
+                    store.RemoveRoom(room.ChannelId);   // only when the server is fully loaded
                 continue;
             }
+            if (channel.ConnectedUsers.Count == 0 &&
+                !SafetyValve.Allow(room.GuildId, "tempvoice-sweep", 15, TimeSpan.FromMinutes(10), "deleting temp rooms that look empty")) continue;
             await DeleteIfEmptyAsync(channel);
         }
 

@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 // WebApplication вместо обычного Host: в том же процессе работает веб-админка (папка Web/)
 var builder = WebApplication.CreateBuilder(args);
@@ -68,6 +69,7 @@ builder.Services.AddSingleton<BotTextStore>();
 builder.Services.AddSingleton<PanelService>();
 builder.Services.AddSingleton<PanelRelinker>();
 builder.Services.AddHostedService<AutoBackupService>();
+builder.Services.AddHostedService<ConnectionWatchdog>();
 builder.Services.AddSingleton<LfgPublisher>();
 builder.Services.AddSingleton<CommunityStore>();
 builder.Services.AddSingleton<GuildStatsStore>();
@@ -104,6 +106,8 @@ var app = builder.Build();
 // Статические хранилища текстов (Tx, PanelDefs.Label) — создать до первых сообщений
 app.Services.GetRequiredService<PanelTextStore>();
 app.Services.GetRequiredService<BotTextStore>();
+// Предохранитель для автоматических действий бота (см. SafetyValve) — пишет «Safety stop» в Log сервера
+SafetyValve.Init(app.Services.GetRequiredService<AuditLog>(), app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Safety"));
 app.UseWebPanel();
 
 await app.RunAsync();

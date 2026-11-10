@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using Discord.WebSocket;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -10,7 +11,7 @@ namespace LfgBot.Services;
 /// (the last 5 are kept) and one a day (the last 14 are kept). If something gets lost, there is always a copy
 /// from before — downloadable in Settings → Backup.
 /// </summary>
-public sealed class AutoBackupService(IConfiguration config, ILogger<AutoBackupService> logger) : BackgroundService
+public sealed class AutoBackupService(IConfiguration config, DiscordSocketClient client, AuditLog audit, ILogger<AutoBackupService> logger) : BackgroundService
 {
     /// <summary>Folders that never go into a backup (site login keys, the backups themselves).</summary>
     public static readonly string[] SkipDirs = ["web-keys", "backups"];
@@ -61,6 +62,7 @@ public sealed class AutoBackupService(IConfiguration config, ILogger<AutoBackupS
             DataFiles.FlushAll();
             var dir = BackupDir(config);
             Directory.CreateDirectory(dir);
+            CheckShrink(dir);
             File.WriteAllBytes(Path.Combine(dir, $"auto-{kind}-{DateTime.UtcNow:yyyyMMdd-HHmmss}.zip"), Zip(DataDir(config)));
             foreach (var old in new DirectoryInfo(dir).GetFiles($"auto-{kind}-*.zip").OrderByDescending(f => f.Name).Skip(keep))
                 old.Delete();
@@ -69,5 +71,41 @@ public sealed class AutoBackupService(IConfiguration config, ILogger<AutoBackupS
         {
             logger.LogWarning(ex, "Automatic backup ({Kind}) failed", kind);
         }
+    }
+
+    /// <summary>
+    /// Before a new backup: is a data file much smaller than in the newest backup (or gone)? Then something may have
+    /// wiped it — the Log of every server says so, and that backup is copied to keep-*.zip so it never rotates away.
+    /// Compares file sizes only (milliseconds, once at start and once a day).
+    /// </summary>
+    private void CheckShrink(string dir)
+    {
+        var newest = new DirectoryInfo(dir).GetFiles("auto-*.zip").OrderByDescending(f => f.LastWriteTimeUtc).FirstOrDefault();
+        if (newest is null) return;
+        var dataDir = DataDir(config);
+        var problems = new List<string>();
+        try
+        {
+            using var zip = ZipFile.OpenRead(newest.FullName);
+            foreach (var entry in zip.Entries)
+            {
+                if (entry.Length < 4096 || entry.FullName.Contains("audit", StringComparison.OrdinalIgnoreCase)) continue;
+                var file = new FileInfo(Path.Combine(dataDir, entry.FullName));
+                if (!file.Exists) problems.Add($"{entry.FullName} is gone (was {entry.Length / 1024} KB)");
+                else if (file.Length < entry.Length * .4) problems.Add($"{entry.FullName} shrank from {entry.Length / 1024} KB to {file.Length / 1024} KB");
+            }
+        }
+        catch (Exception ex) { logger.LogWarning(ex, "Could not compare data with backup {Backup}", newest.Name); return; }
+        if (problems.Count == 0) return;
+        var keep = Path.Combine(dir, $"keep-{newest.Name[5..]}");
+        try { if (!File.Exists(keep)) File.Copy(newest.FullName, keep); } catch { /* best effort */ }
+        var text = $"{string.Join("; ", problems)}. If that wasn't on purpose, restore from {Path.GetFileName(keep)} (Settings → Backup).";
+        logger.LogCritical("Data shrank since the last backup: {Text}", text);
+        _ = Task.Run(async () =>
+        {
+            // servers may not be loaded yet right after a start
+            for (var i = 0; i < 60 && client.Guilds.Count == 0; i++) await Task.Delay(2000);
+            foreach (var guild in client.Guilds) audit.FromSystem(guild.Id, "safety", "Data much smaller than in the last backup", text);
+        });
     }
 }

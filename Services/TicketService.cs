@@ -28,9 +28,7 @@ public sealed class TicketArchiveStore
     public TicketArchiveStore(IConfiguration config)
     {
         _path = config["Storage:TicketArchivePath"] ?? "data/ticket-archive.json";
-        _data = File.Exists(_path)
-            ? JsonSerializer.Deserialize<List<TicketArchiveEntry>>(File.ReadAllText(_path)) ?? []
-            : [];
+        _data = DataFiles.Load<List<TicketArchiveEntry>>(_path) ?? [];
     }
 
     public void Add(TicketArchiveEntry entry)
@@ -93,6 +91,8 @@ public sealed class TicketService(
         var existing = store.FindOpenTicket(guild.Id, userId, project.Key);
         if (existing is null) return null;
         if (guild.GetTextChannel(existing.TextChannelId) is not null) return existing;
+        // channel not found only counts when the server is fully loaded (otherwise it's just not in the cache yet)
+        if (!GuildCache.Loaded(guild) || !SafetyValve.Allow(guild.Id, "ticket-forget", 5, TimeSpan.FromHours(1), "closing tickets whose channels are gone")) return existing;
         Archive(existing, "closed", null, "Channels were deleted manually");
         store.RemoveTicket(existing.Id);
         return null;
@@ -407,7 +407,7 @@ public sealed class TicketAutoCloseService(
         {
             while (await timer.WaitForNextTickAsync(stoppingToken))
             {
-                foreach (var guild in client.Guilds)
+                foreach (var guild in client.Guilds.Where(GuildCache.Loaded))
                 foreach (var ticket in store.GetTickets(guild.Id))
                 {
                     try
@@ -447,6 +447,7 @@ public sealed class TicketAutoCloseService(
             }
             if (now - warned < Grace) return;
 
+            if (!SafetyValve.Allow(guild.Id, "ticket-autoclose", 5, TimeSpan.FromHours(1), "auto-closing inactive tickets")) return;
             audit.FromSystem(guild.Id, "tickets", "Auto-closed inactive ticket",
                 $"{project.Name} · {guild.GetUser(ticket.UserId)?.DisplayName ?? ticket.UserId.ToString()}");
             await tickets.CloseAsync(ticket, "auto-closed", null, $"No messages for {days} day(s)"); // причина в архиве (видна только админам)

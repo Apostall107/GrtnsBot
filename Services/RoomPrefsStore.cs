@@ -25,9 +25,7 @@ public sealed class RoomPrefsStore
     public RoomPrefsStore(IConfiguration config)
     {
         _path = config["Storage:RoomPrefsPath"] ?? "data/room-prefs.json";
-        _data = File.Exists(_path)
-            ? JsonSerializer.Deserialize<Dictionary<string, RoomPrefs>>(File.ReadAllText(_path)) ?? new()
-            : new();
+        _data = DataFiles.Load<Dictionary<string, RoomPrefs>>(_path) ?? new();
     }
 
     private static string Key(ulong guildId, ulong userId) => $"{guildId}:{userId}";

@@ -115,9 +115,7 @@ public sealed class BotTextStore
     public BotTextStore(IConfiguration config)
     {
         _path = config["Storage:BotTextsPath"] ?? "data/bot-texts.json";
-        _data = File.Exists(_path)
-            ? JsonSerializer.Deserialize<Dictionary<ulong, Dictionary<string, string>>>(File.ReadAllText(_path)) ?? new()
-            : new();
+        _data = DataFiles.Load<Dictionary<ulong, Dictionary<string, string>>>(_path) ?? new();
         Tx.Store = this;
     }
 

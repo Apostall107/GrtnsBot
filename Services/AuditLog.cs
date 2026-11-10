@@ -42,9 +42,7 @@ public sealed class AuditLog : IDisposable
         _path = config["Storage:AuditPath"] ?? "data/audit.json";
         try
         {
-            _entries = File.Exists(_path)
-                ? JsonSerializer.Deserialize<List<AuditEntry>>(File.ReadAllText(_path)) ?? []
-                : [];
+            _entries = DataFiles.Load<List<AuditEntry>>(_path) ?? [];
         }
         catch (Exception ex)
         {

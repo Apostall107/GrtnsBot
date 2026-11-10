@@ -3728,7 +3728,12 @@ async function attentionCard(holder, go) {
   try { a = await gApi("GET", "/attention"); } catch { return; }
   const tickets = can("tickets") ? a.tickets : [], groups = can("lfg") ? a.groups : [];
   const birthdays = can("birthdays") ? a.birthdays : [], failed = can("announce") ? a.failedPosts : [];
-  const total = tickets.length + groups.length + birthdays.length + failed.length;
+  // the bot's safety stops and data problems of the last 7 days (Log → Safety)
+  let safety = [];
+  if (can("log")) {
+    try { safety = ((await gApi("GET", "/log?module=safety&take=5")).entries || []).filter(e => Date.now() - e.at < 7 * 864e5); } catch { /* no log access */ }
+  }
+  const total = tickets.length + groups.length + birthdays.length + failed.length + safety.length;
   const row = (ic, tone, title, sub, tab, extra) => h("button", { type: "button", class: `att-row tone-${tone}`, onclick: go(tab) || undefined, disabled: !go(tab) },
     h("span", { class: "att-ic" }, icon(ic, 16)), h("span", { class: "att-main" }, h("b", {}, title), sub ? h("span", { class: "muted small" }, sub) : null),
     extra || null, go(tab) ? icon("chevron-right", 16, "att-go") : null);
@@ -3737,7 +3742,8 @@ async function attentionCard(holder, go) {
     tickets.length > 4 ? row("ticket", "amber", `+${tickets.length - 4} more open ticket(s)`, null, "tickets") : null,
     ...groups.map(g => row("swords", "violet", `${g.activity} — ${g.filled}/${g.size}`, `starts ${fmtRelative(g.startsAt)}${g.reserve ? ` · ${g.reserve} in reserve` : ""}${g.owner ? ` · ${g.owner.name}` : ""}`, "lfg")),
     birthdays.length ? row("cake", "pink", `Birthday today: ${birthdays.map(m => m.name).join(", ")}`, null, "birthdays") : null,
-    ...failed.map(f => row("triangle-alert", "red", `Post to #${f.channel || "unknown"} failed`, f.error || fmtRelative(f.at), "announce"))
+    ...failed.map(f => row("triangle-alert", "red", `Post to #${f.channel || "unknown"} failed`, f.error || fmtRelative(f.at), "announce")),
+    ...safety.map(e => row("shield", "red", `🛡️ ${e.action}`, `${e.details || ""} · ${fmtRelative(e.at)}`, "log"))
   ].filter(Boolean);
   holder.replaceChildren(h("div", { class: `card attention-card${total ? "" : " calm"}` },
     h("div", { class: "card-head" }, h("h2", {}, icon(total ? "bell-ring" : "circle-check", 18), total ? "Needs attention" : "All clear"),
@@ -7306,7 +7312,7 @@ async function loadMessages(channels, body, reload) {
 // ================= Log =================
 
 const MODULE_LABELS = { lfg: "📣 LFG", tickets: "🎫 Tickets", voice: "🔊 Voice", texts: "📝 Texts", posts: "📌 Posts",
-  access: "🔑 Access", settings: "⚙️ Settings" };
+  access: "🔑 Access", settings: "⚙️ Settings", safety: "🛡️ Safety" };
 const SOURCE_LABELS = { web: "🌐 site", discord: "💬 Discord", system: "🤖 bot" };
 
 async function pageLog(main) {

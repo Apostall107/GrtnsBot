@@ -66,6 +66,7 @@ public sealed class PanelService(DiscordSocketClient client, PanelTextStore stor
 
                 if (await channel.GetMessageAsync(p.MessageId) is not IUserMessage message || message.Author.Id != client.CurrentUser.Id)
                 {
+                    if (!SafetyValve.Allow(guildId, "forget-panel", 3, TimeSpan.FromHours(1), "forgetting posted panels whose messages Discord reports as gone")) continue;
                     store.Untrack(guildId, key, p.MessageId);
                     audit.FromSystem(guildId, key, "Forgot a panel — its message was deleted in Discord", $"#{channel.Name}");
                     continue;

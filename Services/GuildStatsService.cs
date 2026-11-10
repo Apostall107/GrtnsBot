@@ -33,9 +33,7 @@ public sealed class GuildStatsStore
     public GuildStatsStore(IConfiguration config)
     {
         _path = config["Storage:StatsHistoryPath"] ?? "data/stats-history.json";
-        _data = File.Exists(_path)
-            ? JsonSerializer.Deserialize<List<GuildDaySnapshot>>(File.ReadAllText(_path)) ?? []
-            : [];
+        _data = DataFiles.Load<List<GuildDaySnapshot>>(_path) ?? [];
     }
 
     public bool Has(ulong guildId, DateOnly date)

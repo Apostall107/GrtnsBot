@@ -34,7 +34,7 @@ public sealed class MemberActivityStore
     public MemberActivityStore(IConfiguration config)
     {
         _path = config["Storage:MemberActivityPath"] ?? "data/member-activity.json";
-        var file = File.Exists(_path) ? JsonSerializer.Deserialize<ActivityFile>(File.ReadAllText(_path)) : null;
+        var file = DataFiles.Load<ActivityFile>(_path);
         _data = new ConcurrentDictionary<string, MemberActivity>(file?.Members ?? new());
         TrackingSince = file?.Since ?? DateTimeOffset.UtcNow;
         if (file is null) _dirty = true;

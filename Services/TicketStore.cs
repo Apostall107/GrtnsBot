@@ -17,9 +17,7 @@ public sealed class TicketStore
     public TicketStore(IConfiguration config)
     {
         _path = config["Storage:TicketsPath"] ?? "data/tickets.json";
-        _data = File.Exists(_path)
-            ? JsonSerializer.Deserialize<TicketData>(File.ReadAllText(_path)) ?? new()
-            : new();
+        _data = DataFiles.Load<TicketData>(_path) ?? new();
         // Имя основного проекта для подпроектов — в названиях каналов и сообщении тикета («Where Winds Meet · PoV»)
         TicketRenderer.ParentName = key =>
         {

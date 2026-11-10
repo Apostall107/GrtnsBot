@@ -48,9 +48,7 @@ public sealed class ChannelPageStore
     public ChannelPageStore(IConfiguration config)
     {
         _path = config["Storage:ChannelPagesPath"] ?? "data/channel-pages.json";
-        _data = File.Exists(_path)
-            ? JsonSerializer.Deserialize<List<ChannelPage>>(File.ReadAllText(_path)) ?? []
-            : [];
+        _data = DataFiles.Load<List<ChannelPage>>(_path) ?? [];
     }
 
     public IReadOnlyList<ChannelPage> Get(ulong guildId)

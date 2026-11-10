@@ -38,9 +38,7 @@ public sealed class LfgTemplateStore
     public LfgTemplateStore(IConfiguration config)
     {
         _path = config["Storage:LfgTemplatesPath"] ?? "data/lfg-templates.json";
-        _data = File.Exists(_path)
-            ? JsonSerializer.Deserialize<Dictionary<ulong, List<LfgTemplate>>>(File.ReadAllText(_path)) ?? new()
-            : new();
+        _data = DataFiles.Load<Dictionary<ulong, List<LfgTemplate>>>(_path) ?? new();
     }
 
     public IReadOnlyList<LfgTemplate> Get(ulong guildId)

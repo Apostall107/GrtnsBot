@@ -96,9 +96,7 @@ public sealed class AnnouncementTemplateStore
     public AnnouncementTemplateStore(IConfiguration config)
     {
         _path = config["Storage:AnnouncementTemplatesPath"] ?? "data/announcement-templates.json";
-        _data = File.Exists(_path)
-            ? JsonSerializer.Deserialize<List<AnnouncementTemplate>>(File.ReadAllText(_path)) ?? []
-            : [];
+        _data = DataFiles.Load<List<AnnouncementTemplate>>(_path) ?? [];
     }
 
     public IReadOnlyList<AnnouncementTemplate> Get(ulong guildId)
@@ -229,9 +227,7 @@ public sealed class AnnouncementStore
     public AnnouncementStore(IConfiguration config)
     {
         _path = config["Storage:AnnouncementsPath"] ?? "data/announcements.json";
-        _data = File.Exists(_path)
-            ? JsonSerializer.Deserialize<List<Announcement>>(File.ReadAllText(_path)) ?? []
-            : [];
+        _data = DataFiles.Load<List<Announcement>>(_path) ?? [];
         // Бот перезапустился посреди отправки — такой пост считается неудачным (часть сообщений могла уйти)
         foreach (var a in _data.Where(a => a.Status == "sending"))
         {

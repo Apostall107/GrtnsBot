@@ -50,6 +50,14 @@ public sealed class BotService(
         if (_commandsRegistered) return;
         _commandsRegistered = true;
 
+        // Problems with the data files on this start (damaged / missing → restored from a backup) — into every server's Log
+        var audit = services.GetRequiredService<AuditLog>();
+        while (DataFiles.Warnings.TryDequeue(out var warning))
+        {
+            logger.LogCritical("{Warning}", warning);
+            foreach (var guild in client.Guilds) audit.FromSystem(guild.Id, "safety", "Data file problem on start", warning);
+        }
+
         // Команды регистрируются на каждый сервер отдельно — появляются мгновенно
         foreach (var guild in client.Guilds)
             await RegisterToGuildAsync(guild);

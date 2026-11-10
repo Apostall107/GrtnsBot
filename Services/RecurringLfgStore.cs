@@ -71,9 +71,7 @@ public sealed class RecurringLfgStore
     public RecurringLfgStore(IConfiguration config)
     {
         _path = config["Storage:RecurringLfgPath"] ?? "data/recurring-lfg.json";
-        _data = File.Exists(_path)
-            ? JsonSerializer.Deserialize<List<RecurringLfg>>(File.ReadAllText(_path)) ?? []
-            : [];
+        _data = DataFiles.Load<List<RecurringLfg>>(_path) ?? [];
     }
 
     public IReadOnlyList<RecurringLfg> GetAll()

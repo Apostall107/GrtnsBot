@@ -75,6 +75,8 @@ public sealed class GroupCleanupService(
 
     private async Task ExpireAsync(LfgGroup group)
     {
+        // a jump of the server clock or a broken date must not wipe all groups at once
+        if (!SafetyValve.Allow(group.GuildId, "lfg-expire", 20, TimeSpan.FromHours(1), "closing expired LFG groups")) return;
         await group.Gate.WaitAsync();
         try
         {

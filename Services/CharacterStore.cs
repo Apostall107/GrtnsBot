@@ -73,13 +73,9 @@ public sealed class CharacterStore
     {
         _prefs = prefs;
         _path = config["Storage:CharactersPath"] ?? "data/characters.json";
-        _data = File.Exists(_path)
-            ? JsonSerializer.Deserialize<Dictionary<string, List<string>>>(File.ReadAllText(_path)) ?? new()
-            : new();
+        _data = DataFiles.Load<Dictionary<string, List<string>>>(_path) ?? new();
         _infoPath = config["Storage:CharacterInfoPath"] ?? "data/character-info.json";
-        _info = File.Exists(_infoPath)
-            ? JsonSerializer.Deserialize<Dictionary<string, CharacterInfo>>(File.ReadAllText(_infoPath)) ?? new()
-            : new();
+        _info = DataFiles.Load<Dictionary<string, CharacterInfo>>(_infoPath) ?? new();
     }
 
     /// <summary>scope — проект (см. LfgProjectStore.Scope); null — проект по умолчанию / персонажи до появления проектов.</summary>

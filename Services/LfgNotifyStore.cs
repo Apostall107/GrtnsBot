@@ -13,9 +13,7 @@ public sealed class LfgNotifyStore
     public LfgNotifyStore(IConfiguration config)
     {
         _path = config["Storage:LfgNotifyPath"] ?? "data/lfg-notify.json";
-        _optedOut = File.Exists(_path)
-            ? JsonSerializer.Deserialize<HashSet<string>>(File.ReadAllText(_path)) ?? []
-            : [];
+        _optedOut = DataFiles.Load<HashSet<string>>(_path) ?? [];
     }
 
     private static string Key(ulong guildId, ulong userId) => $"{guildId}:{userId}";

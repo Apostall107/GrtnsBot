@@ -15,7 +15,7 @@ public sealed class TicketPanelStore
     public TicketPanelStore(IConfiguration config)
     {
         _path = config["Storage:TicketPanelsPath"] ?? "data/ticket-panels.json";
-        _data = File.Exists(_path) ? JsonSerializer.Deserialize<List<TicketPanel>>(File.ReadAllText(_path)) ?? [] : [];
+        _data = DataFiles.Load<List<TicketPanel>>(_path) ?? [];
     }
 
     public IReadOnlyList<TicketPanel> Get(ulong guildId)

@@ -212,7 +212,7 @@ public sealed class MascotStatsStore
     public MascotStatsStore(IConfiguration config)
     {
         _path = config["Storage:MascotStatsPath"] ?? "data/mascot-stats.json";
-        _data = File.Exists(_path) ? JsonSerializer.Deserialize<Dictionary<string, MascotStats>>(File.ReadAllText(_path)) ?? new() : new();
+        _data = DataFiles.Load<Dictionary<string, MascotStats>>(_path) ?? new();
     }
 
     public MascotStats Get(ulong guildId, ulong userId)

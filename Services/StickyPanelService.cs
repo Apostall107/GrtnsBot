@@ -68,7 +68,12 @@ public sealed class StickyPanelService(DiscordSocketClient client, PanelTextStor
 
     private async Task RepostAsync(SocketTextChannel channel)
     {
-        await _gate.WaitAsync();
+        // one stuck repost (Discord rate limit) must not hold up every other channel forever
+        if (!await _gate.WaitAsync(TimeSpan.FromMinutes(2)))
+        {
+            logger.LogWarning("Sticky panels in #{Channel}: skipped, another repost is still running", channel.Name);
+            return;
+        }
         try
         {
             var guildId = channel.Guild.Id;

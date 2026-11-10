@@ -382,9 +382,13 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
                             m.Components = s.Components;
                         });
                 }
-                catch (Discord.Net.HttpException)
+                catch (Discord.Net.HttpException ex) when (ex.DiscordCode is DiscordErrorCode.UnknownMessage or DiscordErrorCode.UnknownChannel)
                 {
-                    group.Mirrors.Remove(mirror); // копию удалили вручную
+                    group.Mirrors.Remove(mirror); // копию удалили вручную (только когда Discord так и сказал — не при сбое/лимите)
+                }
+                catch (Discord.Net.HttpException ex)
+                {
+                    logger.LogWarning(ex, "Could not update a copy of LFG post {GroupId}", group.Id);
                 }
             }
         }
@@ -403,6 +407,7 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
     /// <summary>Пост сбора удалён руками в Discord: сбор закрывается (как «deleted»), его копии и служебные сообщения удаляются.</summary>
     private async Task ForgetDeletedPostAsync(LfgGroup group)
     {
+        if (!SafetyValve.Allow(group.GuildId, "lfg-deleted", 5, TimeSpan.FromHours(1), "closing LFG groups whose posts Discord reports as deleted")) return;
         if (!await group.Gate.WaitAsync(TimeSpan.FromMinutes(1))) return;
         try
         {

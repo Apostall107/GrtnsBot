@@ -61,9 +61,7 @@ public sealed class WebAccessStore
     public WebAccessStore(IConfiguration config)
     {
         _path = config["Storage:WebAccessPath"] ?? "data/web-access.json";
-        _data = File.Exists(_path)
-            ? JsonSerializer.Deserialize<List<WebGrant>>(File.ReadAllText(_path)) ?? []
-            : [];
+        _data = DataFiles.Load<List<WebGrant>>(_path) ?? [];
         // «Welcome & roles» разделён на два модуля: у кого был доступ к ролям — получает и Welcome
         var changed = false;
         foreach (var g in _data.Where(g => g.Permissions.Contains(PanelPermissions.Roles) && !g.Permissions.Contains(PanelPermissions.Welcome)))

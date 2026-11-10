@@ -381,6 +381,7 @@ public sealed class CommunityService(
         if (client.GetGuild(panel.GuildId)?.GetTextChannel(channelId) is not { } channel) return null;
         if (await channel.GetMessageAsync(messageId) is not IUserMessage message)
         {
+            if (!SafetyValve.Allow(panel.GuildId, "forget-panel", 3, TimeSpan.FromHours(1), "forgetting posted panels whose messages Discord reports as gone")) return null;
             store.SetPosted(panel.Id, null, null);
             audit.FromSystem(panel.GuildId, "roles", "Role panel marked as not posted — its message was deleted in Discord", $"{panel.Title} · #{channel.Name}");
             return "The posted message was deleted — post the panel again.";

@@ -26,9 +26,7 @@ public sealed class BotSettingsStore
     public BotSettingsStore(IConfiguration config)
     {
         _path = config["Storage:SettingsPath"] ?? "data/settings.json";
-        _data = File.Exists(_path)
-            ? JsonSerializer.Deserialize<BotSettings>(File.ReadAllText(_path)) ?? new()
-            : new();
+        _data = DataFiles.Load<BotSettings>(_path) ?? new();
     }
 
     public BotSettings Get()

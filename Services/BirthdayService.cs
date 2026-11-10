@@ -51,6 +51,8 @@ public sealed class BirthdayService(DiscordSocketClient client, BirthdayStore st
         var g = store.Get(guildId);
         if (!g.Enabled || g.BirthdayRoleId is not { } roleId) return new Reconciled(0, 0);
         if (client.GetGuild(guildId) is not { } guild || guild.GetRole(roleId) is not { } role) return new Reconciled(0, 0);
+        // members not all in the cache yet: a celebrant could look "not on the server" and lose the role
+        if (!GuildCache.Loaded(guild) || !(guild.HasAllMembers || guild.Users.Count >= guild.MemberCount * .9)) return new Reconciled(0, 0);
 
         var today = time.LocalNow.Date;
 
@@ -88,9 +90,12 @@ public sealed class BirthdayService(DiscordSocketClient client, BirthdayStore st
 
         // Снять роль у всех, у кого она есть, но сегодня не их день (включая вчерашних именинников)
         var removed = 0;
-        foreach (var member in role.Members.ToList())
+        var toRemove = role.Members.Where(m => !celebrants.Contains(m.Id)).ToList();
+        // a birthday role is on a handful of people; dozens means a wrong role was chosen as the birthday role (e.g. Member)
+        if (!SafetyValve.AllowBatch(guildId, "birthday-remove", toRemove.Count, 15, $"removing the birthday role @{role.Name} from members"))
+            toRemove.Clear();
+        foreach (var member in toRemove)
         {
-            if (celebrants.Contains(member.Id)) continue;
             try { await member.RemoveRoleAsync(role); removed++; }
             catch (Discord.Net.HttpException ex) { logger.LogWarning(ex, "Birthday: can't remove role from {User}", member.Id); }
         }
