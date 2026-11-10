@@ -73,6 +73,8 @@ public sealed class MascotStatsStore
     public static readonly string[] GradeNames = ["Poor", "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic"];
     /// <summary>Most achievements: geometric, from 5 doubling each grade.</summary>
     public static readonly int[] PowerTiers = [5, 10, 20, 40, 80, 160, 320];
+    /// <summary>One-time achievements: done once — straight to Mythic (all seven grades).</summary>
+    public static readonly int[] Once = [1, 1, 1, 1, 1, 1, 1];
     /// <summary>Each single spell: an easier climb.</summary>
     public static readonly int[] SpellTiers = [1, 3, 5, 10, 15, 25, 40];
     /// <summary>Legendary casts (and each legendary combination).</summary>
@@ -105,8 +107,8 @@ public sealed class MascotStatsStore
             new("organized", "guild", "📣", "Organizer", "Organize {0} groups.", PowerTiers, s => s.GroupsOrganized),
             new("roster", "guild", "🧙", "Roster", "Have {0} characters in My characters.", [1, 2, 3, 4, 5, 7, 10], s => s.Characters),
             // one-time, straight to Mythic (all seven grades at once)
-            new("registered", "guild", "🪪", "Welcome to Greatness", "Register a character in My characters.", [1, 1, 1, 1, 1, 1, 1], s => Math.Min(1, s.Characters)),
-            new("birthday", "guild", "🎂", "Birthday Registered", "Tell the bot your birthday.", [1], s => s.HasBirthday),
+            new("registered", "guild", "🪪", "Welcome to Greatness", "Register a character in My characters.", Once, s => Math.Min(1, s.Characters)),
+            new("birthday", "guild", "🎂", "Birthday Registered", "Tell the bot your birthday.", Once, s => s.HasBirthday),
             new("spells", "general", "✨", "Spellbound", "See {0} spells in total.", PowerTiers, Total),
             new("kinds", "general", "📖", "Grimoire", "See {0} different spells.", [1, 3, 5, 7, 10, 13, 15], Seen),
             new("legend", "legend", "🌟", "Legendary!", "Witness {0} legendary casts — two spells at once.", LegendTiers, s => s.Legendary),
