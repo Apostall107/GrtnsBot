@@ -31,7 +31,7 @@ public sealed class MascotStats
     public int CatchDays { get; set; }     // different days with a catch
     public string? LastCatchDay { get; set; }
     public int PointBlank { get; set; }    // caught within 3 s of it appearing
-    public int Marathon { get; set; }      // caught after chasing it for 20+ s
+    public int Marathon { get; set; }      // caught after chasing it for 10+ s
     public int Lucky { get; set; }         // a spell in two flights in a row
     public bool LastFlightSpell { get; set; }
 
@@ -134,7 +134,7 @@ public sealed class MascotStatsStore
             new("streak", "general", "🔁", "On a Roll", "Catch the robot {0} times in a row without letting one escape.", PowerTiers, s => s.BestStreak),
             new("days", "general", "📅", "Daily Visitor", "Catch the robot on {0} different days.", PowerTiers, s => s.CatchDays),
             new("pointblank", "general", "🎯", "Point Blank", "Catch the robot within 3 seconds of it appearing {0} times.", SpellTiers, s => s.PointBlank),
-            new("marathon", "general", "🏃", "Marathon", "Chase the robot for 20+ seconds and still catch it {0} times.", SpellTiers, s => s.Marathon),
+            new("marathon", "general", "🏃", "Marathon", "Chase the robot for 10+ seconds and still catch it {0} times.", SpellTiers, s => s.Marathon),
             new("lucky", "general", "🎲", "Lucky", "See spells in two flights in a row {0} times.", SpellTiers, s => s.Lucky),
             new("site", "general", "🌐", "Site Regular", "Visit the site on {0} different days.", PowerTiers, s => s.SiteDays),
             new("search", "general", "🔍", "Seeker", "Use the quick search (Ctrl+K) {0} times.", PowerTiers, s => s.Searches),

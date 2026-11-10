@@ -1665,16 +1665,15 @@ function summonButtons(after) {
   };
   let busy = false, timer = 0;
   function fly(opts) {
-    // Often (40%) a successful escape ends with a show: instead of just leaving the screen it casts a spell (1% — a legendary cast: two at once).
-    // When it's caught the chance is 1.5× higher (60%, 1.5% legendary).
     // The owner can summon it with a guaranteed spell (opts.finale: a spell or "random").
     let forced = opts && typeof opts === "object" ? opts.finale : null;
     if (forced && busy) return toast("The robot is already flying — wait until it's gone.", "warn");
     if (busy || document.hidden || !state.me) return schedule();
     if (forced === "random") forced = pickSpell();
     // Escape: 40% a spell (1% legendary). Caught: 1.5× more — 60% (1.5% legendary), it strikes back as it vanishes.
-    const rollSpell = k => { const r = Math.random(); return r < .01 * k ? "legend" : r < .4 * k ? pickSpell() : null; };
-    const finale = forced || rollSpell(1);
+    // Escape: 4% a spell, never legendary. Caught: 60% (1.5% legendary) — it strikes back as it vanishes.
+    const rollSpell = caught => { const r = Math.random(); return caught ? (r < .015 ? "legend" : r < .6 ? pickSpell() : null) : (r < .04 ? pickSpell() : null); };
+    const finale = forced || rollSpell(false);
     const M = BOT; // only our robot flies (the cat is retired)
     const A = area(), W = M.w, H = M.h;
     // Starts just outside the page area: mostly left↔right, sometimes up↕down. While it flies, clicks within 200 px
@@ -1790,7 +1789,7 @@ function summonButtons(after) {
       const d = new Date(), day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       const chase = enteredAt ? performance.now() - enteredAt : 0;
       return gApi("POST", "/me/mascot", { ...body, dodges, dashes, tired, hour: d.getHours(), day,
-        fast: body.kind === "caught" && enteredAt > 0 && chase < 3000, long: body.kind === "caught" && chase > 20000 }).catch(() => null);
+        fast: body.kind === "caught" && enteredAt > 0 && chase < 3000, long: body.kind === "caught" && chase > 10000 }).catch(() => null);
     };
     function end() {
       if (ended) return; ended = true;
@@ -2797,7 +2796,7 @@ function summonButtons(after) {
       let legacy = null;
       try { if (!localStorage.getItem("gb.mascotsLegacySent")) { legacy = Number(localStorage.getItem("gb.mascotsCaught") || localStorage.getItem("gb.catsCaught") || 0) || null; localStorage.setItem("gb.mascotsLegacySent", "1"); } } catch { /* private mode */ }
       // Caught — but sometimes it strikes back with a spell as it vanishes (the owner's summon always does)
-      const spell = forced ? finale : rollSpell(1.5);
+      const spell = forced ? finale : rollSpell(true);
       if (spell) {
         cast(spell);
         report({ kind: "caught", quick: !tired, spells: castKinds, legendary: castLegend, legacy });
@@ -7972,7 +7971,7 @@ async function pageChars(main) {
 async function pageMascot(main) {
   const g = currentGuild() || {};
   main.append(h("div", { class: "card-head" }, h("h1", {}, "🤖 Mascot")),
-    h("p", { class: "muted small" }, "Only you (the bot owner) see this page. The little Greatness robot flies across the site for everyone on this server, runs away from the cursor, gets tired and can be caught. When it escapes it often casts a spell (40%; 1% — a legendary cast of two spells at once); when it's caught — 1.5× more often (60%; 1.5% legendary). The poop barrage is 5× rarer than the other spells. Members collect what they saw in Member → Achievements."));
+    h("p", { class: "muted small" }, "Only you (the bot owner) see this page. The little Greatness robot flies across the site for everyone on this server, runs away from the cursor, gets tired and can be caught. When it escapes it sometimes casts a spell (4%, never legendary); when it's caught it strikes back much more often (60%; 1.5% — a legendary cast of two spells at once). The poop barrage is 5× rarer than the other spells. Members collect what they saw in Member → Achievements."));
   // How often
   const secs = h("input", { type: "number", min: "0", max: "604800", step: "1", value: String(g.mascotSeconds ?? 900), style: "width:140px", "aria-label": "Seconds" });
   const human = h("span", { class: "muted small" });
