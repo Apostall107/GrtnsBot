@@ -8027,7 +8027,7 @@ function achievementsCard(d) {
       a.tierClass >= 3 ? h("i", { class: "ach-shine" }) : null,
       h("span", { class: "ach-icon" }, h("span", { class: "ico" }, a.icon)),
       h("div", { class: "ach-text" },
-        h("div", { class: "ach-top" }, h("b", {}, a.title),
+        h("div", { class: "ach-top" }, h("b", { title: a.title }, a.title),
           h("span", { class: "ach-cls", title: ["", "Tier I achievement (common)", "Tier II achievement (rare)", "Tier III achievement (legendary)", "Tier IV achievement (ultra rare)"][a.tierClass || 1] }, "✦".repeat(a.tierClass || 1)),
           h("span", { class: "ach-grade" }, a.gradeName)),
         // what was done for the current grade, then how far the next one is
