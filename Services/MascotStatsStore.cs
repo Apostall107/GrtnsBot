@@ -30,6 +30,18 @@ public sealed class MascotStats
     public int BestStreak { get; set; }
     public int CatchDays { get; set; }     // different days with a catch
     public string? LastCatchDay { get; set; }
+    public int PointBlank { get; set; }    // caught within 3 s of it appearing
+    public int Marathon { get; set; }      // caught after chasing it for 20+ s
+    public int Lucky { get; set; }         // a spell in two flights in a row
+    public bool LastFlightSpell { get; set; }
+
+    // --- the site (tracked by the site) ---
+    public int SiteDays { get; set; }
+    public string? LastSiteDay { get; set; }
+    public int Searches { get; set; }
+    public string? SearchDay { get; set; }
+    public int SearchesToday { get; set; }
+    public List<string> Tabs { get; set; } = [];
 
     // --- from the bot (filled per request, not stored) ---
     [System.Text.Json.Serialization.JsonIgnore] public int GroupsJoined { get; set; }
@@ -37,6 +49,18 @@ public sealed class MascotStats
     [System.Text.Json.Serialization.JsonIgnore] public int GroupsOrganized { get; set; }
     [System.Text.Json.Serialization.JsonIgnore] public int Characters { get; set; }
     [System.Text.Json.Serialization.JsonIgnore] public int HasBirthday { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore] public int BestAttendStreak { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore] public int FullHouses { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore] public int Activities { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore] public int RecurringJoined { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore] public int MinRoleGames { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore] public int VoiceGroups { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore] public int Applied { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore] public int Approved { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore] public int ArmoryLinked { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore] public int GearUps { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore] public int MonthsOnServer { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore] public int Projects { get; set; }
 }
 
 /// <summary>
@@ -102,9 +126,28 @@ public sealed class MascotStatsStore
             new("morning", "general", "🐦", "Early Bird", "Catch the robot between 6 and 10 am {0} times.", PowerTiers, s => s.MorningCatches),
             new("streak", "general", "🔁", "On a Roll", "Catch the robot {0} times in a row without letting one escape.", PowerTiers, s => s.BestStreak),
             new("days", "general", "📅", "Daily Visitor", "Catch the robot on {0} different days.", PowerTiers, s => s.CatchDays),
+            new("pointblank", "general", "🎯", "Point Blank", "Catch the robot within 3 seconds of it appearing {0} times.", SpellTiers, s => s.PointBlank),
+            new("marathon", "general", "🏃", "Marathon", "Chase the robot for 20+ seconds and still catch it {0} times.", SpellTiers, s => s.Marathon),
+            new("lucky", "general", "🎲", "Lucky", "See spells in two flights in a row {0} times.", SpellTiers, s => s.Lucky),
+            new("site", "general", "🌐", "Site Regular", "Visit the site on {0} different days.", PowerTiers, s => s.SiteDays),
+            new("search", "general", "🔍", "Seeker", "Use the quick search (Ctrl+K) {0} times.", PowerTiers, s => s.Searches),
+            new("explorer", "general", "🧭", "Explorer", "Open every Member section: Home, Groups, My characters and Achievements.", Once,
+                s => new[] { "home", "play", "chars", "achievements" }.All(s.Tabs.Contains) ? 1 : 0),
             new("joined", "guild", "⚔️", "Party Member", "Sign up for {0} groups.", PowerTiers, s => s.GroupsJoined),
             new("attended", "guild", "✅", "Showed Up", "Be marked as present in {0} groups.", PowerTiers, s => s.GroupsAttended),
             new("organized", "guild", "📣", "Organizer", "Organize {0} groups.", PowerTiers, s => s.GroupsOrganized),
+            new("punctual", "guild", "⏱️", "Punctual", "Show up in {0} groups in a row without a no-show.", [3, 5, 7, 10, 15, 20, 30], s => s.BestAttendStreak),
+            new("fullhouse", "guild", "🏟️", "Full House", "Fill every slot of a group you organized {0} times.", SpellTiers, s => s.FullHouses),
+            new("variety", "guild", "🎮", "Variety", "Play {0} different activities.", [2, 3, 4, 5, 7, 10, 15], s => s.Activities),
+            new("regular", "guild", "🔁", "Regular", "Join recurring groups {0} times.", PowerTiers, s => s.RecurringJoined),
+            new("roles", "guild", "🛡️", "Role Player", "Play at least {0} groups as each role — DD, Tank and Sup.", [1, 2, 3, 5, 7, 10, 15], s => s.MinRoleGames),
+            new("voice", "guild", "🎙️", "Voice Room", "Join {0} groups that had a voice room.", PowerTiers, s => s.VoiceGroups),
+            new("gearup", "guild", "📈", "Gear Up", "Update your characters (class, GS, armory) {0} times.", PowerTiers, s => s.GearUps),
+            new("veteran", "guild", "🏅", "Veteran", "Be on the server for {0} months.", [1, 2, 3, 6, 12, 18, 24], s => s.MonthsOnServer),
+            new("applicant", "guild", "🎫", "Applicant", "Apply through a ticket.", Once, s => Math.Min(1, s.Applied)),
+            new("accepted", "guild", "🤝", "Accepted", "Get an application approved.", Once, s => Math.Min(1, s.Approved)),
+            new("armory", "guild", "🔗", "Armory Linked", "Link a character to the official armory.", Once, s => Math.Min(1, s.ArmoryLinked)),
+            new("twoworlds", "guild", "🌍", "Two Worlds", "Have characters in two games of the server.", Once, s => s.Projects >= 2 ? 1 : 0),
             new("roster", "guild", "🧙", "Roster", "Have {0} characters in My characters.", [1, 2, 3, 4, 5, 7, 10], s => s.Characters),
             // one-time, straight to Mythic (all seven grades at once)
             new("registered", "guild", "🪪", "Welcome to Greatness", "Register a character in My characters.", Once, s => Math.Min(1, s.Characters)),
@@ -155,9 +198,31 @@ public sealed class MascotStatsStore
                 .Select(kv => (ulong.Parse(kv.Key[prefix.Length..]), JsonSerializer.Deserialize<MascotStats>(JsonSerializer.Serialize(kv.Value))!)).ToList();
     }
 
+    /// <summary>Site activity for achievements: a visit (day), a quick search, a Member tab opened.</summary>
+    public void Track(ulong guildId, ulong userId, string what, string? day, string? tab)
+    {
+        lock (_lock)
+        {
+            var key = $"{guildId}:{userId}";
+            if (!_data.TryGetValue(key, out var s)) _data[key] = s = new MascotStats();
+            var changed = false;
+            if (day is { Length: 10 } && day != s.LastSiteDay) { s.SiteDays++; s.LastSiteDay = day; changed = true; }
+            if (what == "search")
+            {
+                if (day != s.SearchDay) { s.SearchDay = day; s.SearchesToday = 0; }
+                if (s.SearchesToday < 30) { s.SearchesToday++; s.Searches++; changed = true; }   // no farming: 30 a day
+            }
+            if (what == "tab" && tab is "home" or "play" or "chars" or "achievements" && !s.Tabs.Contains(tab)) { s.Tabs.Add(tab); changed = true; }
+            if (!changed) return;
+            var dir = Path.GetDirectoryName(Path.GetFullPath(_path));
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            DataFiles.Save(_path, JsonSerializer.Serialize(_data, JsonOptions));
+        }
+    }
+
     /// <summary>Record an event from the site; returns the member's catches after it (null — ignored: too fast / not valid).</summary>
     public int? Record(ulong guildId, ulong userId, string kind, bool quick, IEnumerable<string>? spells, bool legendary, int? legacyCaught = null,
-        int dodges = 0, int dashes = 0, bool tired = false, int? hour = null, string? day = null)
+        int dodges = 0, int dashes = 0, bool tired = false, int? hour = null, string? day = null, bool fast = false, bool longChase = false)
     {
         lock (_lock)
         {
@@ -171,6 +236,8 @@ public sealed class MascotStatsStore
                 if (hour is >= 0 and < 6) s.NightCatches++;
                 else if (hour is >= 6 and < 10) s.MorningCatches++;
                 s.Streak++; s.BestStreak = Math.Max(s.BestStreak, s.Streak);
+                if (fast) s.PointBlank++;
+                if (longChase) s.Marathon++;
                 if (day is { Length: 10 } && day != s.LastCatchDay) { s.CatchDays++; s.LastCatchDay = day; }
                 // once: catches the browser counted before the server kept stats (capped)
                 if (!s.LegacyImported) { s.LegacyImported = true; if (legacyCaught is > 0) s.Caught = Math.Max(s.Caught, Math.Min(legacyCaught.Value, 500)); }
@@ -187,6 +254,8 @@ public sealed class MascotStatsStore
             // spells it cast — when it escaped or, now and then, when it was caught
             var valid = (spells ?? []).Distinct().Where(k => Spells.Any(x => x.Key == k)).Take(2).ToList();
             foreach (var k in valid) s.Spells[k] = s.Spells.GetValueOrDefault(k) + 1;
+            if (valid.Count > 0 && s.LastFlightSpell) s.Lucky++;
+            s.LastFlightSpell = valid.Count > 0;
             if (legendary && valid.Count == 2)
             {
                 s.Legendary++;

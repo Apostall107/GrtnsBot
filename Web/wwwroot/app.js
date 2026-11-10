@@ -1620,6 +1620,18 @@ async function logout() {
 const SPELLS = [["hole", "🌀", "Black hole"], ["fire", "🔥", "Fireball"], ["bolt", "⚡", "Lightning"], ["rock", "🪨", "Stone barrage"], ["air", "🌪️", "Tornado"],
   ["ice", "❄️", "Ice storm"], ["meteor", "☄️", "Meteor"], ["water", "🌊", "Tidal wave"], ["seal", "👑", "Seal of Greatness"], ["acid", "☠️", "Acid cloud"],
   ["laser", "🔴", "Orbital beam"], ["claws", "🖤", "Shadow claws"], ["glitch", "📺", "Glitch"], ["sakura", "🌸", "Sakura storm"], ["fireworks", "🎆", "Fireworks"]];
+/** Achievements: site activity — a visit (once a day), quick search, Member tabs (each once). Fire and forget. */
+const siteTrack = (() => {
+  const seen = new Set();
+  const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  return (what, tab) => {
+    if (!state.guildId || !state.me) return;
+    const key = `${state.guildId}:${what}:${tab || ""}:${today()}`;
+    if (what !== "search" && seen.has(key)) return;
+    seen.add(key);
+    gApi("POST", "/me/track", { what, day: today(), tab: tab || null }).catch(() => { /* just stats */ });
+  };
+})();
 /** Owner only: summon the robot now — it will surely cast the chosen spell when it escapes. */
 function summonButtons(after) {
   const go = kind => { if (after) after(); window.__mascotFinale && window.__mascotFinale(kind); };
@@ -1681,7 +1693,7 @@ function summonButtons(after) {
     // After 5 runs/dashes it gets tired: slows down and can be caught.
     const NEAR = 55, MAX_ACTS = 5, inside = () => ({ x0: A.left + 4, y0: A.top + 4, x1: A.right - W - 4, y1: A.bottom - H - 4 });
     let ptr = null, raf = 0, last = performance.now(), born = last, entered = false, acts = 0, tired = false;
-    let runUntil = 0, dash = null, done = false, casting = false, caughtIt = false, castKinds = [], castLegend = false, dodges = 0, dashes = 0;
+    let runUntil = 0, dash = null, done = false, casting = false, caughtIt = false, castKinds = [], castLegend = false, dodges = 0, dashes = 0, enteredAt = 0;
     const onMove = e => { ptr = [e.clientX, e.clientY]; };
     const norm = (x, y) => { const l = Math.hypot(x, y) || 1; return [x / l, y / l]; };
     const tire = () => { if (++acts >= MAX_ACTS) { tired = true; el.classList.add("tired"); el.classList.remove("run"); el.title = "It's tired — catch it!"; } };
@@ -1733,7 +1745,7 @@ function summonButtons(after) {
       const ix = Math.max(0, Math.min(pos[0] + W, A.right) - Math.max(pos[0], A.left)), iy = Math.max(0, Math.min(pos[1] + H, A.bottom) - Math.max(pos[1], A.top));
       const frac = ix * iy / (W * H);
       el.style.opacity = frac.toFixed(2);
-      if (frac > .98) entered = true;
+      if (frac > .98 && !entered) { entered = true; enteredAt = now; }
       // a successful escape: instead of just slipping off the screen it stops at the edge and casts
       if (finale && entered && !running && frac < .98) {
         pos = [Math.max(b.x0, Math.min(b.x1, pos[0])), Math.max(b.y0, Math.min(b.y1, pos[1]))];
@@ -1766,7 +1778,9 @@ function summonButtons(after) {
     const report = body => {
       if (!state.guildId) return Promise.resolve(null);
       const d = new Date(), day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-      return gApi("POST", "/me/mascot", { ...body, dodges, dashes, tired, hour: d.getHours(), day }).catch(() => null);
+      const chase = enteredAt ? performance.now() - enteredAt : 0;
+      return gApi("POST", "/me/mascot", { ...body, dodges, dashes, tired, hour: d.getHours(), day,
+        fast: body.kind === "caught" && enteredAt > 0 && chase < 3000, long: body.kind === "caught" && chase > 20000 }).catch(() => null);
     };
     function end() {
       if (ended) return; ended = true;
@@ -2747,6 +2761,7 @@ function renderShell() {
 
   if (!state.guildId) { main.append(empty("No servers available for your account.")); return; }
   if (!visibleTabs().length) { main.append(empty("You have no sections on this server. Ask an admin for the member role.")); return; }
+  siteTrack(MEMBER_TABS.includes(state.tab) ? "tab" : "visit", state.tab);
   const page = { home: pageHome, content: pageContent, play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, guild: pageGuild, schedule: pageSchedule, roster: pageMemberRoster, tickets: pageTickets, voice: pageVoice, welcome: pageWelcome, roles: pageRoles, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess, voicenow: pageVoiceNow, birthdays: pageBirthdays, pages: pageChannelPages, media: pageMedia, mascot: pageMascot, achievements: pageAchievements }[state.tab];
   page(main);
   addGuideButton(main, state.tab);
@@ -3097,6 +3112,7 @@ document.addEventListener("keydown", e => {
 const searchCache = { at: 0, guild: null, groups: [], tickets: [] };
 
 async function quickSearch() {
+  siteTrack("search");
   const d = dialog();
   if (d.open && d.classList.contains("qs-dialog")) return;
   d.classList.remove("member-card-dialog", "wide", "xwide", "page-dialog");

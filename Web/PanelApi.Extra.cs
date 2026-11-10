@@ -1006,7 +1006,7 @@ public static partial class PanelApi
         var suffix = pattern.Replace("/api/guilds/{guildId}", "").Replace("/api", "");
         if (!suffix.EndsWith('/') && suffix == "/settings") suffix = "/settings/";
         if (suffix.EndsWith("/preview", StringComparison.Ordinal) || suffix.EndsWith("/screens", StringComparison.Ordinal)) return await next(ctx); // предпросмотр ничего не меняет
-        if (suffix == "/me/mascot") return await next(ctx); // easter egg stats — not an admin-worthy action
+        if (suffix is "/me/mascot" or "/me/track") return await next(ctx); // easter egg stats — not an admin-worthy action
         var def = Array.Find(AuditActions, a => a.Method == http.Request.Method && a.Suffix == suffix);
 
         string? details = null;

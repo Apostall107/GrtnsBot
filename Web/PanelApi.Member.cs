@@ -316,13 +316,21 @@ public static partial class PanelApi
         g.MapPost("/mascot", (ulong guildId, MascotEventBody body, ClaimsPrincipal user, [FromServices] MascotStatsStore mascot) =>
         {
             var caught = mascot.Record(guildId, user.UserId()!.Value, body.Kind ?? "", body.Quick, body.Spells, body.Legendary, body.Legacy,
-                body.Dodges ?? 0, body.Dashes ?? 0, body.Tired, body.Hour, body.Day);
+                body.Dodges ?? 0, body.Dashes ?? 0, body.Tired, body.Hour, body.Day, body.Fast, body.Long);
             return Results.Ok(new { caught = caught ?? mascot.Get(guildId, user.UserId()!.Value).Caught });
+        });
+
+        // Site activity for achievements (visit days, quick search, Member tabs) — not logged
+        g.MapPost("/track", (ulong guildId, SiteTrackBody body, ClaimsPrincipal user, [FromServices] MascotStatsStore mascot) =>
+        {
+            mascot.Track(guildId, user.UserId()!.Value, body.What ?? "", body.Day, body.Tab);
+            return Results.Ok();
         });
 
         // Achievements tab: my stats and the achievements (locked ones come without title and description)
         g.MapGet("/achievements", (ulong guildId, ClaimsPrincipal user, DiscordSocketClient client, [FromServices] MascotStatsStore mascot,
-            [FromServices] LfgHistoryStore history, [FromServices] CharacterStore chars, [FromServices] BirthdayStore birthdays) =>
+            [FromServices] LfgHistoryStore history, [FromServices] CharacterStore chars, [FromServices] BirthdayStore birthdays,
+            [FromServices] TicketStore tickets, [FromServices] TicketArchiveStore archive, [FromServices] AuditLog audit, [FromServices] LfgProjectStore projects) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             var me = user.UserId()!.Value;
@@ -333,11 +341,47 @@ public static partial class PanelApi
             foreach (var id in lfgStats.Keys.Concat(charCount.Keys).Append(me).Distinct())
                 if (!all.Any(x => x.UserId == id)) all.Add((id, new MascotStats()));
             all = all.Where(x => guild.GetUser(x.UserId) is not null || x.UserId == me).ToList();
+            // everything the bot already knows (so these count retroactively)
+            var hist = history.Get(guildId, null).OrderBy(e => e.ClosedAt).ToList();
+            var recurringPosts = audit.Query(guildId, 0, "lfg", "Posted recurring LFG group", 0, int.MaxValue)
+                .Select(e => e.Details ?? "").ToHashSet();   // "Activity · 2026-11-09 20:00:00Z"
+            bool IsRecurring(LfgHistoryEntry e) => e.StartsAt is { } st && recurringPosts.Contains($"{e.Activity} · {st:u}");
+            var archived = archive.Query(guildId, null, null, null, 0, int.MaxValue);
+            var openTickets = tickets.GetTickets(guildId);
+            var gearActions = audit.Query(guildId, null, "lfg", null, 0, int.MaxValue)
+                .Where(e => e.Action.Contains("armory", StringComparison.OrdinalIgnoreCase) || e.Action.Contains("class/note", StringComparison.OrdinalIgnoreCase)
+                    || e.Action.Contains(" GS", StringComparison.Ordinal))
+                .GroupBy(e => e.ActorId).ToDictionary(x => x.Key, x => x.Count());
+            var myChars = chars.All(guildId).GroupBy(c => c.UserId).ToDictionary(x => x.Key, x => x.ToList());
+            var defKey = projects.DefaultKey(guildId);
             foreach (var (id, st) in all)
             {
                 if (lfgStats.TryGetValue(id, out var p)) { st.GroupsJoined = p.Groups; st.GroupsAttended = p.Attended; st.GroupsOrganized = p.Organized; }
                 st.Characters = charCount.GetValueOrDefault(id);
                 st.HasBirthday = birthdays.Of(guildId, id) is null ? 0 : 1;
+                var mine = hist.Where(e => e.Members.Any(m => m.UserId == id)).ToList();
+                int run = 0, best = 0;
+                foreach (var e in mine)
+                {
+                    var m = e.Members.First(x => x.UserId == id);
+                    if (m.Attended == true) best = Math.Max(best, ++run);
+                    else if (m.Attended == false) run = 0;
+                }
+                st.BestAttendStreak = best;
+                st.FullHouses = hist.Count(e => e.OwnerId == id && e.Size > 0 && e.Members.Count >= e.Size);
+                st.Activities = mine.Select(e => e.Activity).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+                st.RecurringJoined = mine.Count(IsRecurring);
+                var roles = mine.Select(e => e.Members.First(x => x.UserId == id).Role).ToList();
+                int RoleCount(string r) => roles.Count(x => x.Contains(r, StringComparison.OrdinalIgnoreCase));
+                st.MinRoleGames = Math.Min(RoleCount("DD"), Math.Min(RoleCount("Tank"), RoleCount("Sup")));
+                st.VoiceGroups = mine.Count(e => e.Voice);
+                st.Applied = archived.Count(e => e.UserId == id) + openTickets.Count(t => t.UserId == id);
+                st.Approved = archived.Count(e => e.UserId == id && e.Outcome == "approved");
+                var cs = myChars.GetValueOrDefault(id) ?? [];
+                st.ArmoryLinked = cs.Count(c => c.Info?.Armory is not null);
+                st.Projects = cs.Select(c => c.Scope ?? defKey).Distinct().Count();
+                st.GearUps = gearActions.GetValueOrDefault(id);
+                st.MonthsOnServer = guild.GetUser(id)?.JoinedAt is { } j ? (int)((DateTimeOffset.UtcNow - j).TotalDays / 30.44) : 0;
             }
             var s = all.First(x => x.UserId == me).Stats;
             object Rank(string key, string label, string icon, Func<MascotStats, int> value)
@@ -792,7 +836,8 @@ public static partial class PanelApi
 
 public sealed record MemberRolesBody(List<string>? RoleIds);
 public sealed record MascotEventBody(string? Kind, bool Quick, List<string>? Spells, bool Legendary, int? Legacy = null,
-    int? Dodges = null, int? Dashes = null, bool Tired = false, int? Hour = null, string? Day = null);
+    int? Dodges = null, int? Dashes = null, bool Tired = false, int? Hour = null, string? Day = null, bool Fast = false, bool Long = false);
+public sealed record SiteTrackBody(string? What, string? Day, string? Tab);
 public sealed record JoinBody(string? Role, string? Character);
 public sealed record CharacterBody(string? Name);
 public sealed record CharacterProfileBody(string? ClassRoleId, string? Comment, int? Gs = null, int? Race = null, int? ServerId = null);
