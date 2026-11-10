@@ -7671,6 +7671,13 @@ async function pageMascot(main) {
 
 // ================= Member: Achievements (the mascot game) =================
 
+// Achievements: a click opens the place/top-3 popup at once (hovering 3 s does it too); click again or elsewhere to close
+document.addEventListener("click", e => {
+  const t = e.target.closest && e.target.closest(".ach.done");
+  document.querySelectorAll(".ach.done.open").forEach(x => { if (x !== t) x.classList.remove("open"); });
+  if (t) t.classList.toggle("open");
+});
+
 /** Graded achievements: rarity colour by grade, progress to the next one; locked ones are just "?". */
 function achievementsCard(d) {
   const grades = d.grades || ["Poor", "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic"];

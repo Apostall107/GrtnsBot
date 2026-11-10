@@ -2925,5 +2925,21 @@ input.switch:checked { animation: switch-glow .5s ease-out; }
 /* achievement tiles: hover shows my place and the top 3 */
 .ach.done { position: relative; outline: none; }
 .ach.done:hover, .ach.done:focus { z-index: 40; }
-.ach.done:hover .rank-pop, .ach.done:focus .rank-pop { display: block; }
+/* hold the mouse over it for 3 s: the border fills up in the grade colour, then the place and the top 3 pop up */
+@property --ach-fill { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+.ach.done::after { content: ""; position: absolute; inset: -1.5px; border-radius: inherit; padding: 2.5px; pointer-events: none;
+  background: conic-gradient(from -90deg, var(--gc) var(--ach-fill), transparent 0);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  filter: drop-shadow(0 0 6px var(--gc)); opacity: 0; transition: opacity .2s; }
+.ach.done:hover::after, .ach.done:focus::after { opacity: 1; animation: gb-ach-fill 3s linear forwards; }
+@keyframes gb-ach-fill { from { --ach-fill: 0deg; } to { --ach-fill: 360deg; } }
+.ach.done .rank-pop { display: block; visibility: hidden; opacity: 0; transform: translateY(-4px); transition: opacity .15s, transform .15s, visibility 0s .15s; }
+.ach.done:hover .rank-pop, .ach.done:focus .rank-pop { visibility: visible; opacity: 1; transform: none; transition: opacity .2s 3s, transform .2s 3s, visibility 0s 3s; }
 .card:has(.ach.done:hover), .card:has(.ach.done:focus) { position: relative; z-index: 60; }
+/* …or just click it: opens at once (click again or elsewhere to close) */
+.ach.done { cursor: pointer; }
+.ach.done.open { z-index: 41; }
+.ach.done.open::after { opacity: 1; animation: none; --ach-fill: 360deg; }
+.ach.done.open .rank-pop { visibility: visible; opacity: 1; transform: none; transition: none; }
+.card:has(.ach.done.open) { position: relative; z-index: 60; }
