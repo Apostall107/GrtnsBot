@@ -316,7 +316,7 @@ public static partial class PanelApi
         g.MapPost("/mascot", (ulong guildId, MascotEventBody body, ClaimsPrincipal user, [FromServices] MascotStatsStore mascot) =>
         {
             var caught = mascot.Record(guildId, user.UserId()!.Value, body.Kind ?? "", body.Quick, body.Spells, body.Legendary, body.Legacy,
-                body.Dodges ?? 0, body.Dashes ?? 0, body.Tired, body.Hour, body.Day, body.Fast, body.Long);
+                body.Dodges ?? 0, body.Dashes ?? 0, body.Tired, body.Hour, body.Day, body.Fast, body.Long, body.Golden);
             return Results.Ok(new { caught = caught ?? mascot.Get(guildId, user.UserId()!.Value).Caught });
         });
 
@@ -837,7 +837,7 @@ public static partial class PanelApi
 
 public sealed record MemberRolesBody(List<string>? RoleIds);
 public sealed record MascotEventBody(string? Kind, bool Quick, List<string>? Spells, bool Legendary, int? Legacy = null,
-    int? Dodges = null, int? Dashes = null, bool Tired = false, int? Hour = null, string? Day = null, bool Fast = false, bool Long = false);
+    int? Dodges = null, int? Dashes = null, bool Tired = false, int? Hour = null, string? Day = null, bool Fast = false, bool Long = false, bool Golden = false);
 public sealed record SiteTrackBody(string? What, string? Day, string? Tab);
 public sealed record JoinBody(string? Role, string? Character);
 public sealed record CharacterBody(string? Name);

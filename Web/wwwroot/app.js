@@ -1644,9 +1644,9 @@ const siteTrack = (() => {
 })();
 /** Owner only: summon the robot now — it will surely cast the chosen spell when it escapes. */
 function summonButtons(after) {
-  const go = kind => { if (after) after(); window.__mascotFinale && window.__mascotFinale(kind); };
+  const go = kind => { if (after) after(); if (kind === "golden") window.__neonCat && window.__neonCat({ golden: true }); else window.__mascotFinale && window.__mascotFinale(kind); };
   return h("div", { class: "row summon-row", style: "gap:6px;flex-wrap:wrap" },
-    [...SPELLS, ["legend", "🌟", "LEGENDARY (two spells at once)"], ["random", "🎲", "Random spell"]].map(([k, e, n]) => h("button", { type: "button", class: "btn secondary sm", title: `Summon — casts: ${n}`, onclick: () => go(k) }, e)));
+    [...SPELLS, ["legend", "🌟", "LEGENDARY (two spells at once)"], ["random", "🎲", "Random spell"], ["golden", "🏆", "GOLDEN robot (always casts, 6% legendary)"]].map(([k, e, n]) => h("button", { type: "button", class: "btn secondary sm", title: `Summon — casts: ${n}`, onclick: () => go(k) }, e)));
 }
 (function mascots() {
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
@@ -1667,12 +1667,22 @@ function summonButtons(after) {
   function fly(opts) {
     // The owner can summon it with a guaranteed spell (opts.finale: a spell or "random").
     let forced = opts && typeof opts === "object" ? opts.finale : null;
-    if (forced && busy) return toast("The robot is already flying — wait until it's gone.", "warn");
+    const summonGolden = !!(opts && typeof opts === "object" && opts.golden);
+    if ((forced || summonGolden) && busy) return toast("The robot is already flying — wait until it's gone.", "warn");
     if (busy || document.hidden || !state.me) return schedule();
     if (forced === "random") forced = pickSpell();
-    // Escape: 40% a spell (1% legendary). Caught: 1.5× more — 60% (1.5% legendary), it strikes back as it vanishes.
+    // The GOLDEN robot: after 10 catches in a row (counted in this browser) there's a 10% chance, doubling with every further
+    // catch (20%, 40%, 80%, 100%); when it appears the count starts over. It always casts, legendary 4× as often (6%).
+    const streakKey = `gb.mascotStreak.${state.guildId}`;
+    const streak = Number(store.get(streakKey) || 0);
+    const golden = summonGolden || (streak >= 10 && Math.random() < Math.min(1, .1 * 2 ** (streak - 10)));
+    if (golden && !summonGolden) store.set(streakKey, "0");
     // Escape: 4% a spell, never legendary. Caught: 60% (1.5% legendary) — it strikes back as it vanishes.
-    const rollSpell = caught => { const r = Math.random(); return caught ? (r < .015 ? "legend" : r < .6 ? pickSpell() : null) : (r < .04 ? pickSpell() : null); };
+    const rollSpell = caught => {
+      const r = Math.random();
+      if (golden) return r < .06 ? "legend" : pickSpell();
+      return caught ? (r < .015 ? "legend" : r < .6 ? pickSpell() : null) : (r < .04 ? pickSpell() : null);
+    };
     const finale = forced || rollSpell(false);
     const M = BOT; // only our robot flies (the cat is retired)
     const A = area(), W = M.w, H = M.h;
@@ -1689,7 +1699,8 @@ function summonButtons(after) {
     busy = true;
     const span = dir[0] ? A.right - A.left + W : A.bottom - A.top + H;
     const base = span / Math.max(4500, span * 7.5);          // px per ms — same pace as before
-    const el = h("div", { class: `mascot mascot-${M.name}`, title: "Catch me!" });
+    const el = h("div", { class: `mascot mascot-${M.name}${golden ? " golden" : ""}`, title: golden ? "A GOLDEN robot — catch it!" : "Catch me!" });
+    if (golden) toast("✨ A GOLDEN robot appeared! It surely casts something…");
     el.innerHTML = `<div class="mascot-dodge"><div class="mascot-bob">${M.svg}</div></div>`;
     el.style.opacity = "0";
     document.body.append(el);
@@ -1769,7 +1780,7 @@ function summonButtons(after) {
     const trail = setInterval(() => {
       if (done || +el.style.opacity < .2) return;
       const r = box(), sx = r.left + r.width / 2 - dir[0] * 36, sy = r.top + r.height / 2 - dir[1] * 44;
-      const s = h("i", { class: `cat-spark${Math.random() < .4 ? " blue" : ""}`, style: `left:${sx + (Math.random() * 10 - 5)}px;top:${sy + (Math.random() * 10 - 5)}px` });
+      const s = h("i", { class: `cat-spark${golden ? " gold" : Math.random() < .4 ? " blue" : ""}`, style: `left:${sx + (Math.random() * 10 - 5)}px;top:${sy + (Math.random() * 10 - 5)}px` });
       document.body.append(s); setTimeout(() => s.remove(), 800);
     }, 55);
     // Click guard: near the mascot (200 px) buttons, links and fields don't react — only the mascot does
@@ -1793,7 +1804,7 @@ function summonButtons(after) {
     };
     function end() {
       if (ended) return; ended = true;
-      if (!caughtIt && entered) report({ kind: "escaped", spells: castKinds, legendary: castLegend });
+      if (!caughtIt && entered) { report({ kind: "escaped", spells: castKinds, legendary: castLegend, golden }); store.set(streakKey, "0"); }
       stopWatch(); clearInterval(trail); EVENTS.forEach(t => document.removeEventListener(t, guard, true)); el.remove(); busy = false; schedule();
     }
     // ---- The finale spells (pure DOM/CSS, a few seconds, never block clicks) ----
@@ -2792,6 +2803,7 @@ function summonButtons(after) {
         setTimeout(() => s.remove(), 720);
       }
       caughtIt = true;
+      if (!golden) store.set(streakKey, String(Number(store.get(streakKey) || 0) + 1));   // a catch streak for the golden robot
       // The count lives on the server (same as Achievements); catches this browser counted before are handed over once
       let legacy = null;
       try { if (!localStorage.getItem("gb.mascotsLegacySent")) { legacy = Number(localStorage.getItem("gb.mascotsCaught") || localStorage.getItem("gb.catsCaught") || 0) || null; localStorage.setItem("gb.mascotsLegacySent", "1"); } } catch { /* private mode */ }
@@ -2799,12 +2811,12 @@ function summonButtons(after) {
       const spell = forced ? finale : rollSpell(true);
       if (spell) {
         cast(spell);
-        report({ kind: "caught", quick: !tired, spells: castKinds, legendary: castLegend, legacy });
+        report({ kind: "caught", quick: !tired, spells: castKinds, legendary: castLegend, legacy, golden });
         return;
       }
       el.classList.add("caught");
       const line = M.lines[Math.floor(Math.random() * M.lines.length)];
-      report({ kind: "caught", quick: !tired, legacy }).then(r => toast(`${line}${r && r.caught > 1 ? ` (caught: ${r.caught})` : ""}`));
+      report({ kind: "caught", quick: !tired, legacy, golden }).then(r => toast(`${line}${r && r.caught > 1 ? ` (caught: ${r.caught})` : ""}`));
       setTimeout(end, 650);
     }, { once: true });
   }
@@ -7971,7 +7983,7 @@ async function pageChars(main) {
 async function pageMascot(main) {
   const g = currentGuild() || {};
   main.append(h("div", { class: "card-head" }, h("h1", {}, "🤖 Mascot")),
-    h("p", { class: "muted small" }, "Only you (the bot owner) see this page. The little Greatness robot flies across the site for everyone on this server, runs away from the cursor, gets tired and can be caught. When it escapes it sometimes casts a spell (4%, never legendary); when it's caught it strikes back much more often (60%; 1.5% — a legendary cast of two spells at once). The poop barrage is 5× rarer than the other spells. Members collect what they saw in Member → Achievements."));
+    h("p", { class: "muted small" }, "Only you (the bot owner) see this page. The little Greatness robot flies across the site for everyone on this server, runs away from the cursor, gets tired and can be caught. When it escapes it sometimes casts a spell (4%, never legendary); when it's caught it strikes back much more often (60%; 1.5% — a legendary cast of two spells at once). The poop barrage is 5× rarer than the other spells. After 10 catches in a row a GOLDEN robot may come (10%, doubling with each further catch): it always casts, legendary 6%. Members collect what they saw in Member → Achievements."));
   // How often
   const secs = h("input", { type: "number", min: "0", max: "604800", step: "1", value: String(g.mascotSeconds ?? 900), style: "width:140px", "aria-label": "Seconds" });
   const human = h("span", { class: "muted small" });

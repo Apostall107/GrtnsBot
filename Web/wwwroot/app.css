@@ -3081,3 +3081,8 @@ input.switch:checked { animation: switch-glow .5s ease-out; }
 .ach-group.folded .ach-group-head .chev { transform: rotate(-90deg); }
 .ach-group.folded > .ach-grid { display: none; }
 .ach-group-head:hover h3 { color: var(--text-primary, #fff); }
+/* the GOLDEN robot */
+.mascot.golden svg { filter: sepia(1) saturate(3.2) hue-rotate(-12deg) brightness(1.15) drop-shadow(0 0 8px rgba(255, 210, 80, .95)) drop-shadow(0 0 22px rgba(255, 170, 40, .7)) !important; }
+.mascot.golden::before { content: ""; position: absolute; inset: -18px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, rgba(255, 220, 110, .35), rgba(255, 190, 60, 0) 70%); animation: gb-gold-pulse 1.2s ease-in-out infinite alternate; }
+@keyframes gb-gold-pulse { from { opacity: .5; transform: scale(.9); } to { opacity: 1; transform: scale(1.1); } }
