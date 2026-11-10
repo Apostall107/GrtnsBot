@@ -1615,7 +1615,7 @@ async function logout() {
 })();
 
 // ----- Easter egg: now and then our little Greatness robot (from the bot's icon) flies across the page.
-// It flies over the page area (not the sidebar); while it flies, clicks within 200 px of it are ignored.
+// It flies over the page area (not the sidebar); while it flies, clicks right around it (where it reacts to the cursor) are ignored.
 // The robot's escape spells (key, emoji, name) — also used by the owner's "Summon" buttons
 const SPELLS = [["hole", "🌀", "Black hole"], ["fire", "🔥", "Fireball"], ["bolt", "⚡", "Lightning"], ["rock", "🪨", "Stone barrage"], ["air", "🌪️", "Tornado"],
   ["ice", "❄️", "Ice storm"], ["meteor", "☄️", "Meteor"], ["water", "🌊", "Tidal wave"], ["seal", "👑", "Seal of Greatness"], ["acid", "☠️", "Acid cloud"],
@@ -1686,7 +1686,7 @@ function summonButtons(after) {
     const finale = forced || rollSpell(false);
     const M = BOT; // only our robot flies (the cat is retired)
     const A = area(), W = M.w, H = M.h;
-    // Starts just outside the page area: mostly left↔right, sometimes up↕down. While it flies, clicks within 200 px
+    // Starts just outside the page area: mostly left↔right, sometimes up↕down. While it flies, clicks right around it
     // of it are ignored (so you never hit a button by accident while trying to catch it).
     let pos, dir;
     if (Math.random() < .7) {
@@ -1783,11 +1783,12 @@ function summonButtons(after) {
       const s = h("i", { class: `cat-spark${golden ? " gold" : Math.random() < .4 ? " blue" : ""}`, style: `left:${sx + (Math.random() * 10 - 5)}px;top:${sy + (Math.random() * 10 - 5)}px` });
       document.body.append(s); setTimeout(() => s.remove(), 800);
     }, 55);
-    // Click guard: near the mascot (200 px) buttons, links and fields don't react — only the mascot does
+    // Click guard: the same zone the robot reacts to (NEAR px around it) — there buttons, links and fields don't react,
+    // only the mascot does; everywhere else the site works as usual
     const guard = e => {
       if (!el.isConnected || (e.target.closest && e.target.closest(".mascot"))) return;
-      const r = box(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-      if (e.clientX == null || Math.hypot(e.clientX - cx, e.clientY - cy) > 200) return;
+      const r = box();
+      if (e.clientX == null || Math.hypot(Math.max(r.left - e.clientX, 0, e.clientX - r.right), Math.max(r.top - e.clientY, 0, e.clientY - r.bottom)) > NEAR) return;
       e.preventDefault(); e.stopImmediatePropagation();
     };
     const EVENTS = ["pointerdown", "mousedown", "pointerup", "mouseup", "click", "dblclick", "contextmenu"];
@@ -7998,7 +7999,7 @@ async function pageMascot(main) {
   });
   save.addEventListener("click", tracker.save);
   main.append(tracker.attach(h("div", { class: "card" }, h("h2", {}, "⏱️ How often"),
-    h("p", { class: "muted small" }, "While it flies, buttons within 200 px of it don't react. People with 'reduce motion' turned on never see it."),
+    h("p", { class: "muted small" }, "While it flies, buttons right around it (55 px — the same zone where it reacts to the cursor) don't react. People with 'reduce motion' turned on never see it."),
     h("div", { class: "row", style: "align-items:flex-end" }, h("div", { class: "field", style: "margin:0" }, fieldLabel("Every … seconds on average (0 = off)"), h("div", { class: "row" }, secs, human)), save))));
   // Summon
   const preview = h("button", { class: "btn secondary" }, icon("sparkles", 15), "Let it fly (normal)");
