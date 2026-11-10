@@ -417,7 +417,7 @@ public static partial class PanelApi
                 grades = MascotStatsStore.GradeNames,
                 points = MascotStatsStore.All.Sum(a => a.Points(s)),
                 maxPoints = MascotStatsStore.All.Sum(a => a.MaxPoints),
-                multipliers = new[] { 1, 2, 5, 50 },
+                multipliers = new[] { 1, 2, 10, 50 },
                 // graded: grade 1..7 (rarity colour), progress to the next grade; locked ones come without any text
                 achievements = MascotStatsStore.All.Select(a =>
                 {

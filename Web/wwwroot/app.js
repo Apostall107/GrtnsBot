@@ -8040,7 +8040,7 @@ function achievementsCard(d) {
       h("span", { class: "ach-icon" }, h("span", { class: "ico" }, a.icon)),
       h("div", { class: "ach-text" },
         h("div", { class: "ach-top" }, h("b", { title: a.title }, a.title),
-          h("span", { class: "ach-cls", title: ["", "Tier I achievement (common) — ×1 grade points", "Tier II achievement (rare) — ×2 grade points", "Tier III achievement (legendary) — ×5 grade points", "Tier IV achievement (ultra rare) — ×50 grade points"][a.tierClass || 1] }, "✦".repeat(a.tierClass || 1)),
+          h("span", { class: "ach-cls", title: ["", "Tier I achievement (common) — ×1 grade points", "Tier II achievement (rare) — ×2 grade points", "Tier III achievement (legendary) — ×10 grade points", "Tier IV achievement (ultra rare) — ×50 grade points"][a.tierClass || 1] }, "✦".repeat(a.tierClass || 1)),
           h("span", { class: "ach-grade" }, a.gradeName)),
         // what was done for the current grade, then how far the next one is
         small ? null : h("span", { class: "muted small" }, a.description),
@@ -8095,7 +8095,7 @@ function achievementsCard(d) {
   };
   const reset = h("button", { type: "button", class: "ach-reset", onclick: () => { selG.clear(); selT.clear(); legend.querySelectorAll(".on").forEach(x => x.classList.remove("on")); legend.classList.remove("filtering"); draw(); } }, "✕ All");
   const legend = h("div", { class: "ach-legend" }, grades.map((n, i) => chip(`ach-chip g${i + 1}`, n, selG, i + 1)),
-    h("span", { class: "ach-legend-sep" }), chip("ach-cls-chip c1", "✦ Tier I ×1", selT, 1), chip("ach-cls-chip c2", "✦✦ Tier II ×2", selT, 2), chip("ach-cls-chip c3", "✦✦✦ Tier III ×5", selT, 3), chip("ach-cls-chip c4", "✦✦✦✦ Tier IV ×50", selT, 4), reset);
+    h("span", { class: "ach-legend-sep" }), chip("ach-cls-chip c1", "✦ Tier I ×1", selT, 1), chip("ach-cls-chip c2", "✦✦ Tier II ×2", selT, 2), chip("ach-cls-chip c3", "✦✦✦ Tier III ×10", selT, 3), chip("ach-cls-chip c4", "✦✦✦✦ Tier IV ×50", selT, 4), reset);
   draw();
   return h("div", { class: "card" }, h("h2", {}, "🏆 Achievements"), legend, body);
 }

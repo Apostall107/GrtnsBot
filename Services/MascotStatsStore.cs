@@ -79,8 +79,8 @@ public sealed record MascotAchievement(string Id, string Group, string Icon, str
         : ReferenceEquals(Tiers, MascotStatsStore.LegendTiers) || Group is "legend" or "combos" ? 3
         : Group == "spells" || Id == "kinds" ? 2 : 1;
 
-    /// <summary>Grade points per grade by class: I ×1, II ×2, III ×5, IV ×50.</summary>
-    public int Multiplier => TierClass switch { 4 => 50, 3 => 5, 2 => 2, _ => 1 };
+    /// <summary>Grade points per grade by class: I ×1, II ×2, III ×10, IV ×50.</summary>
+    public int Multiplier => TierClass switch { 4 => 50, 3 => 10, 2 => 2, _ => 1 };
     public int Points(MascotStats s) => Grade(s) * Multiplier;
     public int MaxPoints => Tiers.Length * Multiplier;
     public bool Done(MascotStats s) => Grade(s) > 0;
