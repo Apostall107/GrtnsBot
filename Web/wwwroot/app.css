@@ -2943,3 +2943,35 @@ input.switch:checked { animation: switch-glow .5s ease-out; }
 .ach.done.open::after { opacity: 1; animation: none; --ach-fill: 360deg; }
 .ach.done.open .rank-pop { visibility: visible; opacity: 1; transform: none; transition: none; }
 .card:has(.ach.done.open) { position: relative; z-index: 60; }
+/* Achievement classes: I common, II rare (animated icon), III legendary (animated icon, iridescent shimmer) */
+.ach .ico { display: inline-block; line-height: 1; }
+.ach .ach-cls { font-size: 10px; letter-spacing: 1px; color: var(--text-secondary); opacity: .8; }
+.ach.cls2 .ach-cls { color: #9FD0FF; opacity: 1; }
+.ach.cls3 .ach-cls { background: linear-gradient(90deg, #FFE48A, #FF9AE0, #9AD8FF, #FFE48A); background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; opacity: 1; animation: ach-iris 4s linear infinite; }
+.ach-legend-sep { width: 1px; align-self: stretch; background: rgba(255, 255, 255, .12); margin: 0 4px; }
+.ach-cls-chip { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .15); color: var(--text-secondary); }
+.ach-cls-chip.c2 { color: #9FD0FF; border-color: rgba(120, 190, 255, .4); }
+.ach-cls-chip.c3 { color: #FFE48A; border-color: rgba(255, 200, 120, .5); background: linear-gradient(90deg, rgba(255, 220, 120, .12), rgba(255, 150, 230, .12), rgba(150, 215, 255, .12)); }
+/* tier II: the icon floats and glows */
+.ach.cls2 .ach-icon { animation: ach-glow 2.8s ease-in-out infinite; }
+.ach.cls2 .ico { animation: ach-float 2.8s ease-in-out infinite; }
+@keyframes ach-float { 0%, 100% { transform: translateY(1px) rotate(-5deg); } 50% { transform: translateY(-3px) rotate(5deg); } }
+@keyframes ach-glow { 0%, 100% { box-shadow: 0 0 6px color-mix(in srgb, var(--gc) 30%, transparent); } 50% { box-shadow: 0 0 16px color-mix(in srgb, var(--gc) 65%, transparent); } }
+/* tier III: animated icon, iridescent background that flows, a shimmer sweep and twinkles */
+.ach.cls3 { isolation: isolate; }
+.ach.cls3.done { background: linear-gradient(120deg, color-mix(in srgb, var(--gc) 20%, transparent), rgba(255, 140, 220, .13), rgba(120, 200, 255, .13), rgba(255, 225, 120, .14), color-mix(in srgb, var(--gc) 20%, transparent));
+  background-size: 300% 300%; animation: ach-iris 6s ease-in-out infinite; }
+@keyframes ach-iris { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+.ach.cls3 .ach-shine { position: absolute; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; border-radius: inherit; }
+.ach.cls3 .ach-shine::before { content: ""; position: absolute; top: -50%; bottom: -50%; width: 40%; left: -60%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .22), rgba(255, 240, 200, .32), transparent); transform: skewX(-20deg); animation: ach-sweep 3.6s ease-in-out infinite; }
+@keyframes ach-sweep { 0%, 55% { left: -60%; } 100% { left: 130%; } }
+.ach.cls3 .ach-shine::after { content: ""; position: absolute; inset: 0;
+  background: radial-gradient(1.5px 1.5px at 18% 30%, #fff, transparent), radial-gradient(1.5px 1.5px at 72% 22%, #fff, transparent), radial-gradient(1px 1px at 86% 70%, #fff, transparent),
+    radial-gradient(1px 1px at 40% 80%, #fff, transparent), radial-gradient(1.5px 1.5px at 58% 52%, #FFE9A8, transparent);
+  animation: ach-twinkle 1.8s ease-in-out infinite alternate; }
+@keyframes ach-twinkle { from { opacity: .15; } to { opacity: .9; } }
+.ach.cls3 .ach-icon { animation: ach-glow 2s ease-in-out infinite; background: conic-gradient(from 0deg, rgba(255, 220, 120, .35), rgba(255, 140, 220, .3), rgba(120, 200, 255, .3), rgba(255, 220, 120, .35)) !important; }
+.ach.cls3 .ico { animation: ach-legend-ico 2.4s ease-in-out infinite; filter: drop-shadow(0 0 6px rgba(255, 220, 140, .9)); }
+@keyframes ach-legend-ico { 0%, 100% { transform: translateY(1px) scale(1) rotate(-6deg); } 50% { transform: translateY(-3px) scale(1.12) rotate(6deg); } }
+@media (prefers-reduced-motion: reduce) { .ach .ico, .ach .ach-icon, .ach.cls3.done, .ach.cls3 .ach-shine::before, .ach.cls3 .ach-shine::after, .ach.cls3 .ach-cls { animation: none !important; } }

@@ -373,6 +373,8 @@ public static partial class PanelApi
                     var top = vals.Take(3).Select(x => new { member = Member(guild, x.UserId), value = x.V, me = x.UserId == me }).ToList();
                     return new
                     {
+                        // achievement class: I — common climbs (×2 from 5), II — rare (single spells, Grimoire), III — legendary casts
+                        tierClass = ReferenceEquals(a.Tiers, MascotStatsStore.PowerTiers) ? 1 : ReferenceEquals(a.Tiers, MascotStatsStore.LegendTiers) ? 3 : 2,
                         id = a.Id, group = a.Group, unlocked = true, icon = a.Icon, title = a.Title, grade = g, gradeName = MascotStatsStore.GradeNames[g - 1],
                         rank = 1 + vals.Count(x => x.V > v), of = vals.Count, top,
                         description = string.Format(a.Description, a.Tiers[g - 1]).Replace(" 1 times", " once"), nextGrade = next is null ? null : MascotStatsStore.GradeNames[g], value = v, prev = a.Tiers[g - 1], next, maxGrade = a.Tiers.Length

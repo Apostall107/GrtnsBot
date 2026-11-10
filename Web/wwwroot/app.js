@@ -7682,10 +7682,13 @@ document.addEventListener("click", e => {
 function achievementsCard(d) {
   const grades = d.grades || ["Poor", "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic"];
   const tile = (a, small) => a.unlocked
-    ? h("div", { class: `ach done g${a.grade}${small ? " sm" : ""}`, tabindex: "0" },
-      h("span", { class: "ach-icon" }, a.icon),
+    ? h("div", { class: `ach done g${a.grade} cls${a.tierClass || 1}${small ? " sm" : ""}`, tabindex: "0" },
+      a.tierClass === 3 ? h("i", { class: "ach-shine" }) : null,
+      h("span", { class: "ach-icon" }, h("span", { class: "ico" }, a.icon)),
       h("div", { class: "ach-text" },
-        h("div", { class: "ach-top" }, h("b", {}, a.title), h("span", { class: "ach-grade" }, a.gradeName)),
+        h("div", { class: "ach-top" }, h("b", {}, a.title),
+          h("span", { class: "ach-cls", title: ["", "Tier I achievement (common)", "Tier II achievement (rare)", "Tier III achievement (legendary)"][a.tierClass || 1] }, "✦".repeat(a.tierClass || 1)),
+          h("span", { class: "ach-grade" }, a.gradeName)),
         // what was done for the current grade, then how far the next one is
         small ? null : h("span", { class: "muted small" }, a.description),
         h("span", { class: "ach-next" }, a.next ? `${a.value} / ${a.next} → ${a.nextGrade || "next grade"}` : `${a.value} · max grade!`),
@@ -7712,7 +7715,8 @@ function achievementsCard(d) {
     return h("div", { class: "ach-group" }, h("h3", {}, `${title} · ${open}/${list.length}`), grid);
   };
   return h("div", { class: "card" }, h("h2", {}, "🏆 Achievements"),
-    h("div", { class: "ach-legend" }, grades.map((n, i) => h("span", { class: `ach-chip g${i + 1}` }, n))),
+    h("div", { class: "ach-legend" }, grades.map((n, i) => h("span", { class: `ach-chip g${i + 1}` }, n)),
+      h("span", { class: "ach-legend-sep" }), h("span", { class: "ach-cls-chip c1" }, "✦ Tier I"), h("span", { class: "ach-cls-chip c2" }, "✦✦ Tier II"), h("span", { class: "ach-cls-chip c3" }, "✦✦✦ Tier III")),
     group("general", "General"), group("spells", "Spells"), group("legend", "Legendary casts"), group("combos", "Legendary combinations", true));
 }
 
