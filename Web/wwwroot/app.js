@@ -7712,8 +7712,12 @@ function achievementsCard(d) {
         h("span", { class: "ach-pips" }, Array.from({ length: a.maxGrade }, () => h("i")))))
     : h("div", { class: `ach locked${small ? " sm" : ""}` }, h("span", { class: "ach-icon" }, "?"),
       h("div", { class: "ach-text" }, h("b", {}, "???"), small ? null : h("span", { class: "muted small" }, "Hidden achievement")));
+  // Filters: click grade chips and/or tier chips (several at once); nothing selected — everything
+  const selG = new Set(), selT = new Set();
+  const pass = a => (!selG.size || (a.unlocked && selG.has(a.grade))) && (!selT.size || selT.has(a.tierClass || 0));
   const group = (key, title, small) => {
-    const list = d.achievements.filter(a => (a.group || "general") === key);
+    const all = d.achievements.filter(a => (a.group || "general") === key);
+    const list = all.filter(pass);
     if (!list.length) return null;
     const open = list.filter(a => a.unlocked).length, rankOf = a => a.unlocked ? 2 : a.visible ? 1 : 0;
     const sorted = [...list].sort((x, y) => rankOf(y) - rankOf(x));
@@ -7723,12 +7727,22 @@ function achievementsCard(d) {
       ...(!all && small && hidden ? [h("button", { type: "button", class: "ach locked sm ach-more", onclick: () => draw(true) },
         h("span", { class: "ach-icon" }, "?"), h("div", { class: "ach-text" }, h("b", {}, `+${hidden} hidden`), h("span", { class: "muted small" }, "show")))] : []));
     draw(false);   // the big combination list starts folded: found ones + "+N hidden"
-    return h("div", { class: "ach-group" }, h("h3", {}, `${title} · ${open}/${list.length}`), grid);
+    return h("div", { class: "ach-group" }, h("h3", {}, `${title} · ${all.filter(a => a.unlocked).length}/${all.length}`), grid);
   };
-  return h("div", { class: "card" }, h("h2", {}, "🏆 Achievements"),
-    h("div", { class: "ach-legend" }, grades.map((n, i) => h("span", { class: `ach-chip g${i + 1}` }, n)),
-      h("span", { class: "ach-legend-sep" }), h("span", { class: "ach-cls-chip c1" }, "✦ Tier I"), h("span", { class: "ach-cls-chip c2" }, "✦✦ Tier II"), h("span", { class: "ach-cls-chip c3" }, "✦✦✦ Tier III")),
-    group("general", "General"), group("guild", "Guild"), group("spells", "Spells"), group("legend", "Legendary casts"), group("combos", "Legendary combinations", true));
+  const body = h("div", {});
+  const draw = () => {
+    const groups = [group("general", "General"), group("guild", "Guild"), group("spells", "Spells"), group("legend", "Legendary casts"), group("combos", "Legendary combinations", true)].filter(Boolean);
+    body.replaceChildren(...(groups.length ? groups : [h("div", { class: "muted", style: "margin-top:12px" }, "No achievements match the filter.")]));
+  };
+  const chip = (cls, label, set, v) => {
+    const b = h("button", { type: "button", class: cls, title: "Filter", onclick: () => { set.has(v) ? set.delete(v) : set.add(v); b.classList.toggle("on", set.has(v)); legend.classList.toggle("filtering", selG.size + selT.size > 0); draw(); } }, label);
+    return b;
+  };
+  const reset = h("button", { type: "button", class: "ach-reset", onclick: () => { selG.clear(); selT.clear(); legend.querySelectorAll(".on").forEach(x => x.classList.remove("on")); legend.classList.remove("filtering"); draw(); } }, "✕ All");
+  const legend = h("div", { class: "ach-legend" }, grades.map((n, i) => chip(`ach-chip g${i + 1}`, n, selG, i + 1)),
+    h("span", { class: "ach-legend-sep" }), chip("ach-cls-chip c1", "✦ Tier I", selT, 1), chip("ach-cls-chip c2", "✦✦ Tier II", selT, 2), chip("ach-cls-chip c3", "✦✦✦ Tier III", selT, 3), reset);
+  draw();
+  return h("div", { class: "card" }, h("h2", {}, "🏆 Achievements"), legend, body);
 }
 
 /** Ranking: my place per category among everyone on the server; hover a tile for the top 3. */

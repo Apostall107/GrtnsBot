@@ -379,7 +379,7 @@ public static partial class PanelApi
                     var g = a.Grade(s);
                     // General and Guild ones are open goals: shown even before they're earned; the rest stay hidden ???
                     if (g == 0) return a.Group is "general" or "guild"
-                        ? new { id = a.Id, group = a.Group, unlocked = false, visible = true, icon = a.Icon, title = a.Title,
+                        ? new { id = a.Id, group = a.Group, unlocked = false, visible = true, tierClass = a.Group == "spells" || a.Id == "kinds" ? 2 : 1, icon = a.Icon, title = a.Title,
                             description = string.Format(a.Description, a.Tiers[0]).Replace(" 1 times", " once"), value = a.Value(s), next = a.Tiers[0], maxGrade = a.Tiers.Length }
                         : (object)new { id = a.Id, group = a.Group, unlocked = false };
                     var v = a.Value(s);

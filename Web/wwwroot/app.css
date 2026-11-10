@@ -2980,3 +2980,10 @@ input.switch:checked { animation: switch-glow .5s ease-out; }
 .ach.todo .ach-icon { filter: grayscale(1); opacity: .55; }
 .ach.todo .ach-grade { color: var(--text-secondary); }
 .ach.todo b { color: var(--text-secondary); }
+/* the legend chips filter the achievements (several at once) */
+.ach-legend button { cursor: pointer; font-family: inherit; background: none; transition: opacity .15s, box-shadow .15s, background .15s; }
+.ach-legend.filtering button.ach-chip:not(.on), .ach-legend.filtering button.ach-cls-chip:not(.on) { opacity: .4; }
+.ach-legend button.on { opacity: 1; box-shadow: 0 0 10px color-mix(in srgb, var(--gc, #FFD86A) 55%, transparent); background: color-mix(in srgb, var(--gc, #FFD86A) 22%, transparent); }
+.ach-cls-chip.c1 { --gc: #C8CCD8; } .ach-cls-chip.c2 { --gc: #9FD0FF; } .ach-cls-chip.c3 { --gc: #FFE48A; }
+.ach-reset { display: none; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .2); color: var(--text-secondary); }
+.ach-legend.filtering .ach-reset { display: inline-block; }
