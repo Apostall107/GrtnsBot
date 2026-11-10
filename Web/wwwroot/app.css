@@ -2922,3 +2922,8 @@ input.switch:checked { animation: switch-glow .5s ease-out; }
 .ach-more { cursor: pointer; text-align: left; color: inherit; font: inherit; }
 .ach-more:hover { border-color: rgba(167, 139, 250, .5); }
 .ach .ach-next { font-size: 11.5px; color: var(--text-secondary); margin-top: 3px; }
+/* achievement tiles: hover shows my place and the top 3 */
+.ach.done { position: relative; outline: none; }
+.ach.done:hover, .ach.done:focus { z-index: 40; }
+.ach.done:hover .rank-pop, .ach.done:focus .rank-pop { display: block; }
+.card:has(.ach.done:hover), .card:has(.ach.done:focus) { position: relative; z-index: 60; }

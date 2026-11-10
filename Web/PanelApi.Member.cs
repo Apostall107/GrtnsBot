@@ -368,10 +368,14 @@ public static partial class PanelApi
                     if (g == 0) return (object)new { id = a.Id, group = a.Group, unlocked = false };
                     var v = a.Value(s);
                     var next = g < a.Tiers.Length ? a.Tiers[g] : (int?)null;
+                    // my place for this achievement among everyone on the server + the top 3 (for the hover)
+                    var vals = all.Select(x => (x.UserId, V: a.Value(x.Stats))).Where(x => x.V > 0).OrderByDescending(x => x.V).ToList();
+                    var top = vals.Take(3).Select(x => new { member = Member(guild, x.UserId), value = x.V, me = x.UserId == me }).ToList();
                     return new
                     {
                         id = a.Id, group = a.Group, unlocked = true, icon = a.Icon, title = a.Title, grade = g, gradeName = MascotStatsStore.GradeNames[g - 1],
-                        description = string.Format(a.Description, a.Tiers[g - 1]), nextGrade = next is null ? null : MascotStatsStore.GradeNames[g], value = v, prev = a.Tiers[g - 1], next, maxGrade = a.Tiers.Length
+                        rank = 1 + vals.Count(x => x.V > v), of = vals.Count, top,
+                        description = string.Format(a.Description, a.Tiers[g - 1]).Replace(" 1 times", " once"), nextGrade = next is null ? null : MascotStatsStore.GradeNames[g], value = v, prev = a.Tiers[g - 1], next, maxGrade = a.Tiers.Length
                     };
                 })
             });

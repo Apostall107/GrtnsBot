@@ -7675,7 +7675,7 @@ async function pageMascot(main) {
 function achievementsCard(d) {
   const grades = d.grades || ["Poor", "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic"];
   const tile = (a, small) => a.unlocked
-    ? h("div", { class: `ach done g${a.grade}${small ? " sm" : ""}`, title: `${a.title} — ${a.gradeName} (${a.grade}/${a.maxGrade})` },
+    ? h("div", { class: `ach done g${a.grade}${small ? " sm" : ""}`, tabindex: "0" },
       h("span", { class: "ach-icon" }, a.icon),
       h("div", { class: "ach-text" },
         h("div", { class: "ach-top" }, h("b", {}, a.title), h("span", { class: "ach-grade" }, a.gradeName)),
@@ -7684,7 +7684,11 @@ function achievementsCard(d) {
         h("span", { class: "ach-next" }, a.next ? `${a.value} / ${a.next} → ${a.nextGrade || "next grade"}` : `${a.value} · max grade!`),
         h("div", { class: "ach-bar", title: a.next ? `${a.value} / ${a.next}` : `${a.value}` },
           h("i", { style: `width:${a.next ? Math.min(100, Math.round((a.value - a.prev) / (a.next - a.prev) * 100)) : 100}%` })),
-        h("span", { class: "ach-pips" }, Array.from({ length: a.maxGrade }, (_, i) => h("i", { class: i < a.grade ? `on g${i + 1}` : "" })))))
+        h("span", { class: "ach-pips" }, Array.from({ length: a.maxGrade }, (_, i) => h("i", { class: i < a.grade ? `on g${i + 1}` : "" })))),
+      a.top ? h("div", { class: "rank-pop" }, h("div", { class: "rank-pop-title" }, `Your place: #${a.rank} of ${a.of}`),
+        a.top.map((t, i) => h("div", { class: `rank-row${t.me ? " me" : ""}` }, h("span", { class: "rank-pos" }, ["🥇", "🥈", "🥉"][i]),
+          t.member.avatarUrl ? h("img", { class: "avatar", src: t.member.avatarUrl, alt: "" }) : h("span", { class: "avatar" }),
+          h("span", { class: "rank-name" }, t.member.name), h("b", {}, String(t.value))))) : null)
     : h("div", { class: `ach locked${small ? " sm" : ""}` }, h("span", { class: "ach-icon" }, "?"),
       h("div", { class: "ach-text" }, h("b", {}, "???"), small ? null : h("span", { class: "muted small" }, "Hidden achievement")));
   const group = (key, title, small) => {
