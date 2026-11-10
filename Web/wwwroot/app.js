@@ -1682,6 +1682,10 @@ function summonButtons(after) {
     // The RAINBOW robot: +1% for every catch in a row (its own count, starts over when it appears or one escapes).
     // It can come together with the golden one. Legendary casts ×10 (60% when golden too).
     const rbKey = `gb.mascotRainbow.${state.guildId}`, rbStreak = Number(sess.get(rbKey) || 0);
+    // the plain catch streak shown to the player (doesn't reset when a special robot comes — only when one escapes)
+    const runKey = `gb.mascotRun.${state.guildId}`;
+    let run = 0;
+    const streakNote = () => `🔥 Streak: ${run}${Number(sess.get(streakKey) || 0) >= 10 ? " · ✨ golden zone" : ""}`;
     // +1% per catch as usual; in the golden zone (10+ catches in a row) +2% more for every catch from the 10th on
     const rainbow = summonRainbow || Math.random() < Math.min(1, rbStreak / 100 + Math.max(0, streak - 9) * .02);
     if (rainbow && !summonRainbow) sess.set(rbKey, "0");
@@ -1817,7 +1821,7 @@ function summonButtons(after) {
     };
     function end() {
       if (ended) return; ended = true;
-      if (!caughtIt && entered) { report({ kind: "escaped", spells: castKinds, legendary: castLegend, golden, rainbow }); sess.set(streakKey, "0"); sess.set(rbKey, "0"); }
+      if (!caughtIt && entered) { report({ kind: "escaped", spells: castKinds, legendary: castLegend, golden, rainbow }); sess.set(streakKey, "0"); sess.set(rbKey, "0"); sess.set(runKey, "0"); }
       stopWatch(); clearInterval(trail); EVENTS.forEach(t => document.removeEventListener(t, guard, true)); el.remove(); busy = false; schedule();
     }
     // ---- The finale spells (pure DOM/CSS, a few seconds, never block clicks) ----
@@ -2018,7 +2022,7 @@ function summonButtons(after) {
       const finish = msg => {
         if (--pending > 0) return;
         shared.forEach(n => n.remove());
-        toast(caughtIt ? `🎯 Caught! …but it still cast ${kinds.map(name).join(" + ")}${legendary ? " — 🌟 LEGENDARY!" : ""}`
+        toast(caughtIt ? `🎯 Caught! …but it still cast ${kinds.map(name).join(" + ")}${legendary ? " — 🌟 LEGENDARY!" : ""} · ${streakNote()}`
           : legendary ? `🌟 LEGENDARY CAST! ${kinds.map(name).join(" + ")} — the Greatness bot escaped!` : msg);
         end();
       };
@@ -2816,6 +2820,7 @@ function summonButtons(after) {
         setTimeout(() => s.remove(), 720);
       }
       caughtIt = true;
+      run = Number(sess.get(runKey) || 0) + 1; sess.set(runKey, String(run));
       if (!golden) sess.set(streakKey, String(Number(sess.get(streakKey) || 0) + 1));   // a catch streak for the golden robot
       if (!rainbow) sess.set(rbKey, String(Number(sess.get(rbKey) || 0) + 1));          // …and for the rainbow one
       // The count lives on the server (same as Achievements); catches this browser counted before are handed over once
@@ -2830,7 +2835,7 @@ function summonButtons(after) {
       }
       el.classList.add("caught");
       const line = M.lines[Math.floor(Math.random() * M.lines.length)];
-      report({ kind: "caught", quick: !tired, legacy, golden, rainbow }).then(r => toast(`${line}${r && r.caught > 1 ? ` (caught: ${r.caught})` : ""}`));
+      report({ kind: "caught", quick: !tired, legacy, golden, rainbow }).then(r => toast(`${line}${r && r.caught > 1 ? ` (caught: ${r.caught})` : ""} · ${streakNote()}`));
       setTimeout(end, 650);
     }, { once: true });
   }
