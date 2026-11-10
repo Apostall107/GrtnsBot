@@ -2287,29 +2287,61 @@ function summonButtons(after) {
           later(1300, () => finish("The Greatness bot escaped — and a meteor fell ☄️"));
         };
       } else if (kind === "water") {
-        // Tidal wave: a translucent wave with foam rolls across the page and leaves drops on the glass
+        // Tidal wave: a real curling wave rises from the bottom, rolls across the page (its surface ripples, the lip throws
+        // forward and curls over, spray flies off it), then crashes down and leaves drops on the glass
         later(700, () => {
           charge.remove();
-          const NS = "http://www.w3.org/2000/svg", Wd = (A.right - A.left) * 1.2, Hw = (A.bottom - A.top) * .8;
+          const NS = "http://www.w3.org/2000/svg", L = A.left, R = A.right, B = A.bottom, Wa = R - L, Hmax = Math.min((B - A.top) * .62, 520);
           const svg = document.createElementNS(NS, "svg");
-          svg.setAttribute("class", "gb-fx gb-wave"); svg.setAttribute("width", Wd); svg.setAttribute("height", Hw); svg.setAttribute("viewBox", `0 0 ${Wd} ${Hw}`);
-          svg.style.left = `${A.left - Wd}px`; svg.style.top = `${A.bottom - Hw}px`;
-          let top = `M0,${Hw}`, crest = "";
-          for (let x = 0; x <= Wd; x += 20) {
-            const y = Hw * .18 + Math.sin(x / Wd * Math.PI * 5) * 26 + Math.sin(x / Wd * Math.PI * 13) * 9 + (x > Wd * .82 ? (x - Wd * .82) * .9 : 0);
-            top += ` L${x},${y.toFixed(1)}`; crest += `${crest ? " L" : "M"}${x},${y.toFixed(1)}`;
-          }
-          svg.innerHTML = `<defs><linearGradient id="gbWave" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(140,210,255,.75)"/><stop offset=".35" stop-color="rgba(60,140,240,.55)"/><stop offset="1" stop-color="rgba(20,70,190,.35)"/></linearGradient></defs>
-            <path d="${top} L${Wd},${Hw} Z" fill="url(#gbWave)"/><path d="${crest}" class="foam"/><path d="${crest}" class="foam thin" transform="translate(0 14)"/>`;
+          svg.setAttribute("class", "gb-fx gb-wave"); svg.setAttribute("width", innerWidth); svg.setAttribute("height", innerHeight);
+          svg.style.left = "0px"; svg.style.top = "0px";
+          svg.innerHTML = `<defs><clipPath id="gbWaveClip"><rect x="${L}" y="0" width="${Wa + 20}" height="${B + 10}"/></clipPath>
+            <linearGradient id="gbWaveF" gradientUnits="userSpaceOnUse" x1="0" y1="${B - Hmax}" x2="0" y2="${B}"><stop offset="0" stop-color="rgba(170,235,255,.9)"/><stop offset=".3" stop-color="rgba(70,165,245,.78)"/><stop offset="1" stop-color="rgba(12,55,165,.7)"/></linearGradient>
+            <linearGradient id="gbWaveK" gradientUnits="userSpaceOnUse" x1="0" y1="${B - Hmax}" x2="0" y2="${B}"><stop offset="0" stop-color="rgba(120,200,255,.55)"/><stop offset="1" stop-color="rgba(20,70,180,.45)"/></linearGradient></defs>
+            <g clip-path="url(#gbWaveClip)"><path class="back" fill="url(#gbWaveK)"/><path class="body" fill="url(#gbWaveF)"/>
+            <path class="foam"/><path class="foam thin"/><path class="curtain"/></g>`;
           document.body.append(svg); clean.push(svg);
-          const dx = A.right - A.left + Wd;
-          svg.animate([{ transform: `translate(0, ${Hw * .45}px)` }, { transform: `translate(${dx * .5}px, 0)`, offset: .5 }, { transform: `translate(${dx}px, ${Hw * .3}px)` }],
-            { duration: 1600, easing: "ease-in-out", fill: "forwards" });
-          for (let i = 0; i < 14; i++) later(i * 100, () => burst(A.left + (i / 14) * (A.right - A.left), A.bottom - Hw * .55 - Math.random() * 60, 4, 50, "water", 700));
-          later(900, () => waterDrops(20, () => [A.left + Math.random() * (A.right - A.left), A.top + Math.random() * (A.bottom - A.top) * .85]));
+          const [back, body, foam, foam2, curtain] = svg.querySelectorAll("path"), f = n => n.toFixed(1);
+          // one wave: front x F, height Hp, curl c (0…1), ripple phase k — returns the filled body, the foam line and the lip tip
+          const shape = (F, Hp, c, t, k) => {
+            const Lb = Math.max(Wa * .75, 520), x0 = F - Lb, top = B - Hp;
+            let d = `M${f(x0)},${B}`, crest = "";
+            for (let x = x0; x <= F - Hp * .1; x += 12) {
+              const u = (x - x0) / Lb;
+              const y = B - Hp * Math.pow(u, 1.8) - Math.sin(x * .026 - t * .012 + k) * 10 * Math.min(1, u * 5) * (1 - u * .5) - Math.sin(x * .07 + t * .021 + k) * 3.5 * u;
+              d += ` L${f(x)},${f(y)}`; if (u > .45) crest += `${crest ? " L" : "M"}${f(x)},${f(y)}`;
+            }
+            const lx = F + Hp * (.16 + .46 * c), ly = top + Hp * (.06 + .46 * c);
+            const curl = ` C${f(F + Hp * .04)},${f(top - Hp * .05)} ${f(F + Hp * (.28 + .34 * c))},${f(top - Hp * .03)} ${f(lx)},${f(ly)}`;
+            const under = ` Q${f(F + Hp * (.14 + .2 * c))},${f(top + Hp * (.16 + .2 * c))} ${f(F + Hp * .08)},${f(top + Hp * .56)}` +
+              ` Q${f(F + Hp * .14)},${f(B - Hp * .05)} ${f(F + Hp * .58)},${B} Z`;
+            return { d: d + curl + under, crest: crest + curl, lx, ly };
+          };
+          const DUR = 2200, t0 = performance.now(), ease = x => x < .5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
+          let lastSpray = 0, crashed = false;
+          const step = now => {
+            if (ended && !svg.isConnected) return;
+            const ms = now - t0, t = Math.min(1, ms / DUR);
+            // rolls in from the left, slows as it breaks and crashes on the page (not off-screen)
+            const F = L - Hmax * .35 + (Wa * .8 + Hmax * .35) * (t < .72 ? ease(t / .72) * .93 : .93 + .07 * (t - .72) / .28);
+            const Hp = Hmax * (t < .2 ? .25 + .75 * Math.sin(t / .2 * Math.PI / 2) : t > .72 ? Math.max(.06, 1 - Math.pow((t - .72) / .28, 1.3)) : 1);
+            const c = Math.min(1, .15 + t * 1.3);
+            const w = shape(F, Hp, c, ms, 0), wb = shape(F - Hmax * .8, Hp * .62, c * .5, ms * 1.1, 2.1);
+            body.setAttribute("d", w.d); back.setAttribute("d", wb.d);
+            foam.setAttribute("d", w.crest); foam2.setAttribute("d", wb.crest);
+            // a thin falling sheet of water from the lip down to the face — the hollow tube shows behind it
+            curtain.setAttribute("d", `M${f(w.lx)},${f(w.ly)} Q${f(w.lx + Hp * .02)},${f(w.ly + Hp * .25)} ${f(F + Hp * .45)},${f(B - Hp * .04)}`);
+            curtain.style.opacity = c > .5 ? Math.min(.8, (c - .5) * 2) : 0;
+            if (ms - lastSpray > 70 && Hp > Hmax * .3) { lastSpray = ms; burst(w.lx, w.ly, 3, 30 + Hp * .08, "water", 650); }
+            if (!crashed && t > .74) { crashed = true; burst(F + Hmax * .2, B - 30, 26, 140, "water", 900); burst(F, B - Hmax * .2, 12, 90, "water", 800); }
+            svg.style.opacity = t > .85 ? String(Math.max(0, 1 - (t - .85) / .15)) : "1";
+            if (t < 1) requestAnimationFrame(step); else svg.remove();
+          };
+          requestAnimationFrame(step);
+          later(1000, () => waterDrops(24, () => [L + Math.random() * Wa, A.top + Math.random() * (B - A.top) * .85]));
         });
-        later(1500, () => blinkOut("water", "water"));
-        later(2500, () => { clean.forEach(n => n.remove()); finish("The Greatness bot escaped on a tidal wave 🌊"); });
+        later(1600, () => blinkOut("water", "water"));
+        later(2900, () => { clean.forEach(n => n.remove()); finish("The Greatness bot escaped on a tidal wave 🌊"); });
       } else if (kind === "seal") {
         // Seal of Greatness: a golden rune circle with the G spins up over the page and is stamped onto the glass
         later(700, () => {
@@ -2607,24 +2639,51 @@ function summonButtons(after) {
         // Spores: glowing spores drift over the page, little luminous mushrooms sprout; the glowing mould fades
         later(700, () => {
           charge.remove();
-          for (let i = 0; i < 60; i++) {
+          for (let i = 0; i < 90; i++) {
             const s = h("i", { class: "gb-fx gb-spore", style: `left:${ox}px;top:${oy}px` }); document.body.append(s);
             const x = A.left + Math.random() * (A.right - A.left), y = A.top + Math.random() * (A.bottom - A.top), dur = 1600 + Math.random() * 1400;
             s.animate([{ transform: "translate(0,0)", opacity: 0 }, { transform: `translate(${(x - ox) * .5 + (Math.random() - .5) * 120}px, ${(y - oy) * .5 - 40}px)`, opacity: 1, offset: .4 },
               { transform: `translate(${x - ox}px, ${y - oy}px)`, opacity: 0 }], { duration: dur, delay: i * 15, easing: "ease-out", fill: "forwards" });
             setTimeout(() => s.remove(), dur + i * 15 + 50);
           }
-          const spots = [[A.left + 30, A.bottom - 10], [A.right - 30, A.bottom - 10], [A.left + 30, A.top + 60], [A.right - 30, A.top + 60], [tx, A.bottom - 10]];
-          spots.forEach(([x, y], k) => later(500 + k * 150, () => {
-            for (let j = 0; j < 4; j++) {
-              const mx = x + (Math.random() - .5) * 90, sz = 18 + Math.random() * 18;
-              const m = h("div", { class: "gb-fx gb-shroom", style: `left:${mx}px;top:${y - (k > 1 && k < 4 ? -sz : 0)}px;width:${sz}px;height:${sz}px;${k > 1 && k < 4 ? "transform-origin:top;rotate:180deg" : ""}` }, h("i"), h("b"));
-              document.body.append(m);
-              m.animate([{ scale: "0" }, { scale: "1.1", offset: .08 }, { scale: "1", offset: .12 }, { scale: "1", opacity: 1, offset: .75 }, { scale: ".8", opacity: 0 }], { duration: 4200, fill: "forwards" });
-              setTimeout(() => m.remove(), 4250);
+          // Glowing mushrooms grow in clusters along the bottom edge and hang from the top; each one is drawn: a domed cap with
+          // spots and a shine, gills underneath, a curved stem with a little skirt — and they sway
+          const PAL = [["#D6FFF4", "#2FE0B0", "#0B6E59", "60,255,196"], ["#F1E4FF", "#A66BFF", "#43208C", "170,110,255"],
+            ["#FFE2F5", "#FF5FC0", "#7E1A5E", "255,95,192"], ["#FFF4D0", "#FFC43D", "#8E5205", "255,196,61"], ["#E0F0FF", "#4FA8FF", "#173F96", "80,170,255"]];
+          let sid = 0;
+          const shroom = (x, y, sz, hang, delay, pal) => {
+            const id = `gbSh${Date.now() % 1e6}_${++sid}`, [lt, md, dk, rgb] = pal, bend = (Math.random() - .5) * 16, cx = 50 + bend * .6;
+            const cw = 30 + Math.random() * 14, ch = 24 + Math.random() * 16, cy = 66;
+            const spots = Array.from({ length: 3 + Math.floor(Math.random() * 5) }, () => {
+              const a = (Math.random() - .5) * 1.5, sy = cy - ch * (1 - a * a) * (.3 + Math.random() * .5), r = 2.4 + Math.random() * 4;
+              return `<ellipse cx="${(cx + a * cw).toFixed(1)}" cy="${sy.toFixed(1)}" rx="${r.toFixed(1)}" ry="${(r * .8).toFixed(1)}" fill="rgba(255,255,255,.8)"/>`;
+            }).join("");
+            const gills = Array.from({ length: 9 }, (_, g) => { const gx = cx - cw * .85 + g * cw * .21; return `<path d="M${gx.toFixed(1)},${cy + 1} L${(cx + (gx - cx) * .25).toFixed(1)},${cy + 5}" stroke="${dk}" stroke-width="1.1" opacity=".7"/>`; }).join("");
+            const art = `<defs><radialGradient id="${id}c" cx=".38" cy=".3" r=".85"><stop offset="0" stop-color="${lt}"/><stop offset=".45" stop-color="${md}"/><stop offset="1" stop-color="${dk}"/></radialGradient>
+                <linearGradient id="${id}s" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#C9D8E0"/><stop offset=".45" stop-color="#FFFFFF"/><stop offset="1" stop-color="${lt}"/></linearGradient></defs>
+              <path d="M43,130 C42,112 ${46 + bend},90 ${cx - 5},${cy} L${cx + 5},${cy} C${54 + bend},90 58,112 58,130 Z" fill="url(#${id}s)" stroke="${dk}" stroke-opacity=".35" stroke-width="1"/>
+              <path d="M${(44 + bend * .8).toFixed(1)},84 Q${(50 + bend * .8).toFixed(1)},93 ${(57 + bend * .8).toFixed(1)},84" fill="none" stroke="${lt}" stroke-width="2.4" stroke-linecap="round" opacity=".9"/>
+              <ellipse cx="${cx}" cy="${cy + 2}" rx="${cw * .92}" ry="5.5" fill="${dk}"/>${gills}
+              <path d="M${cx - cw},${cy + 1} C${cx - cw},${cy - ch * 1.33} ${cx + cw},${cy - ch * 1.33} ${cx + cw},${cy + 1} Q${cx},${cy - 4} ${cx - cw},${cy + 1} Z" fill="url(#${id}c)" stroke="${dk}" stroke-width="1.2"/>
+              ${spots}<ellipse cx="${cx - cw * .38}" cy="${cy - ch * .62}" rx="${cw * .22}" ry="${ch * .14}" fill="#fff" opacity=".45" transform="rotate(-24 ${cx - cw * .38} ${cy - ch * .62})"/>`;
+            const m = h("div", { class: `gb-fx gb-shroom${hang ? " hang" : ""}`, style: `left:${x}px;top:${y}px;width:${sz}px;height:${sz * 1.3}px;--g:${rgb};--sw:${(1.8 + Math.random() * 1.4).toFixed(2)}s;--sd:-${(Math.random() * 2).toFixed(2)}s` });
+            m.innerHTML = `<svg viewBox="0 0 100 130" width="100%" height="100%">${hang ? `<g transform="translate(0 130) scale(1 -1)">${art}</g>` : art}</svg>`;
+            document.body.append(m);
+            m.animate([{ transform: "scale(0, 0)", opacity: 1 }, { transform: "scale(.5, 1.15)", offset: .05 }, { transform: "scale(1.12, .92)", offset: .1 }, { transform: "scale(1)", offset: .14 },
+              { transform: "scale(1)", opacity: 1, offset: .78 }, { transform: "scale(.6, .9)", opacity: 0 }], { duration: 4800, delay, easing: "ease-out", fill: "both" });
+            setTimeout(() => m.remove(), 4850 + delay);
+          };
+          const Wd = A.right - A.left, nb = Math.max(4, Math.round(Wd / 200)), nt = Math.max(3, Math.round(Wd / 300));
+          const clusters = [...Array.from({ length: nb }, (_, k) => [A.left + 40 + (k + Math.random() * .6) * (Wd - 80) / nb, A.bottom - 4, false]),
+            ...Array.from({ length: nt }, (_, k) => [A.left + 60 + (k + .2 + Math.random() * .6) * (Wd - 120) / nt, A.top - 8, true])];
+          clusters.forEach(([x, y, hang], k) => later(450 + k * 110, () => {
+            const pal = PAL[Math.floor(Math.random() * PAL.length)], n = 4 + Math.floor(Math.random() * 4);
+            for (let j = 0; j < n; j++) {
+              const hero = j === 0, sz = hero ? 90 + Math.random() * 45 : 38 + Math.random() * 46;
+              shroom(x + (hero ? 0 : (Math.random() - .5) * 170), y, sz, hang, hero ? 0 : 80 + Math.random() * 500, Math.random() < .75 ? pal : PAL[Math.floor(Math.random() * PAL.length)]);
             }
-            const mould = h("div", { class: "gb-fx gb-mould", style: `left:${x}px;top:${y}px;width:160px;height:110px` }); document.body.append(mould);
-            mould.animate([{ opacity: 0 }, { opacity: 1, offset: .15 }, { opacity: 1, offset: .5 }, { opacity: 0 }], { duration: 4200, fill: "forwards" }); setTimeout(() => mould.remove(), 4250);
+            const mould = h("div", { class: "gb-fx gb-mould", style: `left:${x}px;top:${y}px;width:260px;height:150px;--g:${pal[3]}` }); document.body.append(mould);
+            mould.animate([{ opacity: 0 }, { opacity: 1, offset: .15 }, { opacity: 1, offset: .6 }, { opacity: 0 }], { duration: 4800, fill: "forwards" }); setTimeout(() => mould.remove(), 4850);
           }));
         });
         later(1800, () => blinkOut("acid", "acid"));
@@ -2764,6 +2823,56 @@ function summonButtons(after) {
           };
           requestAnimationFrame(step);
           later(1500, () => waterDrops(10, () => [A.left + Math.random() * (A.right - A.left), A.top + Math.random() * (A.bottom - A.top) * .8], "honey"));
+          // Honeycombs fly out of the screen at you, spinning, and splat on the glass — honey runs down, then they slide off
+          const comb = (x, y, size, delay) => {
+            const s = 10, r3 = Math.sqrt(3), cells = new Map([["0,0", [0, 0]]]), dirs = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+            const want = 7 + Math.floor(Math.random() * 9);
+            while (cells.size < want) {
+              const [q, r] = [...cells.values()][Math.floor(Math.random() * cells.size)], [dq, dr] = dirs[Math.floor(Math.random() * 6)], nq = q + dq, nr = r + dr;
+              if (Math.max(Math.abs(nq), Math.abs(nr), Math.abs(nq + nr)) <= 2) cells.set(`${nq},${nr}`, [nq, nr]);
+            }
+            const id = `gbHc${Date.now() % 1e6}_${Math.floor(Math.random() * 1e4)}`;
+            const hex = (cx, cy, k) => Array.from({ length: 6 }, (_, i) => { const a = Math.PI / 180 * (60 * i - 90); return `${(cx + k * Math.cos(a)).toFixed(2)},${(cy + k * Math.sin(a)).toFixed(2)}`; }).join(" ");
+            let art = "", minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
+            for (const [q, r] of cells.values()) {
+              const cx = s * r3 * (q + r / 2), cy = s * 1.5 * r, kind = Math.random();
+              minX = Math.min(minX, cx - s); maxX = Math.max(maxX, cx + s); minY = Math.min(minY, cy - s); maxY = Math.max(maxY, cy + s);
+              art += `<polygon points="${hex(cx, cy, s)}" fill="#C98A1A" stroke="#6E3F05" stroke-width="1.1"/>` +
+                (kind < .35 ? `<polygon points="${hex(cx, cy, s * .8)}" fill="url(#${id}w)"/><path d="M${(cx - s * .35).toFixed(1)},${(cy - s * .2).toFixed(1)} q${(s * .35).toFixed(1)},-${(s * .3).toFixed(1)} ${(s * .7).toFixed(1)},0" stroke="#FFF6D8" stroke-width="1" fill="none" opacity=".8"/>`
+                  : kind < .85 ? `<polygon points="${hex(cx, cy, s * .8)}" fill="url(#${id}h)"/><ellipse cx="${(cx - s * .25).toFixed(1)}" cy="${(cy - s * .3).toFixed(1)}" rx="${(s * .22).toFixed(1)}" ry="${(s * .13).toFixed(1)}" fill="#fff" opacity=".75"/>`
+                  : `<polygon points="${hex(cx, cy, s * .8)}" fill="#4A2603"/><polygon points="${hex(cx, cy + s * .2, s * .5)}" fill="#8A4E08" opacity=".7"/>`);
+            }
+            const vw = maxX - minX + 4, vh = maxY - minY + 4;
+            const el2 = fxEl("gb-comb", `left:${x}px;top:${y}px;width:${size}px;height:${size * vh / vw}px`);
+            el2.innerHTML = `<svg viewBox="${(minX - 2).toFixed(1)} ${(minY - 2).toFixed(1)} ${vw.toFixed(1)} ${vh.toFixed(1)}" width="100%" height="100%"><defs>
+              <radialGradient id="${id}h" cx=".4" cy=".35" r=".75"><stop offset="0" stop-color="#FFE9A0"/><stop offset=".5" stop-color="#F2A81C"/><stop offset="1" stop-color="#A05A04"/></radialGradient>
+              <linearGradient id="${id}w" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFF0B8"/><stop offset="1" stop-color="#E7B648"/></linearGradient></defs>${art}</svg>`;
+            el2.style.opacity = "0";
+            const r0 = (Math.random() - .5) * 540, r1 = (Math.random() - .5) * 24, fly = 620 + Math.random() * 200;
+            setTimeout(() => {
+              el2.style.opacity = "";
+              el2.animate([{ transform: `translate(calc(-50% + ${ox - x}px), calc(-50% + ${oy - y}px)) scale(.05) rotate(${r0}deg)`, opacity: .3, filter: "blur(2px)" },
+                { transform: `translate(-50%,-50%) scale(1.12) rotate(${r1}deg)`, opacity: 1, filter: "blur(0px)" }], { duration: fly, easing: "cubic-bezier(.55,0,.9,.6)", fill: "forwards" });
+              setTimeout(() => {
+                // splat: a honey blot behind it, honey spatter around, and drips running down
+                const blot = fxEl("gb-honeysplat", `left:${x}px;top:${y}px;width:${size * 1.35}px;height:${size * 1.1}px`);
+                blot.animate([{ transform: "translate(-50%,-50%) scale(.3)", opacity: 0 }, { transform: "translate(-50%,-50%) scale(1)", opacity: 1, offset: .08 },
+                  { transform: "translate(-50%,-45%) scale(1, 1.08)", opacity: .9, offset: .7 }, { transform: "translate(-50%,-38%) scale(1, 1.15)", opacity: 0 }], { duration: 3200, fill: "forwards" });
+                setTimeout(() => blot.remove(), 3250);
+                burst(x, y, 12, size * .55, "gold", 600);
+                waterDrops(5, () => [x + (Math.random() - .5) * size * .9, y + size * .2 + Math.random() * size * .25], "honey");
+                el2.animate([{ transform: `translate(-50%,-50%) scale(1.12) rotate(${r1}deg)` }, { transform: `translate(-50%,-50%) scale(1.2, .9) rotate(${r1}deg)`, offset: .05 },
+                  { transform: `translate(-50%,-50%) scale(1) rotate(${r1}deg)`, offset: .1 }, { transform: `translate(-50%,-50%) scale(1) rotate(${r1}deg)`, offset: .55 },
+                  { transform: `translate(-50%, calc(-50% + ${size * .7}px)) scale(.98) rotate(${r1 * 1.5}deg)`, opacity: 0 }], { duration: 2800, easing: "ease-in", fill: "forwards" });
+                setTimeout(() => el2.remove(), 2850);
+              }, fly);
+            }, delay);
+          };
+          const nc = 5 + Math.floor(Math.random() * 3);
+          for (let i = 0; i < nc; i++) {
+            const size = 130 + Math.random() * 110;
+            comb(A.left + size * .6 + Math.random() * Math.max(10, A.right - A.left - size * 1.2), A.top + size * .5 + Math.random() * Math.max(10, A.bottom - A.top - size), size, 250 + i * 190 + Math.random() * 120);
+          }
         });
         later(1900, () => blinkOut("seal", "gold"));
         later(2700, () => { clean.forEach(n => n.remove()); finish("The Greatness bot escaped — buzz buzz 🐝"); });

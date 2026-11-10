@@ -2796,9 +2796,11 @@ input.switch:checked { animation: switch-glow .5s ease-out; }
 .gb-cracks.meteor .gl { stroke: rgba(255, 110, 30, .45); animation: gb-ember 2.8s ease-out forwards; }
 .gb-cracks.meteor path.pit { fill: rgba(16, 4, 0, .92); stroke: #FF7A1A; stroke-width: 4; filter: drop-shadow(0 0 8px rgba(255, 120, 30, .9)); }
 /* tidal wave */
-.gb-wave { z-index: 95; overflow: visible; will-change: transform; filter: drop-shadow(0 -6px 18px rgba(120, 200, 255, .5)); }
-.gb-wave .foam { fill: none; stroke: rgba(245, 252, 255, .95); stroke-width: 7; stroke-linecap: round; filter: blur(1px); }
-.gb-wave .foam.thin { stroke-width: 3; stroke: rgba(230, 245, 255, .6); }
+.gb-wave { z-index: 95; overflow: visible; filter: drop-shadow(0 -4px 16px rgba(120, 200, 255, .55)); }
+.gb-wave .body { stroke: rgba(210, 245, 255, .55); stroke-width: 1.5; }
+.gb-wave .foam { fill: none; stroke: rgba(248, 253, 255, .95); stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 60 6 24 4; filter: drop-shadow(0 0 4px #fff); }
+.gb-wave .foam.thin { stroke-width: 3; stroke: rgba(230, 245, 255, .6); stroke-dasharray: none; }
+.gb-wave .curtain { fill: none; stroke: rgba(200, 240, 255, .55); stroke-width: 5; stroke-linecap: round; filter: blur(1.5px); }
 /* seal of Greatness */
 .gb-seal { z-index: 96; overflow: visible; transform-origin: center; filter: drop-shadow(0 0 10px rgba(255, 200, 80, .9)) drop-shadow(0 0 30px rgba(255, 170, 40, .5)); }
 .gb-seal .ring { fill: none; stroke: #FFD86A; stroke-width: 2.4; }
@@ -3013,10 +3015,17 @@ input.switch:checked { animation: switch-glow .5s ease-out; }
   background: radial-gradient(circle, rgba(120, 255, 170, .55) 0, rgba(170, 100, 255, .45) 45%, rgba(170, 100, 255, 0) 70%); }
 /* spores */
 .gb-spore { width: 6px; height: 6px; z-index: 96; border-radius: 50%; background: #B6FFE8; box-shadow: 0 0 10px #3CFFC4, 0 0 20px rgba(60, 255, 196, .5); }
-.gb-shroom { z-index: 96; transform-origin: bottom center; translate: -50% -100%; }
-.gb-shroom > i { position: absolute; left: 0; right: 0; top: 0; height: 55%; border-radius: 50% 50% 20% 20%; background: radial-gradient(circle at 40% 35%, #C8FFF0, #2FE0B0 60%, #0E8A70); box-shadow: 0 0 14px rgba(60, 255, 196, .8); }
-.gb-shroom > b { position: absolute; left: 38%; width: 24%; top: 45%; bottom: 0; border-radius: 3px; background: linear-gradient(#E8FFF8, #9ADCC8); }
-.gb-mould { z-index: 95; transform: translate(-50%, -50%); border-radius: 50%; filter: blur(16px); background: radial-gradient(circle, rgba(60, 255, 196, .35), rgba(40, 200, 160, 0) 70%); }
+.gb-shroom { z-index: 96; transform-origin: bottom center; translate: -50% -100%; filter: drop-shadow(0 0 8px rgba(var(--g), .9)) drop-shadow(0 0 22px rgba(var(--g), .45)); }
+.gb-shroom.hang { transform-origin: top center; translate: -50% 0; }
+.gb-shroom svg { display: block; overflow: visible; transform-origin: bottom center; animation: gb-sway var(--sw, 2.4s) ease-in-out var(--sd, 0s) infinite alternate; }
+.gb-shroom.hang svg { transform-origin: top center; }
+@keyframes gb-sway { from { rotate: -5deg; } to { rotate: 5deg; } }
+.gb-mould { z-index: 95; transform: translate(-50%, -50%); border-radius: 50%; filter: blur(18px); background: radial-gradient(circle, rgba(var(--g, 60, 255, 196), .4), rgba(var(--g, 60, 255, 196), 0) 70%); }
+/* honeycombs (swarm) */
+.gb-comb { z-index: 97; filter: drop-shadow(0 8px 12px rgba(70, 35, 0, .55)) drop-shadow(0 0 14px rgba(255, 190, 60, .55)); }
+.gb-comb svg { display: block; overflow: visible; }
+.gb-honeysplat { z-index: 96; border-radius: 46% 54% 50% 50% / 55% 45% 55% 45%; filter: blur(2px);
+  background: radial-gradient(circle at 40% 35%, rgba(255, 240, 180, .75), rgba(240, 170, 30, .6) 42%, rgba(200, 120, 10, 0) 72%); }
 /* portal */
 .gb-portal { z-index: 96; border-radius: 50%; border: 5px solid transparent;
   background: conic-gradient(from 0deg, #8C5CFF, #4FB0FF, #FF6BD5, #8C5CFF) border-box; -webkit-mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
