@@ -38,6 +38,7 @@ public sealed class MascotStats
     public int GoldenCaught { get; set; }
     public int RainbowCaught { get; set; }
     public int DoubleSeen { get; set; }    // golden and rainbow at once
+    public int MythCaught { get; set; }    // caught a golden rainbow robot
 
     // --- the site (tracked by the site) ---
     public int SiteDays { get; set; }
@@ -75,7 +76,7 @@ public sealed record MascotAchievement(string Id, string Group, string Icon, str
     public int Grade(MascotStats s) { var v = Value(s); return Tiers.Count(t => v >= t); }
 
     /// <summary>Achievement class: I common, II rare (single spells, Grimoire), III legendary (legendary casts, special robots), IV ultra rare (the poop barrage).</summary>
-    public int TierClass => Id.Contains(MascotStatsStore.UltraRare) ? 4
+    public int TierClass => Id.Contains(MascotStatsStore.UltraRare) || Id == "myth-caught" ? 4
         : ReferenceEquals(Tiers, MascotStatsStore.LegendTiers) || Group is "legend" or "combos" ? 3
         : Group == "spells" || Id == "kinds" ? 2 : 1;
 
@@ -179,6 +180,7 @@ public sealed class MascotStatsStore
             new("golden-caught", "legend", "👑", "Midas Touch", "Catch the golden robot {0} times.", LegendTiers, s => s.GoldenCaught),
             new("rainbow-caught", "legend", "🌈", "Prism Catcher", "Catch the rainbow robot {0} times.", LegendTiers, s => s.RainbowCaught),
             new("golden-rainbow", "legend", "💫", "Double Rainbow", "Meet the golden rainbow robot.", Once, s => Math.Min(1, s.DoubleSeen)),
+            new("myth-caught", "legend", "🌠", "Myth Hunter", "Catch the golden rainbow robot {0} times.", [1, 5, 10, 25, 50, 75, 100], s => s.MythCaught),
             new("legend", "legend", "🌟", "Legendary!", "Witness {0} legendary casts — two spells at once.", LegendTiers, s => s.Legendary),
         };
         for (var i = 0; i < Spells.Length; i++)
@@ -269,6 +271,7 @@ public sealed class MascotStatsStore
                 if (fast) s.PointBlank++;
                 if (golden) s.GoldenCaught++;
                 if (rainbow) s.RainbowCaught++;
+                if (golden && rainbow) s.MythCaught++;
                 if (longChase) s.Marathon++;
                 if (day is { Length: 10 } && day != s.LastCatchDay) { s.CatchDays++; s.LastCatchDay = day; }
                 // once: catches the browser counted before the server kept stats (capped)
