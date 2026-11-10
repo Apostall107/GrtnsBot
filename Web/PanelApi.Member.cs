@@ -377,7 +377,11 @@ public static partial class PanelApi
                 achievements = MascotStatsStore.All.Select(a =>
                 {
                     var g = a.Grade(s);
-                    if (g == 0) return (object)new { id = a.Id, group = a.Group, unlocked = false };
+                    // General and Guild ones are open goals: shown even before they're earned; the rest stay hidden ???
+                    if (g == 0) return a.Group is "general" or "guild"
+                        ? new { id = a.Id, group = a.Group, unlocked = false, visible = true, icon = a.Icon, title = a.Title,
+                            description = string.Format(a.Description, a.Tiers[0]).Replace(" 1 times", " once"), value = a.Value(s), next = a.Tiers[0], maxGrade = a.Tiers.Length }
+                        : (object)new { id = a.Id, group = a.Group, unlocked = false };
                     var v = a.Value(s);
                     var next = g < a.Tiers.Length ? a.Tiers[g] : (int?)null;
                     // my place for this achievement among everyone on the server + the top 3 (for the hover)

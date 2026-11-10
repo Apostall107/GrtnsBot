@@ -2975,3 +2975,8 @@ input.switch:checked { animation: switch-glow .5s ease-out; }
 .ach.cls3 .ico { animation: ach-legend-ico 2.4s ease-in-out infinite; filter: drop-shadow(0 0 6px rgba(255, 220, 140, .9)); }
 @keyframes ach-legend-ico { 0%, 100% { transform: translateY(1px) scale(1) rotate(-6deg); } 50% { transform: translateY(-3px) scale(1.12) rotate(6deg); } }
 @media (prefers-reduced-motion: reduce) { .ach .ico, .ach .ach-icon, .ach.cls3.done, .ach.cls3 .ach-shine::before, .ach.cls3 .ach-shine::after, .ach.cls3 .ach-cls { animation: none !important; } }
+/* not yet earned, but visible (General, Guild): a goal to go for */
+.ach.todo { border: 1px dashed rgba(255, 255, 255, .16); background: rgba(255, 255, 255, .02); --gc: #8A8FA0; }
+.ach.todo .ach-icon { filter: grayscale(1); opacity: .55; }
+.ach.todo .ach-grade { color: var(--text-secondary); }
+.ach.todo b { color: var(--text-secondary); }

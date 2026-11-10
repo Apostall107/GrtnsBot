@@ -7704,13 +7704,19 @@ function achievementsCard(d) {
         a.top.map((t, i) => h("div", { class: `rank-row${t.me ? " me" : ""}` }, h("span", { class: "rank-pos" }, ["🥇", "🥈", "🥉"][i]),
           t.member.avatarUrl ? h("img", { class: "avatar", src: t.member.avatarUrl, alt: "" }) : h("span", { class: "avatar" }),
           h("span", { class: "rank-name" }, t.member.name), h("b", {}, String(t.value))))) : null)
+    : a.visible ? h("div", { class: `ach todo${small ? " sm" : ""}` }, h("span", { class: "ach-icon" }, h("span", { class: "ico" }, a.icon)),
+      h("div", { class: "ach-text" }, h("div", { class: "ach-top" }, h("b", {}, a.title), h("span", { class: "ach-grade" }, "Not yet")),
+        h("span", { class: "muted small" }, a.description),
+        h("span", { class: "ach-next" }, `${a.value} / ${a.next}`),
+        h("div", { class: "ach-bar" }, h("i", { style: `width:${Math.min(100, Math.round(a.value / a.next * 100))}%` })),
+        h("span", { class: "ach-pips" }, Array.from({ length: a.maxGrade }, () => h("i")))))
     : h("div", { class: `ach locked${small ? " sm" : ""}` }, h("span", { class: "ach-icon" }, "?"),
       h("div", { class: "ach-text" }, h("b", {}, "???"), small ? null : h("span", { class: "muted small" }, "Hidden achievement")));
   const group = (key, title, small) => {
     const list = d.achievements.filter(a => (a.group || "general") === key);
     if (!list.length) return null;
-    const open = list.filter(a => a.unlocked).length;
-    const sorted = [...list].sort((x, y) => (y.unlocked ? 1 : 0) - (x.unlocked ? 1 : 0));
+    const open = list.filter(a => a.unlocked).length, rankOf = a => a.unlocked ? 2 : a.visible ? 1 : 0;
+    const sorted = [...list].sort((x, y) => rankOf(y) - rankOf(x));
     const grid = h("div", { class: `ach-grid${small ? " sm" : ""}` });
     const hidden = list.length - open;
     const draw = all => grid.replaceChildren(...(all || !small ? sorted : sorted.filter(a => a.unlocked)).map(a => tile(a, small)),
