@@ -8159,7 +8159,7 @@ function achievementsCard(d) {
   };
   const body = h("div", {});
   const draw = () => {
-    const groups = [group("general", "General"), group("guild", "Guild"), group("spells", "Spells"), group("legend", "Legendary casts"), group("combos", "Legendary combinations", true)].filter(Boolean);
+    const groups = [group("guild", "Guild"), group("general", "General"), group("spells", "Spells"), group("legend", "Legendary casts"), group("combos", "Legendary combinations", true)].filter(Boolean);
     body.replaceChildren(...(groups.length ? groups : [h("div", { class: "muted", style: "margin-top:12px" }, "No achievements match the filter.")]));
   };
   const chip = (cls, label, set, v) => {
