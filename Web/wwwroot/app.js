@@ -1729,6 +1729,9 @@ function summonButtons(after) {
     const NEAR = 55, MAX_ACTS = 5, inside = () => ({ x0: A.left + 4, y0: A.top + 4, x1: A.right - W - 4, y1: A.bottom - H - 4 });
     let ptr = null, raf = 0, last = performance.now(), born = last, entered = false, acts = 0, tired = false;
     let runUntil = 0, dash = null, done = false, casting = false, caughtIt = false, castKinds = [], castLegend = false, dodges = 0, dashes = 0, enteredAt = 0;
+    // before the chase it drifts slowly and keeps as far from the cursor as it can; the chase starts once the cursor
+    // gets into its escape radius; after a while of calm it leaves the page
+    let chased = false, leaving = false, calmUntil = 0;
     const onMove = e => { ptr = [e.clientX, e.clientY]; };
     const norm = (x, y) => { const l = Math.hypot(x, y) || 1; return [x / l, y / l]; };
     const tire = () => { if (++acts >= MAX_ACTS) { tired = true; el.classList.add("tired"); el.classList.remove("run"); el.title = "It's tired — catch it!"; } };
@@ -1754,6 +1757,7 @@ function summonButtons(after) {
         if (look) look.style.transform = `translate(${(dx / L * 5 * m).toFixed(1)}px, ${(dy / L * 3.5 * m).toFixed(1)}px)`;
         const edge = Math.hypot(Math.max(pos[0] - ptr[0], 0, ptr[0] - pos[0] - W), Math.max(pos[1] - ptr[1], 0, ptr[1] - pos[1] - H));
         if (entered && !tired && edge < NEAR) {
+          chased = true; calmUntil = Math.max(calmUntil, now + 8000);   // the chase keeps it on the page a while longer
           const away = norm(cx - ptr[0], cy - ptr[1]);
           if (room(away, b) < 40) {
             // cornered: dash past the cursor to the other side
@@ -1772,15 +1776,47 @@ function summonButtons(after) {
       }
       const running = now < runUntil;
       if (!running) el.classList.remove("run");
-      const v = base * (running ? 2 : tired ? .6 : 1) * dt;
+      let speed = base * (running ? 2 : tired ? .6 : 1);
+      // drifting: before the chase slowly, during it a bit faster between runs; it stays on the page until its time is up
+      const calm = entered && !leaving && !running;
+      if (calm) {
+        if (now > calmUntil) { leaving = true; if (ptr) dir = norm(cx - ptr[0], cy - ptr[1]); }   // time to go: away from the cursor, off the page
+        else {
+          let want = dir, sp = chased ? .5 : .22;
+          if (ptr) {
+            // head for the spot farthest from the cursor; speed up only while the cursor is getting close
+            const spots = [[b.x0, b.y0], [b.x1, b.y0], [b.x0, b.y1], [b.x1, b.y1], [(b.x0 + b.x1) / 2, b.y0], [(b.x0 + b.x1) / 2, b.y1], [b.x0, (b.y0 + b.y1) / 2], [b.x1, (b.y0 + b.y1) / 2]];
+            const far = spots.reduce((best, p) => Math.hypot(p[0] + W / 2 - ptr[0], p[1] + H / 2 - ptr[1]) > Math.hypot(best[0] + W / 2 - ptr[0], best[1] + H / 2 - ptr[1]) ? p : best);
+            const toX = far[0] - pos[0], toY = far[1] - pos[1], dT = Math.hypot(toX, toY), d = Math.hypot(cx - ptr[0], cy - ptr[1]);
+            if (d < 450) {
+              // the cursor is coming: move straight away from it (never past it); along the wall if a wall is in the way
+              let away = norm(cx - ptr[0], cy - ptr[1]);
+              if ((away[0] < 0 && pos[0] <= b.x0 + 6) || (away[0] > 0 && pos[0] >= b.x1 - 6)) away = [0, away[1] || (cy < (b.y0 + b.y1) / 2 + H / 2 ? 1 : -1)];
+              if ((away[1] < 0 && pos[1] <= b.y0 + 6) || (away[1] > 0 && pos[1] >= b.y1 - 6)) away = [away[0] || (cx < (b.x0 + b.x1) / 2 + W / 2 ? 1 : -1), 0];
+              want = norm(away[0], away[1]);
+              sp += 1.4 * (450 - d) / 450;
+            } else {
+              if (dT > 6) want = norm(toX, toY);
+              if (dT < 50) sp *= Math.max(.15, dT / 50);   // settle there, hovering
+            }
+          } else want = norm(dir[0] + (Math.random() - .5) * .1, dir[1] + (Math.random() - .5) * .1);   // no cursor: a slow wander
+          dir = norm(dir[0] * .9 + want[0] * .1, dir[1] * .9 + want[1] * .1);
+          speed = base * sp * (tired ? .6 : 1);
+        }
+      }
+      const v = speed * dt;
       pos = [pos[0] + dir[0] * v, pos[1] + dir[1] * v];
-      if (running) pos = [Math.max(b.x0, Math.min(b.x1, pos[0])), Math.max(b.y0, Math.min(b.y1, pos[1]))];   // no escaping while fleeing
+      if (entered && !leaving) {   // no escaping while fleeing or drifting; bounce off the edges
+        if (pos[0] <= b.x0 || pos[0] >= b.x1) dir[0] = -dir[0] * .5;
+        if (pos[1] <= b.y0 || pos[1] >= b.y1) dir[1] = -dir[1] * .5;
+        pos = [Math.max(b.x0, Math.min(b.x1, pos[0])), Math.max(b.y0, Math.min(b.y1, pos[1]))];
+      }
       place();
       // fade with how much of it is on the page; done once it has entered and then left
       const ix = Math.max(0, Math.min(pos[0] + W, A.right) - Math.max(pos[0], A.left)), iy = Math.max(0, Math.min(pos[1] + H, A.bottom) - Math.max(pos[1], A.top));
       const frac = ix * iy / (W * H);
       el.style.opacity = frac.toFixed(2);
-      if (frac > .98 && !entered) { entered = true; enteredAt = now; }
+      if (frac > .98 && !entered) { entered = true; enteredAt = now; calmUntil = now + 15000 + Math.random() * 10000; }
       // a successful escape: instead of just slipping off the screen it stops at the edge and casts
       if (finale && entered && !running && frac < .98) {
         pos = [Math.max(b.x0, Math.min(b.x1, pos[0])), Math.max(b.y0, Math.min(b.y1, pos[1]))];
@@ -1816,7 +1852,7 @@ function summonButtons(after) {
       const d = new Date(), day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       const chase = enteredAt ? performance.now() - enteredAt : 0;
       return gApi("POST", "/me/mascot", { ...body, dodges, dashes, tired, hour: d.getHours(), day,
-        fast: body.kind === "caught" && enteredAt > 0 && chase < 3000, long: body.kind === "caught" && chase > 10000 }).catch(() => null);
+        fast: body.kind === "caught" && enteredAt > 0 && chase < 3000, long: body.kind === "caught" && chase > 20000 }).catch(() => null);
     };
     function end() {
       if (ended) return; ended = true;
