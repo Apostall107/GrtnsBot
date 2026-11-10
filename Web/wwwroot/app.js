@@ -1682,8 +1682,8 @@ function summonButtons(after) {
     // The RAINBOW robot: +1% for every catch in a row (its own count, starts over when it appears or one escapes).
     // It can come together with the golden one. Legendary casts ×4 (×16 when golden too).
     const rbKey = `gb.mascotRainbow.${state.guildId}`, rbStreak = Number(sess.get(rbKey) || 0);
-    // in the golden zone (10+ catches in a row) the rainbow chance also gets +10% for every catch from the 10th on
-    const rainbow = summonRainbow || Math.random() < Math.min(1, rbStreak / 100 + Math.max(0, streak - 9) * .1);
+    // +1% per catch as usual; in the golden zone (10+ catches in a row) that chance doubles with every catch (×2, ×4, ×8…)
+    const rainbow = summonRainbow || Math.random() < Math.min(1, rbStreak / 100 * (streak >= 10 ? 2 ** (streak - 9) : 1));
     if (rainbow && !summonRainbow) sess.set(rbKey, "0");
     // Escape: 4% a spell, never legendary. Caught: 60% (1.5% legendary) — it strikes back as it vanishes.
     const rollSpell = caught => {
@@ -7997,7 +7997,7 @@ async function pageChars(main) {
 async function pageMascot(main) {
   const g = currentGuild() || {};
   main.append(h("div", { class: "card-head" }, h("h1", {}, "🤖 Mascot")),
-    h("p", { class: "muted small" }, "Only you (the bot owner) see this page. The little Greatness robot flies across the site for everyone on this server, runs away from the cursor, gets tired and can be caught. When it escapes it sometimes casts a spell (4%, never legendary); when it's caught it strikes back much more often (60%; 1.5% — a legendary cast of two spells at once). The poop barrage is 5× rarer than the other spells. After 10 catches in a row a GOLDEN robot may come (10%, doubling with each further catch): it always casts, legendary 6%. A RAINBOW robot comes with +1% for every catch in a row (+10% more per catch once you're in the golden zone, 10+ in a row): legendary ×4 (×16 if it's golden too). Members collect what they saw in Member → Achievements."));
+    h("p", { class: "muted small" }, "Only you (the bot owner) see this page. The little Greatness robot flies across the site for everyone on this server, runs away from the cursor, gets tired and can be caught. When it escapes it sometimes casts a spell (4%, never legendary); when it's caught it strikes back much more often (60%; 1.5% — a legendary cast of two spells at once). The poop barrage is 5× rarer than the other spells. After 10 catches in a row a GOLDEN robot may come (10%, doubling with each further catch): it always casts, legendary 6%. A RAINBOW robot comes with +1% for every catch in a row (in the golden zone, 10+ in a row, that chance doubles with every catch): legendary ×4 (×16 if it's golden too). Members collect what they saw in Member → Achievements."));
   // How often
   const secs = h("input", { type: "number", min: "0", max: "604800", step: "1", value: String(g.mascotSeconds ?? 900), style: "width:140px", "aria-label": "Seconds" });
   const human = h("span", { class: "muted small" });
