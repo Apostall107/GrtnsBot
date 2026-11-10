@@ -2761,12 +2761,33 @@ function summonButtons(after) {
             { transform: `translate(calc(-50% + ${x - ox}px), calc(-50% + ${y - oy}px)) scale(1.8) rotate(400deg)` }], { duration: dur, easing: "ease-in", fill: "forwards" });
           setTimeout(() => {
             b.remove(); if (ended) return;
-            mud(x, y, 60 + Math.random() * 60, poop ? "poop" : "tomato");
+            const size = 60 + Math.random() * 60;
+            mud(x, y, size, poop ? "poop" : "tomato");
             burst(x, y, 8, 50, poop ? "dust" : "fire", 500);
-            if (poop) for (let f = 0; f < 3; f++) {   // flies
-              const fly = h("i", { class: "gb-fx gb-fly", style: `left:${x}px;top:${y}px` }); document.body.append(fly);
-              const k = [0, 1, 2, 3, 4].map(j => ({ transform: `translate(${Math.cos(j * 1.6 + f) * 30}px, ${Math.sin(j * 2.1 + f) * 22 - 10}px)` }));
-              fly.animate(k, { duration: 700, iterations: 6, direction: "alternate" }); setTimeout(() => fly.remove(), 4200);
+            if (poop) {
+              // flies buzzing around it
+              for (let f = 0; f < 4 + Math.floor(Math.random() * 3); f++) {
+                const fly = h("i", { class: "gb-fx gb-fly", style: `left:${x}px;top:${y}px` }, h("b"), h("b"));
+                document.body.append(fly);
+                const R = size * (.4 + Math.random() * .4), ph = Math.random() * 6.3;
+                const k = Array.from({ length: 9 }, (_, j) => ({ transform: `translate(${Math.cos(ph + j * 1.3) * R + (Math.random() - .5) * 14}px, ${Math.sin(ph + j * 1.9) * R * .7 - 12 + (Math.random() - .5) * 14}px)` }));
+                fly.animate(k, { duration: 900 + Math.random() * 500, iterations: Infinity, direction: "alternate", easing: "ease-in-out" });
+                setTimeout(() => fly.remove(), 4800);
+              }
+              // a worm crawling out of it
+              if (Math.random() < .7) {
+                const wx = x + (Math.random() - .5) * size * .4, wy = y + (Math.random() - .5) * size * .3, dir = Math.random() < .5 ? -1 : 1;
+                const worm = h("div", { class: "gb-fx gb-worm", style: `left:${wx}px;top:${wy}px;${dir < 0 ? "scale:-1 1" : ""}` }, ...Array.from({ length: 6 }, (_, i) => h("i", { style: `animation-delay:${-i * .08}s` })));
+                document.body.append(worm);
+                worm.animate([{ translate: "0 0", opacity: 0 }, { opacity: 1, offset: .1 }, { translate: `${dir * size * .7}px ${size * .15}px`, opacity: 1, offset: .85 }, { translate: `${dir * size * .8}px ${size * .2}px`, opacity: 0 }],
+                  { duration: 4600, easing: "linear", fill: "forwards" });
+                setTimeout(() => worm.remove(), 4700);
+              }
+              // stink lines
+              for (let w = 0; w < 3; w++) {
+                const st = h("i", { class: "gb-fx gb-stink", style: `left:${x + (w - 1) * size * .22}px;top:${y - size * .35}px;animation-delay:${w * .25}s` });
+                document.body.append(st); setTimeout(() => st.remove(), 4000);
+              }
             }
           }, dur);
         });

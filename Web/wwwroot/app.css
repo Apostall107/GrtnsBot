@@ -3111,3 +3111,28 @@ input.switch:checked { animation: switch-glow .5s ease-out; }
 .ach .ach-foot .ach-pips { margin-top: 0; }
 .ach .ach-pts { margin-left: auto; font-size: 11px; font-weight: 800; color: var(--gc); white-space: nowrap; }
 .ach-formula { margin: -4px 0 10px; }
+/* the poop barrage: mottled, lumpy, glossy — clearly not tornado dirt; flies, a worm and stink lines */
+.gb-mud.poop { filter: none;
+  background:
+    radial-gradient(circle at 30% 28%, rgba(255, 230, 180, .45) 0 4%, transparent 9%),
+    radial-gradient(circle at 62% 40%, rgba(110, 70, 20, .95) 0 14%, transparent 26%),
+    radial-gradient(circle at 40% 65%, rgba(70, 80, 20, .85) 0 12%, transparent 24%),
+    radial-gradient(circle at 70% 70%, rgba(150, 95, 35, .9) 0 10%, transparent 20%),
+    radial-gradient(circle at 25% 50%, rgba(55, 30, 10, .95) 0 14%, transparent 28%),
+    radial-gradient(circle, rgba(92, 56, 22, .98) 0 52%, rgba(70, 44, 16, .92) 70%, rgba(60, 36, 12, 0) 100%);
+  box-shadow: inset -3px -4px 6px rgba(20, 10, 0, .55), inset 3px 3px 5px rgba(200, 150, 90, .25); }
+.gb-mud.poop > u { background: radial-gradient(circle at 35% 30%, rgba(230, 190, 130, .4) 0 8%, transparent 14%), radial-gradient(circle, rgba(85, 60, 20, .97) 0 50%, rgba(60, 40, 12, .9) 70%, rgba(55, 35, 10, 0) 100%); }
+.gb-mud.poop > i.drip { background: linear-gradient(rgba(80, 50, 18, .95), rgba(90, 80, 20, .4)); }
+.gb-mud.poop > b { background: rgba(70, 85, 25, .9); }
+.gb-fly { width: 6px; height: 5px; border-radius: 50%; background: #0D0D0D; box-shadow: 0 0 2px rgba(120, 255, 120, .35); z-index: 97; }
+.gb-fly > b { position: absolute; top: -4px; width: 5px; height: 4px; border-radius: 50%; background: rgba(220, 235, 255, .7); animation: gb-wing .05s linear infinite alternate; }
+.gb-fly > b:first-child { left: -3px; } .gb-fly > b:last-child { right: -3px; }
+.gb-worm { z-index: 97; display: flex; gap: 0; }
+.gb-worm > i { width: 7px; height: 7px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #FFC2C8, #E2788A 70%); margin-left: -2px; animation: gb-worm .5s ease-in-out infinite alternate; }
+.gb-worm > i:last-child { background: radial-gradient(circle at 40% 35%, #FFD6DA, #D45E74 70%); }
+@keyframes gb-worm { from { transform: translateY(-2px); } to { transform: translateY(2px); } }
+.gb-stink { z-index: 97; width: 14px; height: 34px; translate: -50% -100%; opacity: 0;
+  background: radial-gradient(ellipse at 50% 50%, transparent 40%, rgba(140, 200, 60, .75) 45% 55%, transparent 60%) 0 0 / 14px 14px repeat-y;
+  -webkit-mask: linear-gradient(transparent, #000 30%, #000 70%, transparent); mask: linear-gradient(transparent, #000 30%, #000 70%, transparent);
+  animation: gb-stink 1.6s ease-out 2 forwards; }
+@keyframes gb-stink { 0% { opacity: 0; transform: translateY(0) scaleX(1); } 30% { opacity: .9; } 100% { opacity: 0; transform: translateY(-26px) scaleX(1.4); } }
