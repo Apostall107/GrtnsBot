@@ -1685,7 +1685,6 @@ function summonButtons(after) {
     // the plain catch streak shown to the player (doesn't reset when a special robot comes — only when one escapes)
     const runKey = `gb.mascotRun.${state.guildId}`;
     let run = 0;
-    const streakNote = () => `🔥 Streak: ${run}${Number(sess.get(streakKey) || 0) >= 10 ? " · ✨ golden zone" : ""}`;
     // +1% per catch as usual; in the golden zone (10+ catches in a row) +2% more for every catch from the 10th on
     const rainbow = summonRainbow || Math.random() < Math.min(1, rbStreak / 100 + Math.max(0, streak - 9) * .02);
     if (rainbow && !summonRainbow) sess.set(rbKey, "0");
@@ -2022,7 +2021,7 @@ function summonButtons(after) {
       const finish = msg => {
         if (--pending > 0) return;
         shared.forEach(n => n.remove());
-        toast(caughtIt ? `🎯 Caught! …but it still cast ${kinds.map(name).join(" + ")}${legendary ? " — 🌟 LEGENDARY!" : ""} · ${streakNote()}`
+        toast(caughtIt ? `🎯 Caught! …but it still cast ${kinds.map(name).join(" + ")}${legendary ? " — 🌟 LEGENDARY!" : ""}`
           : legendary ? `🌟 LEGENDARY CAST! ${kinds.map(name).join(" + ")} — the Greatness bot escaped!` : msg);
         end();
       };
@@ -2844,6 +2843,16 @@ function summonButtons(after) {
       run = Number(sess.get(runKey) || 0) + 1; sess.set(runKey, String(run));
       if (!golden) sess.set(streakKey, String(Number(sess.get(streakKey) || 0) + 1));   // a catch streak for the golden robot
       if (!rainbow) sess.set(rbKey, String(Number(sess.get(rbKey) || 0) + 1));          // …and for the rainbow one
+      // the streak pops up right where it was caught: a big number that floats up; gold once you're in the golden zone
+      {
+        const r = box(), zone = Number(sess.get(streakKey) || 0) >= 10;
+        const pop = h("div", { class: `gb-fx gb-streak${zone ? " zone" : run >= 5 ? " hot" : ""}`, style: `left:${r.left + r.width / 2}px;top:${r.top + r.height * .35}px` },
+          h("b", {}, `🔥 ${run}`), zone ? h("span", {}, "✨ GOLDEN ZONE") : run >= 5 ? h("span", {}, "streak") : null);
+        document.body.append(pop);
+        pop.animate([{ transform: "translate(-50%,-50%) scale(.3)", opacity: 0 }, { transform: "translate(-50%,-50%) scale(1.25)", opacity: 1, offset: .12 },
+          { transform: "translate(-50%,-60%) scale(1)", opacity: 1, offset: .55 }, { transform: "translate(-50%,-140%) scale(.95)", opacity: 0 }], { duration: 2200, easing: "ease-out", fill: "forwards" });
+        setTimeout(() => pop.remove(), 2250);
+      }
       // The count lives on the server (same as Achievements); catches this browser counted before are handed over once
       let legacy = null;
       try { if (!localStorage.getItem("gb.mascotsLegacySent")) { legacy = Number(localStorage.getItem("gb.mascotsCaught") || localStorage.getItem("gb.catsCaught") || 0) || null; localStorage.setItem("gb.mascotsLegacySent", "1"); } } catch { /* private mode */ }
@@ -2856,7 +2865,7 @@ function summonButtons(after) {
       }
       el.classList.add("caught");
       const line = M.lines[Math.floor(Math.random() * M.lines.length)];
-      report({ kind: "caught", quick: !tired, legacy, golden, rainbow }).then(r => toast(`${line}${r && r.caught > 1 ? ` (caught: ${r.caught})` : ""} · ${streakNote()}`));
+      report({ kind: "caught", quick: !tired, legacy, golden, rainbow }).then(r => toast(`${line}${r && r.caught > 1 ? ` (caught: ${r.caught})` : ""}`));
       setTimeout(end, 650);
     }, { once: true });
   }

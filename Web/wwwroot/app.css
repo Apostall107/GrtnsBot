@@ -3136,3 +3136,11 @@ input.switch:checked { animation: switch-glow .5s ease-out; }
   -webkit-mask: linear-gradient(transparent, #000 30%, #000 70%, transparent); mask: linear-gradient(transparent, #000 30%, #000 70%, transparent);
   animation: gb-stink 1.6s ease-out 2 forwards; }
 @keyframes gb-stink { 0% { opacity: 0; transform: translateY(0) scaleX(1); } 30% { opacity: .9; } 100% { opacity: 0; transform: translateY(-26px) scaleX(1.4); } }
+/* catch streak: a number popping up where the robot was caught */
+.gb-streak { z-index: 99; display: flex; flex-direction: column; align-items: center; gap: 2px; pointer-events: none; white-space: nowrap; }
+.gb-streak b { font: 900 30px/1 system-ui, sans-serif; color: #fff; text-shadow: 0 2px 0 rgba(0, 0, 0, .5), 0 0 12px rgba(167, 139, 250, .9); }
+.gb-streak span { font: 800 11px/1 system-ui, sans-serif; letter-spacing: .12em; text-transform: uppercase; color: #FFD9A0; text-shadow: 0 1px 0 rgba(0, 0, 0, .6); }
+.gb-streak.hot b { font-size: 36px; color: #FFB054; text-shadow: 0 2px 0 rgba(0, 0, 0, .5), 0 0 14px rgba(255, 120, 40, .95); }
+.gb-streak.zone b { font-size: 44px; background: linear-gradient(180deg, #FFF6C8, #FFD24A 45%, #E79A12); -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 0 10px rgba(255, 200, 60, .95)) drop-shadow(0 2px 0 rgba(0, 0, 0, .5)); text-shadow: none; }
+.gb-streak.zone span { color: #FFE48A; font-size: 12px; text-shadow: 0 0 8px rgba(255, 200, 60, .9), 0 1px 0 rgba(0, 0, 0, .6); animation: ach-twinkle .35s ease-in-out infinite alternate; }
