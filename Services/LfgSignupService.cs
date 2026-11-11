@@ -10,7 +10,7 @@ namespace LfgBot.Services;
 /// в меню организатора и для напоминаний.
 /// </summary>
 public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store, CharacterStore characters, LfgProjectStore projects,
-    GuildPrefsStore prefs, UserDmStore userDm, ILogger<LfgSignupService> logger)
+    GuildPrefsStore prefs, UserDmStore userDm, LfgHistoryStore history, BotOwner botOwner, ILogger<LfgSignupService> logger)
 {
     /// <summary>Запись в слот или в резерв + сохранение + обновление поста.</summary>
     public async Task<string> JoinAsync(LfgGroup group, ulong userId, SlotRole role, string characterName)
@@ -143,7 +143,7 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
         try
         {
             if (group.IsClosed) return;
-            foreach (var entry in group.Reserve.ToList())
+            foreach (var entry in ReserveByPriority(group))
             {
                 if (group.Slots.All(s => !s.IsFree)) break;
                 if (GsUnmet(group, entry.UserId, entry.CharacterName) is not null) continue;
@@ -184,6 +184,24 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
             }
             await NotifyPromotedAsync(group, userId, slot);
         }
+    }
+
+    /// <summary>
+    /// Порядок автозамены из резерва: сначала владелец бота, потом надёжность (явка в прошлых сборах, выше — раньше;
+    /// без истории считается 100%), при равной — кто раньше записался в резерв.
+    /// Роль/класс/GS по-прежнему решают, подходит ли человек под свободный слот.
+    /// </summary>
+    public List<ReserveEntry> ReserveByPriority(LfgGroup group)
+    {
+        var reliability = LfgStats.Players(history.Get(group.GuildId, null)).ToDictionary(p => p.UserId, p => p.Reliability);
+        return group.Reserve
+            .Select((e, i) => (e, i))
+            .OrderByDescending(x => botOwner.Is(x.e.UserId))
+            .ThenByDescending(x => reliability.GetValueOrDefault(x.e.UserId) ?? 100)
+            .ThenBy(x => x.e.JoinedAt)
+            .ThenBy(x => x.i)
+            .Select(x => x.e)
+            .ToList();
     }
 
     /// <summary>Не хватает GS персонажа (текст требования) или null.</summary>
