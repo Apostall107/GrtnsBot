@@ -3207,3 +3207,12 @@ dialog.lb-dialog:not([open]) { display: none; }
 .slot-role-opts button { padding: 0; border: 0; background: none; cursor: pointer; border-radius: 999px; }
 .slot-role-opts button:hover:not(:disabled) .role-pill { filter: brightness(1.3); box-shadow: 0 0 0 1px rgba(255, 255, 255, .3); }
 .slot-role-opts button:disabled { opacity: .4; cursor: default; }
+
+/* Group card drag & drop (reserve ⇄ slots) */
+.slot.draggable { cursor: grab; }
+.slot.draggable:active { cursor: grabbing; }
+.slot.drag-src { opacity: .45; }
+.dragging-reserve .slot[data-slot]:not(.is-owner) { outline: 1px dashed rgba(176, 156, 255, .55); outline-offset: 2px; }
+.dragging-slot .reserve { outline: 1px dashed rgba(176, 156, 255, .55); outline-offset: 4px; border-radius: 10px; }
+.slot.drop-over, .reserve.drop-over { outline: 2px solid var(--primary) !important; background: rgba(118, 87, 246, .16) !important; }
+.dnd-hint { font-weight: 400; }

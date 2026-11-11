@@ -541,8 +541,8 @@ public static partial class PanelApi
         return $"cls_{clean}_{hash}";
     }
 
-    private static readonly string[] AdminRosterActions = ["toReserve", "promote", "removeReserve", "remove", "character"];
-    private static readonly string[] OrganizerRosterActions = ["toReserve", "promote", "removeReserve"];
+    private static readonly string[] AdminRosterActions = ["toReserve", "promote", "removeReserve", "remove", "character", "swap"];
+    private static readonly string[] OrganizerRosterActions = ["toReserve", "promote", "removeReserve", "swap"];
 
     /// <summary>Изменение состава сбора: сохранить, обновить пост, ЛС переведённому из резерва. null — успех.</summary>
     private static async Task<string?> RosterAsync(LfgGroup group, RosterBody body, LfgStore lfg, LfgSignupService signup, string[] allowed)
@@ -567,6 +567,10 @@ public static partial class PanelApi
                     break;
                 case "removeReserve":
                     error = group.RemoveFromReserve(userId);
+                    break;
+                case "swap":
+                    // drag & drop: reserve member → slot; whoever was there goes to the reserve
+                    error = body.Slot is { } index ? group.SwapIntoSlot(userId, index, out promoted) : "Pick a slot.";
                     break;
                 case "remove":
                     error = group.Slots.Any(x => x.UserId == userId) ? group.Leave(userId) : "This member is no longer in the group.";
@@ -1129,7 +1133,7 @@ public sealed record LfgCreateBody(string? ChannelId, string? ActivityKey, strin
     string? Date, string? Time, bool NotifyByDm = true, bool SeatOwner = true, List<string>? RequiredRoleIds = null, int? MinGs = null,
     string? ProjectKey = null, List<string>? MirrorChannelIds = null, bool CreateVoice = false, List<string?>? SlotRequirements = null,
     string? Note = null, string? OwnerCharacter = null);
-public sealed record RosterBody(string? Action, string? UserId, string? Character);
+public sealed record RosterBody(string? Action, string? UserId, string? Character, int? Slot = null);
 public sealed record SlotRoleBody(int Index, string? Role);
 public sealed record RecurringBody(string? ChannelId, string? ActivityKey, string? CustomName, List<string>? Slots,
     List<int>? Days, string? Time, int PostHoursBefore = 24, bool NotifyByDm = true, bool SeatOwner = true, bool Enabled = true,

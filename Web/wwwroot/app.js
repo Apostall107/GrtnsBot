@@ -5231,7 +5231,7 @@ function groupCard(g) {
   };
 
   const full = g.filled >= g.size;
-  return h("div", { class: `card group-card${full ? " is-full" : ""}`, style: "margin:0" },
+  return rosterDnd(true, `/lfg/groups/${gid}/roster`, g, h("div", { class: `card group-card${full ? " is-full" : ""}`, style: "margin:0" },
     h("div", { class: "group-head" },
       h("div", { class: "group-title" }, h("h3", {}, g.activity)),
       h("div", { class: "group-state" },
@@ -5247,7 +5247,7 @@ function groupCard(g) {
         g.requirements.minGs ? h("span", { class: "chip" }, `GS ${g.requirements.minGs}+`) : null) : null),
     groupNoteLine(g),
     h("div", { class: "roster" }, g.slots.map((s, i) => s.member
-      ? h("div", { class: `slot taken${attClass(s)}` },
+      ? h("div", { class: `slot taken${attClass(s)}`, "data-slot": i, "data-user": s.member.id },
           h("span", { class: "slot-num" }, i + 1), rolePill(s.role || s.slotRole),
           slotInfo(s, "Pressed ✅ Ready in the reminder", true), slotTools(
           g.started ? attendanceButton(s, `/lfg/groups/${gid}/attendance`) : null,
@@ -5255,12 +5255,12 @@ function groupCard(g) {
           (!g.owner || s.member.id !== g.owner.id) ? tool("arrow-right", "Move to reserve", () => roster("toReserve", s.member, "Moved to the reserve.")) : null,
           (!g.owner || s.member.id !== g.owner.id) ? tool("x", "Remove from the group", e => removeWithUndo(e.currentTarget.closest(".slot"), `${s.member.name} removed from the group.`,
             () => gApi("POST", `/lfg/groups/${gid}/roster`, { action: "remove", userId: s.member.id }), refresh)) : null))
-      : h("div", { class: "slot open" }, h("span", { class: "slot-num" }, i + 1),
+      : h("div", { class: "slot open", "data-slot": i }, h("span", { class: "slot-num" }, i + 1),
           slotRoleButton(s.slotRole, (role, label) => act(null, () => gApi("POST", `/lfg/groups/${gid}/slot`, { index: i, role }), `Slot ${i + 1} is now ${label}.`)
             .then(r => { if (r !== undefined) refresh(); })), slotReqMark(s),
           h("span", { class: "slot-open-text" }, icon("circle-plus", 14), "Open slot")))),
     g.reserve.length ? h("details", { class: "reserve", open: true }, h("summary", {}, icon("clock", 14), `Reserve · ${g.reserve.length}`),
-      h("div", { class: "roster" }, g.reserve.map(r => h("div", { class: "slot taken reserve-row" },
+      h("div", { class: "roster" }, g.reserve.map(r => h("div", { class: "slot taken reserve-row", "data-reserve": r.member.id },
         rolePill(r.role || "All"), slotInfo(r, null, true), slotTools(
         tool("arrow-left", "Move into the group (sends a DM)", () => roster("promote", r.member, "Moved into the group, DM sent.")),
         tool("pencil", "Change character", rename(r.member, r.character)),
@@ -5271,7 +5271,7 @@ function groupCard(g) {
       g.voiceUrl ? h("a", { class: "btn secondary voice-btn", href: g.voiceUrl, target: "_blank", rel: "noopener", title: "Open the group's voice room in Discord" }, icon("volume-2", 15), "Voice room") : null,
       h("button", { class: "btn secondary", onclick: () => rescheduleDialog(g, `/lfg/groups/${gid}/time`) }, icon("clock", 15), "Time"),
       h("button", { class: "btn secondary", onclick: () => groupNoteDialog(g, `/lfg/groups/${gid}/note`) }, icon("file-pen-line", 15), "Note"),
-      h("span", { class: "spacer" }), close));
+      h("span", { class: "spacer" }), close)));
 }
 
 // ================= Tickets =================
@@ -7881,12 +7881,12 @@ function playCard(g) {
 
   // Roster: taken slots and open slots look different (not only by color)
   const roster = h("div", { class: "roster" }, g.slots.map((s, i) => s.member
-    ? h("div", { class: `slot taken${s.member.id === meId ? " me" : ""}${attClass(s)}` },
+    ? h("div", { class: `slot taken${s.member.id === meId ? " me" : ""}${attClass(s)}`, "data-slot": i, "data-user": s.member.id },
         h("span", { class: "slot-num" }, i + 1), rolePill(s.role || s.slotRole),
         slotInfo(s, "Ready", false), slotTools(
         org && g.started ? attendanceButton(s, `/me/groups/${gid}/attendance`) : null,
         org && (!g.owner || s.member.id !== g.owner.id) ? tool("arrow-right", "Move to reserve", () => roster$("toReserve", s.member, "Moved to the reserve.")) : null))
-    : h("div", { class: "slot open" },
+    : h("div", { class: "slot open", "data-slot": i },
         h("span", { class: "slot-num" }, i + 1),
         // the organizer can change the role of a free slot (like 🔁 Slot roles in Discord)
         org ? slotRoleButton(s.slotRole, (role, label) => act(null, () => gApi("POST", `/me/groups/${gid}/slot`, { index: i, role }), `Slot ${i + 1} is now ${label}.`)
@@ -7894,7 +7894,7 @@ function playCard(g) {
         h("span", { class: "slot-open-text" }, icon("circle-plus", 14), "Open slot"))));
   const reserve = g.reserve.length ? h("details", { class: "reserve", open: org },
     h("summary", {}, icon("clock", 14), `Reserve · ${g.reserve.length}`),
-    h("div", { class: "roster" }, g.reserve.map(r => h("div", { class: "slot taken reserve-row" },
+    h("div", { class: "roster" }, g.reserve.map(r => h("div", { class: "slot taken reserve-row", "data-reserve": r.member.id },
       rolePill(r.role || "All"), slotInfo(r, null, false), slotTools(
       org ? tool("arrow-left", "Move into the group (sends a DM)", () => roster$("promote", r.member, "Moved into the group, DM sent.")) : null,
       org ? tool("x", "Remove from the reserve", e => removeWithUndo(e.currentTarget.closest(".slot"), `${r.member.name} removed from the reserve.`,
@@ -7959,7 +7959,7 @@ function playCard(g) {
   const req = g.requirements ? h("div", { class: "meta-item" }, icon("shield", 14),
     g.requirements.roles.map(r => roleChip(r)), g.requirements.minGs ? h("span", { class: "chip" }, `GS ${g.requirements.minGs}+`) : null) : null;
 
-  return h("div", { class: `card group-card${full ? " is-full" : ""}`, style: "margin:0" },
+  return rosterDnd(org, `/me/groups/${gid}/roster`, g, h("div", { class: `card group-card${full ? " is-full" : ""}`, style: "margin:0" },
     h("div", { class: "group-head" },
       h("div", { class: "group-title" },
         g.project ? h("span", { class: "project-chip" }, icon("gamepad-2", 12), g.project) : null,
@@ -7986,7 +7986,72 @@ function playCard(g) {
       g.voiceUrl ? h("a", { class: "btn secondary tone-teal voice-btn", href: g.voiceUrl, target: "_blank", rel: "noopener", title: "Open the group's voice room in Discord" }, icon("volume-2", 15), "Voice room") : null,
       org ? h("button", { class: "btn secondary", onclick: () => rescheduleDialog(g, `/me/groups/${gid}/time`) }, icon("clock", 15), "Time") : null,
       org ? h("button", { class: "btn secondary", onclick: () => groupNoteDialog(g, `/me/groups/${gid}/note`) }, icon("file-pen-line", 15), "Note") : null,
-      closeBtn ? h("span", { class: "spacer" }) : null, closeBtn));
+      closeBtn ? h("span", { class: "spacer" }) : null, closeBtn)));
+}
+
+/**
+ * Drag & drop in a group card (organizer / admin, mouse): a reserve member dropped on a slot takes it — whoever was in it
+ * goes to the reserve in their place (a free slot is just filled); a member dragged from a slot onto the reserve goes there.
+ * The organizer's own slot is neither dragged nor a target. Phones keep the arrow buttons.
+ */
+function rosterDnd(enabled, url, g, card) {
+  if (!enabled || !g.reserve || !g.reserve.length) return card;
+  const ownerId = g.owner && g.owner.id;
+  let drag = null;
+  const done = (body, ok) => act(null, () => gApi("POST", url, body), ok).then(r => { if (r !== undefined) refresh(); });
+  const start = (el, kind, id) => e => {
+    drag = { kind, id };
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", id);
+    el.classList.add("drag-src");
+    card.classList.add(`dragging-${kind}`);
+  };
+  const end = el => () => {
+    drag = null;
+    el.classList.remove("drag-src");
+    card.classList.remove("dragging-reserve", "dragging-slot");
+    card.querySelectorAll(".drop-over").forEach(x => x.classList.remove("drop-over"));
+  };
+  card.querySelectorAll("[data-reserve]").forEach(row => {
+    row.draggable = true;
+    row.classList.add("draggable");
+    row.title = "Drag onto a slot: they take it, whoever was there goes to the reserve";
+    row.addEventListener("dragstart", start(row, "reserve", row.dataset.reserve));
+    row.addEventListener("dragend", end(row));
+  });
+  card.querySelectorAll("[data-slot]").forEach(slot => {
+    const uid = slot.dataset.user;
+    if (uid && uid === ownerId) { slot.classList.add("is-owner"); return; }
+    if (uid) {
+      slot.draggable = true;
+      slot.classList.add("draggable");
+      slot.addEventListener("dragstart", start(slot, "slot", uid));
+      slot.addEventListener("dragend", end(slot));
+    }
+    slot.addEventListener("dragover", e => { if (drag && drag.kind === "reserve") { e.preventDefault(); slot.classList.add("drop-over"); } });
+    slot.addEventListener("dragleave", () => slot.classList.remove("drop-over"));
+    slot.addEventListener("drop", e => {
+      e.preventDefault();
+      slot.classList.remove("drop-over");
+      if (!drag || drag.kind !== "reserve") return;
+      done({ action: "swap", userId: drag.id, slot: Number(slot.dataset.slot) },
+        uid ? "Swapped: moved into the slot (DM sent), the other member went to the reserve." : "Moved into the group, DM sent.");
+    });
+  });
+  const zone = card.querySelector(".reserve");
+  if (zone) {
+    zone.addEventListener("dragover", e => { if (drag && drag.kind === "slot") { e.preventDefault(); zone.classList.add("drop-over"); } });
+    zone.addEventListener("dragleave", e => { if (!zone.contains(e.relatedTarget)) zone.classList.remove("drop-over"); });
+    zone.addEventListener("drop", e => {
+      e.preventDefault();
+      zone.classList.remove("drop-over");
+      if (!drag || drag.kind !== "slot") return;
+      done({ action: "toReserve", userId: drag.id }, "Moved to the reserve.");
+    });
+    const sum = zone.querySelector("summary");
+    if (sum && matchMedia("(pointer: fine)").matches) sum.append(h("span", { class: "muted small dnd-hint" }, " · drag a member onto a slot to swap"));
+  }
+  return card;
 }
 
 // ================= Member: characters =================

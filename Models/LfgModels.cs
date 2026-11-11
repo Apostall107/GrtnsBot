@@ -504,6 +504,48 @@ public sealed class LfgGroup
         return null;
     }
 
+    /// <summary>
+    /// Перетаскивание на сайте: человек из резерва встаёт в слот index. Если слот занят — тот, кто в нём был,
+    /// уходит в резерв на место перетащенного (обмен). Слот организатора не трогается.
+    /// </summary>
+    public string? SwapIntoSlot(ulong reserveUserId, int index, out Slot? slot)
+    {
+        slot = null;
+        var entry = FindReserve(reserveUserId);
+        if (entry is null) return Tx.Get(GuildId, "lfg.err.reserveGone");
+        if (index < 0 || index >= Slots.Count) return Tx.Get(GuildId, "lfg.err.slotGone");
+        var target = Slots[index];
+        if (target.UserId == OwnerId && OwnerId != 0) return Tx.Get(GuildId, "lfg.err.moveSelf");
+
+        var at = Reserve.IndexOf(entry);
+        Reserve.RemoveAt(at);
+        if (target.UserId is { } displaced)
+            Reserve.Insert(at, new ReserveEntry
+            {
+                UserId = displaced,
+                Role = target.TakenAs ?? target.Role,
+                CharacterName = target.CharacterName,
+                ClassRoleId = target.ClassRoleId,
+                ClassIcon = target.ClassIcon,
+                Comment = target.Comment,
+                Gs = target.Gs,
+                Server = target.Server,
+                Cp = target.Cp
+            });
+        target.Clear();
+        target.UserId = entry.UserId;
+        target.TakenAs = entry.Role;
+        target.CharacterName = entry.CharacterName;
+        target.ClassRoleId = entry.ClassRoleId;
+        target.ClassIcon = entry.ClassIcon;
+        target.Comment = entry.Comment;
+        target.Gs = entry.Gs;
+        target.Server = entry.Server;
+        target.Cp = entry.Cp;
+        slot = target;
+        return null;
+    }
+
     /// <summary>Организатор убирает человека из резерва.</summary>
     public string? RemoveFromReserve(ulong userId) =>
         Reserve.RemoveAll(r => r.UserId == userId) > 0 ? null : Tx.Get(GuildId, "lfg.err.reserveGone");
