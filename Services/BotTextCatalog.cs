@@ -184,6 +184,12 @@ public static class BotTextCatalog
         T("lfg.manage.noShow", "Attendance: didn't come", "didn't come", null, Option);
         T("lfg.manage.notMarked", "Attendance: not marked", "not marked", null, Option);
         T("lfg.manage.changeTime", "“Change time” button", "Change time", null, Button);
+        T("lfg.manage.slotRoles", "“Slot roles” button", "Slot roles", null, Button);
+        T("lfg.manage.slotRolePick", "“Change slot role” placeholder", "🔁 Change the role of a free slot", null, Placeholder);
+        T("lfg.manage.slotRoleHint", "Slot roles hint (- = hide)", "-# Pick a free slot and its new role. A taken slot: move the member to the reserve first.", null, 300, optional: true);
+        T("lfg.manage.slotRoleOption", "Slot role option", "Slot {n}: {from} → {to}", "{n}, {from}, {to}", Option);
+        T("lfg.manage.noFreeSlots", "No free slots to change", "No free slots — move someone to the reserve first.", null, 300);
+        T("lfg.manage.slotRoleChanged", "Slot role changed", "🔁 Slot {n} is now **{role}**.", "{n}, {role}", 500);
         T("lfg.manage.nobody", "Nobody to manage (- = hide)", "Nobody to manage yet.", null, 300, optional: true);
         T("lfg.manage.movedToReserve", "Moved to reserve", "🔽 {user} was moved to the reserve.", "{user}", 500);
         T("lfg.manage.removedFromReserve", "Removed from reserve", "✖️ {user} was removed from the reserve.", "{user}", 500);
@@ -194,6 +200,8 @@ public static class BotTextCatalog
         T("lfg.err.memberGone", "Error: member left the group", "This member is no longer in the group.", null, 500);
         T("lfg.err.reserveFullManage", "Error: reserve full (manage)", "The reserve list is full — remove someone from it first.", null, 500);
         T("lfg.err.reserveGone", "Error: member left the reserve", "This member is no longer in the reserve.", null, 500);
+        T("lfg.err.slotGone", "Error: no such slot", "This slot no longer exists.", null, 500);
+        T("lfg.err.slotTaken", "Error: slot is taken", "This slot is taken — move the member to the reserve first, then change the slot's role.", null, 500);
         T("lfg.err.noSlotsManage", "Error: no free slots (manage)", "No free slots — move someone to the reserve first.", null, 500);
         T("lfg.manage.timeTitle", "Change time window: title", "Change the start time", null, ModalTitle);
         T("lfg.manage.timeLabel", "Change time window: field", "New time (server time zone), empty = none", null, ModalTitle);

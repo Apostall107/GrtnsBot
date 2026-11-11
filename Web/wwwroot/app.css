@@ -3195,3 +3195,15 @@ dialog.lb-dialog:not([open]) { display: none; }
 .lb-meta { display: flex; flex-direction: column; align-items: flex-end; font-variant-numeric: tabular-nums; }
 .lb-meta b { font-size: 15px; }
 @media (max-width: 520px) { .lb-row { grid-template-columns: 34px 28px 1fr auto; gap: 8px; padding: 6px 8px; } .lb-row .avatar { width: 28px; height: 28px; } }
+
+/* Free slot: the organizer / admin changes its role (All → Sup …) */
+.slot.open { position: relative; }
+.slot-role-btn { display: inline-flex; align-items: center; gap: 3px; padding: 2px 4px 2px 0; border: 0; border-radius: 999px; background: none; color: var(--text-secondary); cursor: pointer; }
+.slot-role-btn:hover .role-pill { filter: brightness(1.25); box-shadow: 0 0 0 1px rgba(255, 255, 255, .25); }
+.slot-role-btn:hover { color: var(--text); }
+.slot-role-pop { position: absolute; z-index: 30; left: 34px; top: calc(100% - 4px); padding: 8px 10px; border-radius: 10px; background: var(--surface);
+  border: 1px solid var(--border); box-shadow: var(--shadow-pop); display: flex; flex-direction: column; gap: 6px; }
+.slot-role-opts { display: flex; gap: 6px; flex-wrap: wrap; }
+.slot-role-opts button { padding: 0; border: 0; background: none; cursor: pointer; border-radius: 999px; }
+.slot-role-opts button:hover:not(:disabled) .role-pill { filter: brightness(1.3); box-shadow: 0 0 0 1px rgba(255, 255, 255, .3); }
+.slot-role-opts button:disabled { opacity: .4; cursor: default; }

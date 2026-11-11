@@ -449,11 +449,34 @@ public static class LfgRenderer
 
         builder.WithButton(Tx.Get(gid, "lfg.manage.changeTime"), $"lfg:resched:{g.Id}", ButtonStyle.Secondary, new Emoji("🕒"), row: Math.Min(row, 4));
         builder.WithButton(Tx.Get(gid, "lfg.manage.noteButton"), $"lfg:mnote:{g.Id}", ButtonStyle.Secondary, new Emoji("📝"), row: Math.Min(row, 4));
+        if (g.Slots.Any(s => s.IsFree))
+            builder.WithButton(Tx.Get(gid, "lfg.manage.slotRoles"), $"lfg:mslots:{g.Id}", ButtonStyle.Secondary, new Emoji("🔁"), row: Math.Min(row, 4));
 
         if (members.Count == 0 && g.Reserve.Count == 0)
             sb.AppendText(Tx.Get(gid, "lfg.manage.nobody"));
 
         return new Screen(sb.ToString(), null, builder.Build());
+    }
+
+    /// <summary>Организатор: сменить роль свободного слота — один список «Слот N: старая → новая».</summary>
+    public static Screen SlotRoles(LfgGroup g, string? note = null)
+    {
+        var gid = g.GuildId;
+        var sb = new StringBuilder();
+        if (note is not null) sb.AppendLine(note);
+        var free = g.Slots.Select((s, i) => (s, i)).Where(x => x.s.IsFree).ToList();
+        if (free.Count == 0) return new Screen(sb.Append(Tx.Get(gid, "lfg.manage.noFreeSlots")).ToString(), null, new ComponentBuilder().Build());
+        if (Tx.Get(gid, "lfg.manage.slotRoleHint") is { Length: > 0 } hint) sb.AppendLine(hint);
+        var menu = new SelectMenuBuilder().WithCustomId($"lfg:mslotset:{g.Id}").WithPlaceholder(Tx.Get(gid, "lfg.manage.slotRolePick"));
+        // all roles for every free slot, at most 25 options (Discord's limit) — about 8 free slots
+        foreach (var (slot, index) in free)
+        foreach (var role in SlotRoleExtensions.All.Where(r => r != slot.Role))
+        {
+            if (menu.Options.Count >= 25) break;
+            menu.AddOption(Trim(Tx.Get(gid, "lfg.manage.slotRoleOption", ("n", index + 1), ("from", slot.Role.Label()), ("to", role.Label()))),
+                $"{index}:{role}", emote: new Emoji(role.Emoji()));
+        }
+        return new Screen(sb.ToString(), null, new ComponentBuilder().WithSelectMenu(menu).Build());
     }
 
     private static string Trim(string value) => value.Length <= 100 ? value : value[..100];

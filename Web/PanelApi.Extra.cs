@@ -64,6 +64,14 @@ public static partial class PanelApi
             return error is null ? Results.Ok() : Error(error);
         });
 
+        // Роль свободного слота (например All → Sup)
+        g.MapPost("/groups/{groupId}/slot", async (ulong guildId, string groupId, SlotRoleBody body, LfgStore lfg, LfgSignupService signup) =>
+        {
+            if (!lfg.Groups.TryGetValue(groupId, out var group) || group.GuildId != guildId) return Error("This group is no longer active.");
+            var error = await SlotRoleAsync(group, body, lfg, signup);
+            return error is null ? Results.Ok() : Error(error);
+        });
+
         // ----- Проекты (игры): роли, проект по умолчанию, привязка LFG-панелей -----
         g.MapGet("/projects", (ulong guildId, DiscordSocketClient client, LfgProjectStore projects, PanelTextStore panels) =>
         {
@@ -594,6 +602,29 @@ public static partial class PanelApi
         return error;
     }
 
+    /// <summary>Роль свободного слота (организатор на сайте / админ). null — успех.</summary>
+    private static async Task<string?> SlotRoleAsync(LfgGroup group, SlotRoleBody body, LfgStore lfg, LfgSignupService signup)
+    {
+        if (!Enum.TryParse<SlotRole>(body.Role, out var role) || !Enum.IsDefined(role)) return "Unknown role.";
+        string? error;
+        await group.Gate.WaitAsync();
+        try
+        {
+            error = group.SetSlotRole(body.Index, role);
+            if (error is null)
+            {
+                lfg.SaveGroups();
+                await signup.RefreshPostAsync(group);
+            }
+        }
+        finally
+        {
+            group.Gate.Release();
+        }
+        if (error is null) _ = signup.TryAutoPromoteAsync(group);   // someone in the reserve may fit the new role
+        return error;
+    }
+
     /// <summary>Закрыть сбор и удалить пост с напоминанием.</summary>
     private static async Task CloseGroupAsync(LfgGroup group, LfgStore lfg, LfgSignupService signup)
     {
@@ -877,6 +908,7 @@ public static partial class PanelApi
         ("DELETE", "/lfg/activities/{key}", "lfg", "Removed activity"),
         ("POST", "/lfg/groups/{groupId}/close", "lfg", "Force-closed LFG group"),
         ("POST", "/lfg/groups/{groupId}/roster", "lfg", "Changed LFG roster"),
+        ("POST", "/lfg/groups/{groupId}/slot", "lfg", "Changed LFG slot role"),
         ("POST", "/lfg/create", "lfg", "Created LFG group"),
         ("POST", "/lfg/panel", "lfg", "Posted LFG panel"),
         ("PUT", "/lfg/channel", "lfg", "Set channel for groups"),
@@ -972,6 +1004,7 @@ public static partial class PanelApi
         ("PUT", "/me/dm", "lfg", "Changed LFG DMs (site)"),
         ("POST", "/me/create", "lfg", "Created LFG group (site)"),
         ("POST", "/me/groups/{groupId}/roster", "lfg", "Organizer changed roster (site)"),
+        ("POST", "/me/groups/{groupId}/slot", "lfg", "Organizer changed slot role (site)"),
         ("POST", "/me/groups/{groupId}/close", "lfg", "Organizer closed group (site)"),
         ("POST", "/me/room", "voice", "Changed own room (site)"),
         ("POST", "/me/tickets", "tickets", "Applied (site)"),
@@ -1097,6 +1130,7 @@ public sealed record LfgCreateBody(string? ChannelId, string? ActivityKey, strin
     string? ProjectKey = null, List<string>? MirrorChannelIds = null, bool CreateVoice = false, List<string?>? SlotRequirements = null,
     string? Note = null, string? OwnerCharacter = null);
 public sealed record RosterBody(string? Action, string? UserId, string? Character);
+public sealed record SlotRoleBody(int Index, string? Role);
 public sealed record RecurringBody(string? ChannelId, string? ActivityKey, string? CustomName, List<string>? Slots,
     List<int>? Days, string? Time, int PostHoursBefore = 24, bool NotifyByDm = true, bool SeatOwner = true, bool Enabled = true,
     string? OwnerId = null, List<string>? RequiredRoleIds = null, int? MinGs = null, string? ProjectKey = null,

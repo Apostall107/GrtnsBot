@@ -5255,7 +5255,9 @@ function groupCard(g) {
           (!g.owner || s.member.id !== g.owner.id) ? tool("arrow-right", "Move to reserve", () => roster("toReserve", s.member, "Moved to the reserve.")) : null,
           (!g.owner || s.member.id !== g.owner.id) ? tool("x", "Remove from the group", e => removeWithUndo(e.currentTarget.closest(".slot"), `${s.member.name} removed from the group.`,
             () => gApi("POST", `/lfg/groups/${gid}/roster`, { action: "remove", userId: s.member.id }), refresh)) : null))
-      : h("div", { class: "slot open" }, h("span", { class: "slot-num" }, i + 1), rolePill(s.slotRole), slotReqMark(s),
+      : h("div", { class: "slot open" }, h("span", { class: "slot-num" }, i + 1),
+          slotRoleButton(s.slotRole, (role, label) => act(null, () => gApi("POST", `/lfg/groups/${gid}/slot`, { index: i, role }), `Slot ${i + 1} is now ${label}.`)
+            .then(r => { if (r !== undefined) refresh(); })), slotReqMark(s),
           h("span", { class: "slot-open-text" }, icon("circle-plus", 14), "Open slot")))),
     g.reserve.length ? h("details", { class: "reserve", open: true }, h("summary", {}, icon("clock", 14), `Reserve · ${g.reserve.length}`),
       h("div", { class: "roster" }, g.reserve.map(r => h("div", { class: "slot taken reserve-row" },
@@ -7847,6 +7849,25 @@ function rolePill(label) {
   return h("span", { class: `role-pill ${cls}` }, icon(ic, 12), label);
 }
 
+/** Role pill of a free slot that the organizer / admin can click to pick another role (DD / Tank / Sup / All). */
+const SLOT_ROLE_KEYS = { DD: "Dps", Tank: "Tank", Sup: "Healer", All: "Any" };
+function slotRoleButton(label, onPick) {
+  const btn = h("button", { type: "button", class: "slot-role-btn", title: "Change this slot's role", "aria-haspopup": "menu" },
+    rolePill(label), icon("chevron-down", 12));
+  btn.addEventListener("click", e => {
+    e.stopPropagation();
+    const had = btn.parentElement.querySelector(".slot-role-pop");
+    document.querySelectorAll(".slot-role-pop").forEach(p => p.remove());
+    if (had) return;
+    const pop = h("div", { class: "slot-role-pop", role: "menu" }, h("div", { class: "muted small" }, "Role of this slot:"),
+      h("div", { class: "slot-role-opts" }, Object.keys(SLOT_ROLE_KEYS).map(k => h("button", { type: "button", role: "menuitem", class: k === label ? "current" : "",
+        disabled: k === label, onclick: ev => { ev.stopPropagation(); pop.remove(); onPick(SLOT_ROLE_KEYS[k], k); } }, rolePill(k)))));
+    btn.after(pop);
+    setTimeout(() => document.addEventListener("click", function off(ev) { if (!pop.contains(ev.target)) { pop.remove(); document.removeEventListener("click", off); } }));
+  });
+  return btn;
+}
+
 function playCard(g) {
   const characters = g.characters || [];
   const gid = encodeURIComponent(g.id);
@@ -7866,7 +7887,10 @@ function playCard(g) {
         org && g.started ? attendanceButton(s, `/me/groups/${gid}/attendance`) : null,
         org && (!g.owner || s.member.id !== g.owner.id) ? tool("arrow-right", "Move to reserve", () => roster$("toReserve", s.member, "Moved to the reserve.")) : null))
     : h("div", { class: "slot open" },
-        h("span", { class: "slot-num" }, i + 1), rolePill(s.slotRole), slotReqMark(s),
+        h("span", { class: "slot-num" }, i + 1),
+        // the organizer can change the role of a free slot (like 🔁 Slot roles in Discord)
+        org ? slotRoleButton(s.slotRole, (role, label) => act(null, () => gApi("POST", `/me/groups/${gid}/slot`, { index: i, role }), `Slot ${i + 1} is now ${label}.`)
+          .then(r => { if (r !== undefined) refresh(); })) : rolePill(s.slotRole), slotReqMark(s),
         h("span", { class: "slot-open-text" }, icon("circle-plus", 14), "Open slot"))));
   const reserve = g.reserve.length ? h("details", { class: "reserve", open: org },
     h("summary", {}, icon("clock", 14), `Reserve · ${g.reserve.length}`),

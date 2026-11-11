@@ -489,6 +489,21 @@ public sealed class LfgGroup
         return null;
     }
 
+    /// <summary>
+    /// Организатор меняет роль свободного слота (например «All» → Sup). Занятый слот не трогается — сначала в резерв.
+    /// Свои классы слота сбрасываются: они подбирались под старую роль.
+    /// </summary>
+    public string? SetSlotRole(int index, SlotRole role)
+    {
+        if (index < 0 || index >= Slots.Count) return Tx.Get(GuildId, "lfg.err.slotGone");
+        var slot = Slots[index];
+        if (!slot.IsFree) return Tx.Get(GuildId, "lfg.err.slotTaken");
+        if (slot.Role == role) return null;
+        slot.Role = role;
+        slot.Classes.Clear();
+        return null;
+    }
+
     /// <summary>Организатор убирает человека из резерва.</summary>
     public string? RemoveFromReserve(ulong userId) =>
         Reserve.RemoveAll(r => r.UserId == userId) > 0 ? null : Tx.Get(GuildId, "lfg.err.reserveGone");

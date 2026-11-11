@@ -634,6 +634,50 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
             await signup.NotifyPromotedAsync(group, userId, promoted);
     }
 
+    [ComponentInteraction("lfg:mslots:*")]
+    public async Task OnManageSlotRoles(string groupId)
+    {
+        if (await GetOwnedGroupAsync(groupId) is not { } group) return;
+        Screen screen;
+        await group.Gate.WaitAsync();
+        try { screen = LfgRenderer.SlotRoles(group); }
+        finally { group.Gate.Release(); }
+        await RespondAsync(screen.Content, components: screen.Components, ephemeral: true, allowedMentions: AllowedMentions.None);
+    }
+
+    [ComponentInteraction("lfg:mslotset:*")]
+    public async Task OnManageSlotRoleSet(string groupId, string[] values)
+    {
+        if (await GetOwnedGroupAsync(groupId) is not { } group) return;
+        var parts = values[0].Split(':');
+        if (parts.Length != 2 || !int.TryParse(parts[0], out var index) || !Enum.TryParse<SlotRole>(parts[1], out var role)) return;
+        await DeferAsync();
+        string? error;
+        Screen screen;
+        await group.Gate.WaitAsync();
+        try
+        {
+            var from = index >= 0 && index < group.Slots.Count ? group.Slots[index].Role : role;
+            error = group.SetSlotRole(index, role);
+            if (error is null)
+            {
+                store.SaveGroups();
+                await signup.RefreshPostAsync(group);
+                audit.FromDiscord(group.GuildId, Context.User, "lfg", "Changed LFG slot role", $"{group.ActivityName}: slot {index + 1} {from.Label()} → {role.Label()}");
+            }
+            screen = LfgRenderer.SlotRoles(group, error is null ? T("lfg.manage.slotRoleChanged", ("n", index + 1), ("role", role.Label())) : $"⚠️ {error}");
+        }
+        finally { group.Gate.Release(); }
+        await Component.ModifyOriginalResponseAsync(m =>
+        {
+            m.Content = screen.Content;
+            m.Components = screen.Components;
+            m.AllowedMentions = AllowedMentions.None;
+        });
+        // someone in the reserve may fit the new role
+        if (error is null) _ = signup.TryAutoPromoteAsync(group);
+    }
+
     /// <summary>Действие организатора: изменить состав, сохранить, обновить пост и меню.</summary>
     private async Task<LfgGroup?> ManageAsync(string groupId, Func<LfgGroup, string?> action, string okText)
     {

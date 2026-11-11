@@ -686,6 +686,14 @@ public static partial class PanelApi
             return error is null ? Results.Ok() : Error(error);
         });
 
+        g.MapPost("/groups/{groupId}/slot", async (ulong guildId, string groupId, SlotRoleBody body, ClaimsPrincipal user, LfgStore lfg, LfgSignupService signup) =>
+        {
+            if (!lfg.Groups.TryGetValue(groupId, out var group) || group.GuildId != guildId) return Error("This group is no longer active.");
+            if (group.OwnerId != user.UserId()) return Error("Only the organizer can manage this group.");
+            var error = await SlotRoleAsync(group, body, lfg, signup);
+            return error is null ? Results.Ok() : Error(error);
+        });
+
         g.MapPost("/groups/{groupId}/time", (ulong guildId, string groupId, TimeBody body, ClaimsPrincipal user, DiscordSocketClient client,
             LfgStore lfg, LfgSignupService signup, [Microsoft.AspNetCore.Mvc.FromServices] TimeService time) =>
             RescheduleEndpointAsync(guildId, groupId, body, user, client, lfg, signup, time, organizerOnly: true));
