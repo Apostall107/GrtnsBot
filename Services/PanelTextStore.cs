@@ -298,6 +298,18 @@ public sealed class PanelTextStore
         }
     }
 
+    /// <summary>Канал удалён в Discord — забыть все панели модулей в нём. Возвращает, сколько забыто.</summary>
+    public int UntrackChannel(ulong guildId, ulong channelId)
+    {
+        lock (_lock)
+        {
+            if (!_data.TryGetValue(guildId, out var g)) return 0;
+            var removed = g.Posted.Values.Sum(list => list.RemoveAll(p => p.ChannelId == channelId));
+            if (removed > 0) Save();
+            return removed;
+        }
+    }
+
     public void Untrack(ulong guildId, string key, ulong messageId)
     {
         lock (_lock)

@@ -62,7 +62,17 @@ public sealed class PanelService(DiscordSocketClient client, PanelTextStore stor
             {
                 // Server or channel not in the cache (bot still connecting, Discord hiccup) — keep the record, try next time.
                 // Only Discord saying "this message is gone" makes us forget a panel.
-                if (client.GetGuild(guildId)?.GetTextChannel(p.ChannelId) is not { } channel) continue;
+                if (client.GetGuild(guildId)?.GetTextChannel(p.ChannelId) is not { } channel)
+                {
+                    // the channel itself is gone (a deleted temp room, …) — only on a fully loaded server, never in bulk
+                    if (GuildCache.Loaded(client.GetGuild(guildId)) && client.GetGuild(guildId)!.GetChannel(p.ChannelId) is null &&
+                        SafetyValve.Allow(guildId, "forget-panel-channel", 10, TimeSpan.FromHours(1), "forgetting panels whose channels are deleted"))
+                    {
+                        store.Untrack(guildId, key, p.MessageId);
+                        audit.FromSystem(guildId, key, "Forgot a panel — its channel was deleted", null);
+                    }
+                    continue;
+                }
 
                 if (await channel.GetMessageAsync(p.MessageId) is not IUserMessage message || message.Author.Id != client.CurrentUser.Id)
                 {

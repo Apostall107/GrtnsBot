@@ -11,7 +11,7 @@ namespace LfgBot.Services;
 /// Only panels that are NOT marked as posted are linked, so nothing that is already known is touched.
 /// </summary>
 public sealed class PanelRelinker(DiscordSocketClient client, PanelService panels, CommunityStore roles,
-    TicketPanelStore ticketPanels, TicketPanelService tickets, ChannelPageStore pages, AuditLog audit, ILogger<PanelRelinker> logger)
+    TicketPanelStore ticketPanels, TicketPanelService tickets, ChannelPageStore pages, TempVoiceStore tempVoice, AuditLog audit, ILogger<PanelRelinker> logger)
 {
     public async Task<Dictionary<string, int>> RelinkAsync(SocketGuild guild, int messagesPerChannel = 50)
     {
@@ -36,7 +36,8 @@ public sealed class PanelRelinker(DiscordSocketClient client, PanelService panel
             .Where(x => x.Ids.Count > 0).ToList();
         var me = guild.CurrentUser;
 
-        foreach (var channel in guild.TextChannels.Where(c => c is not SocketThreadChannel))
+        // temp voice rooms are skipped: their control panel lives and dies with the room, it isn't a posted panel to keep
+        foreach (var channel in guild.TextChannels.Where(c => c is not SocketThreadChannel && tempVoice.GetRoom(c.Id) is null))
         {
             var perms = me.GetPermissions(channel);
             if (!perms.ViewChannel || !perms.ReadMessageHistory) continue;

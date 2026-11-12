@@ -23,6 +23,7 @@ public sealed class BotService(
         interactions.Log += LogAsync;
         client.Ready += OnReadyAsync;
         client.JoinedGuild += OnJoinedGuildAsync;
+        client.ChannelDestroyed += OnChannelDestroyedAsync;
         client.InteractionCreated += OnInteractionAsync;
         interactions.InteractionExecuted += OnInteractionExecutedAsync;
 
@@ -130,6 +131,26 @@ public sealed class BotService(
     }
 
     private Task OnJoinedGuildAsync(SocketGuild guild) => RegisterToGuildAsync(guild);
+
+    /// <summary>
+    /// A channel was deleted in Discord (a real event, not "not in the cache") — panels posted in it are gone with it:
+    /// module panels (e.g. a temp room's control panel) are forgotten, role and ticket panels become "not posted".
+    /// </summary>
+    private Task OnChannelDestroyedAsync(SocketChannel channel)
+    {
+        if (channel is not SocketGuildChannel gc) return Task.CompletedTask;
+        var gid = gc.Guild.Id;
+        try
+        {
+            services.GetRequiredService<PanelTextStore>().UntrackChannel(gid, channel.Id);
+            var roles = services.GetRequiredService<CommunityStore>();
+            foreach (var p in roles.GetPanels(gid).Where(p => p.ChannelId == channel.Id && p.MessageId is not null)) roles.SetPosted(p.Id, null, null);
+            var tickets = services.GetRequiredService<TicketPanelStore>();
+            foreach (var p in tickets.Get(gid).Where(p => p.ChannelId == channel.Id && p.MessageId is not null)) tickets.SetPosted(p.Id, null, null);
+        }
+        catch (Exception ex) { logger.LogWarning(ex, "Forgetting panels of deleted channel {Channel} failed", channel.Id); }
+        return Task.CompletedTask;
+    }
 
     private async Task RegisterToGuildAsync(SocketGuild guild)
     {
