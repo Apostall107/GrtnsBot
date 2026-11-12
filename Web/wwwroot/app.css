@@ -3218,3 +3218,25 @@ dialog.lb-dialog:not([open]) { display: none; }
 .slot.drop-over, .reserve.drop-over { outline: 2px solid var(--primary) !important; background: rgba(118, 87, 246, .16) !important; }
 .dnd-hint { font-weight: 400; }
 .roster-hint { margin: 2px 0 6px; }
+
+/* Attendance: ✓ Came / ✗ No-show buttons on each member + a summary above the roster */
+.att-seg { display: inline-flex; border: 1px solid var(--glass-border); border-radius: 999px; overflow: hidden; flex: none; }
+.att-opt { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border: 0; background: transparent; color: var(--text-secondary);
+  font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; transition: background var(--ease), color var(--ease); }
+.att-opt + .att-opt { border-left: 1px solid var(--glass-border); }
+.att-opt.ok:hover { color: var(--success); background: color-mix(in srgb, var(--success) 10%, transparent); }
+.att-opt.no:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.att-opt.ok.on { color: #06130d; background: var(--success); }
+.att-opt.no.on { color: #fff; background: var(--danger); }
+.att-summary { margin: 4px 0 10px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--glass-border); background: rgba(255, 255, 255, .03); display: flex; flex-direction: column; gap: 8px; }
+.att-sum-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.att-sum-n { font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; }
+.att-sum-n.ok { color: var(--success); background: color-mix(in srgb, var(--success) 14%, transparent); }
+.att-sum-n.no { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
+.att-sum-n.un { color: var(--text-secondary); background: rgba(255, 255, 255, .06); }
+.att-summary .mc-att-bar { flex: none; height: 8px; }
+.att-sum-hint { margin: 0; }
+@media (max-width: 600px) { .att-opt span { display: none; } .att-opt { padding: 4px 8px; } }
+.slot:has(.att-seg) .att-badge { display: none; }   /* the buttons already show it */
+.group-card { container-type: inline-size; }
+@container (max-width: 560px) { .att-opt span { display: none; } .att-opt { padding: 4px 8px; } }

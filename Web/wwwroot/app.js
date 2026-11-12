@@ -5103,23 +5103,64 @@ function attBadge(s) {
   return null;
 }
 
-/** Attendance toggle for a seated member: not marked → came → no-show → not marked.
- *  Updates itself in place (no full page re-render) so the page doesn't jump to the top. */
-function attendanceButton(s, url) {
-  const build = () => {
-    const next = s.attended === null || s.attended === undefined ? true : s.attended ? false : null;
-    const ic = s.attended === true ? "circle-check" : s.attended === false ? "circle-x" : "circle-dot";
-    const cls = s.attended === true ? " att-came" : s.attended === false ? " att-miss" : "";
-    const title = s.attended === true ? "Came — click: no-show (moves them to the reserve, the slot frees up)" : s.attended === false ? "No-show — click: clear" : "Not marked — click: came";
-    const btn = h("button", { class: `btn ghost icon-only sm${cls}`, title, "aria-label": title,
-      onclick: () => act(btn, () => gApi("POST", url, { userId: s.member.id, attended: next }))
-        .then(r => { if (r === undefined) return;
-          // a no-show goes to the reserve (not the organizer) — redraw the group
-          if (next === false) { refresh(); return; }
-          s.attended = next; const nb = build(); btn.replaceWith(nb); syncSlotAttendance(nb, s); }) }, icon(ic, 16));
-    return btn;
-  };
-  return build();
+/**
+ * Attendance of a seated member: two clear buttons — ✓ Came / ✗ No-show (clicking the active one clears it).
+ * No-show moves the member to the reserve (not the organizer) — the group is redrawn; Came updates in place.
+ */
+function attendanceButton(s, url, ownerId) {
+  const isOwner = ownerId && s.member && s.member.id === ownerId;
+  const wrap = h("span", { class: "att-seg", role: "group", "aria-label": "Attendance" });
+  const send = next => act(wrap, () => gApi("POST", url, { userId: s.member.id, attended: next }),
+      next === false && !isOwner ? `${s.member.name}: no-show — moved to the reserve, the slot is free.` : null)
+    .then(r => {
+      if (r === undefined) return;
+      if (next === false && !isOwner) { refresh(); return; }
+      s.attended = next; draw(); syncSlotAttendance(wrap, s); updateAttBars(wrap);
+    });
+  const draw = () => wrap.replaceChildren(
+    h("button", { type: "button", class: `att-opt ok${s.attended === true ? " on" : ""}`, "aria-pressed": String(s.attended === true),
+      title: s.attended === true ? "Marked as came — click to clear" : "Came", onclick: () => send(s.attended === true ? null : true) }, icon("check", 13), h("span", {}, "Came")),
+    h("button", { type: "button", class: `att-opt no${s.attended === false ? " on" : ""}`, "aria-pressed": String(s.attended === false),
+      title: s.attended === false ? "Marked as no-show — click to clear" : isOwner ? "Didn't come (the organizer stays in the slot)" : "Didn't come — moves to the reserve, the slot frees up for a replacement",
+      onclick: () => send(s.attended === false ? null : false) }, icon("x", 13), h("span", {}, "No-show")));
+  draw();
+  return wrap;
+}
+
+/** Attendance summary above the roster after the start: came / no-show / not marked + "everyone unmarked came". */
+function attendanceBar(g, url) {
+  const bar = h("div", { class: "att-summary" });
+  bar._g = g; bar._url = url;
+  drawAttBar(bar);
+  return bar;
+}
+function drawAttBar(bar) {
+  const g = bar._g, seated = g.slots.filter(s => s.member);
+  const came = seated.filter(s => s.attended === true).length;
+  const miss = seated.filter(s => s.attended === false).length + (g.reserve || []).filter(r => r.attended === false).length;
+  const open = seated.filter(s => s.attended == null);
+  const total = came + miss + open.length || 1;
+  const all = h("button", { type: "button", class: "btn sm secondary", disabled: !open.length, title: "Mark everyone who isn't marked yet as came" },
+    icon("circle-check", 14), open.length ? `All unmarked came (${open.length})` : "Everyone is marked");
+  all.addEventListener("click", async () => {
+    for (const s of open) {
+      const r = await act(all, () => gApi("POST", bar._url, { userId: s.member.id, attended: true }));
+      if (r === undefined) break;
+    }
+    refresh();
+  });
+  bar.replaceChildren(
+    h("div", { class: "att-sum-head" }, h("b", {}, "✅ Attendance"),
+      h("span", { class: "att-sum-n ok" }, `${came} came`), h("span", { class: "att-sum-n no" }, `${miss} no-show`),
+      h("span", { class: "att-sum-n un" }, `${open.length} not marked`), h("span", { class: "spacer" }), all),
+    h("div", { class: "mc-att-bar" }, h("i", { class: "ok", style: `width:${came / total * 100}%` }), h("i", { class: "no", style: `width:${miss / total * 100}%` }),
+      h("i", { class: "un", style: `width:${open.length / total * 100}%` })),
+    h("div", { class: "muted small att-sum-hint" }, "Pressed ✅ Ready → already marked as came. No-show → moves to the reserve so you can put someone in the slot; bring them back if they came late."));
+}
+/** After a change in place: redraw the summary of the same card. */
+function updateAttBars(node) {
+  const card = node.closest(".group-card"), bar = card && card.querySelector(".att-summary");
+  if (bar) drawAttBar(bar);
 }
 
 /** Own requirement of an open slot: 🔒 the role it needs, or 🔓 when this slot needs no role. */
@@ -5250,11 +5291,12 @@ function groupCard(g) {
       g.requirements ? h("div", { class: "meta-item" }, icon("shield", 14), g.requirements.roles.map(r => roleChip(r)),
         g.requirements.minGs ? h("span", { class: "chip" }, `GS ${g.requirements.minGs}+`) : null) : null),
     groupNoteLine(g),
+    g.started ? attendanceBar(g, `/lfg/groups/${gid}/attendance`) : null,
     h("div", { class: "roster" }, g.slots.map((s, i) => s.member
       ? h("div", { class: `slot taken${attClass(s)}`, "data-slot": i, "data-user": s.member.id },
           h("span", { class: "slot-num" }, i + 1), rolePill(s.role || s.slotRole),
           slotInfo(s, "Pressed ✅ Ready in the reminder", true), slotTools(
-          g.started ? attendanceButton(s, `/lfg/groups/${gid}/attendance`) : null,
+          g.started ? attendanceButton(s, `/lfg/groups/${gid}/attendance`, g.owner && g.owner.id) : null,
           tool("pencil", "Change character", rename(s.member, s.character)),
           (!g.owner || s.member.id !== g.owner.id) ? tool("arrow-right", "Move to reserve", () => roster("toReserve", s.member, "Moved to the reserve.")) : null,
           (!g.owner || s.member.id !== g.owner.id) ? tool("x", "Remove from the group", e => removeWithUndo(e.currentTarget.closest(".slot"), `${s.member.name} removed from the group.`,
@@ -7888,7 +7930,7 @@ function playCard(g) {
     ? h("div", { class: `slot taken${s.member.id === meId ? " me" : ""}${attClass(s)}`, "data-slot": i, "data-user": s.member.id },
         h("span", { class: "slot-num" }, i + 1), rolePill(s.role || s.slotRole),
         slotInfo(s, "Ready", false), slotTools(
-        org && g.started ? attendanceButton(s, `/me/groups/${gid}/attendance`) : null,
+        org && g.started ? attendanceButton(s, `/me/groups/${gid}/attendance`, g.owner && g.owner.id) : null,
         org && (!g.owner || s.member.id !== g.owner.id) ? tool("arrow-right", "Move to reserve", () => roster$("toReserve", s.member, "Moved to the reserve.")) : null))
     : h("div", { class: "slot open", "data-slot": i },
         h("span", { class: "slot-num" }, i + 1),
@@ -7975,6 +8017,7 @@ function playCard(g) {
       g.channel ? h("div", { class: "meta-item" }, icon("hash", 14), g.channel) : null,
       mine, req),
     groupNoteLine(g),
+    org && g.started ? attendanceBar(g, `/me/groups/${gid}/attendance`) : null,
     roster, reserve,
     g.readyCheck && g.me && g.me.status === "group" ? h("div", { class: "group-note ready-line" },
       g.myReady ? h("span", { class: "badge ok" }, "🟢 You're marked as ready")
