@@ -44,6 +44,11 @@ public sealed class GuildPrefs
 
     /// <summary>Официальная оружейная AION 2 по проектам (ключ проекта): включена, фракция и сервер по умолчанию.</summary>
     public Dictionary<string, ArmoryProjectPrefs>? Armory { get; set; }
+    /// <summary>Автоматически привязывать и обновлять персонажей (как «Link &amp; update all»): с какого времени (часовой пояс бота) и раз в сколько часов.</summary>
+    public bool ArmoryAuto { get; set; } = true;
+    public string ArmoryAutoTime { get; set; } = "05:00";
+    public int ArmoryAutoHours { get; set; } = 24;
+    public DateTimeOffset? ArmoryAutoLastRun { get; set; }
 
     /// <summary>Служебный канал медиатеки: картинки и гифки для постов лежат там вложениями (на сервере бота — ничего).</summary>
     public ulong? MediaChannelId { get; set; }

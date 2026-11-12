@@ -1531,7 +1531,8 @@ const allTabs = [
   ["settings", "settings", "Settings", "settings", "Administration"],
   ["access", "key-round", "Access", "access", "Owner tools"],
   ["voicenow", "headphones", "Voice now", "access", "Owner tools"],
-  ["mascot", "bot", "Mascot", "access", "Owner tools"]
+  ["mascot", "bot", "Mascot", "access", "Owner tools"],
+  ["armoryauto", "refresh-cw", "Armory auto-update", "access", "Owner tools"]
 ];
 const currentGuild = () => state.guilds.find(g => g.id === state.guildId);
 const isAdmin = () => !!(state.me && state.me.isAdmin);
@@ -3305,7 +3306,7 @@ function renderShell() {
   if (!state.guildId) { main.append(empty("No servers available for your account.")); return; }
   if (!visibleTabs().length) { main.append(empty("You have no sections on this server. Ask an admin for the member role.")); return; }
   siteTrack(MEMBER_TABS.includes(state.tab) ? "tab" : "visit", state.tab);
-  const page = { home: pageHome, content: pageContent, play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, guild: pageGuild, schedule: pageSchedule, roster: pageMemberRoster, tickets: pageTickets, voice: pageVoice, welcome: pageWelcome, roles: pageRoles, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess, voicenow: pageVoiceNow, birthdays: pageBirthdays, pages: pageChannelPages, media: pageMedia, mascot: pageMascot, achievements: pageAchievements }[state.tab];
+  const page = { home: pageHome, content: pageContent, play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, guild: pageGuild, schedule: pageSchedule, roster: pageMemberRoster, tickets: pageTickets, voice: pageVoice, welcome: pageWelcome, roles: pageRoles, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess, voicenow: pageVoiceNow, birthdays: pageBirthdays, pages: pageChannelPages, media: pageMedia, mascot: pageMascot, achievements: pageAchievements, armoryauto: pageArmoryAuto }[state.tab];
   page(main);
   addGuideButton(main, state.tab);
   decorateHeading(main);
@@ -4729,7 +4730,7 @@ async function renderArmoryPrefs(card) {
     if (r) showStatus(r);
   };
   card.replaceChildren(h("h2", {}, title),
-    h("p", { class: "muted small" }, "Members link their characters themselves in My characters (search on aion2.plaync.com, EU) and press Update when their gear changes — nothing updates automatically. Faction and server below are the defaults for new characters and for the search."),
+    h("p", { class: "muted small" }, "Members can link their characters themselves in My characters (search on aion2.plaync.com, EU) and press Update when their gear changes; the bot also does it on a schedule (set by the bot owner). Faction and server are the defaults for new characters and for the search."),
     ...rows.map(r => r.el),
     h("div", { class: "row", style: "margin-top:10px;flex-wrap:wrap" }, save,
       h("button", { class: "btn secondary", onclick: run(true) }, icon("link", 15), "Link & update all"),
@@ -8307,6 +8308,45 @@ async function pageChars(main) {
 
 /** Who is in which voice channel right now — every channel the bot knows, hidden ones too. Refreshes itself. */
 // ================= Owner tools: Mascot (only the bot owner) =================
+
+/** Owner tools → Armory auto-update: link & update all characters from the official armory on a schedule. */
+async function pageArmoryAuto(main) {
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "🔄 Armory auto-update"),
+    h("button", { class: "btn btn-refresh", title: "Reload", onclick: hardRefresh }, "🔄 Refresh")),
+    h("p", { class: "muted small" }, "Only you (the bot owner) see this page. On schedule the bot does the same as LFG → Settings → Official armory → “Link & update all”: linked characters are refreshed (GS, combat power, class, legion), the others are searched by their exact name on their server and linked when exactly one is found. About 3 s per character, one server at a time; if the armory refuses, it waits and tries later."));
+  const body = h("div", {}, h("div", { class: "card" }, skeletonLines(3)));
+  main.append(body);
+  let d;
+  try { d = await gApi("GET", "/armory-auto"); } catch (e) { body.replaceChildren(errorState(e.message)); return; }
+  const on = toggle(d.on, "Link & update all characters automatically");
+  const at = h("input", { type: "time", value: d.time || "05:00", style: "width:120px", "aria-label": "Start time" });
+  const OPTS = [[6, "every 6 hours"], [12, "every 12 hours"], [24, "once a day"], [48, "every 2 days"], [72, "every 3 days"], [168, "once a week"]];
+  const every = h("select", { "aria-label": "How often" }, OPTS.map(([v, l]) => h("option", { value: v }, l)));
+  every.value = String(OPTS.some(o => o[0] === d.hours) ? d.hours : 24);
+  const box = h("div", { class: "subcard" },
+    h("div", { class: "row", style: "flex-wrap:wrap" }, h("span", { class: "muted" }, "Starting at"), at, every, h("span", { class: "muted small" }, `(${d.zone})`)),
+    h("p", { class: "muted small", style: "margin:8px 0 0" },
+      d.on ? `Next run: ${new Date(d.next).toLocaleString()}. ` : "", d.lastRun ? `Last: ${new Date(d.lastRun).toLocaleString()}.` : ""));
+  const sync = () => { box.style.display = on.cb.checked ? "" : "none"; };
+  on.cb.addEventListener("change", sync); sync();
+  const save = h("button", { class: "btn" }, "💾 Save");
+  const value = () => ({ on: on.cb.checked, time: at.value || "05:00", hours: Number(every.value) });
+  const tracker = track("Armory auto-update", () => JSON.stringify(value()), async () => {
+    const ok = await act(save, () => gApi("PUT", "/armory-auto", value()), "Schedule saved.") !== undefined;
+    if (ok) setTimeout(() => renderShell(), 300);
+    return ok;
+  });
+  save.addEventListener("click", tracker.save);
+  const b = d.bulk;
+  const status = b ? h("div", { class: "small" }, b.running ? "Running now: " : `Last run ${fmtRelative(b.finished || b.started)}: `,
+    [`${b.done}/${b.total} checked`, `linked ${b.linked}`, `updated ${b.updated}`, b.notFound ? `not found ${b.notFound}` : null,
+      b.ambiguous ? `several with this name ${b.ambiguous}` : null, b.failed ? `failed ${b.failed}` : null].filter(Boolean).join(" · "),
+    b.error ? h("div", { class: "warn-text" }, b.error) : null) : h("div", { class: "muted small" }, "No run since the bot started.");
+  body.replaceChildren(tracker.attach(h("div", { class: "card" }, h("h2", {}, "⏱️ Schedule"), on.el, box,
+    h("div", { class: "row", style: "margin-top:10px" }, save))),
+    h("div", { class: "card" }, h("h2", {}, "📋 Last run"), status,
+      h("p", { class: "muted small" }, "Which projects use the armory, their faction and default server — LFG → Settings → Official armory.")));
+}
 
 async function pageMascot(main) {
   const g = currentGuild() || {};

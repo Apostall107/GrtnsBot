@@ -85,6 +85,7 @@ public static partial class PanelApi
                 {
                     Enabled = x.Enabled, Race = x.Race is 1 ? 1 : 2, ServerId = x.ServerId is > 0 and < 100000 ? x.ServerId : null
                 }));
+
             return Results.Ok();
         });
 
@@ -303,6 +304,7 @@ public static partial class PanelApi
 
 public sealed record ArmoryProjectBody(string? Key, bool Enabled, int Race, int? ServerId);
 public sealed record ArmoryPrefsBody(List<ArmoryProjectBody>? Projects);
+public sealed record ArmoryAutoBody(bool On, string? Time, int Hours);
 public sealed record ArmoryBulkBody(string? Project, bool LinkNew = true);
 
 public sealed record LfgPrefsBody(bool ReadyCheck, int? AutoPromoteMinutes, bool GsReminder, string? GsReminderChannelId, int? GsReminderDays,

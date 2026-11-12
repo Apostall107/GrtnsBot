@@ -94,6 +94,8 @@ builder.Services.AddSingleton<BirthdayService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<BirthdayService>());
 builder.Services.AddSingleton<OfficialArmory>();
 builder.Services.AddSingleton<ArmorySyncService>();
+builder.Services.AddSingleton<ArmoryAutoService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<ArmoryAutoService>());
 builder.Services.AddHostedService<StickyPanelService>();
 builder.Services.AddHostedService<RecurringLfgService>();
 builder.Services.AddHostedService<TicketAutoCloseService>();

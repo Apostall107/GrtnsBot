@@ -974,6 +974,7 @@ public static partial class PanelApi
         ("DELETE", "/access/{userId}", "access", "Removed panel access"),
         ("PUT", "/settings/", "settings", "Changed bot settings"),
         ("PUT", "/mascot", "access", "Changed the mascot (easter egg) frequency"),
+        ("PUT", "/armory-auto", "access", "Changed the armory auto-update schedule"),
         ("PUT", "/search-roles", "settings", "Changed the roles for quick search"),
         ("PUT", "/lfg/settings/", "lfg", "Changed LFG settings (time zone, auto-delete, reminder)"),
         ("POST", "/backup/restore", "settings", "Uploaded a data backup"),

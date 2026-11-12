@@ -13,7 +13,7 @@ public sealed record ArmoryBulkStatus(bool Running, int Total, int Done, int Lin
 
 /// <summary>
 /// Официальная оружейная: каждый привязывает и обновляет своих персонажей кнопкой на сайте; админ может запустить
-/// массовую привязку/обновление (по одному запросу в несколько секунд). Автоматически ничего не обновляется.
+/// массовую привязку/обновление (по одному запросу в несколько секунд), а по расписанию это делает ArmoryAutoService.
 /// GS берётся оттуда (LFG → Group options). Оружейная отказывает (403/429/503) — пауза, данные остаются прежними.
 /// </summary>
 public sealed class ArmorySyncService(OfficialArmory armory, CharacterStore characters, GuildPrefsStore prefs, LfgProjectStore projects,

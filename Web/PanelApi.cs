@@ -157,6 +157,33 @@ public static partial class PanelApi
             return Results.Ok();
         }).AddEndpointFilter(Require(PanelPermissions.Settings));
 
+        // Owner tools → Armory auto-update: automatic link & update of characters on a schedule (owner only)
+        yield return g.MapGet("/armory-auto", (ulong guildId, GuildPrefsStore prefs, [Microsoft.AspNetCore.Mvc.FromServices] ArmorySyncService sync,
+            [Microsoft.AspNetCore.Mvc.FromServices] ArmoryAutoService auto, [Microsoft.AspNetCore.Mvc.FromServices] TimeService time) =>
+        {
+            var p = prefs.Get(guildId);
+            var b = sync.BulkStatus(guildId);
+            return Results.Ok(new
+            {
+                on = p.ArmoryAuto, time = p.ArmoryAutoTime, hours = p.ArmoryAutoHours, zone = time.ZoneName,
+                lastRun = p.ArmoryAutoLastRun?.ToUnixTimeMilliseconds(), next = auto.NextSlot(p.ArmoryAutoTime, p.ArmoryAutoHours).ToUnixTimeMilliseconds(),
+                bulk = b is null ? null : new { running = b.Running, total = b.Total, done = b.Done, linked = b.Linked, updated = b.Updated,
+                    notFound = b.NotFound, ambiguous = b.Ambiguous, failed = b.Failed, started = b.Started.ToUnixTimeMilliseconds(),
+                    finished = b.Finished?.ToUnixTimeMilliseconds(), error = b.Error }
+            });
+        }).AddEndpointFilter(Require(PanelPermissions.Access));
+        yield return g.MapPut("/armory-auto", (ulong guildId, ArmoryAutoBody body, GuildPrefsStore prefs) =>
+        {
+            prefs.Update(guildId, p =>
+            {
+                p.ArmoryAuto = body.On;
+                if (TimeOnly.TryParse(body.Time, out var t)) p.ArmoryAutoTime = t.ToString("HH:mm");
+                p.ArmoryAutoHours = Math.Clamp(body.Hours, 1, 24 * 14);
+                p.ArmoryAutoLastRun = DateTimeOffset.UtcNow;   // the new schedule starts from its next time
+            });
+            return Results.Ok();
+        }).AddEndpointFilter(Require(PanelPermissions.Access));
+
         // Owner tools → Mascot: how often the mascot flies by (owner only)
         yield return g.MapPut("/mascot", (ulong guildId, MascotBody body, DiscordSocketClient client, GuildPrefsStore prefs) =>
         {
