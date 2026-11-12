@@ -855,6 +855,8 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
                 if (!slot.Ready)
                 {
                     slot.Ready = true;
+                    // pressed ✅ Ready → counts as came (the organizer can still change it in Attendance)
+                    slot.Attended ??= true;
                     store.SaveGroups();
                     await signup.RefreshPostAsync(group);
                 }

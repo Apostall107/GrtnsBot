@@ -39,6 +39,8 @@ public static partial class PanelApi
                 if (!slot.Ready)
                 {
                     slot.Ready = true;
+                    // pressed ✅ Ready → counts as came (the organizer can still change it in Attendance)
+                    slot.Attended ??= true;
                     lfg.SaveGroups();
                     await signup.RefreshPostAsync(group);
                 }
