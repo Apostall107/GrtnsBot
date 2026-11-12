@@ -73,7 +73,14 @@ public sealed class LfgHistoryStore
                     Character = s.CharacterName,
                     Role = (s.TakenAs ?? s.Role).Label(),
                     Attended = s.Attended
-                }).ToList()
+                }).Concat(g.NoShows.Where(n => g.Slots.All(s => s.UserId != n.UserId)).Select(n => new LfgHistoryMember
+                {
+                    // marked "didn't come" and moved to the reserve — still a no-show
+                    UserId = n.UserId,
+                    Character = n.CharacterName,
+                    Role = n.Role.Label(),
+                    Attended = false
+                })).ToList()
             });
             if (_data.Count > MaxEntries) _data.RemoveRange(0, _data.Count - MaxEntries);
             var dir = Path.GetDirectoryName(Path.GetFullPath(_path));

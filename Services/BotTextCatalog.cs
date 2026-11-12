@@ -179,7 +179,7 @@ public static class BotTextCatalog
         T("lfg.manage.wants", "Reserve option description", "Wants {role}", "{role}", Option);
         T("lfg.manage.noName", "“no name”", "no name", null, 50);
         T("lfg.manage.attendance", "Attendance placeholder", "✅ Attendance: who came?", null, Placeholder);
-        T("lfg.manage.attendanceHint", "Attendance hint (- = hide)", "-# Attendance: select everyone who came — the others are marked as no-show.", null, 300, optional: true);
+        T("lfg.manage.attendanceHint", "Attendance hint (- = hide)", "-# Attendance: select everyone who came — the others are marked as no-show and moved to the reserve, so you can put someone in their slot.", null, 300, optional: true);
         T("lfg.manage.came", "Attendance: came", "came", null, Option);
         T("lfg.manage.noShow", "Attendance: didn't come", "didn't come", null, Option);
         T("lfg.manage.notMarked", "Attendance: not marked", "not marked", null, Option);

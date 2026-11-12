@@ -755,7 +755,8 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         var came = values.Select(ulong.Parse).ToHashSet();
         return ManageAsync(groupId, g =>
         {
-            foreach (var s in g.Slots.Where(s => s.UserId is not null)) s.Attended = came.Contains(s.UserId!.Value);
+            // "didn't come" → to the reserve (the slot is free for a replacement), the no-show is remembered
+            foreach (var id in g.Slots.Where(s => s.UserId is not null).Select(s => s.UserId!.Value).ToList()) g.MarkAttendance(id, came.Contains(id));
             return null;
         }, T("lfg.manage.attendanceSaved", ("count", came.Count)));
     }

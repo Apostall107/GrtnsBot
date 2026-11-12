@@ -5110,10 +5110,13 @@ function attendanceButton(s, url) {
     const next = s.attended === null || s.attended === undefined ? true : s.attended ? false : null;
     const ic = s.attended === true ? "circle-check" : s.attended === false ? "circle-x" : "circle-dot";
     const cls = s.attended === true ? " att-came" : s.attended === false ? " att-miss" : "";
-    const title = s.attended === true ? "Came — click: no-show" : s.attended === false ? "No-show — click: clear" : "Not marked — click: came";
+    const title = s.attended === true ? "Came — click: no-show (moves them to the reserve, the slot frees up)" : s.attended === false ? "No-show — click: clear" : "Not marked — click: came";
     const btn = h("button", { class: `btn ghost icon-only sm${cls}`, title, "aria-label": title,
       onclick: () => act(btn, () => gApi("POST", url, { userId: s.member.id, attended: next }))
-        .then(r => { if (r !== undefined) { s.attended = next; const nb = build(); btn.replaceWith(nb); syncSlotAttendance(nb, s); } }) }, icon(ic, 16));
+        .then(r => { if (r === undefined) return;
+          // a no-show goes to the reserve (not the organizer) — redraw the group
+          if (next === false) { refresh(); return; }
+          s.attended = next; const nb = build(); btn.replaceWith(nb); syncSlotAttendance(nb, s); }) }, icon(ic, 16));
     return btn;
   };
   return build();

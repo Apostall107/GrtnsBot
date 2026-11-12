@@ -348,6 +348,7 @@ public static partial class PanelApi
                 }),
                 reserve = x.Reserve.Select(r => new
                 {
+                    attended = x.NoShows.Any(n => n.UserId == r.UserId) ? false : (bool?)null,
                     role = r.Role.Label(),
                     emoji = r.Role.Emoji(),
                     member = Member(guild, r.UserId),

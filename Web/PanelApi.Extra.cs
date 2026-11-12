@@ -752,8 +752,8 @@ public static partial class PanelApi
         await group.Gate.WaitAsync();
         try
         {
-            if (group.Slots.Find(s => s.UserId == userId) is not { } slot) return Error("This member is not in the group.");
-            slot.Attended = body.Attended;
+            if (group.Slots.Find(s => s.UserId == userId) is null) return Error("This member is not in the group.");
+            group.MarkAttendance(userId, body.Attended);   // "didn't come" → reserve, slot free for a replacement
             lfg.SaveGroups();
             await signup.RefreshPostAsync(group);
         }

@@ -283,6 +283,31 @@ public sealed class LfgGroup
     public List<Slot> Slots { get; set; } = [];
     /// <summary>Запас: записались, когда подходящих слотов не было.</summary>
     public List<ReserveEntry> Reserve { get; set; } = [];
+    /// <summary>Отмечены «не пришёл» и переведены в резерв: в историю идут как прогул, даже если их потом убрали из резерва.</summary>
+    public List<ReserveEntry> NoShows { get; set; } = [];
+
+    /// <summary>
+    /// Явка участника слота. «Не пришёл» (не организатор) — уходит в резерв, слот освобождается под замену;
+    /// прогул запоминается. Вернётся в группу (опоздал) — прогул снимается, отмечается как пришедший.
+    /// </summary>
+    public void MarkAttendance(ulong userId, bool? attended)
+    {
+        if (Slots.Find(s => s.UserId == userId) is not { } slot) return;
+        if (attended == false && userId != OwnerId && Reserve.Count < MaxReserve)
+        {
+            NoShows.RemoveAll(x => x.UserId == userId);
+            NoShows.Add(new ReserveEntry { UserId = userId, Role = slot.TakenAs ?? slot.Role, CharacterName = slot.CharacterName });
+            MoveToReserve(userId);
+            return;
+        }
+        slot.Attended = attended;
+    }
+
+    /// <summary>Прогульщик вернулся в группу — значит, всё-таки пришёл.</summary>
+    private void Returned(Slot slot)
+    {
+        if (slot.UserId is { } id && NoShows.RemoveAll(x => x.UserId == id) > 0) slot.Attended = true;
+    }
     public bool IsClosed { get; set; }
     /// <summary>Требования: у игрока одна из этих ролей (пусто — любой). Не подходит — запись только в резерв.</summary>
     public List<ulong> RequiredRoleIds { get; set; } = [];
@@ -557,6 +582,7 @@ public sealed class LfgGroup
         target.Gs = entry.Gs;
         target.Server = entry.Server;
         target.Cp = entry.Cp;
+        Returned(target);
         slot = target;
         return null;
     }
@@ -598,6 +624,7 @@ public sealed class LfgGroup
         slot.Gs = entry.Gs;
         slot.Server = entry.Server;
         slot.Cp = entry.Cp;
+        Returned(slot);
         return slot;
     }
 
@@ -624,6 +651,7 @@ public sealed class LfgGroup
         slot.ClassIcon = entry.ClassIcon;
         slot.Comment = entry.Comment;
         slot.Gs = entry.Gs;
+        Returned(slot);
         return null;
     }
 }
