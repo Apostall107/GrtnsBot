@@ -140,6 +140,21 @@ public sealed class Slot
     public bool Ready { get; set; }
     [JsonIgnore] public bool IsFree => UserId is null;
 
+    /// <summary>Копия данных участника слота (без настроек самого слота: роль, требования, классы).</summary>
+    public Slot CopyMember() => new()
+    {
+        UserId = UserId, TakenAs = TakenAs, CharacterName = CharacterName, ClassRoleId = ClassRoleId, ClassIcon = ClassIcon,
+        Comment = Comment, Gs = Gs, Server = Server, Cp = Cp, Attended = Attended, Ready = Ready
+    };
+
+    /// <summary>Посадить участника из копии в слот target (настройки target не меняются).</summary>
+    public void PutMember(Slot target)
+    {
+        target.UserId = UserId; target.TakenAs = TakenAs; target.CharacterName = CharacterName; target.ClassRoleId = ClassRoleId;
+        target.ClassIcon = ClassIcon; target.Comment = Comment; target.Gs = Gs; target.Server = Server; target.Cp = Cp;
+        target.Attended = Attended; target.Ready = Ready;
+    }
+
     public void Clear()
     {
         UserId = null;
@@ -543,6 +558,25 @@ public sealed class LfgGroup
         target.Server = entry.Server;
         target.Cp = entry.Cp;
         slot = target;
+        return null;
+    }
+
+    /// <summary>
+    /// Перетаскивание на сайте внутри группы: участник переезжает в другой слот (занятый — меняются местами).
+    /// Роль слота остаётся у слота, роль участника (TakenAs) — у участника. Только порядок: никому не пишем.
+    /// </summary>
+    public string? MoveWithinSlots(ulong userId, int index)
+    {
+        var from = Slots.Find(s => s.UserId == userId);
+        if (from is null) return Tx.Get(GuildId, "lfg.err.memberGone");
+        if (index < 0 || index >= Slots.Count) return Tx.Get(GuildId, "lfg.err.slotGone");
+        var to = Slots[index];
+        if (ReferenceEquals(from, to)) return null;
+        var moving = from.CopyMember();
+        var other = to.CopyMember();
+        to.Clear(); from.Clear();
+        moving.PutMember(to);
+        if (other.UserId is not null) other.PutMember(from);
         return null;
     }
 

@@ -541,8 +541,8 @@ public static partial class PanelApi
         return $"cls_{clean}_{hash}";
     }
 
-    private static readonly string[] AdminRosterActions = ["toReserve", "promote", "removeReserve", "remove", "character", "swap"];
-    private static readonly string[] OrganizerRosterActions = ["toReserve", "promote", "removeReserve", "swap"];
+    private static readonly string[] AdminRosterActions = ["toReserve", "promote", "removeReserve", "remove", "character", "swap", "moveSlot"];
+    private static readonly string[] OrganizerRosterActions = ["toReserve", "promote", "removeReserve", "swap", "moveSlot"];
 
     /// <summary>Изменение состава сбора: сохранить, обновить пост, ЛС переведённому из резерва. null — успех.</summary>
     private static async Task<string?> RosterAsync(LfgGroup group, RosterBody body, LfgStore lfg, LfgSignupService signup, string[] allowed)
@@ -567,6 +567,10 @@ public static partial class PanelApi
                     break;
                 case "removeReserve":
                     error = group.RemoveFromReserve(userId);
+                    break;
+                case "moveSlot":
+                    // drag & drop inside the group: just the order of slots — nobody gets a DM
+                    error = body.Slot is { } to ? group.MoveWithinSlots(userId, to) : "Pick a slot.";
                     break;
                 case "swap":
                     // drag & drop: reserve member → slot; whoever was there goes to the reserve

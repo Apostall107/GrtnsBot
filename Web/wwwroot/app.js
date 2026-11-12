@@ -7995,7 +7995,7 @@ function playCard(g) {
  * The organizer's own slot is neither dragged nor a target. Phones keep the arrow buttons.
  */
 function rosterDnd(enabled, url, g, card) {
-  if (!enabled || !g.reserve || !g.reserve.length) return card;
+  if (!enabled) return card;
   const ownerId = g.owner && g.owner.id;
   let drag = null;
   const done = (body, ok) => act(null, () => gApi("POST", url, body), ok).then(r => { if (r !== undefined) refresh(); });
@@ -8009,7 +8009,7 @@ function rosterDnd(enabled, url, g, card) {
   const end = el => () => {
     drag = null;
     el.classList.remove("drag-src");
-    card.classList.remove("dragging-reserve", "dragging-slot");
+    card.classList.remove("dragging-reserve", "dragging-slot", "dragging-owner");
     card.querySelectorAll(".drop-over").forEach(x => x.classList.remove("drop-over"));
   };
   card.querySelectorAll("[data-reserve]").forEach(row => {
@@ -8021,21 +8021,27 @@ function rosterDnd(enabled, url, g, card) {
   });
   card.querySelectorAll("[data-slot]").forEach(slot => {
     const uid = slot.dataset.user;
-    if (uid && uid === ownerId) { slot.classList.add("is-owner"); return; }
+    const isOwner = !!uid && uid === ownerId;
+    if (isOwner) slot.classList.add("is-owner");
     if (uid) {
+      // every member (the organizer too) can be moved between slots; only others can go to the reserve
       slot.draggable = true;
       slot.classList.add("draggable");
-      slot.addEventListener("dragstart", start(slot, "slot", uid));
+      slot.addEventListener("dragstart", start(slot, isOwner ? "owner" : "slot", uid));
       slot.addEventListener("dragend", end(slot));
     }
-    slot.addEventListener("dragover", e => { if (drag && drag.kind === "reserve") { e.preventDefault(); slot.classList.add("drop-over"); } });
+    const accepts = () => drag && (drag.kind === "reserve" ? !isOwner : drag.id !== uid);
+    slot.addEventListener("dragover", e => { if (accepts()) { e.preventDefault(); slot.classList.add("drop-over"); } });
     slot.addEventListener("dragleave", () => slot.classList.remove("drop-over"));
     slot.addEventListener("drop", e => {
       e.preventDefault();
       slot.classList.remove("drop-over");
-      if (!drag || drag.kind !== "reserve") return;
-      done({ action: "swap", userId: drag.id, slot: Number(slot.dataset.slot) },
-        uid ? "Swapped: moved into the slot (DM sent), the other member went to the reserve." : "Moved into the group, DM sent.");
+      if (!accepts()) return;
+      const to = Number(slot.dataset.slot);
+      if (drag.kind === "reserve")
+        done({ action: "swap", userId: drag.id, slot: to },
+          uid ? "Swapped: moved into the slot (DM sent), the other member went to the reserve." : "Moved into the group, DM sent.");
+      else done({ action: "moveSlot", userId: drag.id, slot: to }, uid ? "Swapped places." : `Moved to slot ${to + 1}.`);
     });
   });
   const zone = card.querySelector(".reserve");
@@ -8051,6 +8057,9 @@ function rosterDnd(enabled, url, g, card) {
     const sum = zone.querySelector("summary");
     if (sum && matchMedia("(pointer: fine)").matches) sum.append(h("span", { class: "muted small dnd-hint" }, " · drag a member onto a slot to swap"));
   }
+  const roster = card.querySelector(".roster");
+  if (roster && matchMedia("(pointer: fine)").matches && card.querySelectorAll("[data-slot][data-user]").length > 1)
+    roster.before(h("div", { class: "muted small dnd-hint roster-hint" }, "Drag members to reorder the slots — just the layout, nobody is notified."));
   return card;
 }
 

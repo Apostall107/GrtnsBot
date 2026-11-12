@@ -3212,7 +3212,9 @@ dialog.lb-dialog:not([open]) { display: none; }
 .slot.draggable { cursor: grab; }
 .slot.draggable:active { cursor: grabbing; }
 .slot.drag-src { opacity: .45; }
+.dragging-slot .slot[data-slot]:not(.drag-src), .dragging-owner .slot[data-slot]:not(.drag-src),
 .dragging-reserve .slot[data-slot]:not(.is-owner) { outline: 1px dashed rgba(176, 156, 255, .55); outline-offset: 2px; }
 .dragging-slot .reserve { outline: 1px dashed rgba(176, 156, 255, .55); outline-offset: 4px; border-radius: 10px; }
 .slot.drop-over, .reserve.drop-over { outline: 2px solid var(--primary) !important; background: rgba(118, 87, 246, .16) !important; }
 .dnd-hint { font-weight: 400; }
+.roster-hint { margin: 2px 0 6px; }
