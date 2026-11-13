@@ -524,10 +524,12 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
             await RespondAsync(blocked, ephemeral: true, allowedMentions: AllowedMentions.None);
             return;
         }
+        // Discord waits only 3 s for an answer; joining saves and redraws the post (can be slower) — acknowledge first
+        await DeferAsync();
         characters.Add(Context.Guild.Id, Context.User.Id, values[0], ScopeOf(groupId)); // поднимает персонажа наверх списка
         var result = await JoinAsync(groupId, Enum.Parse<SlotRole>(role), values[0]);
         var controls = ProfileControls(groupId);
-        await Component.UpdateAsync(m =>
+        await Component.ModifyOriginalResponseAsync(m =>
         {
             m.Content = result + (controls is null ? "" : ProfileHint(Context.Guild.Id));
             m.Components = controls ?? new ComponentBuilder().Build();
@@ -556,10 +558,11 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
             await RespondAsync(blocked, ephemeral: true, allowedMentions: AllowedMentions.None);
             return;
         }
+        await DeferAsync(ephemeral: true);   // answer within Discord's 3 s, the join itself can take longer
         characters.Add(Context.Guild.Id, Context.User.Id, name, ScopeOf(groupId));
         var result = await JoinAsync(groupId, Enum.Parse<SlotRole>(role), name);
         var controls = ProfileControls(groupId);
-        await RespondAsync(result + (controls is null ? "" : ProfileHint(Context.Guild.Id)), components: controls, ephemeral: true,
+        await FollowupAsync(result + (controls is null ? "" : ProfileHint(Context.Guild.Id)), components: controls, ephemeral: true,
             allowedMentions: AllowedMentions.None);
     }
 
@@ -923,6 +926,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
             return;
         }
 
+        await DeferAsync();   // deleting the post and its notices can take longer than Discord's 3 s
         await group.Gate.WaitAsync();
         try
         {
@@ -939,7 +943,7 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         audit.FromDiscord(group.GuildId, Context.User, "lfg", "Closed LFG group", group.ActivityName);
 
         // Список инвайтов остаётся в эфемерном сообщении, убираем только кнопки
-        await Component.UpdateAsync(m =>
+        await Component.ModifyOriginalResponseAsync(m =>
         {
             m.Content = T("lfg.close.done");
             m.Components = new ComponentBuilder().Build();
@@ -965,18 +969,26 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
             return;
         }
 
+        // acknowledge first: waiting for the group (another change in progress) must not run past Discord's 3 s
+        await DeferAsync();
         await group.Gate.WaitAsync();
         try
         {
             var error = mutate(group);
             if (error is not null)
             {
-                await RespondAsync(error, ephemeral: true);
+                await FollowupAsync(error, ephemeral: true);
                 return;
             }
 
             store.SaveGroups();
-            await ShowAsync(LfgRenderer.Group(group));
+            var s = LfgRenderer.Group(group);
+            await Component.ModifyOriginalResponseAsync(m =>
+            {
+                if (s.Content is not null) m.Content = s.Content;
+                m.Embeds = s.Embed is null ? Array.Empty<Embed>() : new[] { s.Embed };
+                m.Components = s.Components;
+            });
         }
         finally
         {
