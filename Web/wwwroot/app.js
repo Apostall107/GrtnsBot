@@ -3336,8 +3336,36 @@ function decorateHeading(main) {
 }
 
 /** Re-renders the current page only (keeps the shell). */
+// The group card you're working in: after a change in it only that card is redrawn — the rest of the page stays as it is
+// (no flicker, no jump). Any click outside a group card means the next refresh is a normal full one.
+let workCard = null;
+["pointerdown", "dragstart", "keydown"].forEach(t => document.addEventListener(t, e => {
+  const c = e.target && e.target.closest ? e.target.closest(".group-card[data-gid]") : null;
+  workCard = c ? { el: c, at: Date.now() } : (t === "keydown" ? workCard : null);
+}, true));
+
+async function refreshCard(card) {
+  const kind = card.dataset.kind, id = card.dataset.gid;
+  const list = kind === "admin" ? await gApi("GET", "/lfg/groups") : ((await gApi("GET", "/me/groups")).groups || []);
+  const g = list.find(x => x.id === id);
+  if (!g) return false;                       // closed / gone: the whole page is redrawn (counters change)
+  const next = kind === "admin" ? groupCard(g) : playCard(g);
+  card.replaceWith(next);
+  workCard = { el: next, at: Date.now() };
+  return true;
+}
+
 function refresh() {
   if (pending.saving || pendingCheck().length) { pending.deferred = true; return; }
+  const wc = workCard;
+  if (wc && wc.el.isConnected && Date.now() - wc.at < 30000) {
+    refreshCard(wc.el).then(ok => { if (!ok) fullRefresh(); }).catch(() => fullRefresh());
+    return;
+  }
+  fullRefresh();
+}
+
+function fullRefresh() {
   // Keep the scroll position: the page is rebuilt and loads its data again, so for a moment it's short and the browser
   // would jump to the top. The old height is held until the page has loaded (no requests running), then released.
   const y = window.scrollY, app = document.getElementById("app");
@@ -5312,7 +5340,7 @@ function groupCard(g) {
   };
 
   const full = g.filled >= g.size;
-  return rosterDnd(true, `/lfg/groups/${gid}/roster`, g, h("div", { class: `card group-card${full ? " is-full" : ""}`, style: "margin:0",
+  return rosterDnd(true, `/lfg/groups/${gid}/roster`, g, h("div", { class: `card group-card${full ? " is-full" : ""}`, style: "margin:0", "data-gid": g.id, "data-kind": "admin",
       // editing a group keeps it open even if it becomes full / started (Fold full / started)
       onpointerdown: () => rememberOpenedGroup(g.id), ondragstart: () => rememberOpenedGroup(g.id) },
     h("div", { class: "group-head" },
@@ -8045,7 +8073,7 @@ function playCard(g) {
   const req = g.requirements ? h("div", { class: "meta-item" }, icon("shield", 14),
     g.requirements.roles.map(r => roleChip(r)), g.requirements.minGs ? h("span", { class: "chip" }, `GS ${g.requirements.minGs}+`) : null) : null;
 
-  return rosterDnd(org, `/me/groups/${gid}/roster`, g, h("div", { class: `card group-card${full ? " is-full" : ""}`, style: "margin:0" },
+  return rosterDnd(org, `/me/groups/${gid}/roster`, g, h("div", { class: `card group-card${full ? " is-full" : ""}`, style: "margin:0", "data-gid": g.id, "data-kind": "play" },
     h("div", { class: "group-head" },
       h("div", { class: "group-title" },
         g.project ? h("span", { class: "project-chip" }, icon("gamepad-2", 12), g.project) : null,
