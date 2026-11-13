@@ -3346,11 +3346,19 @@ function refresh() {
   if (!(y > 0 && app)) return;
   window.scrollTo(0, y);
   const t0 = performance.now();
+  let userMoved = false;
+  const moved = () => { userMoved = true; };
+  ["wheel", "touchstart", "keydown"].forEach(t => window.addEventListener(t, moved, { once: true, passive: true }));
+  // Released when the rebuilt page is tall enough to show the same place again (its own content, not the held height),
+  // or when nothing has loaded for 2 s, or after 20 s; until then the held height keeps the browser from jumping up.
   const settle = () => {
-    const now = performance.now();
-    const loading = (api.inflight || 0) > 0 || now - (api.lastDone || 0) < 250;
-    if (loading && now - t0 < 15000) { requestAnimationFrame(settle); return; }
+    const now = performance.now(), main = app.querySelector("main");
+    const contentBottom = main ? main.getBoundingClientRect().bottom + window.scrollY : 0;
+    const tall = contentBottom >= y + window.innerHeight - 4;
+    const idle = (api.inflight || 0) === 0 && now - (api.lastDone || 0) > 2000;
+    if (!tall && !idle && now - t0 < 20000) { if (!userMoved && Math.abs(window.scrollY - y) > 2) window.scrollTo(0, y); requestAnimationFrame(settle); return; }
     app.style.minHeight = "";
+    if (!userMoved && tall) window.scrollTo(0, y);
   };
   requestAnimationFrame(settle);
 }
