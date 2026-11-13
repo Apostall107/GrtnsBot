@@ -38,7 +38,9 @@ async function api(method, path, body) {
     opts.headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(body);
   }
-  const res = await fetch(path, opts);
+  api.inflight = (api.inflight || 0) + 1;
+  let res;
+  try { res = await fetch(path, opts); } finally { api.inflight--; api.lastDone = performance.now(); }
   let data = null;
   const text = await res.text();
   if (text) { try { data = JSON.parse(text); } catch { data = null; } }
@@ -3336,23 +3338,21 @@ function decorateHeading(main) {
 /** Re-renders the current page only (keeps the shell). */
 function refresh() {
   if (pending.saving || pendingCheck().length) { pending.deferred = true; return; }
-  // keep the scroll position: the page re-renders (and loads its data again) — without this it jumps to the top
-  const y = window.scrollY, main = document.querySelector("main"), my = main ? main.scrollTop : 0;
+  // Keep the scroll position: the page is rebuilt and loads its data again, so for a moment it's short and the browser
+  // would jump to the top. The old height is held until the page has loaded (no requests running), then released.
+  const y = window.scrollY, app = document.getElementById("app");
+  if (y > 0 && app) app.style.minHeight = `${document.documentElement.scrollHeight}px`;
   renderShell();
-  let n = 0;
-  const back = () => {
-    window.scrollTo(0, y);
-    const m = document.querySelector("main");
-    if (m && my) m.scrollTop = my;
-    const off = Math.abs(window.scrollY - y) > 2 || (m && my && Math.abs(m.scrollTop - my) > 2);
-    if (off && n++ < 90) requestAnimationFrame(back);   // the content is still loading — try again (≈1.5 s)
+  if (!(y > 0 && app)) return;
+  window.scrollTo(0, y);
+  const t0 = performance.now();
+  const settle = () => {
+    const now = performance.now();
+    const loading = (api.inflight || 0) > 0 || now - (api.lastDone || 0) < 250;
+    if (loading && now - t0 < 15000) { requestAnimationFrame(settle); return; }
+    app.style.minHeight = "";
   };
-  if (y || my) {
-    // the user scrolls by themselves — stop putting it back
-    const stop = () => { n = 999; };
-    ["wheel", "touchstart", "keydown"].forEach(t => window.addEventListener(t, stop, { once: true, passive: true }));
-    requestAnimationFrame(back);
-  }
+  requestAnimationFrame(settle);
 }
 
 // ================= Announcements: posts from the bot =================
@@ -5216,13 +5216,20 @@ function slotInfo(s, readyTitle, withNote) {
 }
 const slotTools = (...tools) => h("span", { class: "slot-tools" }, tools);
 
+/** Groups opened by hand or changed in this tab — never folded again (sessionStorage). */
+function openedGroups() { try { return new Set(JSON.parse(sessionStorage.getItem("gb.groupsOpened") || "[]")); } catch { return new Set(); } }
+function rememberOpenedGroup(id) {
+  const s = openedGroups(); s.add(id);
+  try { sessionStorage.setItem("gb.groupsOpened", JSON.stringify([...s].slice(-200))); } catch { /* private mode */ }
+}
+
 /** Active groups with filters: status, search by member / character / activity, project (General), full groups folded. */
 function groupsBoard(groups, projects = [], defKey = null) {
   const saved = (() => { try { return JSON.parse(store.get("gb.groupsFilter") || "{}"); } catch { return {}; } })();
   // folding is off unless switched on; groups opened by hand stay open across refreshes (this tab)
-  const f = { status: saved.status || "all", project: saved.project || "", foldFull: saved.foldFull === true, q: "" };
-  const opened = new Set((() => { try { return JSON.parse(sessionStorage.getItem("gb.groupsOpened") || "[]"); } catch { return []; } })());
-  const remember = id => { opened.add(id); try { sessionStorage.setItem("gb.groupsOpened", JSON.stringify([...opened].slice(-200))); } catch { /* private mode */ } };
+  const f = { status: saved.status || "all", project: saved.project || "", foldFull: store.get("gb.groupsFold") === "1", q: "" };
+  const opened = openedGroups();
+  const remember = id => { rememberOpenedGroup(id); opened.add(id); };
   // my own groups (I organize / I'm in it / in the reserve) are never folded
   const meId = state.me && state.me.id;
   const isMine = g => !!meId && ((g.owner && g.owner.id === meId) || g.slots.some(s => s.member && s.member.id === meId) || g.reserve.some(r => r.member && r.member.id === meId));
@@ -5230,7 +5237,7 @@ function groupsBoard(groups, projects = [], defKey = null) {
   const startMs = g => g.startsAt ? +new Date(g.startsAt) : 9e15;
   const statusOf = g => g.started ? "started" : isFull(g) ? "full" : "recruiting";
   const STATUSES = [["all", "All"], ["recruiting", "Recruiting"], ["started", "Started"], ["full", "Full"]];
-  const keep = () => store.set("gb.groupsFilter", JSON.stringify({ status: f.status, project: f.project, foldFull: f.foldFull }));
+  const keep = () => { store.set("gb.groupsFilter", JSON.stringify({ status: f.status, project: f.project })); store.set("gb.groupsFold", f.foldFull ? "1" : "0"); };
   const text = g => [g.activity, g.owner && g.owner.name, ...g.slots.flatMap(s => s.member ? [s.member.name, s.member.username, s.character] : []),
     ...g.reserve.flatMap(r => [r.member.name, r.member.username, r.character])].filter(Boolean).join(" ").toLowerCase();
 
@@ -5297,7 +5304,9 @@ function groupCard(g) {
   };
 
   const full = g.filled >= g.size;
-  return rosterDnd(true, `/lfg/groups/${gid}/roster`, g, h("div", { class: `card group-card${full ? " is-full" : ""}`, style: "margin:0" },
+  return rosterDnd(true, `/lfg/groups/${gid}/roster`, g, h("div", { class: `card group-card${full ? " is-full" : ""}`, style: "margin:0",
+      // editing a group keeps it open even if it becomes full / started (Fold full / started)
+      onpointerdown: () => rememberOpenedGroup(g.id), ondragstart: () => rememberOpenedGroup(g.id) },
     h("div", { class: "group-head" },
       h("div", { class: "group-title" }, h("h3", {}, g.activity)),
       h("div", { class: "group-state" },
