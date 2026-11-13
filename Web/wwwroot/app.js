@@ -3350,9 +3350,50 @@ async function refreshCard(card) {
   const g = list.find(x => x.id === id);
   if (!g) return false;                       // closed / gone: the whole page is redrawn (counters change)
   const next = kind === "admin" ? groupCard(g) : playCard(g);
-  card.replaceWith(next);
-  workCard = { el: next, at: Date.now() };
+  patchCard(card, next);
+  workCard = { el: card, at: Date.now() };
   return true;
+}
+
+/**
+ * Put a freshly built card into the old one, changing only what differs: blocks of the card (head, meta, attendance,
+ * actions…) and, inside the roster and the reserve, single rows (by slot number / member). Unchanged rows stay the
+ * same DOM nodes — nothing blinks; the reserve keeps its open/closed state.
+ */
+function patchCard(old, next) {
+  old.className = next.className;
+  // decorate the new card the way the page decorates inserted content, so equal parts compare equal
+  try { iconizeButtons(next); normalizeUi(next); iconizeHeadings(next); enhanceControls(next); tidyHints(next); } catch { /* compared as is */ }
+  const keyed = (parent, keyOf) => {
+    const seen = new Map();
+    return el => { const k = keyOf(el); const n = (seen.get(k) || 0) + 1; seen.set(k, n); return `${k}#${n}`; };
+  };
+  const rowKey = el => el.dataset.slot != null ? `slot${el.dataset.slot}` : el.dataset.reserve ? `res${el.dataset.reserve}` : `${el.tagName}.${el.className}`;
+  const blockKey = el => `${el.tagName}.${(el.className || "").split(" ")[0]}`;
+  const patchList = (oldP, newP, keyOf, inner) => {
+    const ko = keyed(oldP, keyOf), kn = keyed(newP, keyOf);
+    const olds = new Map([...oldP.children].map(c => [ko(c), c]));
+    const result = [...newP.children].map(n => {
+      const k = kn(n), o = olds.get(k);
+      if (!o) return n;
+      olds.delete(k);
+      if (o.outerHTML === n.outerHTML) return o;
+      return inner && inner(o, n) ? o : n;
+    });
+    result.forEach((node, i) => { if (oldP.children[i] !== node) oldP.insertBefore(node, oldP.children[i] || null); });
+    while (oldP.children.length > result.length) oldP.lastElementChild.remove();
+  };
+  patchList(old, next, blockKey, (o, n) => {
+    if (o.matches(".roster") && n.matches(".roster")) { patchList(o, n, rowKey); return true; }
+    if (o.matches("details.reserve") && n.matches("details.reserve")) {
+      const os = o.querySelector(":scope > summary"), ns = n.querySelector(":scope > summary");
+      if (os && ns && os.outerHTML !== ns.outerHTML) os.replaceWith(ns);
+      const or = o.querySelector(":scope > .roster"), nr = n.querySelector(":scope > .roster");
+      if (or && nr) patchList(or, nr, rowKey);
+      return true;
+    }
+    return false;
+  });
 }
 
 function refresh() {
@@ -8109,23 +8150,28 @@ function playCard(g) {
  * goes to the reserve in their place (a free slot is just filled); a member dragged from a slot onto the reserve goes there.
  * The organizer's own slot is neither dragged nor a target. Phones keep the arrow buttons.
  */
+// What is being dragged right now (one drag at a time). Shared, so rows kept from an older render of a card and
+// rows from a newer one work together after a partial redraw (see patchCard).
+let rosterDrag = null;
+
 function rosterDnd(enabled, url, g, card) {
   if (!enabled) return card;
   const ownerId = g.owner && g.owner.id;
-  let drag = null;
+  const host = el => el.closest(".group-card") || card;
   const done = (body, ok) => act(null, () => gApi("POST", url, body), ok).then(r => { if (r !== undefined) refresh(); });
   const start = (el, kind, id) => e => {
-    drag = { kind, id };
+    rosterDrag = { kind, id, gid: g.id };
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", id);
     el.classList.add("drag-src");
-    card.classList.add(`dragging-${kind}`);
+    host(el).classList.add(`dragging-${kind}`);
   };
   const end = el => () => {
-    drag = null;
+    rosterDrag = null;
     el.classList.remove("drag-src");
-    card.classList.remove("dragging-reserve", "dragging-slot", "dragging-owner");
-    card.querySelectorAll(".drop-over").forEach(x => x.classList.remove("drop-over"));
+    const c = host(el);
+    c.classList.remove("dragging-reserve", "dragging-slot", "dragging-owner");
+    c.querySelectorAll(".drop-over").forEach(x => x.classList.remove("drop-over"));
   };
   card.querySelectorAll("[data-reserve]").forEach(row => {
     row.draggable = true;
@@ -8145,14 +8191,14 @@ function rosterDnd(enabled, url, g, card) {
       slot.addEventListener("dragstart", start(slot, isOwner ? "owner" : "slot", uid));
       slot.addEventListener("dragend", end(slot));
     }
-    const accepts = () => drag && (drag.kind === "reserve" ? !isOwner : drag.id !== uid);
+    const accepts = () => { const drag = rosterDrag; return !!drag && drag.gid === g.id && (drag.kind === "reserve" ? !isOwner : drag.id !== uid); };
     slot.addEventListener("dragover", e => { if (accepts()) { e.preventDefault(); slot.classList.add("drop-over"); } });
     slot.addEventListener("dragleave", () => slot.classList.remove("drop-over"));
     slot.addEventListener("drop", e => {
       e.preventDefault();
       slot.classList.remove("drop-over");
       if (!accepts()) return;
-      const to = Number(slot.dataset.slot);
+      const drag = rosterDrag, to = Number(slot.dataset.slot);
       if (drag.kind === "reserve")
         done({ action: "swap", userId: drag.id, slot: to },
           uid ? "Swapped: moved into the slot (DM sent), the other member went to the reserve." : "Moved into the group, DM sent.");
@@ -8161,13 +8207,14 @@ function rosterDnd(enabled, url, g, card) {
   });
   const zone = card.querySelector(".reserve");
   if (zone) {
-    zone.addEventListener("dragover", e => { if (drag && drag.kind === "slot") { e.preventDefault(); zone.classList.add("drop-over"); } });
+    const fromSlot = () => rosterDrag && rosterDrag.gid === g.id && rosterDrag.kind === "slot";
+    zone.addEventListener("dragover", e => { if (fromSlot()) { e.preventDefault(); zone.classList.add("drop-over"); } });
     zone.addEventListener("dragleave", e => { if (!zone.contains(e.relatedTarget)) zone.classList.remove("drop-over"); });
     zone.addEventListener("drop", e => {
       e.preventDefault();
       zone.classList.remove("drop-over");
-      if (!drag || drag.kind !== "slot") return;
-      done({ action: "toReserve", userId: drag.id }, "Moved to the reserve.");
+      if (!fromSlot()) return;
+      done({ action: "toReserve", userId: rosterDrag.id }, "Moved to the reserve.");
     });
     const sum = zone.querySelector("summary");
     if (sum && matchMedia("(pointer: fine)").matches) sum.append(h("span", { class: "muted small dnd-hint" }, " · drag a member onto a slot to swap"));
