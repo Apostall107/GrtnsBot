@@ -15,6 +15,7 @@ public static class LfgRenderer
     /// <summary>Сколько пунктов в выпадающем списке Discord (лимит API).</summary>
     public const int MenuMax = 25;
     public const string CustomActivityValue = "__custom";
+    public const string AllActivitiesValue = "__all";
     public const string NewCharacterValue = "__new";
     /// <summary>Версия вида поста сбора: увеличить при изменении поста/кнопок — активные посты перерисуются при старте бота.</summary>
     public const int PostVersion = 4;
@@ -114,7 +115,8 @@ public static class LfgRenderer
 
     // ---------- Шаг 2: активность ----------
     /// <param name="hidden">Сколько активностей скрыто: персонаж организатора не проходит по GS.</param>
-    public static Screen ActivityStep(LfgDraft d, IReadOnlyList<Activity> activities, int hidden = 0)
+    /// <param name="hiddenByRole">Сколько активностей скрыто: у организатора нет их роли (пункт «Все активности» их покажет).</param>
+    public static Screen ActivityStep(LfgDraft d, IReadOnlyList<Activity> activities, int hidden = 0, int hiddenByRole = 0)
     {
         var gid = d.GuildId;
         var menu = new SelectMenuBuilder()
@@ -125,6 +127,9 @@ public static class LfgRenderer
         foreach (var a in activities.Take(ActivityStore.MaxInMenu))
             menu.AddOption(a.MinGs is { } min ? Trim($"{a.Name} · GS {min}+") : a.Name, a.Key, actDesc.Length == 0 ? null : actDesc);
 
+        if (hiddenByRole > 0)
+            menu.AddOption(Tx.Get(gid, "lfg.wiz.allActivities"), AllActivitiesValue,
+                Trim(Tx.Get(gid, "lfg.wiz.allActivitiesOption", ("n", hiddenByRole))), new Emoji("📋"));
         menu.AddOption(Tx.Get(gid, "lfg.wiz.custom"), CustomActivityValue, Tx.Get(gid, "lfg.wiz.customOption"), new Emoji("✏️"));
 
         var comps = new ComponentBuilder()

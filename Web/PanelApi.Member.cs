@@ -591,7 +591,9 @@ public static partial class PanelApi
                         .OrderBy(c => c is SocketVoiceChannel).ThenBy(c => c.Position)
                         .Select(c => new { id = c.Id.ToString(), name = c is SocketVoiceChannel ? $"🔊 {c.Name}" : c.Name })
                     : null,
-                activities = activities.Get(guildId).Select(a => new { key = a.Key, name = a.Name, role = Role(guild, a.RoleId), projectKey = a.ProjectKey, minGs = a.MinGs }),
+                // mine: I have the activity's role (or it has none) — the form shows only these until "All activities"
+                activities = activities.Get(guildId).Select(a => new { key = a.Key, name = a.Name, role = Role(guild, a.RoleId), projectKey = a.ProjectKey, minGs = a.MinGs,
+                    mine = a.RoleId == 0 || member?.Roles.Any(r => r.Id == a.RoleId) == true }),
                 templates = TemplatesDto(guild, templates),
                 // Мои персонажи по проектам: организатор выбирает, с кем идёт; от GS зависят доступные активности
                 characters = projects.GetProjects(guildId).Where(p => LfgProjectStore.CanUse(member, p)).ToDictionary(p => p.Key,

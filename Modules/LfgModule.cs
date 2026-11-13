@@ -95,7 +95,11 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
     {
         var all = activities.ForProject(d.GuildId, d.ProjectKey);
         var fit = d.OwnerCharacter is null ? all : all.Where(a => ActivityStore.GsFits(a, d.OwnerGs)).ToList();
-        return LfgRenderer.ActivityStep(d, fit, all.Count - fit.Count);
+        // Only activities whose role I have (or without a role); "All activities" shows the rest. Nothing of mine — all of them.
+        var member = Context.Guild.GetUser(d.OwnerId);
+        var mine = fit.Where(a => a.RoleId == 0 || member?.Roles.Any(r => r.Id == a.RoleId) == true).ToList();
+        if (d.AllActivities || mine.Count == 0 || mine.Count == fit.Count) return LfgRenderer.ActivityStep(d, fit, all.Count - fit.Count);
+        return LfgRenderer.ActivityStep(d, mine, all.Count - fit.Count, fit.Count - mine.Count);
     }
 
     /// <summary>Слот 1 — организатор: роль по классу его персонажа (если у класса несколько ролей — первая).</summary>
@@ -212,6 +216,12 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
         if (values[0] == LfgRenderer.CustomActivityValue)
         {
             await RespondWithModalAsync(LfgRenderer.CustomActivityModal(d.GuildId, $"lfg:custom:{d.Id}"));
+            return;
+        }
+        if (values[0] == LfgRenderer.AllActivitiesValue)
+        {
+            d.AllActivities = true;
+            await ShowAsync(ActivityScreen(d));
             return;
         }
 

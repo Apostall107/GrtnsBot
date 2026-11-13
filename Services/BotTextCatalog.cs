@@ -64,6 +64,8 @@ public static class BotTextCatalog
         T("lfg.wiz.actPlaceholder", "Activity menu placeholder", "Choose a dungeon / activity", null, Placeholder);
         T("lfg.wiz.actOption", "Activity option description (- = none)", "Pings the linked role", null, Option, optional: true);
         T("lfg.wiz.custom", "“Custom activity” option", "Custom activity", null, Option);
+        T("lfg.wiz.allActivities", "“All activities” option", "All activities", null, Option);
+        T("lfg.wiz.allActivitiesOption", "“All activities” description", "Also show {n} activities for roles you don't have", "{n}", Option);
         T("lfg.wiz.customOption", "“Custom activity” description", "Enter a name manually, no ping", null, Option);
         T("lfg.wiz.noActivities", "Hint: no activities (- = hide)", "-# No activities yet — an admin can add them with `/activity add`.", null, 300, optional: true);
         T("lfg.wiz.customTitle", "Custom activity window: title", "Custom activity", null, ModalTitle);

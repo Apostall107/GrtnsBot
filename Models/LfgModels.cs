@@ -231,6 +231,8 @@ public sealed class LfgDraft(ulong guildId, ulong channelId, ulong ownerId)
     public int SlotPage { get; set; }
     /// <summary>Показать полный выбор размера (2–25), а не только избранные 5 / 10 / 20.</summary>
     public bool AllSizes { get; set; }
+    /// <summary>Показать все активности, а не только те, на роли которых у организатора есть роль.</summary>
+    public bool AllActivities { get; set; }
     /// <summary>Заметка организатора к сбору (необязательная), показывается в посте.</summary>
     public string? Note { get; set; }
 

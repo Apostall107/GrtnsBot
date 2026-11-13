@@ -4414,19 +4414,36 @@ function lfgForm(acts, opts) {
       : [h("option", { value: "" }, "No characters in this project — add them in My characters")]));
     if (list.some(c => c.name === keep)) charSel.value = keep;
   };
-  // Only activities of the chosen project (+ the ones for all projects) that the character's GS allows
+  // Only activities of the chosen project (+ the ones for all projects) that the character's GS allows;
+  // members see only activities whose role they have until they pick "All activities"
+  let allActs = false;
   const fillActivities = projectKey => {
     const keep = activity.value;
     const ofProject = acts.filter(a => !projectKey || !a.projectKey || a.projectKey === projectKey);
-    const ok = ofProject.filter(gsFits);
+    const fit = ofProject.filter(gsFits);
+    const mine = fit.filter(a => a.mine !== false);
+    const ok = allActs || !mine.length ? fit : mine;
+    const more = fit.length - ok.length;
     activity.replaceChildren(h("option", { value: "" }, "✏️ Custom activity (no ping)"),
-      ...ok.map(a => h("option", { value: a.key }, `${a.name}${a.minGs != null ? ` · GS ${a.minGs}+` : ""}  ·  @${a.role.name}`)));
+      ...ok.map(a => h("option", { value: a.key }, `${a.name}${a.minGs != null ? ` · GS ${a.minGs}+` : ""}  ·  @${a.role.name}`)),
+      more ? h("option", { value: "__all" }, `📋 All activities (+${more} for roles you don't have)`) : null);
     if ([...activity.options].some(o => o.value === keep)) activity.value = keep;
     else if (keep && ok.length) activity.value = ok[0].key; // the chosen activity is hidden now — take the first that fits
     const hidden = ofProject.length - ok.length;
     charHint.textContent = hidden ? `${hidden} activit${hidden === 1 ? "y is" : "ies are"} hidden — this character's GS is too low.` : "";
   };
   fillChars();
+  // "All activities": show the rest and keep the list open on them (runs before the other change handlers)
+  activity.addEventListener("change", e => {
+    if (activity.value !== "__all") return;
+    e.stopImmediatePropagation();
+    allActs = true;
+    const prev = [...activity.options].map(o => o.value);
+    fillActivities(currentProject());
+    const added = [...activity.options].find(o => o.value && !prev.includes(o.value));
+    activity.value = added ? added.value : ([...activity.options].find(o => o.value) || {}).value || "";
+    activity.dispatchEvent(new Event("change"));
+  }, true);
   fillActivities(currentProject());
   const custom = h("input", { placeholder: "Activity name", maxlength: "100" });
   if (v.activityKey !== undefined) {
