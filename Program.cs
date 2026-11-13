@@ -108,6 +108,7 @@ var app = builder.Build();
 // Статические хранилища текстов (Tx, PanelDefs.Label) — создать до первых сообщений
 app.Services.GetRequiredService<PanelTextStore>();
 app.Services.GetRequiredService<BotTextStore>();
+app.Services.GetRequiredService<BotOwner>();   // BotOwner.CurrentId for the site checks
 // Предохранитель для автоматических действий бота (см. SafetyValve) — пишет «Safety stop» в Log сервера
 SafetyValve.Init(app.Services.GetRequiredService<AuditLog>(), app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Safety"));
 app.UseWebPanel();

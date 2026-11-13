@@ -712,7 +712,7 @@ public static partial class PanelApi
         LfgStore lfg, LfgSignupService signup, bool organizerOnly)
     {
         if (!lfg.Groups.TryGetValue(groupId, out var group) || group.GuildId != guildId) return Error("This group is no longer active.");
-        if (organizerOnly && group.OwnerId != user.UserId()) return Error("Only the organizer can change the note.");
+        if (organizerOnly && !BotOwner.CanManage(group, user.UserId())) return Error("Only the organizer can change the note.");
         var note = LfgNote.Clean(body.Note);
         var error = await signup.SetNoteAsync(group, note);
         return error is null ? Results.Ok(new { note }) : Error(error);
@@ -723,7 +723,7 @@ public static partial class PanelApi
     {
         if (!lfg.Groups.TryGetValue(groupId, out var group) || group.GuildId != guildId) return Error("This group is no longer active.");
         var me = user.UserId()!.Value;
-        if (organizerOnly && group.OwnerId != me) return Error("Only the organizer can change the time.");
+        if (organizerOnly && !BotOwner.CanManage(group, me)) return Error("Only the organizer can change the time.");
 
         DateTimeOffset? startsAt = null;
         if (!string.IsNullOrWhiteSpace(body.Date) || !string.IsNullOrWhiteSpace(body.Time))
@@ -745,7 +745,7 @@ public static partial class PanelApi
         LfgSignupService signup, ulong? organizerId)
     {
         if (!lfg.Groups.TryGetValue(groupId, out var group) || group.GuildId != guildId) return Error("This group is no longer active.");
-        if (organizerId is { } o && group.OwnerId != o) return Error("Only the organizer can mark attendance.");
+        if (organizerId is { } o && !BotOwner.CanManage(group, o)) return Error("Only the organizer can mark attendance.");
         if (group.StartsAt > DateTimeOffset.UtcNow) return Error("Attendance can be marked after the start.");
         if (ParseId(body.UserId) is not { } userId) return Error("Unknown member.");
 

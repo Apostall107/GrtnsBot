@@ -3336,7 +3336,23 @@ function decorateHeading(main) {
 /** Re-renders the current page only (keeps the shell). */
 function refresh() {
   if (pending.saving || pendingCheck().length) { pending.deferred = true; return; }
+  // keep the scroll position: the page re-renders (and loads its data again) — without this it jumps to the top
+  const y = window.scrollY, main = document.querySelector("main"), my = main ? main.scrollTop : 0;
   renderShell();
+  let n = 0;
+  const back = () => {
+    window.scrollTo(0, y);
+    const m = document.querySelector("main");
+    if (m && my) m.scrollTop = my;
+    const off = Math.abs(window.scrollY - y) > 2 || (m && my && Math.abs(m.scrollTop - my) > 2);
+    if (off && n++ < 90) requestAnimationFrame(back);   // the content is still loading — try again (≈1.5 s)
+  };
+  if (y || my) {
+    // the user scrolls by themselves — stop putting it back
+    const stop = () => { n = 999; };
+    ["wheel", "touchstart", "keydown"].forEach(t => window.addEventListener(t, stop, { once: true, passive: true }));
+    requestAnimationFrame(back);
+  }
 }
 
 // ================= Announcements: posts from the bot =================
@@ -5203,8 +5219,13 @@ const slotTools = (...tools) => h("span", { class: "slot-tools" }, tools);
 /** Active groups with filters: status, search by member / character / activity, project (General), full groups folded. */
 function groupsBoard(groups, projects = [], defKey = null) {
   const saved = (() => { try { return JSON.parse(store.get("gb.groupsFilter") || "{}"); } catch { return {}; } })();
-  const f = { status: saved.status || "all", project: saved.project || "", foldFull: saved.foldFull !== false, q: "" };
-  const opened = new Set();
+  // folding is off unless switched on; groups opened by hand stay open across refreshes (this tab)
+  const f = { status: saved.status || "all", project: saved.project || "", foldFull: saved.foldFull === true, q: "" };
+  const opened = new Set((() => { try { return JSON.parse(sessionStorage.getItem("gb.groupsOpened") || "[]"); } catch { return []; } })());
+  const remember = id => { opened.add(id); try { sessionStorage.setItem("gb.groupsOpened", JSON.stringify([...opened].slice(-200))); } catch { /* private mode */ } };
+  // my own groups (I organize / I'm in it / in the reserve) are never folded
+  const meId = state.me && state.me.id;
+  const isMine = g => !!meId && ((g.owner && g.owner.id === meId) || g.slots.some(s => s.member && s.member.id === meId) || g.reserve.some(r => r.member && r.member.id === meId));
   const isFull = g => g.filled >= g.size;
   const startMs = g => g.startsAt ? +new Date(g.startsAt) : 9e15;
   const statusOf = g => g.started ? "started" : isFull(g) ? "full" : "recruiting";
@@ -5234,7 +5255,7 @@ function groupsBoard(groups, projects = [], defKey = null) {
     h("label", { class: "groups-fold", title: "Full and started groups take one line; click to open" }, fold, "Fold full / started"));
   const body = h("div", {});
 
-  const mini = g => h("button", { type: "button", class: "group-mini", onclick: () => { opened.add(g.id); draw(); } },
+  const mini = g => h("button", { type: "button", class: "group-mini", onclick: () => { remember(g.id); draw(); } },
     h("b", { class: "group-mini-name" }, g.activity),
     g.started ? h("span", { class: "badge wait" }, icon("timer", 12), "Started") : h("span", { class: "badge ok" }, icon("check", 12), "Full"),
     h("span", { class: "muted small group-mini-meta" }, g.owner ? g.owner.name : "no organizer", " · ", g.startsAt ? fmtDate(g.startsAt) : "no time"),
@@ -5248,7 +5269,7 @@ function groupsBoard(groups, projects = [], defKey = null) {
       && (!f.q || text(g).includes(f.q)));
     // Recruiting first (they need people), then by start time
     list.sort((a, b) => (isFull(a) || a.started ? 1 : 0) - (isFull(b) || b.started ? 1 : 0) || startMs(a) - startMs(b));
-    const folded = list.filter(g => f.foldFull && !f.q && (isFull(g) || g.started) && !opened.has(g.id));
+    const folded = list.filter(g => f.foldFull && !f.q && (isFull(g) || g.started) && !opened.has(g.id) && !isMine(g));
     const open = list.filter(g => !folded.includes(g));
     body.replaceChildren(!list.length ? empty("No groups match the filter.") : h("div", {},
       folded.length ? h("div", { class: "group-mini-list" }, folded.map(mini)) : null,
@@ -7922,7 +7943,8 @@ function playCard(g) {
     () => gApi("POST", `/me/groups/${gid}/roster`, { action, userId: m.id }), okText)
     .then(r => { if (r !== undefined) refresh(); });
   const tool = (ic, title, fn) => h("button", { class: "btn ghost icon-only sm", title, "aria-label": title, onclick: fn }, icon(ic, 15));
-  const org = g.isOrganizer;
+  // the organizer — and the bot owner (developer) for any group
+  const org = g.isOrganizer || g.canManage;
   const meId = state.me && state.me.id;
 
   // Roster: taken slots and open slots look different (not only by color)
@@ -7999,7 +8021,8 @@ function playCard(g) {
   const status = g.closed ? h("span", { class: "badge lock" }, icon("lock", 12), "Closed")
     : full ? h("span", { class: "badge ok" }, icon("check", 12), "Full")
     : h("span", { class: "badge recruiting" }, h("span", { class: "pulse" }), "Recruiting");
-  const mine = org ? h("span", { class: "badge" }, icon("crown", 12), "Organizer")
+  const mine = g.isOrganizer ? h("span", { class: "badge" }, icon("crown", 12), "Organizer")
+    : org ? h("span", { class: "badge", title: "You can manage any group as the bot owner" }, icon("settings", 12), "Developer access")
     : g.me ? h("span", { class: `badge ${g.me.status === "group" ? "ok" : "wait"}` }, icon(g.me.status === "group" ? "user-check" : "clock", 12), g.me.status === "group" ? "You're in" : "Reserve")
     : null;
   const req = g.requirements ? h("div", { class: "meta-item" }, icon("shield", 14),

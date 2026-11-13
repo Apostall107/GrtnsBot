@@ -99,6 +99,8 @@ public static partial class PanelApi
                 voiceUrl = x.VoiceChannelId is { } vc ? $"https://discord.com/channels/{x.GuildId}/{vc}" : null,
                         closed = x.IsClosed,
                         isOrganizer = x.OwnerId == me,
+                        // organizer tools (roster, slots, attendance, time, note, close): the organizer and the bot owner
+                        canManage = BotOwner.CanManage(x, me),
                         note = x.Note,
                         requirements = x.HasRequirements ? new
                         {
@@ -682,7 +684,7 @@ public static partial class PanelApi
             LfgStore lfg, LfgSignupService signup) =>
         {
             if (!lfg.Groups.TryGetValue(groupId, out var group) || group.GuildId != guildId) return Error("This group is no longer active.");
-            if (group.OwnerId != user.UserId()) return Error("Only the organizer can manage this group.");
+            if (!BotOwner.CanManage(group, user.UserId())) return Error("Only the organizer can manage this group.");
             var error = await RosterAsync(group, body, lfg, signup, OrganizerRosterActions);
             return error is null ? Results.Ok() : Error(error);
         });
@@ -690,7 +692,7 @@ public static partial class PanelApi
         g.MapPost("/groups/{groupId}/slot", async (ulong guildId, string groupId, SlotRoleBody body, ClaimsPrincipal user, LfgStore lfg, LfgSignupService signup) =>
         {
             if (!lfg.Groups.TryGetValue(groupId, out var group) || group.GuildId != guildId) return Error("This group is no longer active.");
-            if (group.OwnerId != user.UserId()) return Error("Only the organizer can manage this group.");
+            if (!BotOwner.CanManage(group, user.UserId())) return Error("Only the organizer can manage this group.");
             var error = await SlotRoleAsync(group, body, lfg, signup);
             return error is null ? Results.Ok() : Error(error);
         });
@@ -736,7 +738,7 @@ public static partial class PanelApi
         g.MapPost("/groups/{groupId}/close", async (ulong guildId, string groupId, ClaimsPrincipal user, LfgStore lfg, LfgSignupService signup) =>
         {
             if (!lfg.Groups.TryGetValue(groupId, out var group) || group.GuildId != guildId) return Error("This group is no longer active.");
-            if (group.OwnerId != user.UserId()) return Error("Only the organizer can close this group.");
+            if (!BotOwner.CanManage(group, user.UserId())) return Error("Only the organizer can close this group.");
             await CloseGroupAsync(group, lfg, signup);
             return Results.Ok();
         });
