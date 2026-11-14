@@ -20,7 +20,8 @@ public sealed class ArmorySyncService(OfficialArmory armory, CharacterStore char
     LfgProfileService profiles, DiscordSocketClient client, AuditLog audit, ILogger<ArmorySyncService> logger)
 {
     public static readonly TimeSpan ManualCooldown = TimeSpan.FromMinutes(15);
-    private static readonly TimeSpan Step = TimeSpan.FromSeconds(3);
+    /// <summary>Пауза между запросами к оружейной (Owner tools → Armory auto-update), 0.5–10 с, по умолчанию 3.</summary>
+    private TimeSpan Step(ulong guildId) => TimeSpan.FromSeconds(Math.Clamp(prefs.Get(guildId).ArmoryStepSeconds, 0.5, 10));
     private static readonly TimeSpan Pause = TimeSpan.FromMinutes(30);
 
     private DateTimeOffset _pausedUntil;
@@ -96,7 +97,7 @@ public sealed class ArmorySyncService(OfficialArmory armory, CharacterStore char
                     };
                     status = status with { Done = status.Done + 1 };
                     _bulk[guildId] = status;
-                    await Task.Delay(Step);
+                    await Task.Delay(Step(guildId));
                 }
             }
             catch (Exception e)
@@ -136,7 +137,7 @@ public sealed class ArmorySyncService(OfficialArmory armory, CharacterStore char
             .ToList();
         if (exact.Count == 0) return ArmorySyncResult.NotFound;
         if (exact.Count > 1) return ArmorySyncResult.Ambiguous;
-        await Task.Delay(Step);
+        await Task.Delay(Step(guildId));
         return await LinkAsync(guildId, userId, name, scope, exact[0].CharacterId, exact[0].ServerId);
     }
 

@@ -305,7 +305,7 @@ public static partial class PanelApi
 
 public sealed record ArmoryProjectBody(string? Key, bool Enabled, int Race, int? ServerId, bool ClassRole = true);
 public sealed record ArmoryPrefsBody(List<ArmoryProjectBody>? Projects);
-public sealed record ArmoryAutoBody(bool On, string? Time, int Hours);
+public sealed record ArmoryAutoBody(bool On, string? Time, int Hours, double? Step = null);
 public sealed record ArmoryBulkBody(string? Project, bool LinkNew = true);
 
 public sealed record LfgPrefsBody(bool ReadyCheck, int? AutoPromoteMinutes, bool GsReminder, string? GsReminderChannelId, int? GsReminderDays,

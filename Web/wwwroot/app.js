@@ -4838,8 +4838,8 @@ async function renderArmoryPrefs(card) {
   const run = linkNew => async e => {
     if (tracker.dirty) return toast("Save the settings first.", "warn");
     if (!await confirmDialog(linkNew ? "Link and update all characters?" : "Update all linked characters?",
-      linkNew ? "Linked characters are updated. Others are searched by their exact name on their server (or the project's default) and linked when exactly one is found. About 3 seconds per character."
-        : "Every linked character is refreshed from the official armory. About 3 seconds per character.", "Start", false)) return;
+      linkNew ? "Linked characters are updated. Others are searched by their exact name on their server (or the project's default) and linked when exactly one is found. A few seconds per character (the pause is set in Owner tools → Armory auto-update)."
+        : "Every linked character is refreshed from the official armory. A few seconds per character (the pause is set in Owner tools → Armory auto-update).", "Start", false)) return;
     const r = await act(e.currentTarget, () => gApi("POST", "/lfg/armory/bulk", { linkNew }));
     if (r) showStatus(r);
   };
@@ -8495,7 +8495,7 @@ async function pageChars(main) {
 async function pageArmoryAuto(main) {
   main.append(h("div", { class: "card-head" }, h("h1", {}, "🔄 Armory auto-update"),
     h("button", { class: "btn btn-refresh", title: "Reload", onclick: hardRefresh }, "🔄 Refresh")),
-    h("p", { class: "muted small" }, "Only you (the bot owner) see this page. On schedule the bot does the same as LFG → Settings → Official armory → “Link & update all”: linked characters are refreshed (GS, combat power, class, legion), the others are searched by their exact name on their server and linked when exactly one is found. About 3 s per character, one server at a time; if the armory refuses, it waits and tries later."));
+    h("p", { class: "muted small" }, "Only you (the bot owner) see this page. On schedule the bot does the same as LFG → Settings → Official armory → “Link & update all”: linked characters are refreshed (GS, combat power, class, legion), the others are searched by their exact name on their server and linked when exactly one is found. One character at a time with a pause (below), one server at a time; if the armory refuses, it waits and tries later."));
   const body = h("div", {}, h("div", { class: "card" }, skeletonLines(3)));
   main.append(body);
   let d;
@@ -8512,7 +8512,16 @@ async function pageArmoryAuto(main) {
   const sync = () => { box.style.display = on.cb.checked ? "" : "none"; };
   on.cb.addEventListener("change", sync); sync();
   const save = h("button", { class: "btn" }, "💾 Save");
-  const value = () => ({ on: on.cb.checked, time: at.value || "05:00", hours: Number(every.value) });
+  // pause between requests to the armory (also for the buttons in LFG → Settings)
+  const step = h("input", { type: "number", min: "0.5", max: "10", step: "0.5", value: String(d.step ?? 3), style: "width:90px", "aria-label": "Seconds between requests" });
+  const stepHint = h("span", { class: "muted small" });
+  const sayStep = () => {
+    const v = Math.min(10, Math.max(0.5, Number(step.value) || 3));
+    const per100 = Math.round(100 * v / 60);
+    stepHint.textContent = `≈ ${per100} min per 100 linked characters (new ones take about twice as long)${v < 2 ? " · fast: the armory may start refusing — the bot then pauses 30 min and continues later" : ""}`;
+  };
+  step.addEventListener("input", sayStep); sayStep();
+  const value = () => ({ on: on.cb.checked, time: at.value || "05:00", hours: Number(every.value), step: Number(step.value) || 3 });
   const tracker = track("Armory auto-update", () => JSON.stringify(value()), async () => {
     const ok = await act(save, () => gApi("PUT", "/armory-auto", value()), "Schedule saved.") !== undefined;
     if (ok) setTimeout(() => renderShell(), 300);
@@ -8525,6 +8534,8 @@ async function pageArmoryAuto(main) {
       b.ambiguous ? `several with this name ${b.ambiguous}` : null, b.failed ? `failed ${b.failed}` : null].filter(Boolean).join(" · "),
     b.error ? h("div", { class: "warn-text" }, b.error) : null) : h("div", { class: "muted small" }, "No run since the bot started.");
   body.replaceChildren(tracker.attach(h("div", { class: "card" }, h("h2", {}, "⏱️ Schedule"), on.el, box,
+    h("div", { class: "field", style: "margin-top:10px" }, h("label", {}, "🐢 Pause between requests to the armory"),
+      h("div", { class: "row", style: "flex-wrap:wrap" }, step, h("span", { class: "muted" }, "seconds (0.5–10, default 3)"), stepHint)),
     h("div", { class: "row", style: "margin-top:10px" }, save))),
     h("div", { class: "card" }, h("h2", {}, "📋 Last run"), status,
       h("p", { class: "muted small" }, "Which projects use the armory, their faction and default server — LFG → Settings → Official armory.")));

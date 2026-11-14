@@ -165,7 +165,7 @@ public static partial class PanelApi
             var b = sync.BulkStatus(guildId);
             return Results.Ok(new
             {
-                on = p.ArmoryAuto, time = p.ArmoryAutoTime, hours = p.ArmoryAutoHours, zone = time.ZoneName,
+                on = p.ArmoryAuto, time = p.ArmoryAutoTime, hours = p.ArmoryAutoHours, zone = time.ZoneName, step = p.ArmoryStepSeconds,
                 lastRun = p.ArmoryAutoLastRun?.ToUnixTimeMilliseconds(), next = auto.NextSlot(p.ArmoryAutoTime, p.ArmoryAutoHours).ToUnixTimeMilliseconds(),
                 bulk = b is null ? null : new { running = b.Running, total = b.Total, done = b.Done, linked = b.Linked, updated = b.Updated,
                     notFound = b.NotFound, ambiguous = b.Ambiguous, failed = b.Failed, started = b.Started.ToUnixTimeMilliseconds(),
@@ -179,6 +179,7 @@ public static partial class PanelApi
                 p.ArmoryAuto = body.On;
                 if (TimeOnly.TryParse(body.Time, out var t)) p.ArmoryAutoTime = t.ToString("HH:mm");
                 p.ArmoryAutoHours = Math.Clamp(body.Hours, 1, 24 * 14);
+                if (body.Step is { } st) p.ArmoryStepSeconds = Math.Round(Math.Clamp(st, 0.5, 10), 1);
                 p.ArmoryAutoLastRun = DateTimeOffset.UtcNow;   // the new schedule starts from its next time
             });
             return Results.Ok();

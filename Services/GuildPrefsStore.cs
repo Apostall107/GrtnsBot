@@ -49,6 +49,8 @@ public sealed class GuildPrefs
     public string ArmoryAutoTime { get; set; } = "05:00";
     public int ArmoryAutoHours { get; set; } = 24;
     public DateTimeOffset? ArmoryAutoLastRun { get; set; }
+    /// <summary>Пауза между запросами к оружейной при массовой привязке/обновлении, секунды (меньше — быстрее, но сайт может начать отказывать).</summary>
+    public double ArmoryStepSeconds { get; set; } = 3;
 
     /// <summary>Служебный канал медиатеки: картинки и гифки для постов лежат там вложениями (на сервере бота — ничего).</summary>
     public ulong? MediaChannelId { get; set; }
