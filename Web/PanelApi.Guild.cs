@@ -68,7 +68,7 @@ public static partial class PanelApi
                 var mine = all.Where(c => (c.Scope ?? def) == p.Key).ToList();
                 return new
                 {
-                    key = p.Key, name = p.Name, enabled = a.Enabled, race = a.Race, serverId = a.ServerId,
+                    key = p.Key, name = p.Name, enabled = a.Enabled, race = a.Race, serverId = a.ServerId, classRole = a.ClassRole,
                     characters = mine.Count, linked = mine.Count(c => c.Info?.Armory is not null)
                 };
             });
@@ -83,7 +83,8 @@ public static partial class PanelApi
             prefs.Update(guildId, p => p.Armory = (body.Projects ?? []).Where(x => x.Key is not null && keys.Contains(x.Key))
                 .ToDictionary(x => x.Key!, x => new ArmoryProjectPrefs
                 {
-                    Enabled = x.Enabled, Race = x.Race is 1 ? 1 : 2, ServerId = x.ServerId is > 0 and < 100000 ? x.ServerId : null
+                    Enabled = x.Enabled, Race = x.Race is 1 ? 1 : 2, ServerId = x.ServerId is > 0 and < 100000 ? x.ServerId : null,
+                    ClassRole = x.ClassRole
                 }));
 
             return Results.Ok();
@@ -302,7 +303,7 @@ public static partial class PanelApi
     }
 }
 
-public sealed record ArmoryProjectBody(string? Key, bool Enabled, int Race, int? ServerId);
+public sealed record ArmoryProjectBody(string? Key, bool Enabled, int Race, int? ServerId, bool ClassRole = true);
 public sealed record ArmoryPrefsBody(List<ArmoryProjectBody>? Projects);
 public sealed record ArmoryAutoBody(bool On, string? Time, int Hours);
 public sealed record ArmoryBulkBody(string? Project, bool LinkNew = true);

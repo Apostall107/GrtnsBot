@@ -67,6 +67,8 @@ public sealed class ArmoryProjectPrefs
     public bool Enabled { get; set; }
     public int Race { get; set; } = 2;
     public int? ServerId { get; set; }
+    /// <summary>После привязки/обновления: роль класса персонажа с самой высокой боевой мощью — выдать, остальные роли классов проекта — снять.</summary>
+    public bool ClassRole { get; set; } = true;
 }
 
 /// <summary>data/guild-prefs.json — настройки по серверам (ЛС, готовность, автозамена, напоминание о GS).</summary>

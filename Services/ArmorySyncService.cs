@@ -17,7 +17,7 @@ public sealed record ArmoryBulkStatus(bool Running, int Total, int Done, int Lin
 /// GS берётся оттуда (LFG → Group options). Оружейная отказывает (403/429/503) — пауза, данные остаются прежними.
 /// </summary>
 public sealed class ArmorySyncService(OfficialArmory armory, CharacterStore characters, GuildPrefsStore prefs, LfgProjectStore projects,
-    LfgProfileService profiles, DiscordSocketClient client, ILogger<ArmorySyncService> logger)
+    LfgProfileService profiles, DiscordSocketClient client, AuditLog audit, ILogger<ArmorySyncService> logger)
 {
     public static readonly TimeSpan ManualCooldown = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan Step = TimeSpan.FromSeconds(3);
@@ -297,7 +297,45 @@ public sealed class ArmorySyncService(OfficialArmory armory, CharacterStore char
         }
 
         await ApplyAsync(guildId, userId, name, scope, p);
+        await MainClassRoleAsync(guildId, userId, scope);
         return (ArmorySyncResult.Updated, name);
+    }
+
+    /// <summary>
+    /// Роль класса по «главному» персонажу: из привязанных к оружейной персонажей проекта берётся тот, у кого самая высокая
+    /// боевая мощь (CP); его роль класса выдаётся, остальные роли классов проекта снимаются. Только классы, настроенные в
+    /// проекте (LFG → Classes), и только роли ниже роли бота. Выключается в LFG → Settings → Official armory.
+    /// </summary>
+    public async Task MainClassRoleAsync(ulong guildId, ulong userId, string? scope)
+    {
+        if (!ProjectPrefs(guildId, scope).ClassRole) return;
+        var guild = client.GetGuild(guildId);
+        if (!GuildCache.Loaded(guild) || guild!.GetUser(userId) is not { } member) return;
+        var projectKey = scope ?? projects.DefaultKey(guildId);
+        var classIds = projects.EffectiveClassIcons(guildId, projectKey).Keys.ToHashSet();
+        if (classIds.Count == 0) return;
+        var best = characters.Get(guildId, userId, scope)
+            .Select(n => characters.GetInfo(guildId, userId, n, scope))
+            .Where(i => i?.Armory?.CombatPower is not null && i.ClassRoleId is { } c && classIds.Contains(c))
+            .OrderByDescending(i => i!.Armory!.CombatPower)
+            .FirstOrDefault();
+        if (best?.ClassRoleId is not { } target || guild.GetRole(target) is not { } role) return;
+        var me = guild.CurrentUser;
+        bool CanManage(SocketRole r) => me.GuildPermissions.ManageRoles && !r.IsManaged && r.Position < me.Hierarchy;
+        var remove = member.Roles.Where(r => r.Id != target && classIds.Contains(r.Id) && CanManage(r)).ToList();
+        var add = member.Roles.All(r => r.Id != target) && CanManage(role);
+        if (remove.Count == 0 && !add) return;
+        try
+        {
+            if (remove.Count > 0) await member.RemoveRolesAsync(remove);
+            if (add) await member.AddRoleAsync(role);
+            audit.FromSystem(guildId, "lfg", "Class role by the highest-CP character",
+                $"{member.DisplayName}: {(add ? $"+@{role.Name}" : $"@{role.Name}")}{(remove.Count > 0 ? $" −{string.Join(", ", remove.Select(r => "@" + r.Name))}" : "")}");
+        }
+        catch (Discord.Net.HttpException ex)
+        {
+            logger.LogWarning(ex, "Class role for {User}: Discord refused (is the bot's role above the class roles?)", userId);
+        }
     }
 
     /// <summary>GS и класс из оружейной в профиль персонажа; активные сборы обновляются, если что-то изменилось.</summary>

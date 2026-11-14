@@ -4807,14 +4807,18 @@ async function renderArmoryPrefs(card) {
   const rows = d.projects.map(p => {
     const on = h("input", { type: "checkbox", class: "switch", checked: p.enabled, "aria-label": `Armory for ${p.name}` });
     const realm = realmPicker(d.servers, p.race, p.serverId);
-    const sync = () => { realm.race.disabled = realm.server.disabled = !on.checked; };
+    const cls = h("input", { type: "checkbox", checked: p.classRole !== false });
+    const clsLabel = h("label", { class: "row small", style: "gap:6px;flex-basis:100%;margin-top:4px",
+      title: "After a link / update the member gets the class role of their character with the highest combat power; the project's other class roles are removed (LFG → Classes; roles below the bot's role)" },
+      cls, "🎖️ Class role by the highest-CP character (other class roles are removed)");
+    const sync = () => { realm.race.disabled = realm.server.disabled = cls.disabled = !on.checked; };
     on.addEventListener("change", sync); sync();
-    return { p, on, realm, el: h("div", { class: "pref-row armory-proj" },
+    return { p, on, realm, cls, el: h("div", { class: "pref-row armory-proj", style: "flex-wrap:wrap" },
       h("div", { class: "grow" }, h("b", {}, p.name), h("div", { class: "muted small" }, `${p.linked} of ${p.characters} character(s) linked`)),
-      realm.race, realm.server, on) };
+      realm.race, realm.server, on, clsLabel) };
   });
   const save = h("button", { class: "btn" }, "💾 Save");
-  const body = () => ({ projects: rows.map(r => ({ key: r.p.key, enabled: r.on.checked, ...r.realm.value() })) });
+  const body = () => ({ projects: rows.map(r => ({ key: r.p.key, enabled: r.on.checked, classRole: r.cls.checked, ...r.realm.value() })) });
   const tracker = track("Official armory", () => JSON.stringify(body()), async () => await act(save, () => gApi("PUT", "/lfg/armory", body()), "Armory settings saved.") !== undefined);
   save.addEventListener("click", tracker.save);
 
