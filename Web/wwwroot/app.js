@@ -1568,8 +1568,10 @@ function renderLogin(message) {
 /** Where to apply for the guild (Discord channel) — shown to people without the member role. */
 const JOIN_URL = "https://discord.com/channels/1246495628134187059/1542097097648508948";
 
-function renderDenied(me) {
-  document.getElementById("app").replaceChildren(
+function renderDenied(me, preview = false) {
+  document.getElementById("app").replaceChildren(...[
+    preview ? h("div", { class: "guest-preview-bar" }, icon("eye-off", 15), "Preview: this is what someone without the member role sees",
+      h("button", { class: "btn sm", onclick: () => { store.set("gb.viewAs", ""); boot(); } }, icon("x", 13), "Back to my view")) : null,
     h("div", { class: "card login denied" },
       h("div", { class: "logo" }, "🛡️"),
       h("h1", {}, "Сайт доступний учасникам гільдії"),
@@ -1584,7 +1586,7 @@ function renderDenied(me) {
         h("a", { class: "btn", href: JOIN_URL, target: "_blank", rel: "noopener" }, icon("external-link", 15), "Як вступити — відкрити канал"),
         h("button", { class: "btn secondary", onclick: () => location.reload() }, icon("refresh-cw", 15), "Я вже вступив — оновити"),
         h("button", { class: "btn ghost", onclick: logout }, "Вийти")),
-      h("p", { class: "muted small", style: "margin-top:12px" }, "The site is for guild members: apply in the channel above, then reload this page.")));
+      h("p", { class: "muted small", style: "margin-top:12px" }, "The site is for guild members: apply in the channel above, then reload this page."))].filter(Boolean));
 }
 
 async function logout() {
@@ -3083,6 +3085,8 @@ async function boot() {
     return renderLogin(e.message);
   }
   if (!me.allowed) return renderDenied(me);
+  // Owner: preview of the page for someone without the member role
+  if (me.isOwner && store.get("gb.viewAs") === "guest") return renderDenied(me, true);
   state.me = me;
 
   try {
@@ -3279,7 +3283,10 @@ function renderShell() {
   const viewAs = state.me.isOwner ? (() => {
     const sw = h("input", { type: "checkbox", class: "switch", checked: !!state.me.viewAsMember, "aria-label": "View as member" });
     sw.addEventListener("change", () => { store.set("gb.viewAs", sw.checked ? "member" : ""); state.tab = "home"; store.set("gb.tab", "home"); boot(); });
-    return h("label", { class: "menu-item view-as" }, icon("eye", 16), h("span", { style: "flex:1" }, "View as member"), sw);
+    // the page someone without the member role sees (only on this screen — nothing changes on the server)
+    const guest = h("button", { type: "button", class: "menu-item view-as" }, icon("eye-off", 16), h("span", { style: "flex:1;text-align:left" }, "View as non-member"));
+    guest.addEventListener("click", () => { store.set("gb.viewAs", "guest"); boot(); });
+    return h("div", {}, h("label", { class: "menu-item view-as" }, icon("eye", 16), h("span", { style: "flex:1" }, "View as member"), sw), guest);
   })() : null;
   // Which Discord server the panel works with: only the bot owner switches it (in this menu)
   const g0 = currentGuild();
