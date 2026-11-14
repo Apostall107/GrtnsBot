@@ -1565,13 +1565,26 @@ function renderLogin(message) {
       h("a", { class: "btn lg", href: "/login" }, icon("log-in", 18), "Login with Discord")));
 }
 
+/** Where to apply for the guild (Discord channel) — shown to people without the member role. */
+const JOIN_URL = "https://discord.com/channels/1246495628134187059/1542097097648508948";
+
 function renderDenied(me) {
   document.getElementById("app").replaceChildren(
-    h("div", { class: "card login" },
-      h("div", { class: "logo" }, "⛔"),
-      h("h1", {}, "No access"),
-      h("p", {}, `You are logged in as ${me.name}, but this account has no access: you need the member role on the server or admin rights.`),
-      h("button", { class: "btn secondary", onclick: logout }, "Log out")));
+    h("div", { class: "card login denied" },
+      h("div", { class: "logo" }, "🛡️"),
+      h("h1", {}, "Сайт доступний учасникам гільдії"),
+      h("p", {}, `Ти увійшов як `, h("b", {}, me.name), `, але в тебе ще немає ролі учасника на нашому Discord-сервері.`),
+      h("div", { class: "join-steps" },
+        h("b", {}, "Як вступити:"),
+        h("ol", {},
+          h("li", {}, "Відкрий канал вступу на нашому Discord-сервері (кнопка нижче)."),
+          h("li", {}, "Подай заявку за інструкцією в каналі."),
+          h("li", {}, "Після схвалення отримаєш роль учасника — тоді просто онови цю сторінку."))),
+      h("div", { class: "row", style: "justify-content:center;gap:8px;flex-wrap:wrap;margin-top:14px" },
+        h("a", { class: "btn", href: JOIN_URL, target: "_blank", rel: "noopener" }, icon("external-link", 15), "Як вступити — відкрити канал"),
+        h("button", { class: "btn secondary", onclick: () => location.reload() }, icon("refresh-cw", 15), "Я вже вступив — оновити"),
+        h("button", { class: "btn ghost", onclick: logout }, "Вийти")),
+      h("p", { class: "muted small", style: "margin-top:12px" }, "The site is for guild members: apply in the channel above, then reload this page.")));
 }
 
 async function logout() {

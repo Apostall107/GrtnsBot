@@ -3249,3 +3249,8 @@ dialog.lb-dialog:not([open]) { display: none; }
 .slot.open .slot-tools { margin-left: auto; }
 .slot.taken .slot-lock:not(.on) { opacity: .35; }
 .slot.taken:hover .slot-lock { opacity: 1; }
+
+/* No access: how to join the guild */
+.card.login.denied { max-width: 520px; }
+.join-steps { text-align: left; margin: 14px auto 0; padding: 12px 16px; border-radius: 12px; background: rgba(255, 255, 255, .04); border: 1px solid var(--glass-border); }
+.join-steps ol { margin: 6px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
