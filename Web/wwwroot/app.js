@@ -6239,17 +6239,19 @@ function mdPreview(text, mentions = {}) {
   const tsFmt = { t: { hour: "2-digit", minute: "2-digit" }, T: { hour: "2-digit", minute: "2-digit", second: "2-digit" }, d: { day: "2-digit", month: "2-digit", year: "numeric" },
     D: { day: "numeric", month: "long", year: "numeric" }, f: { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" },
     F: { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" } };
-  const inline = (line, el) => {
+  // noLinks: in headings Discord doesn't make [text](url) a link — it shows the brackets as plain text
+  const inline = (line, el, noLinks) => {
     const re = /(\*\*[^*]+\*\*|__[^_]+__|~~[^~]+~~|\*[^*\s][^*]*\*|`[^`]+`|\[[^\]]+\]\(https?:\/\/[^)]+\)|<a?:\w+:\d+>|<t:-?\d+(?::[tTdDfFR])?>|<@&?!?\d+>|<#\d+>|@everyone|@here|@NewMember|https?:\/\/\S+)/g;
     let last = 0, m;
     while ((m = re.exec(line))) {
       if (m.index > last) el.append(line.slice(last, m.index));
       const t = m[0];
-      if (t.startsWith("**")) inline(t.slice(2, -2), el.appendChild(h("b")));
-      else if (t.startsWith("__")) inline(t.slice(2, -2), el.appendChild(h("u")));
-      else if (t.startsWith("~~")) inline(t.slice(2, -2), el.appendChild(h("s")));
-      else if (t.startsWith("*")) inline(t.slice(1, -1), el.appendChild(h("i")));
+      if (t.startsWith("**")) inline(t.slice(2, -2), el.appendChild(h("b")), noLinks);
+      else if (t.startsWith("__")) inline(t.slice(2, -2), el.appendChild(h("u")), noLinks);
+      else if (t.startsWith("~~")) inline(t.slice(2, -2), el.appendChild(h("s")), noLinks);
+      else if (t.startsWith("*")) inline(t.slice(1, -1), el.appendChild(h("i")), noLinks);
       else if (t.startsWith("`")) el.append(h("code", {}, t.slice(1, -1)));
+      else if (t.startsWith("[") && noLinks) el.append(t);   // as Discord shows it in a heading: plain text
       else if (t.startsWith("[")) el.append(h("span", { class: "dc-link" }, t.slice(1, t.indexOf("]"))));
       else if (/^<a?:/.test(t)) el.append(emojiEl(t, 20));
       else if (t.startsWith("<t:")) {
@@ -6283,7 +6285,7 @@ function mdPreview(text, mentions = {}) {
     else if (line.startsWith("> ")) { cls = "dc-quote"; line = line.slice(2); }
     else if (/^\s*[-*] /.test(line)) { cls = "dc-li"; line = "• " + line.replace(/^\s*[-*] /, ""); }
     const el = h("div", { class: cls });
-    inline(line, el);
+    inline(line, el, /^dc-h/.test(cls));
     if (!line.length) el.append(" ");
     wrap.append(el);
   }
