@@ -118,6 +118,7 @@ public static partial class PanelApi
                         {
                             emoji = (s.TakenAs ?? s.Role).Emoji(),
                             slotRole = s.Role.Label(),
+                            locked = s.Locked,
                             role = (s.TakenAs ?? s.Role).Label(),
                             member = s.UserId is { } u ? Member(guild, u) : null,
                             character = s.CharacterName,

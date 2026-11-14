@@ -3240,3 +3240,12 @@ dialog.lb-dialog:not([open]) { display: none; }
 .slot:has(.att-seg) .att-badge { display: none; }   /* the buttons already show it */
 .group-card { container-type: inline-size; }
 @container (max-width: 560px) { .att-opt span { display: none; } .att-opt { padding: 4px 8px; } }
+
+/* 🔒 Reserved slots */
+.slot.open.locked { border-style: dashed; border-color: rgba(255, 196, 61, .45); background: rgba(255, 196, 61, .05); }
+.slot-reserved { color: #FFC43D; font-weight: 600; }
+.slot-lock.on { color: #FFC43D !important; }
+.slot-lock-mark { color: #FFC43D; display: inline-flex; }
+.slot.open .slot-tools { margin-left: auto; }
+.slot.taken .slot-lock:not(.on) { opacity: .35; }
+.slot.taken:hover .slot-lock { opacity: 1; }

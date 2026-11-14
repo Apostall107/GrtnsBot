@@ -139,6 +139,10 @@ public sealed class Slot
     /// <summary>Нажал «✅ Готов» в напоминании перед стартом.</summary>
     public bool Ready { get; set; }
     [JsonIgnore] public bool IsFree => UserId is null;
+    /// <summary>Зарезервирован (🔒): сам записаться нельзя, автозамена не ставит — только организатор/разработчик перетаскивает на сайте.</summary>
+    public bool Locked { get; set; }
+    /// <summary>Свободен и не зарезервирован — сюда можно записаться самому.</summary>
+    [JsonIgnore] public bool IsOpen => UserId is null && !Locked;
 
     /// <summary>Копия данных участника слота (без настроек самого слота: роль, требования, классы).</summary>
     public Slot CopyMember() => new()
@@ -367,7 +371,7 @@ public sealed class LfgGroup
     /// <param name="fits">Подходит ли игрок под требование слота (null — под любой).</param>
     public int FindFreeSlot(SlotRole wanted, Func<Slot, bool>? fits = null)
     {
-        bool Free(Slot s) => s.IsFree && (fits is null || fits(s));
+        bool Free(Slot s) => s.IsOpen && (fits is null || fits(s));
         if (wanted == SlotRole.Any)
         {
             var anySlot = Slots.FindIndex(s => Free(s) && s.Role == SlotRole.Any);
@@ -608,6 +612,14 @@ public sealed class LfgGroup
         return null;
     }
 
+    /// <summary>Зарезервировать слот (🔒) или снять резерв. Занятый тоже можно: когда человек уйдёт, слот останется закрытым.</summary>
+    public string? SetSlotLocked(int index, bool locked)
+    {
+        if (index < 0 || index >= Slots.Count) return Tx.Get(GuildId, "lfg.err.slotGone");
+        Slots[index].Locked = locked;
+        return null;
+    }
+
     /// <summary>Организатор убирает человека из резерва.</summary>
     public string? RemoveFromReserve(ulong userId) =>
         Reserve.RemoveAll(r => r.UserId == userId) > 0 ? null : Tx.Get(GuildId, "lfg.err.reserveGone");
@@ -641,7 +653,7 @@ public sealed class LfgGroup
         if (entry is null) return Tx.Get(GuildId, "lfg.err.reserveGone");
 
         var index = FindFreeSlot(entry.Role);
-        if (index < 0) index = Slots.FindIndex(s => s.IsFree);
+        if (index < 0) index = Slots.FindIndex(s => s.IsOpen);
         if (index < 0) return Tx.Get(GuildId, "lfg.err.noSlotsManage");
 
         Reserve.Remove(entry);

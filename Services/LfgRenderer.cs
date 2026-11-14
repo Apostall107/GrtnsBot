@@ -581,7 +581,7 @@ public static class LfgRenderer
             sb.AppendText(Tx.Get(gid, "lfg.post.starts", ("time", FormatTime(startsAt))));
         sb.AppendText(Tx.Get(gid, "lfg.post.roster", ("filled", g.FilledCount), ("total", g.Slots.Count)));
 
-        var open = g.Slots.Where(s => s.IsFree)
+        var open = g.Slots.Where(s => s.IsOpen)
             .GroupBy(s => s.Role)
             .Select(gr => $"{gr.Key.Emoji()} {gr.Key.Label()} ×{gr.Count()}")
             .ToList();
@@ -642,9 +642,11 @@ public static class LfgRenderer
             sb.AppendLine($"{role.Key.Emoji()} **{role.Key.Label()}** ({role.Count()}): " +
                           string.Join(mentionsOnly ? " " : " · ", role.Select(x => Who(x.UserId!.Value, x.CharacterName, x.ClassIcon) +
                               (x.Attended switch { true => " ✅", false => " ❌", _ => x.Ready ? " 🟢" : "" }))));
-        var open = g.Slots.Where(x => x.UserId is null).GroupBy(x => x.Role).ToList();
+        var open = g.Slots.Where(x => x.IsOpen).GroupBy(x => x.Role).ToList();
         if (open.Count > 0)
             sb.AppendLine($"{Tx.Get(g.GuildId, "lfg.post.open")}: " + string.Join(" · ", open.Select(o => $"{o.Key.Emoji()} {o.Key.Label()} ×{o.Count()}")));
+        var reserved = g.Slots.Count(x => x.UserId is null && x.Locked);
+        if (reserved > 0) sb.AppendLine($"{Tx.Get(g.GuildId, "lfg.post.reserved")} ×{reserved}");
         if (g.Reserve.Count > 0)
         {
             sb.AppendLine();
@@ -688,7 +690,7 @@ public static class LfgRenderer
 
     private static string SlotLine(ulong gid, int i, Slot s, string? home)
     {
-        if (s.UserId is not { } userId) return $"{SlotHead(i, s)} — {Tx.Get(gid, "lfg.post.open")}";
+        if (s.UserId is not { } userId) return $"{SlotHead(i, s)} — {Tx.Get(gid, s.Locked ? "lfg.post.reserved" : "lfg.post.open")}";
 
         var takenAs = s.Role == SlotRole.Any && s.TakenAs is { } t && t != SlotRole.Any
             ? $" ({t.Emoji()} {t.Label()})"

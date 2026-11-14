@@ -34,6 +34,7 @@ public static class BotTextCatalog
         T("lfg.post.voice", "Voice room line (- = hide)", "🔊 Voice room: {channel}", "{channel}", Embed, optional: true);
         T("lfg.post.note", "Organizer's note line (- = hide)", "📝 {note}", "{note}", Embed, optional: true);
         T("lfg.post.open", "Free slot", "*open*", null, 200);
+        T("lfg.post.reserved", "Reserved slot (only the organizer fills it)", "🔒 *reserved*", null, 200);
         T("lfg.post.reserve", "Reserve heading (- = hide)", "**Reserve ({count}):**", "{count}", 200, optional: true);
         T("lfg.post.expires", "Auto-delete line (- = hide)", "-# Post will be removed {time}", "{time}", Embed, optional: true);
         T("lfg.post.recruiting", "Status: recruiting", "📝 Recruiting", null, 200);

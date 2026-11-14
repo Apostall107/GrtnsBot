@@ -42,7 +42,7 @@ public sealed class GroupCleanupService(
                 }
 
                 // Автозамена из резерва в последний час (или сколько задано) перед стартом
-                foreach (var group in store.Groups.Values.Where(g => !g.IsClosed && g.Reserve.Count > 0 && g.Slots.Any(s => s.IsFree)).ToList())
+                foreach (var group in store.Groups.Values.Where(g => !g.IsClosed && g.Reserve.Count > 0 && g.Slots.Any(s => s.IsOpen)).ToList())
                 {
                     try
                     {

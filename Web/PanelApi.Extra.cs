@@ -613,12 +613,19 @@ public static partial class PanelApi
     /// <summary>Роль свободного слота (организатор на сайте / админ). null — успех.</summary>
     private static async Task<string?> SlotRoleAsync(LfgGroup group, SlotRoleBody body, LfgStore lfg, LfgSignupService signup)
     {
-        if (!Enum.TryParse<SlotRole>(body.Role, out var role) || !Enum.IsDefined(role)) return "Unknown role.";
+        SlotRole? role = null;
+        if (body.Role is not null)
+        {
+            if (!Enum.TryParse<SlotRole>(body.Role, out var r) || !Enum.IsDefined(r)) return "Unknown role.";
+            role = r;
+        }
+        if (role is null && body.Locked is null) return "Nothing to change.";
         string? error;
         await group.Gate.WaitAsync();
         try
         {
-            error = group.SetSlotRole(body.Index, role);
+            error = role is { } newRole ? group.SetSlotRole(body.Index, newRole) : null;
+            if (error is null && body.Locked is { } locked) error = group.SetSlotLocked(body.Index, locked);
             if (error is null)
             {
                 lfg.SaveGroups();
@@ -1139,7 +1146,7 @@ public sealed record LfgCreateBody(string? ChannelId, string? ActivityKey, strin
     string? ProjectKey = null, List<string>? MirrorChannelIds = null, bool CreateVoice = false, List<string?>? SlotRequirements = null,
     string? Note = null, string? OwnerCharacter = null);
 public sealed record RosterBody(string? Action, string? UserId, string? Character, int? Slot = null);
-public sealed record SlotRoleBody(int Index, string? Role);
+public sealed record SlotRoleBody(int Index, string? Role, bool? Locked = null);
 public sealed record RecurringBody(string? ChannelId, string? ActivityKey, string? CustomName, List<string>? Slots,
     List<int>? Days, string? Time, int PostHoursBefore = 24, bool NotifyByDm = true, bool SeatOwner = true, bool Enabled = true,
     string? OwnerId = null, List<string>? RequiredRoleIds = null, int? MinGs = null, string? ProjectKey = null,

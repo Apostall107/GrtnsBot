@@ -136,7 +136,7 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
         if (minutes <= 0 || group.IsClosed || group.StartsAt is not { } start) return;
         var now = DateTimeOffset.UtcNow;
         if (now < start - TimeSpan.FromMinutes(minutes) || now >= start) return;
-        if (group.Reserve.Count == 0 || group.Slots.All(s => !s.IsFree)) return;
+        if (group.Reserve.Count == 0 || group.Slots.All(s => !s.IsOpen)) return;
 
         var moved = new List<(ulong UserId, Slot Slot)>();
         await group.Gate.WaitAsync();
@@ -145,7 +145,7 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
             if (group.IsClosed) return;
             foreach (var entry in ReserveByPriority(group))
             {
-                if (group.Slots.All(s => !s.IsFree)) break;
+                if (group.Slots.All(s => !s.IsOpen)) break;
                 if (GsUnmet(group, entry.UserId, entry.CharacterName) is not null) continue;
                 var index = group.FindFreeSlot(entry.Role, SlotFilter(group, entry.UserId, entry.CharacterName));
                 if (index < 0) continue;
@@ -238,7 +238,7 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
     private string? RoleUnmet(LfgGroup group, SlotRole wanted, Func<Slot, bool>? fits)
     {
         if (fits is null || group.FindFreeSlot(wanted) < 0) return null;
-        var roles = group.Slots.Where(s => s.IsFree && !fits(s) && (wanted == SlotRole.Any || s.Role == wanted || s.Role == SlotRole.Any))
+        var roles = group.Slots.Where(s => s.IsOpen && !fits(s) && (wanted == SlotRole.Any || s.Role == wanted || s.Role == SlotRole.Any))
             .SelectMany(s => group.RequiredFor(s)).Where(projects.EffectiveClassIcons(group.GuildId, group.ProjectKey).ContainsKey).Distinct().ToList();
         return roles.Count == 0 ? null : string.Join(" / ", roles.Select(id => $"<@&{id}>"));
     }
