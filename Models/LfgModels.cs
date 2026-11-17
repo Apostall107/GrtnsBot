@@ -291,6 +291,8 @@ public sealed class LfgGroup
     public List<ReserveEntry> Reserve { get; set; } = [];
     /// <summary>Отмечены «не пришёл» и переведены в резерв: в историю идут как прогул, даже если их потом убрали из резерва.</summary>
     public List<ReserveEntry> NoShows { get; set; } = [];
+    /// <summary>Последняя правка поста не прошла (Discord отказал) — пост отстаёт, повторить.</summary>
+    [JsonIgnore] public bool PostStale { get; set; }
 
     /// <summary>
     /// Явка участника слота. «Не пришёл» (не организатор) — уходит в резерв, слот освобождается под замену;

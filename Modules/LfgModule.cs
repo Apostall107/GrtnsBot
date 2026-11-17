@@ -992,13 +992,9 @@ public sealed class LfgModule(PanelService panels, LfgPublisher publisher, Audit
             }
 
             store.SaveGroups();
-            var s = LfgRenderer.Group(group);
-            await Component.ModifyOriginalResponseAsync(m =>
-            {
-                if (s.Content is not null) m.Content = s.Content;
-                m.Embeds = s.Embed is null ? Array.Empty<Embed>() : new[] { s.Embed };
-                m.Components = s.Components;
-            });
+            // Through the post's update queue, like every other change: editing the message directly here could be
+            // overwritten a moment later by an older queued edit (the post then showed someone who had already left)
+            await signup.RefreshPostAsync(group);
         }
         finally
         {

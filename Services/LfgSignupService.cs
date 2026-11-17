@@ -369,7 +369,14 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
                     }
                 }
                 if (group.IsClosed || !store.Groups.ContainsKey(group.Id)) continue; // пост уже удалён
-                await SendPostAsync(group, next);
+                // render the group as it is NOW (not as it was when the edit was queued) — the post never shows an older roster
+                var fresh = next;
+                if (await group.Gate.WaitAsync(TimeSpan.FromSeconds(5)))
+                {
+                    try { fresh = LfgRenderer.Group(group); }
+                    finally { group.Gate.Release(); }
+                }
+                await SendPostAsync(group, fresh);
             }
         });
     }
@@ -388,6 +395,7 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
                 m.Components = s.Components;
                 m.AllowedMentions = AllowedMentions.None;
             });
+            group.PostStale = false;
             // Копии поста в других каналах
             foreach (var mirror in group.Mirrors.ToList())
             {
@@ -418,6 +426,8 @@ public sealed class LfgSignupService(DiscordSocketClient client, LfgStore store,
         }
         catch (Discord.Net.HttpException ex)
         {
+            // Discord refused / rate limit: the post is behind — the cleanup service retries every minute
+            group.PostStale = true;
             logger.LogWarning(ex, "Could not update LFG post {GroupId}", group.Id);
         }
     }

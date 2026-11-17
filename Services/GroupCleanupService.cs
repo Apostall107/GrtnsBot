@@ -54,6 +54,12 @@ public sealed class GroupCleanupService(
                     }
                 }
 
+                // Posts whose last edit failed (Discord refused / rate limit) are redrawn — the post must match the group
+                foreach (var group in store.Groups.Values.Where(g => g.PostStale && !g.IsClosed).ToList())
+                {
+                    try { await signup.RefreshPostAsync(group); }
+                    catch (Exception ex) { logger.LogWarning(ex, "Retrying the post of group {GroupId} failed", group.Id); }
+                }
                 foreach (var group in store.Groups.Values.Where(g => g.ExpiresAt <= now).ToList())
                 {
                     try
