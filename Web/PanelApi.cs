@@ -329,6 +329,7 @@ public static partial class PanelApi
                 started = x.StartsAt is null || x.StartsAt <= DateTimeOffset.UtcNow,
                 requirements = x.HasRequirements ? new { roles = x.RequiredRoleIds.Select(id => Role(guild, id)), minGs = x.MinGs } : null,
                 note = x.Note,
+                history = x.History.AsEnumerable().Reverse().Take(100).Select(h => new { at = h.At.ToUnixTimeMilliseconds(), member = Member(guild, h.UserId), text = h.Text }),
                 slots = x.Slots.Select(s => new
                 {
                     role = (s.TakenAs ?? s.Role).Label(),

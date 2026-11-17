@@ -5466,6 +5466,7 @@ function groupCard(g) {
       g.voiceUrl ? h("a", { class: "btn secondary voice-btn", href: g.voiceUrl, target: "_blank", rel: "noopener", title: "Open the group's voice room in Discord" }, icon("volume-2", 15), "Voice room") : null,
       h("button", { class: "btn secondary", onclick: () => rescheduleDialog(g, `/lfg/groups/${gid}/time`) }, icon("clock", 15), "Time"),
       h("button", { class: "btn secondary", onclick: () => groupNoteDialog(g, `/lfg/groups/${gid}/note`) }, icon("file-pen-line", 15), "Note"),
+      h("button", { class: "btn secondary", title: "Who joined, left, moved", onclick: () => groupHistoryDialog(g) }, icon("scroll-text", 15), "History"),
       h("span", { class: "spacer" }), close)));
 }
 
@@ -8046,6 +8047,33 @@ function rolePill(label) {
   return h("span", { class: `role-pill ${cls}` }, icon(ic, 12), label);
 }
 
+/** History of the roster (who joined, left, moved) — for the organizer / developer / admins. */
+function groupHistoryDialog(g) {
+  const d = dialog();
+  d.classList.remove("qs-dialog", "wide", "xwide", "page-dialog", "member-card-dialog", "lb-dialog");
+  d.classList.add("hist-dialog");
+  d.onclose = () => d.classList.remove("hist-dialog");
+  const items = g.history || [];
+  const day = ms => new Date(ms).toLocaleDateString(undefined, { weekday: "short", day: "2-digit", month: "2-digit" });
+  let lastDay = "";
+  const rows = items.flatMap(e => {
+    const dd = day(e.at), out = [];
+    if (dd !== lastDay) { lastDay = dd; out.push(h("div", { class: "hist-day" }, dd)); }
+    const tone = /left|no-show/.test(e.text) ? "bad" : /joined|into slot|created/.test(e.text) ? "ok" : "";
+    out.push(h("div", { class: `hist-row ${tone}` },
+      h("span", { class: "hist-time" }, new Date(e.at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })),
+      e.member && e.member.avatarUrl ? h("img", { class: "avatar", src: e.member.avatarUrl, alt: "" }) : h("span", { class: "avatar" }),
+      h("span", { class: "hist-text" }, h("b", {}, e.member ? e.member.name : "?"), " ", e.text)));
+    return out;
+  });
+  d.replaceChildren(
+    h("div", { class: "lb-head" }, h("h2", {}, `🕘 History · ${g.activity}`),
+      h("button", { class: "btn ghost icon-only", title: "Close", "aria-label": "Close", onclick: () => d.close() }, "✕")),
+    h("p", { class: "muted small" }, "Who joined, left, moved to the reserve or between slots — newest first."),
+    rows.length ? h("div", { class: "hist-list" }, rows) : h("div", { class: "muted", style: "padding:10px 0" }, "Nothing yet."));
+  if (!d.open) d.showModal();
+}
+
 /** 🔒 Reserved slot: lock toggle for the organizer / developer / admin (nobody can join it by themselves). */
 function slotLockButton(s, i, url) {
   const title = s.locked ? "Reserved — only you can put someone here (drag). Click to open it for everyone" : "Reserve this slot: nobody can join it by themselves, only you can drag someone here";
@@ -8199,6 +8227,7 @@ function playCard(g) {
       g.voiceUrl ? h("a", { class: "btn secondary tone-teal voice-btn", href: g.voiceUrl, target: "_blank", rel: "noopener", title: "Open the group's voice room in Discord" }, icon("volume-2", 15), "Voice room") : null,
       org ? h("button", { class: "btn secondary", onclick: () => rescheduleDialog(g, `/me/groups/${gid}/time`) }, icon("clock", 15), "Time") : null,
       org ? h("button", { class: "btn secondary", onclick: () => groupNoteDialog(g, `/me/groups/${gid}/note`) }, icon("file-pen-line", 15), "Note") : null,
+      org && g.history ? h("button", { class: "btn secondary", title: "Who joined, left, moved", onclick: () => groupHistoryDialog(g) }, icon("scroll-text", 15), "History") : null,
       closeBtn ? h("span", { class: "spacer" }) : null, closeBtn)));
 }
 

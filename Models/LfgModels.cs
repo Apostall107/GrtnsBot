@@ -181,6 +181,14 @@ public sealed class LfgMirror
     public ulong MessageId { get; set; }
 }
 
+/// <summary>Запись истории состава сбора.</summary>
+public sealed class GroupLogEntry
+{
+    public DateTimeOffset At { get; set; } = DateTimeOffset.UtcNow;
+    public ulong UserId { get; set; }
+    public string Text { get; set; } = "";
+}
+
 public sealed class ReserveEntry
 {
     public ulong UserId { get; set; }
@@ -291,6 +299,8 @@ public sealed class LfgGroup
     public List<ReserveEntry> Reserve { get; set; } = [];
     /// <summary>Отмечены «не пришёл» и переведены в резерв: в историю идут как прогул, даже если их потом убрали из резерва.</summary>
     public List<ReserveEntry> NoShows { get; set; } = [];
+    /// <summary>История состава: кто записался, вышел, перешёл в резерв / слот (видят организатор и админы на сайте).</summary>
+    public List<GroupLogEntry> History { get; set; } = [];
     /// <summary>Последняя правка поста не прошла (Discord отказал) — пост отстаёт, повторить.</summary>
     [JsonIgnore] public bool PostStale { get; set; }
 

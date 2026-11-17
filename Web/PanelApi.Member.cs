@@ -101,6 +101,10 @@ public static partial class PanelApi
                         isOrganizer = x.OwnerId == me,
                         // organizer tools (roster, slots, attendance, time, note, close): the organizer and the bot owner
                         canManage = BotOwner.CanManage(x, me),
+                        // history of the roster — only for whoever can manage the group
+                        history = BotOwner.CanManage(x, me)
+                            ? x.History.AsEnumerable().Reverse().Take(100).Select(h => new { at = h.At.ToUnixTimeMilliseconds(), member = Member(guild, h.UserId), text = h.Text })
+                            : null,
                         note = x.Note,
                         requirements = x.HasRequirements ? new
                         {

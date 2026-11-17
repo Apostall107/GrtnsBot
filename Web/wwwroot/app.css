@@ -3256,3 +3256,14 @@ dialog.lb-dialog:not([open]) { display: none; }
 .join-steps ol { margin: 6px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
 .guest-preview-bar { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 50; display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 14px;
   border-radius: 999px; background: rgba(255, 196, 61, .14); border: 1px solid rgba(255, 196, 61, .45); color: #FFE29A; font-size: 13px; font-weight: 600; white-space: nowrap; }
+
+/* Group roster history */
+dialog.hist-dialog { width: min(560px, calc(100vw - 32px)); max-height: min(80vh, 760px); display: flex; flex-direction: column; }
+dialog.hist-dialog:not([open]) { display: none; }
+.hist-list { overflow-y: auto; display: flex; flex-direction: column; gap: 3px; padding-right: 4px; }
+.hist-day { margin: 8px 0 2px; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-secondary); }
+.hist-row { display: grid; grid-template-columns: 64px 24px 1fr; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 8px; background: rgba(255, 255, 255, .03); border-left: 3px solid transparent; font-size: 13px; }
+.hist-row.ok { border-left-color: var(--success); }
+.hist-row.bad { border-left-color: var(--danger); }
+.hist-row .avatar { width: 24px; height: 24px; border-radius: 50%; background: rgba(255, 255, 255, .08); object-fit: cover; }
+.hist-time { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
