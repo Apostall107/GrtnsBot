@@ -541,7 +541,10 @@ public sealed class LfgGroup
             ClassRoleId = slot.ClassRoleId,
             ClassIcon = slot.ClassIcon,
             Comment = slot.Comment,
-            Gs = slot.Gs
+            Gs = slot.Gs,
+            // сервер персонажа (Имя[LUD] в приглашениях) и CP — иначе теряются при возврате из резерва в группу
+            Server = slot.Server,
+            Cp = slot.Cp
         });
         slot.Clear();
         return null;
