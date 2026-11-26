@@ -966,6 +966,7 @@ public static partial class PanelApi
         ("POST", "/voice/rooms/{channelId}/delete", "voice", "Deleted temp room"),
         ("POST", "/voice/rooms/{channelId}/owner", "voice", "Transferred room ownership"),
         ("POST", "/voice/panel", "voice", "Posted room panel"),
+        ("POST", "/lfg/statics-panel", "lfg", "Posted statics panel"),
         ("PUT", "/texts/bot", "texts", "Edited bot texts"),
         ("POST", "/texts/bot/reset", "texts", "Reset bot texts"),
         ("PUT", "/texts/{key}", "texts", "Edited panel text"),

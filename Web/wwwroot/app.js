@@ -256,6 +256,7 @@ const store = {
   if (/^\d+$/.test(q.get("guild") || "")) store.set("gb.guild", q.get("guild"));
   if (/^[a-z]+$/.test(q.get("tab") || "")) store.set("gb.tab", q.get("tab"));
   if (/^[a-z0-9]+$/i.test(q.get("group") || "")) { store.set("gb.focusGroup", q.get("group")); store.set("gb.playProject", "all"); }
+  if (/^[a-z0-9]+$/i.test(q.get("static") || "")) { store.set("gb.focusStatic", q.get("static")); store.set("gb.staticsProject", "all"); }
   history.replaceState(null, "", location.pathname);
 })();
 
@@ -1513,6 +1514,7 @@ const state = {
 const allTabs = [
   ["home", "house", "Home", "member", "Member"],
   ["play", "users-round", "Groups", "member", "Member"],
+  ["statics", "shield-check", "Statics", "member", "Member"],
   ["chars", "user-round", "My characters", "member", "Member"],
   ["achievements", "trophy", "Achievements", "member", "Member"],
   ["schedule", "calendar-clock", "Calendar", "member", "Member"],
@@ -3328,7 +3330,7 @@ function renderShell() {
   if (!state.guildId) { main.append(empty("No servers available for your account.")); return; }
   if (!visibleTabs().length) { main.append(empty("You have no sections on this server. Ask an admin for the member role.")); return; }
   siteTrack(MEMBER_TABS.includes(state.tab) ? "tab" : "visit", state.tab);
-  const page = { home: pageHome, content: pageContent, play: pagePlay, chars: pageChars, overview: pageOverview, lfg: pageLfg, guild: pageGuild, schedule: pageSchedule, roster: pageMemberRoster, tickets: pageTickets, voice: pageVoice, welcome: pageWelcome, roles: pageRoles, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess, voicenow: pageVoiceNow, birthdays: pageBirthdays, pages: pageChannelPages, media: pageMedia, mascot: pageMascot, achievements: pageAchievements, armoryauto: pageArmoryAuto }[state.tab];
+  const page = { home: pageHome, content: pageContent, play: pagePlay, statics: pageStatics, chars: pageChars, overview: pageOverview, lfg: pageLfg, guild: pageGuild, schedule: pageSchedule, roster: pageMemberRoster, tickets: pageTickets, voice: pageVoice, welcome: pageWelcome, roles: pageRoles, texts: pageTexts, posts: pagePosts, announce: pageAnnounce, log: pageLog, settings: pageSettings, access: pageAccess, voicenow: pageVoiceNow, birthdays: pageBirthdays, pages: pageChannelPages, media: pageMedia, mascot: pageMascot, achievements: pageAchievements, armoryauto: pageArmoryAuto }[state.tab];
   page(main);
   addGuideButton(main, state.tab);
   decorateHeading(main);
@@ -7022,7 +7024,7 @@ function colorField(value, def, onChange) {
 const BOT_TEXT_ICONS = [["LFG — group post", "swords"], ["LFG — creating", "circle-plus"], ["LFG — signing", "user-plus"],
   ["LFG — class", "drama"], ["LFG — organizer", "crown"], ["LFG — DMs", "mail-plus"], ["Tickets — ticket", "ticket"],
   ["Tickets — creating", "clipboard-list"], ["Tickets — approve", "shield-check"], ["Temp voice", "headphones"],
-  ["Characters", "users"]];
+  ["Characters", "users"], ["Statics", "shield-check"]];
 
 async function pageBotTexts(main, groupFilter = null) {
   if (!groupFilter) {
@@ -7922,6 +7924,7 @@ const TEXT_MODULES = [
   ["lfg", "LFG", "swords", ["lfg", "lfgpost"], g => g.startsWith("LFG")],
   ["tickets", "Tickets", "ticket", ["tickets", "ticketmsg"], g => g.startsWith("Tickets")],
   ["voice", "Temp Voice", "headphones", ["rooms"], g => g.startsWith("Temp voice")],
+  ["statics", "Statics", "shield-check", ["statics"], g => g.startsWith("Statics")],
   ["chars", "Characters", "users", [], g => g.startsWith("Characters")],
   ["community", "Welcome & role panels", "door-open", [], g => g.startsWith("Welcome")],
   ["birthdays", "Birthdays", "cake", [], g => g.startsWith("Birthdays")],
@@ -7960,7 +7963,7 @@ async function pageContent(main) {
   const m = mods.find(x => x[0] === mod);
   if (mod === "all") {
     inner.append(sectionLabel("Panels"));
-    await pageTexts(inner, ["lfg", "lfgpost", "tickets", "ticketmsg", "rooms"]);
+    await pageTexts(inner, ["lfg", "lfgpost", "tickets", "ticketmsg", "rooms", "statics"]);
     inner.append(sectionLabel("Bot messages"));
     await pageBotTexts(inner, ALL_TEXT_GROUPS);
     return;
@@ -8038,6 +8041,310 @@ async function pagePlay(main) {
     }))
     : h("div", { class: "card" }, emptyState("users-round", "No active groups right now", "Be the first — create a group and others will join.",
       h("button", { class: "btn", onclick: () => { if (createBody.style.display === "none") toggle.click(); window.scrollTo({ top: 0, behavior: "smooth" }); } }, icon("plus", 15), "Create a group"))));
+}
+
+// ================= Statics (constant parties) =================
+
+/** Statics: permanent groups. Anyone creates one; people apply, the organizer accepts (drag an application into the roster). */
+async function pageStatics(main) {
+  main.append(h("div", { class: "card-head" }, h("h1", {}, "🛡️ Statics"), h("button", { class: "btn btn-refresh", title: "Reload this page's data", onclick: hardRefresh }, "🔄 Refresh")));
+  const holder = h("div", {}, h("div", { class: "muted" }, "Loading…"));
+  main.append(holder);
+  let data;
+  try { data = await gApi("GET", "/me/statics"); } catch (e) { holder.replaceChildren(errorState(e.message)); return; }
+
+  // Project tabs (games), like Groups
+  const projects = data.projects || [];
+  let tab = store.get("gb.staticsProject") || "all";
+  if (tab !== "all" && !projects.some(p => p.key === tab)) tab = "all";
+  if (projects.length > 1) main.insertBefore(tabsRow([["all", "🌐 All"], ...projects.map(p => [p.key, `🎮 ${p.name}`])], tab, "gb.staticsProject"), holder);
+
+  // Admins: the panel in Discord (statics are posted in its channel)
+  if (can("lfg")) {
+    const adminCard = postPanelCard("Statics panel", "Posts the panel with “Create static” and “My statics”. New statics are posted in the channel of this panel.", "/lfg/statics-panel");
+    if (!data.panelPosted) adminCard.prepend(h("div", { class: "badge wait", style: "margin-bottom:8px" }, icon("triangle-alert", 13), "Not posted yet — nobody can create a static"));
+    main.insertBefore(h("details", { class: "static-admin", open: !data.panelPosted }, h("summary", { class: "section-label" }, "Admin · statics panel"), adminCard), holder);
+  }
+
+  main.insertBefore(staticCreateCard(data, tab), holder);
+
+  // Search & filters: on the page, no reload
+  const search = h("input", { type: "search", placeholder: "Search by name, description or organizer…", "aria-label": "Search statics", style: "flex:1;min-width:180px" });
+  const onlyOpen = h("input", { type: "checkbox" });
+  const onlyMine = h("input", { type: "checkbox" });
+  onlyOpen.checked = store.get("gb.staticsOpen") === "1";
+  onlyMine.checked = store.get("gb.staticsMine") === "1";
+  main.insertBefore(h("div", { class: "card static-filters" },
+    search,
+    h("label", { class: "check" }, onlyOpen, "Recruiting only"),
+    h("label", { class: "check" }, onlyMine, "Mine")), holder);
+
+  const all = (data.statics || []).filter(s => tab === "all" || s.projectKey === tab);
+  const focus = store.get("gb.focusStatic");
+  if (focus) store.set("gb.focusStatic", "");
+  const draw = () => {
+    store.set("gb.staticsOpen", onlyOpen.checked ? "1" : "");
+    store.set("gb.staticsMine", onlyMine.checked ? "1" : "");
+    const q = search.value.trim().toLowerCase();
+    const list = all.filter(s => (!onlyOpen.checked || s.recruiting) && (!onlyMine.checked || s.status || s.canManage) &&
+      (!q || [s.name, s.description, s.owner && s.owner.name, s.project].some(x => x && x.toLowerCase().includes(q))));
+    // Mine first, then recruiting, then newest
+    list.sort((a, b) => (!!b.status - !!a.status) || (b.recruiting - a.recruiting) || (b.createdAt - a.createdAt));
+    holder.replaceChildren(sectionLabel(`Statics · ${list.length}${list.length !== all.length ? ` of ${all.length}` : ""}`), list.length
+      ? h("div", { class: "grid2" }, list.map(s => {
+        const card = staticCard(s, data);
+        if (s.id === focus) requestAnimationFrame(() => { card.classList.add("focus-flash"); card.scrollIntoView({ behavior: "smooth", block: "center" }); });
+        return card;
+      }))
+      : h("div", { class: "card" }, all.length ? empty("Nothing matches the filters.")
+        : emptyState("shield-check", "No statics yet", "Create the first one — people apply and you pick who joins.")));
+  };
+  search.addEventListener("input", draw);
+  onlyOpen.addEventListener("change", draw);
+  onlyMine.addEventListener("change", draw);
+  draw();
+}
+
+/** My characters of a project for a <select>: "" = without a character. */
+function staticCharSelect(data, projectKey, current, emptyLabel = "— without a character —") {
+  const byProject = data.characters || {};
+  const chars = byProject[projectKey || ""] || byProject[""] || [];
+  const sel = h("select", { "aria-label": "Character" }, h("option", { value: "" }, emptyLabel),
+    chars.map(c => h("option", { value: c.name }, [c.name, c.gs != null ? `GS ${c.gs}` : null].filter(Boolean).join(" · "))));
+  if (current && chars.some(c => c.name === current)) sel.value = current;
+  return sel;
+}
+
+/** Size: 5 / 10 / 20 buttons + own number (like LFG). Returns { el, value() }. */
+function staticSizePicker(sizes, initial = 5) {
+  let value = initial;
+  const custom = h("input", { type: "number", min: "2", max: "100", placeholder: "Other", "aria-label": "Other size", style: "width:90px" });
+  const buttons = sizes.map(n => h("button", { type: "button", class: "btn secondary sm", onclick: () => { value = n; custom.value = ""; paint(); } }, `${n}`));
+  const paint = () => buttons.forEach((b, i) => b.classList.toggle("active-tab", sizes[i] === value && !custom.value));
+  custom.addEventListener("input", () => { const n = parseInt(custom.value, 10); if (n >= 2) value = Math.min(n, 100); paint(); });
+  if (!sizes.includes(initial)) custom.value = String(initial);
+  paint();
+  return { el: h("div", { class: "static-sizes" }, buttons, custom), value: () => value };
+}
+
+function staticCreateCard(data, tab) {
+  const body = h("div", { style: "display:none" });
+  const toggle = h("button", { class: "btn" }, "➕ Create a static");
+  const card = h("div", { class: "card" }, cardHead("circle-plus", "Create a static", toggle),
+    h("p", { class: "muted small" }, "Your static gets its own post in Discord and stays until you delete it. People apply; only those you accept join."),
+    body);
+  let built = false;
+  toggle.addEventListener("click", () => {
+    const open = body.style.display === "none";
+    body.style.display = open ? "" : "none";
+    toggle.textContent = open ? "✕ Hide" : "➕ Create a static";
+    if (!open || built) return;
+    built = true;
+    if (!data.panelPosted) { body.replaceChildren(empty("The Statics panel isn't posted in Discord yet — ask an admin.")); return; }
+    if (data.owned >= data.maxOwned) { body.replaceChildren(empty(`You already run ${data.maxOwned} statics — delete one first.`)); return; }
+    const projects = data.projects || [];
+    const project = h("select", { "aria-label": "Game" }, projects.map(p => h("option", { value: p.key }, p.name)));
+    project.value = tab !== "all" ? tab : (data.defaultProject || (projects[0] && projects[0].key) || "");
+    const charHolder = h("div", {});
+    const fillChars = () => charHolder.replaceChildren(staticCharSelect(data, project.value, null));
+    project.addEventListener("change", fillChars);
+    fillChars();
+    const name = h("input", { maxlength: "80", placeholder: "e.g. Wednesday raid static" });
+    const size = staticSizePicker(data.sizes || [5, 10, 20]);
+    const desc = h("textarea", { rows: "4", maxlength: "1500", placeholder: "Goals, schedule, who you are looking for: Wed & Sat 21:00 · 1 tank, 2 sup · GS 2000+" });
+    const create = h("button", { class: "btn" }, icon("plus", 15), "Create & post");
+    create.addEventListener("click", async () => {
+      if (!name.value.trim()) return toast("Enter a name.", "warn");
+      const res = await act(create, () => gApi("POST", "/me/statics", {
+        projectKey: project.value || null, name: name.value, description: desc.value, size: size.value(),
+        character: charHolder.querySelector("select").value || null
+      }), "Static created and posted in Discord.");
+      if (res !== undefined) { store.set("gb.focusStatic", res.id); refresh(); }
+    });
+    body.replaceChildren(
+      projects.length > 1 ? h("div", { class: "field" }, h("label", {}, "Game"), project) : null,
+      h("div", { class: "field" }, h("label", {}, "Name"), name),
+      h("div", { class: "field" }, h("label", {}, "Members"), size.el),
+      h("div", { class: "field" }, h("label", {}, "Your character (optional)"), charHolder),
+      h("div", { class: "field" }, h("label", {}, "Description"), desc),
+      h("div", { class: "row" }, create));
+  });
+  return card;
+}
+
+function staticCard(s, data) {
+  const sid = encodeURIComponent(s.id);
+  const org = s.canManage;
+  const meId = state.me && state.me.id;
+  const reload = r => { if (r !== undefined) refresh(); };
+  const decide = (action, m, okText) => act(null, () => gApi("POST", `/me/statics/${sid}/decide`, { action, userId: m.id }), okText).then(reload);
+  const tool = (ic, title, fn) => h("button", { class: "btn ghost icon-only sm", title, "aria-label": title, onclick: fn }, icon(ic, 15));
+  const charLine = x => [classMark(x), x.character ? h("span", { class: "slot-charname", title: x.character }, x.character) : null,
+    x.gs ? h("span", { class: "gs" }, `GS ${x.gs}`) : null].filter(Boolean);
+  const person = (x, note) => h("div", { class: "slot-main" },
+    h("span", { class: "slot-who" }, member(x.member), x.isOwner ? h("span", { class: "badge", title: "Organizer" }, icon("crown", 12), "organizer") : null),
+    h("span", { class: "slot-char" }, ...charLine(x)), note || null);
+
+  // Drag & drop (organizer): application → roster = accept; member → applications = back to applications
+  const dragRow = (el, kind, m) => {
+    if (!org) return el;
+    el.draggable = true;
+    el.classList.add("draggable");
+    el.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", JSON.stringify({ sid: s.id, kind, id: m.id })); e.dataTransfer.effectAllowed = "move"; });
+    return el;
+  };
+  const dropZone = (el, accepts, onDrop) => {
+    if (!org) return el;
+    el.addEventListener("dragover", e => { e.preventDefault(); el.classList.add("drop-over"); });
+    el.addEventListener("dragleave", e => { if (!el.contains(e.relatedTarget)) el.classList.remove("drop-over"); });
+    el.addEventListener("drop", e => {
+      e.preventDefault();
+      el.classList.remove("drop-over");
+      let d;
+      try { d = JSON.parse(e.dataTransfer.getData("text/plain")); } catch { return; }
+      if (d && d.sid === s.id && d.kind === accepts) onDrop(d.id);
+    });
+    return el;
+  };
+
+  const roster = dropZone(h("div", { class: "roster static-zone" },
+    s.members.map(m => {
+      const row = h("div", { class: `slot taken static-row${m.member.id === meId ? " me" : ""}` },
+        person(m), h("span", { class: "slot-tools" },
+          org && !m.isOwner ? tool("arrow-down", "Back to applications", () => decide("back", m.member, "Moved back to applications.")) : null,
+          org && !m.isOwner ? tool("x", "Remove from the static (sends a DM)", async () => {
+            if (await confirmDialog(`Remove ${m.member.name}?`, "They leave the static and get a DM.", "Remove")) decide("remove", m.member, "Removed.");
+          }) : null));
+      return m.isOwner ? row : dragRow(row, "member", m.member);
+    }),
+    s.count < s.size ? h("div", { class: "slot open" }, h("span", { class: "slot-open-text" }, icon("user-plus", 14),
+      `${s.size - s.count} free · ${org ? "drag an application here" : "apply to join"}`)) : null),
+    "app", id => decide("accept", { id }, "Accepted — DM sent."));
+
+  const applicants = s.applicants || [];
+  const apps = org ? dropZone(h("div", { class: "static-apps static-zone" },
+    h("div", { class: "section-label" }, `Applications · ${applicants.length}`),
+    applicants.length ? h("div", { class: "roster" }, applicants.map(a => dragRow(h("div", { class: "slot taken static-row" },
+      person(a, a.message ? h("span", { class: "slot-comment muted small" }, icon("message-square", 13), h("span", { title: a.message }, a.message)) : null),
+      h("span", { class: "slot-tools" },
+        tool("check", "Accept (sends a DM)", () => decide("accept", a.member, "Accepted — DM sent.")),
+        tool("x", "Decline (sends a DM)", () => decide("decline", a.member, "Declined.")))), "app", a.member)))
+      : h("div", { class: "muted small" }, "No applications yet.")),
+    "member", id => decide("back", { id }, "Moved back to applications.")) : null;
+
+  // My part: apply / waiting / member
+  let mine = null;
+  if (!s.status) {
+    if (s.recruiting) {
+      const char = staticCharSelect(data, s.projectKey, null);
+      const msg = h("input", { maxlength: "300", placeholder: "Message to the organizer (optional)", style: "flex:1;min-width:160px" });
+      const apply = h("button", { class: "btn" }, icon("send", 15), "Apply");
+      apply.addEventListener("click", async () =>
+        reload(await act(apply, () => gApi("POST", `/me/statics/${sid}/apply`, { character: char.value || null, message: msg.value || null }),
+          "Application sent — you'll get a DM with the answer.")));
+      mine = h("div", { class: "group-join" }, char, msg, apply);
+    } else mine = h("div", { class: "muted small" }, "🔒 Recruiting is closed.");
+  } else if (s.status === "applied") {
+    const withdraw = h("button", { class: "btn secondary sm" }, "Withdraw");
+    withdraw.addEventListener("click", async () => reload(await act(withdraw, () => gApi("POST", `/me/statics/${sid}/leave`), "Application withdrawn.")));
+    mine = h("div", { class: "group-join static-mine" }, h("span", { class: "badge wait" }, icon("clock", 13), "Your application is waiting"),
+      s.myMessage ? h("span", { class: "muted small static-msg", title: s.myMessage }, `“${s.myMessage}”`) : null, h("span", { class: "spacer" }), withdraw);
+  } else if (s.status === "member" && !s.isOwner) {
+    const leave = h("button", { class: "btn secondary sm" }, icon("log-out", 14), "Leave");
+    leave.addEventListener("click", async () => {
+      if (!await confirmDialog(`Leave ${s.name}?`, "To come back you'll have to apply again.", "Leave")) return;
+      reload(await act(leave, () => gApi("POST", `/me/statics/${sid}/leave`), "You left the static."));
+    });
+    const char = staticCharSelect(data, s.projectKey, s.myCharacter);
+    char.title = "Your character in this static";
+    char.addEventListener("change", async () => reload(await act(null, () => gApi("POST", `/me/statics/${sid}/character`, { character: char.value || null }), "Character changed.")));
+    mine = h("div", { class: "group-join static-mine" }, h("span", { class: "badge ok" }, icon("circle-check", 13), "You are in this static"),
+      char, h("span", { class: "spacer" }), leave);
+  }
+
+  // Links and organizer tools
+  const actions = [];
+  if (s.jumpUrl) actions.push(h("a", { class: "btn secondary sm", href: s.jumpUrl, target: "_blank", rel: "noopener" }, icon("external-link", 14), "Discord"));
+  if (org) {
+    if (!s.jumpUrl) {
+      const repost = h("button", { class: "btn sm", title: "The post was deleted in Discord — post it again" }, icon("pin", 14), "Post again");
+      repost.addEventListener("click", async () => reload(await act(repost, () => gApi("POST", `/me/statics/${sid}/repost`), "Posted.")));
+      actions.push(repost);
+    }
+    actions.push(h("button", { class: "btn secondary sm", onclick: () => staticPingDialog(s) }, icon("bell-ring", 14), "Ping members"));
+    const rec = h("button", { class: "btn secondary sm" }, icon(s.recruiting ? "lock" : "lock-open", 14), s.recruiting ? "Close recruiting" : "Open recruiting");
+    rec.addEventListener("click", async () => reload(await act(rec, () => gApi("POST", `/me/statics/${sid}/recruiting`, { open: !s.recruiting }),
+      s.recruiting ? "Recruiting closed." : "Recruiting open.")));
+    actions.push(rec, h("button", { class: "btn secondary sm", onclick: () => staticEditDialog(s, data) }, icon("pencil", 14), "Edit"));
+    if (s.history) actions.push(h("button", { class: "btn ghost sm", onclick: () => staticHistoryDialog(s) }, icon("scroll-text", 14), "History"));
+    const del = h("button", { class: "btn danger sm" }, icon("trash-2", 14), "Delete");
+    del.addEventListener("click", async () => {
+      if (!await confirmDialog(`Delete ${s.name}?`, "The post in Discord is removed and the roster is lost. This can't be undone.", "Delete")) return;
+      reload(await act(del, () => gApi("DELETE", `/me/statics/${sid}`), "Static deleted."));
+    });
+    actions.push(h("span", { class: "spacer" }), del);
+  }
+
+  const full = s.count >= s.size;
+  const status = !s.recruiting ? h("span", { class: "badge lock" }, icon("lock", 12), "Closed")
+    : full ? h("span", { class: "badge ok" }, icon("circle-check", 12), "Full")
+    : h("span", { class: "badge recruiting" }, h("span", { class: "pulse" }), "Recruiting");
+  return h("div", { class: `card group-card static-card${full ? " is-full" : ""}`, "data-sid": s.id },
+    h("div", { class: "group-head" },
+      h("div", { class: "group-title" }, s.project ? h("span", { class: "project-chip" }, icon("gamepad-2", 12), s.project) : null, h("h3", {}, s.name)),
+      h("div", { class: "group-state" }, status)),
+    h("div", { class: "group-meta" },
+      h("span", { class: "meta-item" }, icon("crown", 14), member(s.owner)),
+      h("span", { class: "meta-item" }, icon("users", 14), `${s.count}/${s.size}`),
+      org && s.applicantCount ? h("span", { class: "meta-item" }, icon("inbox", 14), `${s.applicantCount} waiting`) : null,
+      !s.jumpUrl ? h("span", { class: "meta-item", title: "The post was deleted in Discord" }, icon("triangle-alert", 14), "no post in Discord") : null),
+    s.description ? h("div", { class: "static-desc" }, s.description) : null,
+    roster, apps, mine,
+    actions.length ? h("div", { class: "group-actions" }, actions) : null);
+}
+
+function staticPingDialog(s) {
+  const d = dialog();
+  const msg = h("textarea", { rows: "3", maxlength: "1000", placeholder: "Raid in 15 minutes — join the voice!" });
+  const send = h("button", { class: "btn" }, icon("bell-ring", 15), "Ping");
+  send.addEventListener("click", async () => {
+    const r = await act(send, () => gApi("POST", `/me/statics/${encodeURIComponent(s.id)}/ping`, { message: msg.value || null }), r => `Pinged ${r.count} members.`);
+    if (r !== undefined) d.close();
+  });
+  d.replaceChildren(h("h2", {}, `Ping ${s.name}`),
+    h("div", { class: "muted small" }, "Mentions every other member of the static in its channel in Discord."),
+    h("div", { class: "field" }, h("label", {}, "Message (optional)"), msg),
+    h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), send));
+  d.showModal();
+}
+
+function staticEditDialog(s, data) {
+  const d = dialog();
+  const name = h("input", { maxlength: "80", value: s.name });
+  const size = staticSizePicker(data.sizes || [5, 10, 20], s.size);
+  const desc = h("textarea", { rows: "5", maxlength: "1500" });
+  desc.value = s.description || "";
+  const save = h("button", { class: "btn" }, icon("save", 15), "Save");
+  save.addEventListener("click", async () => {
+    const r = await act(save, () => gApi("PUT", `/me/statics/${encodeURIComponent(s.id)}`, { name: name.value, description: desc.value, size: size.value() }), "Saved.");
+    if (r !== undefined) { d.close(); refresh(); }
+  });
+  d.replaceChildren(h("h2", {}, "Edit static"),
+    h("div", { class: "field" }, h("label", {}, "Name"), name),
+    h("div", { class: "field" }, h("label", {}, "Members"), size.el),
+    h("div", { class: "field" }, h("label", {}, "Description"), desc),
+    h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), save));
+  d.showModal();
+}
+
+function staticHistoryDialog(s) {
+  const d = dialog();
+  d.replaceChildren(h("h2", {}, `History · ${s.name}`),
+    (s.history || []).length ? h("div", { class: "table-wrap" }, h("table", { class: "table" }, h("tbody", {}, s.history.map(e =>
+      h("tr", {}, h("td", { class: "muted small", style: "white-space:nowrap" }, fmtDate(e.at)), h("td", {}, member(e.member)), h("td", {}, e.text))))))
+      : empty("Nothing yet."),
+    h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Close")));
+  d.showModal();
 }
 
 /** Role pill for a slot: DD / Tank / Sup / All — icon + text, color only as an extra hint. */
@@ -9741,6 +10048,31 @@ const HELP = {
   content: {
     title: "Panels & posts",
     features: [], discord: [], panel: []
+  },
+  statics: {
+    title: "Statics",
+    features: [["What you can do here", [
+      "Find a static (constant party): search by name, description or organizer, show only those still **recruiting** or only yours.",
+      "Apply with a character (optional) and a message for the organizer. You get a DM when you are accepted or declined.",
+      "Create your own static: game, name, size (5 / 10 / 20 or your own), description. It is posted in Discord and stays until you delete it.",
+      "Organizer: accept or decline applications (drag an application into the roster), remove members, open / close recruiting, edit, **Ping members**, history."
+    ]]],
+    discord: [["The same in Discord", [
+      "The **Statics panel**: **Create static** (size → name and description) and **My statics**.",
+      "Under a static's post: **Apply**, **Leave** (also withdraws an application), ⚙️ **Manage** and 📣 **Ping members** for the organizer.",
+      "The organizer gets a DM about every application with **Accept** / **Decline** buttons."
+    ]]],
+    panel: [
+      ["Join", [
+        "Pick a character (or none), write a message if you like → **Apply**. **Withdraw** takes the application back.",
+        "In a static: change your character in the card or **Leave**."
+      ]],
+      ["Organize", [
+        "Drag an application into the roster to accept it, or press ✔️ / ✖️. Drag a member down to send them back to applications.",
+        "**Ping members** mentions everyone in the static's channel. **Close recruiting** hides the Apply button.",
+        "Post deleted in Discord? The static is kept — **Post again** puts it back."
+      ]]
+    ]
   },
   play: {
     title: "Groups",

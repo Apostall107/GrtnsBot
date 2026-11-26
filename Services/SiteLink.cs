@@ -48,6 +48,10 @@ public static class SiteLink
     public static string? GroupUrl(ulong guildId, string groupId) =>
         Url is null ? null : $"{Url}/?tab=play&guild={guildId}&group={Uri.EscapeDataString(groupId)}";
 
+    /// <summary>Ссылка на статик на сайте: вкладка Statics этого сервера, карточка статика подсвечена.</summary>
+    public static string? StaticUrl(ulong guildId, string staticId) =>
+        Url is null ? null : $"{Url}/?tab=statics&guild={guildId}&static={Uri.EscapeDataString(staticId)}";
+
     /// <summary>Добавляет блок о сайте в конец описания панели.</summary>
     public static EmbedBuilder WithSiteField(this EmbedBuilder embed)
     {

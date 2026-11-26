@@ -126,7 +126,29 @@ public static class PanelDefs
         ],
         "room:rename") { DefaultColor = 0x1ABC9C };
 
-    public static readonly PanelDef[] All = [Lfg, Tickets, Rooms];
+    public static readonly PanelDef Statics = new(
+        "statics", "Statics panel",
+        "🤝 Statics & constant parties",
+        "**Looking for a permanent group or running one?**\n\n" +
+        "**Create a static**\n" +
+        "1. Click **Create static**, pick the size (5 / 10 / 20 or your own) and, if you like, the character you play in it.\n" +
+        "2. Enter a name and a description: goals, schedule, who you are looking for.\n" +
+        "3. The static gets its own post below. It stays until you delete it.\n\n" +
+        "**Join a static**\n" +
+        "• Click **Apply** under its post — pick a character (optional) and add a message for the organizer.\n" +
+        "• Your application waits for the organizer: you get a DM when you are accepted or declined.\n" +
+        "• **Leave** withdraws your application or takes you out of the static.\n\n" +
+        "**Organizer**\n" +
+        "• ⚙️ **Manage** — accept or decline applications, remove members, open / close recruiting, edit, delete.\n" +
+        "• 📣 **Ping members** — mention the whole static in one click.\n\n" +
+        "-# Statics are also on the website: search, apply, and drag applications into the roster.",
+        [
+            new("start", "“Create static” button", "Create static"),
+            new("mine", "“My statics” button", "My statics")
+        ],
+        "st:start") { DefaultColor = 0x9B59B6 };
+
+    public static readonly PanelDef[] All = [Lfg, Tickets, Rooms, Statics];
 
     /// <summary>Кнопки в постах сборов (не панель: только подписи).</summary>
     public static readonly PanelDef LfgPost = new(

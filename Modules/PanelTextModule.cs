@@ -14,7 +14,7 @@ public sealed class PanelTextModule(PanelTextStore store, PanelService panels) :
 {
     [SlashCommand("panel-text", "Edit the title and text of a panel (LFG, Tickets, Room controls)")]
     public async Task EditAsync(
-        [Summary("panel", "Which panel"), Choice("LFG panel", "lfg"), Choice("Ticket panel", "tickets"), Choice("Room controls", "rooms")] string panel)
+        [Summary("panel", "Which panel"), Choice("LFG panel", "lfg"), Choice("Ticket panel", "tickets"), Choice("Room controls", "rooms"), Choice("Statics panel", "statics")] string panel)
     {
         if (PanelDefs.Find(panel) is not { } def)
         {

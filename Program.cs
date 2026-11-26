@@ -57,6 +57,8 @@ builder.Services.AddSingleton<LfgNotifyStore>();
 builder.Services.AddSingleton<LfgNotifier>();
 builder.Services.AddSingleton<LfgSignupService>();
 builder.Services.AddSingleton<LfgProfileService>();
+builder.Services.AddSingleton<StaticStore>();
+builder.Services.AddSingleton<StaticService>();
 builder.Services.AddSingleton<BotOwner>();
 builder.Services.AddSingleton<AdminStore>();
 builder.Services.AddSingleton<TicketMessageService>();

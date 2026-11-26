@@ -93,6 +93,8 @@ public static partial class PanelApi
         MapMember(guild.MapGroup("/me").AddEndpointFilter(RequireMember));
         MapMemberGuild(guild.MapGroup("/me").AddEndpointFilter(RequireMember));
         MapMemberArmory(guild.MapGroup("/me").AddEndpointFilter(RequireMember));
+        MapMemberStatics(guild.MapGroup("/me").AddEndpointFilter(RequireMember));
+        MapStaticsAdmin(guild.MapGroup("/lfg").AddEndpointFilter(Require(PanelPermissions.Lfg)));
         MapMemberRoles(guild.MapGroup("/member-roles").AddEndpointFilter(Require(PanelPermissions.Settings)));
         MapLfgExtra(guild.MapGroup("/lfg").AddEndpointFilter(Require(PanelPermissions.Lfg)));
         MapGuildTools(guild.MapGroup("/lfg").AddEndpointFilter(Require(PanelPermissions.Lfg)),
@@ -1074,6 +1076,8 @@ public static partial class PanelApi
             }
             return (groups.Count, groups.Count);
         }
+        if (key == "staticpost")
+            return StaticService.Instance is { } statics ? await statics.RefreshAllAsync(guildId) : (0, 0);
         if (key == PanelDefs.TicketMessage.Key)
         {
             var (updated, total) = (0, 0);

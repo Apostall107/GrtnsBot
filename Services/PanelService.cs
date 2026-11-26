@@ -36,8 +36,27 @@ public sealed class PanelService(DiscordSocketClient client, PanelTextStore stor
         {
             "tickets" => TicketRenderer.Panel(text),
             "rooms" => TempRoomManager.Panel(text),
+            "statics" => StaticPanel(text),
             _ => throw new ArgumentException($"Unknown panel '{key}'", nameof(key))
         };
+    }
+
+    /// <summary>Панель статиков (КП): «Create static» и «My statics».</summary>
+    private static (Embed Embed, MessageComponent Components) StaticPanel(PanelText? text)
+    {
+        var def = PanelDefs.Statics;
+        var embed = new EmbedBuilder()
+            .WithSiteTitle(def.Title(text))
+            .WithColor(def.Color(text))
+            .WithDescription(def.Description(text))
+            .WithSiteField()
+            .Build();
+        var comps = new ComponentBuilder()
+            .WithButton(def.Label(text, "start"), "st:start", ButtonStyle.Success, new Emoji("➕"), row: 0)
+            .WithButton(def.Label(text, "mine"), "st:mine", ButtonStyle.Secondary, new Emoji("📋"), row: 0)
+            .WithSiteButton(row: 0)
+            .Build();
+        return (embed, comps);
     }
 
     /// <summary>Отправляет панель в канал и запоминает сообщение.</summary>
