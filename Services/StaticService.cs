@@ -18,6 +18,8 @@ public sealed class StaticService
     private readonly StaticStore store;
     private readonly LfgProjectStore projects;
     private readonly LfgProfileService profile;
+    private readonly CharacterStore characters;
+    private readonly GuildPrefsStore prefs;
     private readonly AuditLog audit;
     private readonly ILogger<StaticService> logger;
 
@@ -25,12 +27,15 @@ public sealed class StaticService
     public static StaticService? Instance { get; private set; }
 
     public StaticService(DiscordSocketClient client, StaticStore store, LfgProjectStore projects, LfgProfileService profile,
+        CharacterStore characters, GuildPrefsStore prefs,
         AuditLog audit, ILogger<StaticService> logger)
     {
         this.client = client;
         this.store = store;
         this.projects = projects;
         this.profile = profile;
+        this.characters = characters;
+        this.prefs = prefs;
         this.audit = audit;
         this.logger = logger;
         Instance = this;
@@ -62,6 +67,40 @@ public sealed class StaticService
     public PickerCharacter? Character(ulong guildId, ulong userId, string? projectKey, string? name) =>
         string.IsNullOrWhiteSpace(name) ? null : profile.PickerFor(guildId, userId, projectKey).FirstOrDefault(c => c.Name == name.Trim());
 
+    /// <summary>Персонаж для показа: класс, GS и — только в проекте с оружейной AION (Settings → Armory) — CP и сервер.</summary>
+    public sealed record LiveCharacter(string Name, string? Icon, int? Gs, int? Cp, string? Server);
+
+    /// <summary>Оружейная проекта включена: у персонажей есть CP и сервер (особенность AION 2).</summary>
+    public bool ArmoryOn(ulong guildId, string? projectKey)
+    {
+        var project = projects.Effective(guildId, projectKey);
+        return prefs.ArmoryFor(guildId, project?.Key, project?.Name).Enabled;
+    }
+
+    /// <summary>Все персонажи человека в проекте (для просмотра организатором и на сайте).</summary>
+    public IReadOnlyList<LiveCharacter> CharactersOf(ulong guildId, ulong userId, string? projectKey)
+    {
+        var armory = ArmoryOn(guildId, projectKey);
+        var scope = projects.Scope(guildId, projectKey);
+        return profile.PickerFor(guildId, userId, projectKey).Select(c => new LiveCharacter(c.Name, c.Icon, c.Gs,
+            armory ? c.Cp : null,
+            // Сервер персонажа (как Имя[LUD] в сборах): из оружейной или указанный вручную
+            armory ? OfficialArmory.Tag(characters.GetInfo(guildId, userId, c.Name, scope) is { } info ? info.Armory?.ServerId ?? info.ServerId : null) : null))
+            .ToList();
+    }
+
+    /// <summary>Персонаж участника как он есть сейчас; удалён из профиля — по снимку из заявки. Без персонажа — null.</summary>
+    public LiveCharacter? Shown(StaticGroup s, ulong userId, string? name, string? icon, int? gs, int? cp)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        return CharactersOf(s.GuildId, userId, s.ProjectKey).FirstOrDefault(c => c.Name == name.Trim())
+               ?? new LiveCharacter(name, icon, gs, ArmoryOn(s.GuildId, s.ProjectKey) ? cp : null, null);
+    }
+
+    /// <summary>« — 🛡 **Имя** `[TRI]` · GS · CP».</summary>
+    public string CharacterLine(StaticGroup s, ulong userId, string? name, string? icon, int? gs, int? cp) =>
+        Shown(s, userId, name, icon, gs, cp) is { } c ? CharacterText(c.Name, c.Icon, c.Gs, c.Cp, c.Server) : "";
+
     // ================= Пост =================
 
     public (Embed Embed, MessageComponent Components) Render(StaticGroup s)
@@ -77,7 +116,7 @@ public sealed class StaticService
         var shown = 0;
         foreach (var m in s.Members)
         {
-            var line = $"\n{++shown}. <@{m.UserId}>{CharacterText(m.CharacterName, m.ClassIcon, m.Gs)}";
+            var line = $"\n{++shown}. <@{m.UserId}>{CharacterLine(s, m.UserId, m.CharacterName, m.ClassIcon, m.Gs, m.Cp)}";
             if (text.Length + line.Length > 3600) { text.Append($"\n… +{s.Members.Count - shown + 1}"); break; }
             text.Append(line);
         }
@@ -99,8 +138,12 @@ public sealed class StaticService
         return (embed, comps);
     }
 
-    public static string CharacterText(string? name, string? icon, int? gs) =>
-        name is null ? "" : $" — {(icon is null ? "" : icon + " ")}**{name}**{(gs is { } g ? $" · GS {g}" : "")}";
+    public static string CharacterText(string? name, string? icon, int? gs, int? cp = null, string? server = null) =>
+        name is null ? "" : $" — {(icon is null ? "" : icon + " ")}**{Format.Sanitize(name)}**{(server is { Length: > 0 } ? $" `[{server}]`" : "")}{GsCp(gs, cp)}";
+
+    /// <summary>« · GS 3053 · CP 1.2M» — как в постах сборов.</summary>
+    public static string GsCp(int? gs, int? cp) =>
+        (gs is { } g ? $" · GS {g}" : "") + (cp is { } c ? $" · CP {LfgRenderer.Compact(c)}" : "");
 
     // Объединение правок поста: первая уходит сразу, следующие за PostEditGap — одной итоговой правкой (как у сборов)
     private static readonly TimeSpan PostEditGap = TimeSpan.FromMilliseconds(1200);
@@ -244,7 +287,7 @@ public sealed class StaticService
             Name = clean,
             Description = CleanText(description, StaticGroup.MaxDescription),
             Size = Math.Clamp(size, StaticGroup.MinSize, StaticGroup.MaxSize),
-            Members = [new StaticMember { UserId = owner.Id, CharacterName = pick?.Name, ClassIcon = pick?.Icon, Gs = pick?.Gs }]
+            Members = [new StaticMember { UserId = owner.Id, CharacterName = pick?.Name, ClassIcon = pick?.Icon, Gs = pick?.Gs, Cp = pick?.Cp }]
         };
         s.Log(owner.Id, "created the static");
         store.Statics[s.Id] = s;
@@ -272,7 +315,7 @@ public sealed class StaticService
             if (s.Applicants.Count >= StaticGroup.MaxApplicants) return T(gid, "static.apply.tooMany");
             app = new StaticApplicant
             {
-                UserId = user.Id, CharacterName = pick?.Name, ClassIcon = pick?.Icon, Gs = pick?.Gs,
+                UserId = user.Id, CharacterName = pick?.Name, ClassIcon = pick?.Icon, Gs = pick?.Gs, Cp = pick?.Cp,
                 Message = CleanText(message, StaticGroup.MaxMessage)
             };
             s.Applicants.Add(app);
@@ -321,7 +364,7 @@ public sealed class StaticService
             if (s.FindApplicant(userId) is not { } a) return T(s.GuildId, "static.manage.noSuchApplicant");
             if (s.IsFull) return T(s.GuildId, "static.manage.full", ("size", s.Size));
             s.Applicants.Remove(a);
-            s.Members.Add(new StaticMember { UserId = a.UserId, CharacterName = a.CharacterName, ClassIcon = a.ClassIcon, Gs = a.Gs });
+            s.Members.Add(new StaticMember { UserId = a.UserId, CharacterName = a.CharacterName, ClassIcon = a.ClassIcon, Gs = a.Gs, Cp = a.Cp });
             s.Log(userId, $"accepted by {Name(by)}");
             return null;
         });
@@ -351,7 +394,7 @@ public sealed class StaticService
         if (userId == s.OwnerId) return T(s.GuildId, "static.manage.ownerStays");
         if (s.FindMember(userId) is not { } m) return T(s.GuildId, "static.manage.noSuchMember");
         s.Members.Remove(m);
-        s.Applicants.Add(new StaticApplicant { UserId = m.UserId, CharacterName = m.CharacterName, ClassIcon = m.ClassIcon, Gs = m.Gs });
+        s.Applicants.Add(new StaticApplicant { UserId = m.UserId, CharacterName = m.CharacterName, ClassIcon = m.ClassIcon, Gs = m.Gs, Cp = m.Cp });
         s.Log(userId, $"moved back to applications by {Name(by)}");
         return null;
     });
@@ -394,8 +437,8 @@ public sealed class StaticService
     public Task<string?> SetCharacterAsync(StaticGroup s, ulong userId, string? character) => MutateAsync(s, () =>
     {
         var pick = Character(s.GuildId, userId, s.ProjectKey, character);
-        if (s.FindMember(userId) is { } m) { m.CharacterName = pick?.Name; m.ClassIcon = pick?.Icon; m.Gs = pick?.Gs; }
-        else if (s.FindApplicant(userId) is { } a) { a.CharacterName = pick?.Name; a.ClassIcon = pick?.Icon; a.Gs = pick?.Gs; }
+        if (s.FindMember(userId) is { } m) { m.CharacterName = pick?.Name; m.ClassIcon = pick?.Icon; m.Gs = pick?.Gs; m.Cp = pick?.Cp; }
+        else if (s.FindApplicant(userId) is { } a) { a.CharacterName = pick?.Name; a.ClassIcon = pick?.Icon; a.Gs = pick?.Gs; a.Cp = pick?.Cp; }
         else return T(s.GuildId, "static.leave.none");
         if (pick is not null) s.Log(userId, $"changed character → {pick.Name}");
         return null;
@@ -469,7 +512,7 @@ public sealed class StaticService
         var gid = s.GuildId;
         var text = T(gid, "static.dm.newApplication",
             ("user", $"<@{applicant.Id}> ({Name(applicant)})"), ("name", s.Name), ("server", ServerName(s)),
-            ("character", CharacterText(app.CharacterName, app.ClassIcon, app.Gs)),
+            ("character", CharacterLine(s, app.UserId, app.CharacterName, app.ClassIcon, app.Gs, app.Cp)),
             ("message", app.Message is null ? "" : $"\n> {app.Message.Replace("\n", "\n> ")}"),
             ("link", Link(s)));
         var comps = new ComponentBuilder()

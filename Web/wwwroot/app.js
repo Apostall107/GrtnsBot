@@ -8061,9 +8061,8 @@ async function pageStatics(main) {
 
   // Admins: the panel in Discord (statics are posted in its channel)
   if (can("lfg")) {
-    const adminCard = postPanelCard("Statics panel", "Posts the panel with “Create static” and “My statics”. New statics are posted in the channel of this panel.", "/lfg/statics-panel");
-    if (!data.panelPosted) adminCard.prepend(h("div", { class: "badge wait", style: "margin-bottom:8px" }, icon("triangle-alert", 13), "Not posted yet — nobody can create a static"));
-    main.insertBefore(h("details", { class: "static-admin", open: !data.panelPosted }, h("summary", { class: "section-label" }, "Admin · statics panel"), adminCard), holder);
+    main.insertBefore(h("details", { class: "static-admin", open: !data.panelPosted },
+      h("summary", { class: "section-label" }, "Admin · statics panels"), staticPanelsCard(data.panelPosted)), holder);
   }
 
   main.insertBefore(staticCreateCard(data, tab), holder);
@@ -8105,12 +8104,68 @@ async function pageStatics(main) {
   draw();
 }
 
+/** Admin: statics panels by project — each panel creates statics of its game in its channel. */
+function staticPanelsCard(posted) {
+  const body = h("div", {}, h("div", { class: "muted" }, "Loading…"));
+  const card = h("div", { class: "card" },
+    !posted ? h("div", { class: "badge wait", style: "margin-bottom:8px" }, icon("triangle-alert", 13), "Not posted yet — nobody can create a static") : null,
+    h("div", { class: "card-head" }, h("h3", {}, "Statics panels")),
+    h("p", { class: "muted small" }, "A panel with “Create static” and “My statics”. Each panel belongs to a project (game): statics created from it are of that game and are posted in its channel. On the site a static goes to the panel of its game, otherwise to any panel."),
+    body);
+  (async () => {
+    let d;
+    try { d = await gApi("GET", "/lfg/statics-panels"); } catch (e) { body.replaceChildren(errorState(e.message)); return; }
+    const projectSelect = (value, emptyLabel) => {
+      const sel = h("select", { "aria-label": "Project" }, h("option", { value: "" }, emptyLabel), (d.projects || []).map(p => h("option", { value: p.key }, p.name)));
+      sel.value = value || "";
+      return sel;
+    };
+    const hasProjects = (d.projects || []).length > 0;
+    const list = (d.panels || []).length ? h("div", { class: "roster" }, d.panels.map(p => {
+      const sel = hasProjects ? projectSelect(p.projectKey, "Default project") : null;
+      if (sel) sel.addEventListener("change", () => act(sel, () => gApi("PUT", `/lfg/statics-panels/${p.messageId}/project`, { projectKey: sel.value || null }), "Project of the panel changed."));
+      return h("div", { class: "slot taken static-panel-row" },
+        h("span", { class: "slot-who" }, icon("hash", 14), p.channel || "deleted channel"),
+        sel, h("a", { class: "btn ghost sm", href: p.jumpUrl, target: "_blank", rel: "noopener" }, icon("external-link", 14), "Open"));
+    })) : h("div", { class: "muted small" }, "No statics panels yet.");
+    const ch = channelSelect("text", "Choose a text channel…");
+    const proj = hasProjects ? projectSelect(d.defaultProject, "Default project") : null;
+    const post = h("button", { class: "btn" }, icon("pin", 15), "Post");
+    post.addEventListener("click", async () => {
+      if (!ch.value) return toast("Choose a channel first.", "warn");
+      const q = proj && proj.value ? `?project=${encodeURIComponent(proj.value)}` : "";
+      if (await act(post, () => gApi("POST", `/lfg/statics-panel${q}`, { channelId: ch.value }), "Panel posted.") !== undefined) refresh();
+    });
+    body.replaceChildren(list, h("div", { class: "section-label", style: "margin-top:12px" }, "Post a new panel"),
+      h("div", { class: "static-panel-post" }, h("div", { class: "grow" }, ch), proj, post));
+  })();
+  return card;
+}
+
+/** All characters of a person in the static's game: class, GS, and (AION armory) server and CP. */
+async function staticCharactersDialog(s, m) {
+  const d = dialog();
+  d.replaceChildren(h("h2", {}, `Characters · ${m.name}`), h("div", { class: "muted" }, "Loading…"));
+  if (!d.open) d.showModal();
+  let r;
+  try { r = await gApi("GET", `/me/statics/${encodeURIComponent(s.id)}/characters/${m.id}`); }
+  catch (e) { d.replaceChildren(h("h2", {}, `Characters · ${m.name}`), errorState(e.message)); return; }
+  const rows = (r.characters || []).map(c => h("div", { class: "slot taken static-row" }, h("div", { class: "slot-main" },
+    h("span", { class: "slot-who" }, classMark(c), h("b", {}, c.name)),
+    h("span", { class: "slot-char" }, c.server ? h("span", { class: "gs", title: "Character's server" }, c.server) : null,
+      c.gs ? h("span", { class: "gs" }, `GS ${c.gs}`) : null, c.cp ? h("span", { class: "gs cp" }, `CP ${fmtCp(c.cp)}`) : null))));
+  d.replaceChildren(h("h2", {}, `Characters · ${m.name}`),
+    r.project ? h("div", { class: "muted small", style: "margin-bottom:8px" }, `In ${r.project}`) : null,
+    rows.length ? h("div", { class: "roster" }, rows) : empty("No characters in this game."),
+    h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Close")));
+}
+
 /** My characters of a project for a <select>: "" = without a character. */
 function staticCharSelect(data, projectKey, current, emptyLabel = "— without a character —") {
   const byProject = data.characters || {};
   const chars = byProject[projectKey || ""] || byProject[""] || [];
   const sel = h("select", { "aria-label": "Character" }, h("option", { value: "" }, emptyLabel),
-    chars.map(c => h("option", { value: c.name }, [c.name, c.gs != null ? `GS ${c.gs}` : null].filter(Boolean).join(" · "))));
+    chars.map(c => h("option", { value: c.name }, [c.server ? `${c.name} [${c.server}]` : c.name, c.gs != null ? `GS ${c.gs}` : null, c.cp != null ? `CP ${fmtCp(c.cp)}` : null].filter(Boolean).join(" · "))));
   if (current && chars.some(c => c.name === current)) sel.value = current;
   return sel;
 }
@@ -8180,7 +8235,8 @@ function staticCard(s, data) {
   const decide = (action, m, okText) => act(null, () => gApi("POST", `/me/statics/${sid}/decide`, { action, userId: m.id }), okText).then(reload);
   const tool = (ic, title, fn) => h("button", { class: "btn ghost icon-only sm", title, "aria-label": title, onclick: fn }, icon(ic, 15));
   const charLine = x => [classMark(x), x.character ? h("span", { class: "slot-charname", title: x.character }, x.character) : null,
-    x.gs ? h("span", { class: "gs" }, `GS ${x.gs}`) : null].filter(Boolean);
+    x.server ? h("span", { class: "gs", title: "Character's server" }, x.server) : null,
+    x.gs ? h("span", { class: "gs" }, `GS ${x.gs}`) : null, x.cp ? h("span", { class: "gs cp" }, `CP ${fmtCp(x.cp)}`) : null].filter(Boolean);
   const person = (x, note) => h("div", { class: "slot-main" },
     h("span", { class: "slot-who" }, member(x.member), x.isOwner ? h("span", { class: "badge", title: "Organizer" }, icon("crown", 12), "organizer") : null),
     h("span", { class: "slot-char" }, ...charLine(x)), note || null);
@@ -8211,6 +8267,7 @@ function staticCard(s, data) {
     s.members.map(m => {
       const row = h("div", { class: `slot taken static-row${m.member.id === meId ? " me" : ""}` },
         person(m), h("span", { class: "slot-tools" },
+          tool("users", "All characters in this game", () => staticCharactersDialog(s, m.member)),
           org && !m.isOwner ? tool("arrow-down", "Back to applications", () => decide("back", m.member, "Moved back to applications.")) : null,
           org && !m.isOwner ? tool("x", "Remove from the static (sends a DM)", async () => {
             if (await confirmDialog(`Remove ${m.member.name}?`, "They leave the static and get a DM.", "Remove")) decide("remove", m.member, "Removed.");
@@ -8227,6 +8284,7 @@ function staticCard(s, data) {
     applicants.length ? h("div", { class: "roster" }, applicants.map(a => dragRow(h("div", { class: "slot taken static-row" },
       person(a, a.message ? h("span", { class: "slot-comment muted small" }, icon("message-square", 13), h("span", { title: a.message }, a.message)) : null),
       h("span", { class: "slot-tools" },
+        tool("users", "All characters in this game", () => staticCharactersDialog(s, a.member)),
         tool("check", "Accept (sends a DM)", () => decide("accept", a.member, "Accepted — DM sent.")),
         tool("x", "Decline (sends a DM)", () => decide("decline", a.member, "Declined.")))), "app", a.member)))
       : h("div", { class: "muted small" }, "No applications yet.")),

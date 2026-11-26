@@ -38,7 +38,7 @@ public static partial class PanelApi
                 defaultProject = projects.Effective(guildId, null)?.Key,
                 // Мои персонажи по проектам — для выбора при создании и заявке
                 characters = (myProjects.Count > 0 ? myProjects.Select(p => (string?)p.Key) : [null]).Distinct()
-                    .ToDictionary(k => k ?? "", k => profiles.PickerFor(guildId, me, k).Select(c => new { name = c.Name, icon = c.Icon, gs = c.Gs })),
+                    .ToDictionary(k => k ?? "", k => statics.CharactersOf(guildId, me, k).Select(c => new { name = c.Name, icon = c.Icon, gs = c.Gs, cp = c.Cp, server = c.Server })),
                 statics = list.Select(s =>
                 {
                     var canManage = StaticService.CanManage(s, me, admin);
@@ -64,24 +64,29 @@ public static partial class PanelApi
                         myCharacter = mine?.CharacterName ?? myApp?.CharacterName,
                         myMessage = myApp?.Message,
                         applicantCount = s.Applicants.Count,
-                        members = s.Members.Select(m => new
+                        // Класс, GS, CP и сервер — по актуальному профилю персонажа (удалён — по снимку)
+                        members = s.Members.Select(m => (m, live: statics.Shown(s, m.UserId, m.CharacterName, m.ClassIcon, m.Gs, m.Cp))).Select(x => new
                         {
-                            member = Member(guild, m.UserId),
-                            character = m.CharacterName,
-                            classIcon = m.ClassIcon,
-                            gs = m.Gs,
-                            isOwner = m.UserId == s.OwnerId,
-                            joinedAt = m.JoinedAt.ToUnixTimeMilliseconds()
+                            member = Member(guild, x.m.UserId),
+                            character = x.m.CharacterName,
+                            classIcon = x.live?.Icon,
+                            gs = x.live?.Gs,
+                            cp = x.live?.Cp,
+                            server = x.live?.Server,
+                            isOwner = x.m.UserId == s.OwnerId,
+                            joinedAt = x.m.JoinedAt.ToUnixTimeMilliseconds()
                         }),
                         // Заявки и история — только тому, кто управляет статиком
-                        applicants = canManage ? s.Applicants.Select(a => new
+                        applicants = canManage ? s.Applicants.Select(a => (a, live: statics.Shown(s, a.UserId, a.CharacterName, a.ClassIcon, a.Gs, a.Cp))).Select(x => new
                         {
-                            member = Member(guild, a.UserId),
-                            character = a.CharacterName,
-                            classIcon = a.ClassIcon,
-                            gs = a.Gs,
-                            message = a.Message,
-                            appliedAt = a.AppliedAt.ToUnixTimeMilliseconds()
+                            member = Member(guild, x.a.UserId),
+                            character = x.a.CharacterName,
+                            classIcon = x.live?.Icon,
+                            gs = x.live?.Gs,
+                            cp = x.live?.Cp,
+                            server = x.live?.Server,
+                            message = x.a.Message,
+                            appliedAt = x.a.AppliedAt.ToUnixTimeMilliseconds()
                         }) : null,
                         history = canManage
                             ? s.History.AsEnumerable().Reverse().Take(100).Select(h => new { at = h.At.ToUnixTimeMilliseconds(), member = Member(guild, h.UserId), text = h.Text })
@@ -118,6 +123,19 @@ public static partial class PanelApi
             if (await ActorAsync(client, guild, me) is not { } actor) return GuildNotFound();
             var error = await statics.ApplyAsync(s, actor, body.Character, body.Message);
             return error is null ? Results.Ok() : Error(StripMarkdown(error));
+        });
+
+        // Все персонажи человека в проекте статика: класс, GS, а в проекте с оружейной AION — CP и сервер
+        g.MapGet("/statics/{id}/characters/{userId}", (ulong guildId, string id, string userId, [FromServices] StaticStore store,
+            [FromServices] StaticService statics) =>
+        {
+            if (store.Get(guildId, id) is not { } s) return Error("This static no longer exists.");
+            if (ParseId(userId) is not { } uid) return Error("Unknown member.");
+            return Results.Ok(new
+            {
+                project = statics.ProjectName(s),
+                characters = statics.CharactersOf(guildId, uid, s.ProjectKey).Select(c => new { name = c.Name, classIcon = c.Icon, gs = c.Gs, cp = c.Cp, server = c.Server })
+            });
         });
 
         g.MapPost("/statics/{id}/leave", async (ulong guildId, string id, ClaimsPrincipal user, [FromServices] StaticStore store,
@@ -196,8 +214,45 @@ public static partial class PanelApi
     /// <summary>Админ (право LFG): опубликовать панель статиков в канале.</summary>
     private static void MapStaticsAdmin(RouteGroupBuilder g)
     {
-        g.MapPost("/statics-panel", (ulong guildId, ChannelBody body, DiscordSocketClient client, PanelService panels) =>
-            PostAsync(client, guildId, body.ChannelId, ch => panels.PostAsync(ch, guildId, "statics")));
+        // Опубликованные панели статиков и их проекты (статики с панели создаются под её проект)
+        g.MapGet("/statics-panels", (ulong guildId, DiscordSocketClient client, PanelTextStore texts, LfgProjectStore projects) =>
+        {
+            if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
+            return Results.Ok(new
+            {
+                projects = projects.GetProjects(guildId).Select(p => new { key = p.Key, name = p.Name }),
+                defaultProject = projects.Effective(guildId, null)?.Key,
+                panels = texts.GetPosted(guildId, "statics").Select(p => new
+                {
+                    messageId = p.MessageId.ToString(),
+                    channelId = p.ChannelId.ToString(),
+                    channel = guild.GetTextChannel(p.ChannelId)?.Name,
+                    projectKey = p.ProjectKey,
+                    jumpUrl = $"https://discord.com/channels/{guildId}/{p.ChannelId}/{p.MessageId}"
+                })
+            });
+        });
+
+        // ?project=key — панель сразу привязывается к проекту
+        g.MapPost("/statics-panel", (ulong guildId, string? project, ChannelBody body, DiscordSocketClient client, PanelService panels,
+            PanelTextStore texts, LfgProjectStore projects) =>
+        {
+            var key = string.IsNullOrWhiteSpace(project) ? null : project;
+            if (key is not null && projects.Find(guildId, key) is null) return Task.FromResult(Error("Project not found."));
+            return PostAsync(client, guildId, body.ChannelId, async ch =>
+            {
+                var message = await panels.PostAsync(ch, guildId, "statics");
+                if (key is not null) texts.SetPanelProject(guildId, "statics", message.Id, key);
+            });
+        });
+
+        g.MapPut("/statics-panels/{messageId}/project", (ulong guildId, ulong messageId, LfgPanelProjectBody body, LfgProjectStore projects,
+            PanelTextStore texts) =>
+        {
+            var key = string.IsNullOrWhiteSpace(body.ProjectKey) ? null : body.ProjectKey;
+            if (key is not null && projects.Find(guildId, key) is null) return Error("Project not found.");
+            return texts.SetPanelProject(guildId, "statics", messageId, key) ? Results.Ok() : Error("Panel not found.");
+        });
     }
 
     /// <summary>Действие организатора: проверка прав (организатор, владелец бота, админ с правом LFG), ошибка — текстом.</summary>

@@ -9,7 +9,7 @@ namespace LfgBot.Modules;
 
 /// <summary>Статики (КП) в Discord: панель, создание, заявки, управление организатора, пинг состава.</summary>
 [RequireContext(ContextType.Guild)]
-public sealed class StaticModule(StaticStore store, StaticService statics, LfgProfileService profile, LfgProjectStore projects, PanelService panels,
+public sealed class StaticModule(StaticStore store, StaticService statics, LfgProjectStore projects, PanelService panels,
     PanelTextStore panelStore, AdminStore admins)
     : InteractionModuleBase<SocketInteractionContext>
 {
@@ -17,8 +17,15 @@ public sealed class StaticModule(StaticStore store, StaticService statics, LfgPr
 
     [SlashCommand("statics-panel", "Post the Statics (constant parties) panel in this channel")]
     [RequireBotAdmin]
-    public async Task PanelCommand()
+    public async Task PanelCommand(
+        [Summary("project", "Game / project of the statics created from this panel (empty = default)"), Autocomplete(typeof(ProjectAutocomplete))] string? project = null)
     {
+        var key = string.IsNullOrWhiteSpace(project) ? null : project;
+        if (key is not null && projects.Find(Context.Guild.Id, key) is null)
+        {
+            await RespondAsync("Project not found.", ephemeral: true);
+            return;
+        }
         if (Context.Channel is not IMessageChannel channel)
         {
             await RespondAsync(T("lfg.noAccess"), ephemeral: true);
@@ -27,8 +34,9 @@ public sealed class StaticModule(StaticStore store, StaticService statics, LfgPr
         await DeferAsync(ephemeral: true);
         try
         {
-            await panels.PostAsync(channel, Context.Guild.Id, "statics");
-            await FollowupAsync("Panel posted.", ephemeral: true);
+            var message = await panels.PostAsync(channel, Context.Guild.Id, "statics");
+            if (key is not null) panelStore.SetPanelProject(Context.Guild.Id, "statics", message.Id, key);
+            await FollowupAsync(key is null ? "Panel posted." : $"Panel posted for **{projects.Find(Context.Guild.Id, key)!.Name}**.", ephemeral: true);
         }
         catch (Discord.Net.HttpException)
         {
@@ -66,19 +74,20 @@ public sealed class StaticModule(StaticStore store, StaticService statics, LfgPr
     private (string Content, MessageComponent Components) CreateScreen(StaticDraft d)
     {
         var builder = new ComponentBuilder();
-        var mine = profile.PickerFor(d.GuildId, d.OwnerId, d.ProjectKey);
+        var mine = statics.CharactersOf(d.GuildId, d.OwnerId, d.ProjectKey);
         var row = 0;
         if (mine.Count > 0)
         {
             var menu = new SelectMenuBuilder().WithCustomId($"st:ochar:{d.Id}").WithPlaceholder(T("static.create.charPlaceholder"));
             foreach (var c in mine.Take(25))
-                menu.AddOption(c.Name, c.Name, c.Gs is { } gs ? $"GS {gs}" : null, isDefault: c.Name == d.Character);
+                menu.AddOption(c.Name, c.Name, PickDesc(c), isDefault: c.Name == d.Character);
             builder.WithSelectMenu(menu, row: row++);
         }
         foreach (var n in StaticService.FavoriteSizes)
             builder.WithButton(T("static.create.size", ("n", n)), $"st:size:{d.Id}:{n}", ButtonStyle.Primary, new Emoji("👥"), row: row);
         builder.WithButton(T("static.create.otherSize"), $"st:sizeother:{d.Id}", ButtonStyle.Secondary, row: row);
-        return (T("static.create.step"), builder.Build());
+        var project = projects.GetProjects(d.GuildId).Count > 1 ? projects.Effective(d.GuildId, d.ProjectKey)?.Name : null;
+        return ((project is null ? "" : $"🎮 **{project}**\n") + T("static.create.step"), builder.Build());
     }
 
     [ComponentInteraction("st:ochar:*")]
@@ -187,7 +196,7 @@ public sealed class StaticModule(StaticStore store, StaticService statics, LfgPr
             return;
         }
 
-        var mine = profile.PickerFor(s.GuildId, me, s.ProjectKey);
+        var mine = statics.CharactersOf(s.GuildId, me, s.ProjectKey);
         if (mine.Count == 0)
         {
             await DeferAsync(ephemeral: true);
@@ -197,7 +206,7 @@ public sealed class StaticModule(StaticStore store, StaticService statics, LfgPr
             return;
         }
         var menu = new SelectMenuBuilder().WithCustomId($"st:applychar:{s.Id}").WithPlaceholder(T("static.apply.charPlaceholder"));
-        foreach (var c in mine.Take(25)) menu.AddOption(c.Name, c.Name, c.Gs is { } gs ? $"GS {gs}" : null);
+        foreach (var c in mine.Take(25)) menu.AddOption(c.Name, c.Name, PickDesc(c));
         var builder = new ComponentBuilder().WithSelectMenu(menu, row: 0)
             .WithButton(T("static.apply.noChar"), $"st:applynone:{s.Id}", ButtonStyle.Secondary, row: 1);
         await RespondAsync(T("static.apply.pick", ("name", s.Name)), components: builder.Build(), ephemeral: true);
@@ -273,7 +282,7 @@ public sealed class StaticModule(StaticStore store, StaticService statics, LfgPr
             text.Append(T("static.manage.applicants", ("count", s.Applicants.Count)));
             foreach (var a in s.Applicants)
             {
-                var line = $"\n• <@{a.UserId}>{StaticService.CharacterText(a.CharacterName, a.ClassIcon, a.Gs)}" +
+                var line = $"\n• <@{a.UserId}>{statics.CharacterLine(s, a.UserId, a.CharacterName, a.ClassIcon, a.Gs, a.Cp)}" +
                            (a.Message is null ? "" : $"\n  > {a.Message.Replace("\n", " ")}");
                 if (text.Length + line.Length > 1900) { text.Append("\n…"); break; }
                 text.Append(line);
@@ -284,15 +293,20 @@ public sealed class StaticModule(StaticStore store, StaticService statics, LfgPr
         var row = 0;
         if (s.Applicants.Count > 0)
         {
-            builder.WithSelectMenu(PeopleMenu($"st:mok:{s.Id}", T("static.manage.approvePlaceholder"),
-                s.Applicants.Select(a => (a.UserId, a.CharacterName, a.Gs))), row: row++);
-            builder.WithSelectMenu(PeopleMenu($"st:mno:{s.Id}", T("static.manage.declinePlaceholder"),
-                s.Applicants.Select(a => (a.UserId, a.CharacterName, a.Gs))), row: row++);
+            builder.WithSelectMenu(PeopleMenu(s, $"st:mok:{s.Id}", T("static.manage.approvePlaceholder"),
+                s.Applicants.Select(a => (a.UserId, a.CharacterName, a.Gs, a.Cp))), row: row++);
+            builder.WithSelectMenu(PeopleMenu(s, $"st:mno:{s.Id}", T("static.manage.declinePlaceholder"),
+                s.Applicants.Select(a => (a.UserId, a.CharacterName, a.Gs, a.Cp))), row: row++);
         }
         var others = s.Members.Where(m => m.UserId != s.OwnerId).ToList();
         if (others.Count > 0)
-            builder.WithSelectMenu(PeopleMenu($"st:mkick:{s.Id}", T("static.manage.removePlaceholder"),
-                others.Select(m => (m.UserId, m.CharacterName, m.Gs))), row: row++);
+            builder.WithSelectMenu(PeopleMenu(s, $"st:mkick:{s.Id}", T("static.manage.removePlaceholder"),
+                others.Select(m => (m.UserId, m.CharacterName, m.Gs, m.Cp))), row: row++);
+        // Все персонажи человека в проекте (заявки, затем состав)
+        var people = s.Applicants.Select(a => (a.UserId, a.CharacterName, a.Gs, a.Cp))
+            .Concat(s.Members.Select(m => (m.UserId, m.CharacterName, m.Gs, m.Cp)))
+            .DistinctBy(p => p.UserId).ToList();
+        builder.WithSelectMenu(PeopleMenu(s, $"st:mchars:{s.Id}", T("static.manage.charsPlaceholder"), people), row: row++);
         builder.WithButton(T(s.Recruiting ? "static.manage.close" : "static.manage.open"), $"st:mrec:{s.Id}", ButtonStyle.Secondary,
                 new Emoji(s.Recruiting ? "🔒" : "📝"), row: row)
             .WithButton(T("static.manage.edit"), $"st:medit:{s.Id}", ButtonStyle.Secondary, new Emoji("✏️"), row: row)
@@ -300,13 +314,14 @@ public sealed class StaticModule(StaticStore store, StaticService statics, LfgPr
         return (text.ToString(), builder.Build());
     }
 
-    private SelectMenuBuilder PeopleMenu(string customId, string placeholder, IEnumerable<(ulong UserId, string? Character, int? Gs)> people)
+    private SelectMenuBuilder PeopleMenu(StaticGroup s, string customId, string placeholder, IEnumerable<(ulong UserId, string? Character, int? Gs, int? Cp)> people)
     {
         var menu = new SelectMenuBuilder().WithCustomId(customId).WithPlaceholder(placeholder);
-        foreach (var (userId, character, gs) in people.Take(25))
+        foreach (var (userId, character, gs, cp) in people.Take(25))
         {
             var name = Context.Guild.GetUser(userId)?.DisplayName ?? userId.ToString();
-            var desc = character is null ? null : character + (gs is { } g ? $" · GS {g}" : "");
+            var c = statics.Shown(s, userId, character, null, gs, cp);
+            var desc = c is null ? null : c.Name + (c.Server is { } srv ? $" [{srv}]" : "") + StaticService.GsCp(c.Gs, c.Cp);
             menu.AddOption(name.Length > 100 ? name[..100] : name, userId.ToString(), desc is { Length: > 100 } ? desc[..100] : desc);
         }
         return menu;
@@ -323,6 +338,29 @@ public sealed class StaticModule(StaticStore store, StaticService statics, LfgPr
     [ComponentInteraction("st:mkick:*")]
     public Task OnRemove(string id, string[] values) => ManageActionAsync(id, values, async (s, user) =>
         await statics.RemoveMemberAsync(s, user, Context.User, "discord") ?? T("static.manage.removed", ("user", $"<@{user}>")));
+
+    /// <summary>Все персонажи человека в проекте статика — отдельным сообщением (меню управления остаётся).</summary>
+    [ComponentInteraction("st:mchars:*")]
+    public async Task OnCharacters(string id, string[] values)
+    {
+        if (await GetManagedAsync(id) is not { } s) return;
+        if (!ulong.TryParse(values.FirstOrDefault(), out var user)) return;
+        var list = statics.CharactersOf(s.GuildId, user, s.ProjectKey);
+        var project = statics.ProjectName(s) ?? "—";
+        if (list.Count == 0)
+        {
+            await RespondAsync(T("static.manage.noChars", ("user", $"<@{user}>"), ("project", project)), ephemeral: true, allowedMentions: AllowedMentions.None);
+            return;
+        }
+        var text = new StringBuilder(T("static.manage.chars", ("user", $"<@{user}>"), ("project", project), ("count", list.Count)));
+        foreach (var c in list)
+        {
+            var line = "\n•" + StaticService.CharacterText(c.Name, c.Icon, c.Gs, c.Cp, c.Server).TrimStart(' ', '—');
+            if (text.Length + line.Length > 1900) { text.Append("\n…"); break; }
+            text.Append(line);
+        }
+        await RespondAsync(text.ToString(), ephemeral: true, allowedMentions: AllowedMentions.None);
+    }
 
     private async Task ManageActionAsync(string id, string[] values, Func<StaticGroup, ulong, Task<string>> action)
     {
@@ -410,6 +448,11 @@ public sealed class StaticModule(StaticStore store, StaticService statics, LfgPr
     }
 
     // ================= Помощники =================
+
+    /// <summary>Подпись персонажа в меню: «GS 3053 · CP 1.2M».</summary>
+    private static string? PickDesc(StaticService.LiveCharacter c) =>
+        ((c.Server is { } srv ? $"[{srv}]" : "") + StaticService.GsCp(c.Gs, c.Cp)).TrimStart(' ', '·') is { Length: > 0 } t ? t[..Math.Min(t.Length, 100)] : null;
+
 
     private string T(string key, params (string Name, object? Value)[] args) => Tx.Get(Context.Guild?.Id ?? 0, key, args);
 

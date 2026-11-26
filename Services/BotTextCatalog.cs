@@ -506,6 +506,9 @@ public static class BotTextCatalog
         T("static.manage.approvePlaceholder", "Manage: accept menu", "✅ Accept an application…", null, Placeholder);
         T("static.manage.declinePlaceholder", "Manage: decline menu", "❌ Decline an application…", null, Placeholder);
         T("static.manage.removePlaceholder", "Manage: remove menu", "🚪 Remove a member…", null, Placeholder);
+        T("static.manage.charsPlaceholder", "Manage: characters menu", "👤 See a person's characters…", null, Placeholder);
+        T("static.manage.chars", "Manage: a person's characters", "**Characters of {user} in {project} ({count}):**", "{user}, {project}, {count}", 500);
+        T("static.manage.noChars", "Manage: no characters", "{user} has no characters in {project}.", "{user}, {project}", 500);
         T("static.manage.open", "Manage: open recruiting", "Open recruiting", null, Button);
         T("static.manage.close", "Manage: close recruiting", "Close recruiting", null, Button);
         T("static.manage.edit", "Manage: edit", "Edit", null, Button);

@@ -3292,3 +3292,7 @@ dialog.hist-dialog:not([open]) { display: none; }
   .static-card .group-join > select, .static-card .group-join > input { flex: 1 1 100%; min-width: 0; }
   .static-card .group-actions .spacer { display: none; }
 }
+.static-panel-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.static-panel-row .slot-who { flex: 1; min-width: 140px; }
+.static-panel-post { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.static-panel-post .grow { flex: 1; min-width: 180px; }

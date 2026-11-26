@@ -9,6 +9,8 @@ public sealed class StaticMember
     public string? CharacterName { get; set; }
     public string? ClassIcon { get; set; }
     public int? Gs { get; set; }
+    /// <summary>Боевая мощь (CP) из официальной оружейной (снимок).</summary>
+    public int? Cp { get; set; }
     public DateTimeOffset JoinedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
@@ -19,6 +21,8 @@ public sealed class StaticApplicant
     public string? CharacterName { get; set; }
     public string? ClassIcon { get; set; }
     public int? Gs { get; set; }
+    /// <summary>Боевая мощь (CP) из официальной оружейной (снимок).</summary>
+    public int? Cp { get; set; }
     /// <summary>Сообщение организатору (необязательное).</summary>
     public string? Message { get; set; }
     public DateTimeOffset AppliedAt { get; set; } = DateTimeOffset.UtcNow;

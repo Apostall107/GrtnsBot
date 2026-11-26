@@ -113,6 +113,14 @@ public sealed class BotService(
             }
         }
 
+        // Посты статиков: актуальные класс, GS, CP и сервер персонажей (и новый вид поста после обновления бота)
+        var statics = services.GetRequiredService<StaticService>();
+        foreach (var guild in client.Guilds.Where(GuildCache.Loaded))
+        {
+            try { await statics.RefreshAllAsync(guild.Id); }
+            catch (Exception ex) { logger.LogWarning(ex, "Failed to refresh static posts on {Guild}", guild.Name); }
+        }
+
         // Панели ролей: новые кнопки (например, «My roles») появляются в уже опубликованных
         var community = services.GetRequiredService<CommunityService>();
         var store = services.GetRequiredService<CommunityStore>();
