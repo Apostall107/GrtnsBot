@@ -102,6 +102,10 @@ public static class TextLines
     /// <summary>Строка в embed: пустую (текст скрыт через "-") пропускаем.</summary>
     public static System.Text.StringBuilder AppendText(this System.Text.StringBuilder sb, string text) =>
         text.Length == 0 ? sb : sb.AppendLine(text);
+
+    /// <summary>Цитата Discord (серая полоса слева) — каждая строка через «> »; пустой текст — пусто.</summary>
+    public static string Quote(string text) =>
+        text.Trim().Length == 0 ? "" : "> " + text.Trim().Replace("\r\n", "\n").Replace("\n", "\n> ");
 }
 
 /// <summary>Свои тексты бота по серверам (data/bot-texts.json): ключ → текст. Храним только отличия от текста по умолчанию.</summary>

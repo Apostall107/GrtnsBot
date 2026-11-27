@@ -32,7 +32,7 @@ public static class BotTextCatalog
         T("lfg.post.roster", "Roster line (also in DMs) (- = hide)", "Roster: **{filled}/{total}**", "{filled}, {total}", Embed, optional: true);
         T("lfg.post.requirements", "Requirements line (- = hide)", "📋 Requirements: {list} — others go to the reserve", "{list}", Embed, optional: true);
         T("lfg.post.voice", "Voice room line (- = hide)", "🔊 Voice room: {channel}", "{channel}", Embed, optional: true);
-        T("lfg.post.note", "Organizer's note line (- = hide)", "📝 {note}", "{note}", Embed, optional: true);
+        T("lfg.post.note", "Organizer's note at the top, as a quote (- = hide)", "📝 {note}", "{note}", Embed, optional: true);
         T("lfg.post.open", "Free slot", "*open*", null, 200);
         T("lfg.post.reserved", "Reserved slot (only the organizer fills it)", "🔒 *reserved*", null, 200);
         T("lfg.post.reserve", "Reserve heading (- = hide)", "**Reserve ({count}):**", "{count}", 200, optional: true);
@@ -441,6 +441,7 @@ public static class BotTextCatalog
 
         // ================= Statics (constant parties) =================
         Group("Statics — post", "staticpost");
+        T("static.post.description", "Description at the top, as a quote (- = hide)", "📝 {text}", "{text}", Embed, optional: true);
         T("static.post.organizer", "Organizer line", "Organizer: {user}", "{user}", Embed);
         T("static.post.project", "Game line (- = hide)", "🎮 {project}", "{project}", Embed, optional: true);
         T("static.post.roster", "Roster line", "👥 Members: **{count}/{size}**", "{count}, {size}", Embed);
@@ -530,6 +531,13 @@ public static class BotTextCatalog
         T("static.ping.label", "Ping: message field", "Message (optional)", null, ModalTitle);
         T("static.ping.placeholder", "Ping: message hint", "Raid in 15 minutes — join the voice!", null, Option);
         T("static.ping.message", "Ping: message in the channel", "📣 **{name}** · {user}{text}\n", "{name}, {user}, {text} = «: message» or empty", 1500);
+        T("static.ping.link", "Ping in another channel: link to the post (- = hide)", "-# 🔗 {link}", "{link}", 500, optional: true);
+        T("static.ping.channels", "Manage: ping channels button", "Ping channels", null, Button);
+        T("static.ping.channelsPick", "Ping channels: text", "📣 **Where does “Ping members” go?** Now: {channels}\nPick up to {max} channels where you can write.", "{channels}, {max}", 1000);
+        T("static.ping.channelsPlaceholder", "Ping channels: menu", "Channels for the ping…", null, Placeholder);
+        T("static.ping.channelsReset", "Ping channels: reset button", "Only the static's channel", null, Button);
+        T("static.ping.channelsSaved", "Ping channels: saved", "📣 Pings now go to: {channels}", "{channels}", 1000);
+        T("static.ping.channelDenied", "Ping channels: no access", "You (or the bot) can't write in {channel} — pick another channel.", "{channel}", 500);
         T("static.ping.sent", "Ping: sent", "📣 Pinged {count} members.", "{count}", 500);
         T("static.ping.nobody", "Ping: nobody to ping", "Nobody to ping yet — you are the only member.", null, 500);
         T("static.ping.cooldown", "Ping: too often", "You can ping again in {seconds} s.", "{seconds}", 500);

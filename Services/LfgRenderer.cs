@@ -293,6 +293,9 @@ public static class LfgRenderer
     {
         var gid = g.GuildId;
         var sb = new StringBuilder();
+        // Заметка организатора — первой, цитатой: сразу видна в посте
+        if (!string.IsNullOrWhiteSpace(g.Note) && TextLines.Quote(Tx.Get(gid, "lfg.post.note", ("note", Format.Sanitize(g.Note)))) is { Length: > 0 } note)
+            sb.AppendLine(note).AppendLine();
         // Сбор без организатора (повторяющийся, публикует бот) — строки организатора нет
         if (g.OwnerId != 0) sb.AppendText(Tx.Get(gid, "lfg.post.organizer", ("user", $"<@{g.OwnerId}>")));
         if (g.StartsAt is { } startsAt)
@@ -300,7 +303,6 @@ public static class LfgRenderer
         sb.AppendText(Tx.Get(gid, "lfg.post.roster", ("filled", g.FilledCount), ("total", g.Slots.Count)));
         if (Requirements(g) is { } req) sb.AppendText(Tx.Get(gid, "lfg.post.requirements", ("list", req)));
         if (g.VoiceChannelId is { } voice) sb.AppendText(Tx.Get(gid, "lfg.post.voice", ("channel", $"<#{voice}>")));
-        if (!string.IsNullOrWhiteSpace(g.Note)) sb.AppendText(Tx.Get(gid, "lfg.post.note", ("note", Format.Sanitize(g.Note))));
         sb.AppendLine();
         var expires = Tx.Get(gid, "lfg.post.expires", ("time", $"<t:{g.ExpiresAt.ToUnixTimeSeconds()}:R>"));
         // Заметки к персонажам в посте не показываются — их видит владелец при выборе персонажа.

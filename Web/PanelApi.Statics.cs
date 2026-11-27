@@ -32,6 +32,13 @@ public static partial class PanelApi
                 // Создать можно, если где-то висит панель статиков (там появится пост)
                 panelPosted = panels.GetPosted(guildId, "statics").Count > 0,
                 maxOwned = StaticStore.MaxOwnedPerUser,
+                maxPingChannels = StaticService.MaxPingChannels,
+                // Каналы для «Ping members»: где пишут и я, и бот (только тем, кто управляет хоть одним статиком)
+                myChannels = member is not null && list.Any(s => StaticService.CanManage(s, me, admin))
+                    ? guild.TextChannels.Where(c => StaticService.CanWrite(member, c) && StaticService.CanWrite(guild.CurrentUser, c))
+                        .OrderBy(c => c.Category?.Position ?? -1).ThenBy(c => c.Position)
+                        .Select(c => new { id = c.Id.ToString(), name = c.Name, category = c.Category?.Name })
+                    : null,
                 owned = store.OwnedBy(guildId, me),
                 sizes = StaticService.FavoriteSizes,
                 projects = myProjects.Select(p => new { key = p.Key, name = p.Name }),
@@ -64,6 +71,9 @@ public static partial class PanelApi
                         myCharacter = mine?.CharacterName ?? myApp?.CharacterName,
                         myMessage = myApp?.Message,
                         applicantCount = s.Applicants.Count,
+                        pingChannels = canManage
+                            ? (s.PingChannelIds.Count > 0 ? s.PingChannelIds : [s.ChannelId]).Select(c => new { id = c.ToString(), name = guild.GetTextChannel(c)?.Name ?? "deleted channel" })
+                            : null,
                         // Класс, GS, CP и сервер — по актуальному профилю персонажа (удалён — по снимку)
                         members = s.Members.Select(m => (m, live: statics.Shown(s, m.UserId, m.CharacterName, m.ClassIcon, m.Gs, m.Cp))).Select(x => new
                         {
@@ -186,6 +196,11 @@ public static partial class PanelApi
                 [FromServices] StaticStore store, [FromServices] StaticService statics, [FromServices] PanelAccess access) =>
             ManageAsync(guildId, id, user, client, store, access, async (s, actor) => { await statics.DeleteAsync(s, actor, "web"); return null; }));
 
+        g.MapPut("/statics/{id}/ping-channels", (ulong guildId, string id, StaticPingChannelsBody body, ClaimsPrincipal user, DiscordSocketClient client,
+                [FromServices] StaticStore store, [FromServices] StaticService statics, [FromServices] PanelAccess access) =>
+            ManageAsync(guildId, id, user, client, store, access, (s, actor) =>
+                statics.SetPingChannelsAsync(s, (body.ChannelIds ?? []).Select(ParseId).Where(c => c is not null).Select(c => c!.Value), actor)));
+
         g.MapPost("/statics/{id}/ping", async (ulong guildId, string id, StaticPingBody body, ClaimsPrincipal user, DiscordSocketClient client,
             [FromServices] StaticStore store, [FromServices] StaticService statics, [FromServices] PanelAccess access) =>
         {
@@ -283,3 +298,4 @@ public sealed record StaticDecideBody(string? UserId, string? Action);
 public sealed record StaticRecruitingBody(bool Open);
 public sealed record StaticEditBody(string? Name, string? Description, int? Size);
 public sealed record StaticPingBody(string? Message);
+public sealed record StaticPingChannelsBody(List<string>? ChannelIds);

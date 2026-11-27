@@ -310,6 +310,7 @@ public sealed class StaticModule(StaticStore store, StaticService statics, LfgPr
         builder.WithButton(T(s.Recruiting ? "static.manage.close" : "static.manage.open"), $"st:mrec:{s.Id}", ButtonStyle.Secondary,
                 new Emoji(s.Recruiting ? "🔒" : "📝"), row: row)
             .WithButton(T("static.manage.edit"), $"st:medit:{s.Id}", ButtonStyle.Secondary, new Emoji("✏️"), row: row)
+            .WithButton(T("static.ping.channels"), $"st:mpingch:{s.Id}", ButtonStyle.Secondary, new Emoji("📣"), row: row)
             .WithButton(T("static.manage.delete"), $"st:mdel:{s.Id}", ButtonStyle.Danger, new Emoji("🗑️"), row: row);
         return (text.ToString(), builder.Build());
     }
@@ -428,6 +429,42 @@ public sealed class StaticModule(StaticStore store, StaticService statics, LfgPr
     }
 
     // ================= Пинг состава =================
+
+    /// <summary>Куда идёт пинг: меню каналов (до 5) отдельным сообщением.</summary>
+    [ComponentInteraction("st:mpingch:*")]
+    public async Task OnPingChannels(string id)
+    {
+        if (await GetManagedAsync(id) is not { } s) return;
+        var (content, comps) = PingChannelsScreen(s, null);
+        await RespondAsync(content, components: comps, ephemeral: true, allowedMentions: AllowedMentions.None);
+    }
+
+    private (string Content, MessageComponent Components) PingChannelsScreen(StaticGroup s, string? note)
+    {
+        var menu = new SelectMenuBuilder().WithCustomId($"st:mpingset:{s.Id}").WithType(ComponentType.ChannelSelect)
+            .WithChannelTypes(ChannelType.Text, ChannelType.News).WithPlaceholder(T("static.ping.channelsPlaceholder"))
+            .WithMinValues(1).WithMaxValues(StaticService.MaxPingChannels);
+        var comps = new ComponentBuilder().WithSelectMenu(menu, row: 0)
+            .WithButton(T("static.ping.channelsReset"), $"st:mpingreset:{s.Id}", ButtonStyle.Secondary, row: 1).Build();
+        var text = T("static.ping.channelsPick", ("channels", StaticService.PingChannelsText(s)), ("max", StaticService.MaxPingChannels));
+        return (note is null ? text : $"{note}\n\n{text}", comps);
+    }
+
+    [ComponentInteraction("st:mpingset:*")]
+    public Task OnPingChannelsSet(string id, string[] values) =>
+        SetPingChannelsAsync(id, values.Select(v => ulong.TryParse(v, out var c) ? c : 0).Where(c => c != 0));
+
+    [ComponentInteraction("st:mpingreset:*")]
+    public Task OnPingChannelsReset(string id) => SetPingChannelsAsync(id, []);
+
+    private async Task SetPingChannelsAsync(string id, IEnumerable<ulong> channels)
+    {
+        if (await GetManagedAsync(id) is not { } s) return;
+        await DeferAsync();
+        var error = await statics.SetPingChannelsAsync(s, channels, Context.User);
+        var (content, comps) = PingChannelsScreen(s, error ?? T("static.ping.channelsSaved", ("channels", StaticService.PingChannelsText(s))));
+        await ModifyOriginalResponseAsync(m => { m.Content = content; m.Components = comps; m.AllowedMentions = AllowedMentions.None; });
+    }
 
     [ComponentInteraction("st:ping:*")]
     public async Task OnPing(string id)

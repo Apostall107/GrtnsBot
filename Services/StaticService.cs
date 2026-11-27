@@ -108,7 +108,9 @@ public sealed class StaticService
         var gid = s.GuildId;
         var status = !s.Recruiting ? "closed" : s.IsFull ? "full" : "recruiting";
         var text = new StringBuilder();
-        if (!string.IsNullOrWhiteSpace(s.Description)) text.Append(s.Description.Trim()).Append("\n\n");
+        // Описание — первым, цитатой: сразу видно, что это за статик
+        if (!string.IsNullOrWhiteSpace(s.Description) && TextLines.Quote(Tx.Get(gid, "static.post.description", ("text", s.Description.Trim()))) is { Length: > 0 } desc)
+            text.Append(desc).Append("\n\n");
         text.Append(Tx.Get(gid, "static.post.organizer", ("user", $"<@{s.OwnerId}>")));
         if (ProjectName(s) is { } project) text.Append(Tx.Line(gid, "static.post.project", ("project", project)));
         text.Append(Tx.Line(gid, "static.post.roster", ("count", s.Members.Count), ("size", s.Size)));
@@ -473,7 +475,7 @@ public sealed class StaticService
         if (targets.Count == 0) return (T(gid, "static.ping.nobody"), 0);
         if (_lastPing.TryGetValue(s.Id, out var last) && DateTimeOffset.UtcNow - last < PingCooldown)
             return (T(gid, "static.ping.cooldown", ("seconds", (int)Math.Ceiling((PingCooldown - (DateTimeOffset.UtcNow - last)).TotalSeconds))), 0);
-        if (await GetChannelAsync(s.ChannelId) is not { } channel) return (T(gid, "lfg.noAccess"), 0);
+        var channelIds = s.PingChannelIds.Count > 0 ? s.PingChannelIds.ToList() : [s.ChannelId];
         _lastPing[s.Id] = DateTimeOffset.UtcNow;
 
         var text = CleanText(message, 1000);
@@ -489,21 +491,65 @@ public sealed class StaticService
         }
         chunks.Add(current.ToString());
         var allowed = new AllowedMentions { UserIds = targets };
-        try
+        var sent = 0;
+        foreach (var channelId in channelIds)
         {
-            var reference = s.MessageId != 0 ? new MessageReference(s.MessageId, s.ChannelId, failIfNotExists: false) : null;
-            for (var i = 0; i < chunks.Count; i++)
-                await channel.SendMessageAsync(chunks[i].Trim(), allowedMentions: allowed, messageReference: i == 0 ? reference : null);
+            try
+            {
+                if (await GetChannelAsync(channelId) is not { } channel) continue;
+                // В канале поста — ответом на пост; в других каналах — ссылка на пост
+                var inPostChannel = channelId == s.ChannelId && s.MessageId != 0;
+                var reference = inPostChannel ? new MessageReference(s.MessageId, s.ChannelId, failIfNotExists: false) : null;
+                var link = !inPostChannel && s.MessageId != 0 ? Tx.Line(gid, "static.ping.link", ("link", JumpUrl(s))) : "";
+                for (var i = 0; i < chunks.Count; i++)
+                    await channel.SendMessageAsync((chunks[i].Trim() + (i == chunks.Count - 1 ? link : "")).Trim(), allowedMentions: allowed,
+                        messageReference: i == 0 ? reference : null);
+                sent++;
+            }
+            catch (Discord.Net.HttpException ex)
+            {
+                logger.LogWarning(ex, "Could not ping static {Id} in channel {Channel}", s.Id, channelId);
+            }
         }
-        catch (Discord.Net.HttpException ex)
+        if (sent == 0)
         {
-            logger.LogWarning(ex, "Could not ping static {Id}", s.Id);
             _lastPing.TryRemove(s.Id, out _);
             return (T(gid, "lfg.noAccess"), 0);
         }
         audit.Add(gid, by.Id, Name(by), source, "lfg", "Pinged static members", s.Name);
         return (null, targets.Count);
     }
+
+    public const int MaxPingChannels = 5;
+
+    /// <summary>Канал, куда человек может писать (и бот тоже): только такие можно выбрать для пинга.</summary>
+    public static bool CanWrite(IGuildUser user, IGuildChannel channel) =>
+        channel is ITextChannel && user.GetPermissions(channel) is var p && p.ViewChannel && p.SendMessages;
+
+    /// <summary>Каналы для «Ping members». Пусто — канал поста. Каждый канал: организатор и бот могут там писать.</summary>
+    public async Task<string?> SetPingChannelsAsync(StaticGroup s, IEnumerable<ulong> channelIds, IUser by)
+    {
+        var guild = client.GetGuild(s.GuildId);
+        if (guild is null) return T(s.GuildId, "bot.error");
+        var ids = channelIds.Distinct().Take(MaxPingChannels).ToList();
+        var member = by as IGuildUser ?? guild.GetUser(by.Id);
+        foreach (var id in ids)
+        {
+            if (guild.GetTextChannel(id) is not { } ch || !CanWrite(guild.CurrentUser, ch) || (member is not null && !CanWrite(member, ch)))
+                return T(s.GuildId, "static.ping.channelDenied", ("channel", $"<#{id}>"));
+        }
+        return await MutateAsync(s, () =>
+        {
+            // только канал поста — то же, что «по умолчанию»
+            s.PingChannelIds = ids.Count == 1 && ids[0] == s.ChannelId ? [] : ids;
+            s.Log(by.Id, "set the ping channels");
+            return null;
+        });
+    }
+
+    /// <summary>«#a, #b» — куда сейчас идёт пинг.</summary>
+    public static string PingChannelsText(StaticGroup s) =>
+        string.Join(", ", (s.PingChannelIds.Count > 0 ? s.PingChannelIds : [s.ChannelId]).Select(id => $"<#{id}>"));
 
     // ================= ЛС =================
 
