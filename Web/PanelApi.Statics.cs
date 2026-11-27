@@ -32,13 +32,6 @@ public static partial class PanelApi
                 // Создать можно, если где-то висит панель статиков (там появится пост)
                 panelPosted = panels.GetPosted(guildId, "statics").Count > 0,
                 maxOwned = StaticStore.MaxOwnedPerUser,
-                maxPingChannels = StaticService.MaxPingChannels,
-                // Каналы для «Ping members» выбирают только админы (право LFG): где пишут и они, и бот
-                myChannels = member is not null && admin
-                    ? guild.TextChannels.Where(c => StaticService.CanWrite(member, c) && StaticService.CanWrite(guild.CurrentUser, c))
-                        .OrderBy(c => c.Category?.Position ?? -1).ThenBy(c => c.Position)
-                        .Select(c => new { id = c.Id.ToString(), name = c.Name, category = c.Category?.Name })
-                    : null,
                 owned = store.OwnedBy(guildId, me),
                 sizes = StaticService.FavoriteSizes,
                 projects = myProjects.Select(p => new { key = p.Key, name = p.Name }),
@@ -72,7 +65,7 @@ public static partial class PanelApi
                         myMessage = myApp?.Message,
                         applicantCount = s.Applicants.Count,
                         pingChannels = canManage
-                            ? (s.PingChannelIds.Count > 0 ? s.PingChannelIds : [s.ChannelId]).Select(c => new { id = c.ToString(), name = guild.GetTextChannel(c)?.Name ?? "deleted channel" })
+                            ? statics.PingChannels(s).Select(c => new { id = c.ToString(), name = guild.GetTextChannel(c)?.Name ?? "deleted channel" })
                             : null,
                         // Класс, GS, CP и сервер — по актуальному профилю персонажа (удалён — по снимку)
                         members = s.Members.Select(m => (m, live: statics.Shown(s, m.UserId, m.CharacterName, m.ClassIcon, m.Gs, m.Cp))).Select(x => new
@@ -196,13 +189,6 @@ public static partial class PanelApi
                 [FromServices] StaticStore store, [FromServices] StaticService statics, [FromServices] PanelAccess access) =>
             ManageAsync(guildId, id, user, client, store, access, async (s, actor) => { await statics.DeleteAsync(s, actor, "web"); return null; }));
 
-        g.MapPut("/statics/{id}/ping-channels", (ulong guildId, string id, StaticPingChannelsBody body, ClaimsPrincipal user, DiscordSocketClient client,
-                [FromServices] StaticStore store, [FromServices] StaticService statics, [FromServices] PanelAccess access) =>
-            !access.Has(user.UserId(), PanelPermissions.Lfg)
-                ? Task.FromResult(Error("Only admins (LFG right) choose where pings of a static go."))
-                : ManageAsync(guildId, id, user, client, store, access, (s, actor) =>
-                statics.SetPingChannelsAsync(s, (body.ChannelIds ?? []).Select(ParseId).Where(c => c is not null).Select(c => c!.Value), actor)));
-
         g.MapPost("/statics/{id}/ping", async (ulong guildId, string id, StaticPingBody body, ClaimsPrincipal user, DiscordSocketClient client,
             [FromServices] StaticStore store, [FromServices] StaticService statics, [FromServices] PanelAccess access) =>
         {
@@ -232,13 +218,19 @@ public static partial class PanelApi
     private static void MapStaticsAdmin(RouteGroupBuilder g)
     {
         // Опубликованные панели статиков и их проекты (статики с панели создаются под её проект)
-        g.MapGet("/statics-panels", (ulong guildId, DiscordSocketClient client, PanelTextStore texts, LfgProjectStore projects) =>
+        g.MapGet("/statics-panels", (ulong guildId, DiscordSocketClient client, PanelTextStore texts, LfgProjectStore projects, GuildPrefsStore prefs) =>
         {
             if (client.GetGuild(guildId) is not { } guild) return GuildNotFound();
             return Results.Ok(new
             {
                 projects = projects.GetProjects(guildId).Select(p => new { key = p.Key, name = p.Name }),
                 defaultProject = projects.Effective(guildId, null)?.Key,
+                maxPingChannels = StaticService.MaxPingChannels,
+                // Куда идёт «Ping members» статиков: "" — все игры, иначе ключ проекта
+                pingChannels = prefs.Get(guildId).StaticPingChannels.ToDictionary(kv => kv.Key, kv => kv.Value.Select(c => new
+                {
+                    id = c.ToString(), name = guild.GetTextChannel(c)?.Name ?? "deleted channel"
+                })),
                 panels = texts.GetPosted(guildId, "statics").Select(p => new
                 {
                     messageId = p.MessageId.ToString(),
@@ -267,6 +259,15 @@ public static partial class PanelApi
         // Sticky: держать панель внизу канала (бот публикует её заново после новых сообщений)
         g.MapPut("/statics-panels/{messageId}/sticky", (ulong guildId, ulong messageId, StickyBody body, PanelTextStore texts) =>
             texts.SetSticky(guildId, "statics", messageId, body.Sticky) ? Results.Ok() : Error("Panel not found — refresh the page."));
+
+        // Куда идёт «Ping members» статиков проекта (projectKey пусто — все игры); пустой список — канал поста статика
+        g.MapPut("/statics-ping-channels", (ulong guildId, StaticPingChannelsBody body, StaticService statics, LfgProjectStore projects) =>
+        {
+            var key = string.IsNullOrWhiteSpace(body.ProjectKey) ? "" : body.ProjectKey;
+            if (key != "" && projects.Find(guildId, key) is null) return Error("Project not found.");
+            var error = statics.SetPingChannels(guildId, key, (body.ChannelIds ?? []).Select(ParseId).Where(c => c is not null).Select(c => c!.Value));
+            return error is null ? Results.Ok() : Error(StripMarkdown(error));
+        });
 
         g.MapPut("/statics-panels/{messageId}/project", (ulong guildId, ulong messageId, LfgPanelProjectBody body, LfgProjectStore projects,
             PanelTextStore texts) =>
@@ -305,4 +306,4 @@ public sealed record StaticDecideBody(string? UserId, string? Action);
 public sealed record StaticRecruitingBody(bool Open);
 public sealed record StaticEditBody(string? Name, string? Description, int? Size);
 public sealed record StaticPingBody(string? Message);
-public sealed record StaticPingChannelsBody(List<string>? ChannelIds);
+public sealed record StaticPingChannelsBody(string? ProjectKey, List<string>? ChannelIds);

@@ -8146,8 +8146,34 @@ function staticPanelsCard(posted) {
       const q = proj && proj.value ? `?project=${encodeURIComponent(proj.value)}` : "";
       if (await act(post, () => gApi("POST", `/lfg/statics-panel${q}`, { channelId: ch.value }), "Panel posted.") !== undefined) refresh();
     });
+    // Where 📣 Ping members goes — per game ("" = all games); nothing set = the static's own channel
+    const pingRow = (key, label) => {
+      const chips = h("div", { class: "static-ping-chips" });
+      let ids = ((d.pingChannels || {})[key] || []).map(c => c.id);
+      const names = new Map(((d.pingChannels || {})[key] || []).map(c => [c.id, c.name]));
+      const save = next => act(null, () => gApi("PUT", "/lfg/statics-ping-channels", { projectKey: key || null, channelIds: next }), "Saved.")
+        .then(r => { if (r !== undefined) { ids = next; draw(); } });
+      const add = channelSelect("text", "+ Add a channel…");
+      add.addEventListener("change", () => {
+        const id = add.value; add.value = "";
+        if (!id || ids.includes(id)) return;
+        if (ids.length >= (d.maxPingChannels || 5)) return toast(`Up to ${d.maxPingChannels || 5} channels.`, "warn");
+        names.set(id, (state.channels.text.find(c => c.id === id) || {}).name || id);
+        save([...ids, id]);
+      });
+      const draw = () => chips.replaceChildren(...(ids.length ? ids.map(id => h("span", { class: "chip" }, `#${names.get(id) || id}`,
+          h("button", { class: "chip-x", title: "Remove", "aria-label": "Remove", onclick: () => save(ids.filter(x => x !== id)) }, icon("x", 12))))
+        : [h("span", { class: "muted small" }, key ? "Same as “All games”" : "The static's own channel")]));
+      draw();
+      return h("div", { class: "static-ping-row" }, h("b", {}, label), chips, add);
+    };
+    const pings = h("div", { class: "static-ping-list" }, pingRow("", hasProjects ? "All games" : "Pings"),
+      ...(d.projects || []).map(p => pingRow(p.key, p.name)));
     body.replaceChildren(list, h("div", { class: "section-label", style: "margin-top:12px" }, "Post a new panel"),
-      h("div", { class: "static-panel-post" }, h("div", { class: "grow" }, ch), proj, post));
+      h("div", { class: "static-panel-post" }, h("div", { class: "grow" }, ch), proj, post),
+      h("div", { class: "section-label", style: "margin-top:16px" }, "Where 📣 Ping members goes"),
+      h("div", { class: "muted small" }, "Organizers press Ping — the bot mentions the static's members in these channels. A game without its own channels uses “All games”; nothing set — the static's own channel."),
+      pings);
   })();
   return card;
 }
@@ -8339,7 +8365,7 @@ function staticCard(s, data) {
       repost.addEventListener("click", async () => reload(await act(repost, () => gApi("POST", `/me/statics/${sid}/repost`), "Posted.")));
       actions.push(repost);
     }
-    actions.push(h("button", { class: "btn secondary sm", onclick: () => staticPingDialog(s, data) }, icon("bell-ring", 14), "Ping members"));
+    actions.push(h("button", { class: "btn secondary sm", onclick: () => staticPingDialog(s) }, icon("bell-ring", 14), "Ping members"));
     const rec = h("button", { class: "btn secondary sm" }, icon(s.recruiting ? "lock" : "lock-open", 14), s.recruiting ? "Close recruiting" : "Open recruiting");
     rec.addEventListener("click", async () => reload(await act(rec, () => gApi("POST", `/me/statics/${sid}/recruiting`, { open: !s.recruiting }),
       s.recruiting ? "Recruiting closed." : "Recruiting open.")));
@@ -8371,40 +8397,18 @@ function staticCard(s, data) {
     actions.length ? h("div", { class: "group-actions" }, actions) : null);
 }
 
-function staticPingDialog(s, data) {
+function staticPingDialog(s) {
   const d = dialog();
   const msg = h("textarea", { rows: "3", maxlength: "1000", placeholder: "Raid in 15 minutes — join the voice!" });
-  // Where the ping goes: channels where both you and the bot can write (empty = the static's channel)
-  const max = data.maxPingChannels || 5;
-  const saved = (s.pingChannels || []).map(c => c.id);
-  const known = new Map((data.myChannels || []).map(c => [c.id, c]));
-  (s.pingChannels || []).forEach(c => { if (!known.has(c.id)) known.set(c.id, { id: c.id, name: c.name }); });
-  const boxes = [...known.values()].map(c => {
-    const box = h("input", { type: "checkbox", value: c.id });
-    box.checked = saved.includes(c.id);
-    box.addEventListener("change", () => {
-      if (box.checked && boxes.filter(b => b.checked).length > max) { box.checked = false; toast(`Up to ${max} channels.`, "warn"); }
-    });
-    return box;
-  });
-  const list = h("div", { class: "check-list" }, [...known.values()].map((c, i) =>
-    h("label", {}, boxes[i], `#${c.name}`, c.category ? h("span", { class: "muted small" }, ` · ${c.category}`) : null)));
   const send = h("button", { class: "btn" }, icon("bell-ring", 15), "Ping");
   send.addEventListener("click", async () => {
-    const chosen = boxes.filter(b => b.checked).map(b => b.value);
-    const changed = !!data.myChannels && (chosen.length !== saved.length || chosen.some(id => !saved.includes(id)));
-    const r = await act(send, async () => {
-      if (changed) await gApi("PUT", `/me/statics/${encodeURIComponent(s.id)}/ping-channels`, { channelIds: chosen });
-      return gApi("POST", `/me/statics/${encodeURIComponent(s.id)}/ping`, { message: msg.value || null });
-    }, r => `Pinged ${r.count} members.`);
-    if (r !== undefined) { d.close(); if (changed) refresh(); }
+    const r = await act(send, () => gApi("POST", `/me/statics/${encodeURIComponent(s.id)}/ping`, { message: msg.value || null }), r => `Pinged ${r.count} members.`);
+    if (r !== undefined) d.close();
   });
+  // Channels are set by admins per game (Statics → Admin); the organizer only sees where the ping goes
   d.replaceChildren(h("h2", {}, `Ping ${s.name}`),
-    h("div", { class: "muted small" }, "Mentions every other member of the static in Discord."),
+    h("div", { class: "muted small" }, `Mentions every other member of the static. Goes to: ${(s.pingChannels || []).map(c => "#" + c.name).join(", ")}`),
     h("div", { class: "field" }, h("label", {}, "Message (optional)"), msg),
-    // Only admins (LFG right) choose the channels; the organizer sees where the ping goes
-    data.myChannels ? h("div", { class: "field" }, h("label", {}, `Channels (up to ${max}, none = the static's channel)`), list)
-      : h("div", { class: "muted small" }, `Goes to: ${(s.pingChannels || []).map(c => "#" + c.name).join(", ")}`),
     h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), send));
   d.showModal();
 }

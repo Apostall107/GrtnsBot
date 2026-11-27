@@ -3314,3 +3314,10 @@ dialog.hist-dialog:not([open]) { display: none; }
 .static-panel-row .check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: var(--fs-small); white-space: nowrap; }
 .static-panel-post { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .static-panel-post .grow { flex: 1; min-width: 180px; }
+.static-ping-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.static-ping-row { display: grid; grid-template-columns: 120px minmax(0, 1fr) 220px; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: rgba(255, 255, 255, .03); border: 1px solid var(--glass-border); }
+.static-ping-chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.static-ping-chips .chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 8px; border-radius: 999px; background: rgba(118, 87, 246, .16); font-size: 12.5px; }
+.static-ping-chips .chip-x { display: inline-flex; background: none; border: 0; color: inherit; cursor: pointer; padding: 2px; border-radius: 50%; }
+.static-ping-chips .chip-x:hover { background: rgba(255, 255, 255, .12); }
+@media (max-width: 640px) { .static-ping-row { grid-template-columns: 1fr; } }

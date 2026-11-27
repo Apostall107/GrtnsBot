@@ -56,8 +56,6 @@ public sealed class StaticGroup
     public int Size { get; set; } = 5;
     /// <summary>Набор открыт: можно подавать заявки.</summary>
     public bool Recruiting { get; set; } = true;
-    /// <summary>Куда идёт «Ping members» (выбирает организатор). Пусто — канал поста.</summary>
-    public List<ulong> PingChannelIds { get; set; } = [];
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public List<StaticMember> Members { get; set; } = [];
     public List<StaticApplicant> Applicants { get; set; } = [];

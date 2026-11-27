@@ -475,7 +475,7 @@ public sealed class StaticService
         if (targets.Count == 0) return (T(gid, "static.ping.nobody"), 0);
         if (_lastPing.TryGetValue(s.Id, out var last) && DateTimeOffset.UtcNow - last < PingCooldown)
             return (T(gid, "static.ping.cooldown", ("seconds", (int)Math.Ceiling((PingCooldown - (DateTimeOffset.UtcNow - last)).TotalSeconds))), 0);
-        var channelIds = s.PingChannelIds.Count > 0 ? s.PingChannelIds.ToList() : [s.ChannelId];
+        var channelIds = PingChannels(s);
         _lastPing[s.Id] = DateTimeOffset.UtcNow;
 
         var text = CleanText(message, 1000);
@@ -522,34 +522,38 @@ public sealed class StaticService
 
     public const int MaxPingChannels = 5;
 
-    /// <summary>Канал, куда человек может писать (и бот тоже): только такие можно выбрать для пинга.</summary>
+    /// <summary>Канал, куда человек может писать (и бот тоже).</summary>
     public static bool CanWrite(IGuildUser user, IGuildChannel channel) =>
         channel is ITextChannel && user.GetPermissions(channel) is var p && p.ViewChannel && p.SendMessages;
 
-    /// <summary>Каналы для «Ping members». Пусто — канал поста. Каждый канал: организатор и бот могут там писать.</summary>
-    public async Task<string?> SetPingChannelsAsync(StaticGroup s, IEnumerable<ulong> channelIds, IUser by)
+    /// <summary>
+    /// Куда идёт «Ping members» статика — настройка админа по проекту (сайт → Statics → Admin): каналы проекта,
+    /// иначе общие («» — все игры), иначе канал поста статика.
+    /// </summary>
+    public List<ulong> PingChannels(StaticGroup s)
     {
-        var guild = client.GetGuild(s.GuildId);
-        if (guild is null) return T(s.GuildId, "bot.error");
-        var ids = channelIds.Distinct().Take(MaxPingChannels).ToList();
-        var member = by as IGuildUser ?? guild.GetUser(by.Id);
-        foreach (var id in ids)
-        {
-            if (guild.GetTextChannel(id) is not { } ch || !CanWrite(guild.CurrentUser, ch) || (member is not null && !CanWrite(member, ch)))
-                return T(s.GuildId, "static.ping.channelDenied", ("channel", $"<#{id}>"));
-        }
-        return await MutateAsync(s, () =>
-        {
-            // только канал поста — то же, что «по умолчанию»
-            s.PingChannelIds = ids.Count == 1 && ids[0] == s.ChannelId ? [] : ids;
-            s.Log(by.Id, "set the ping channels");
-            return null;
-        });
+        var all = prefs.Get(s.GuildId).StaticPingChannels;
+        var key = projects.Effective(s.GuildId, s.ProjectKey)?.Key ?? "";
+        return all.TryGetValue(key, out var own) && own.Count > 0 ? own.ToList()
+            : all.TryGetValue("", out var common) && common.Count > 0 ? common.ToList()
+            : [s.ChannelId];
     }
 
-    /// <summary>«#a, #b» — куда сейчас идёт пинг.</summary>
-    public static string PingChannelsText(StaticGroup s) =>
-        string.Join(", ", (s.PingChannelIds.Count > 0 ? s.PingChannelIds : [s.ChannelId]).Select(id => $"<#{id}>"));
+    /// <summary>Каналы пинга проекта (projectKey "" — общие). Только каналы, где бот может писать. Ошибка — текстом.</summary>
+    public string? SetPingChannels(ulong guildId, string projectKey, IEnumerable<ulong> channelIds)
+    {
+        if (client.GetGuild(guildId) is not { } guild) return T(guildId, "bot.error");
+        var ids = channelIds.Distinct().Take(MaxPingChannels).ToList();
+        foreach (var id in ids)
+            if (guild.GetTextChannel(id) is not { } ch || !CanWrite(guild.CurrentUser, ch))
+                return T(guildId, "static.ping.channelDenied", ("channel", "#" + (guild.GetTextChannel(id)?.Name ?? id.ToString())));
+        prefs.Update(guildId, p =>
+        {
+            if (ids.Count == 0) p.StaticPingChannels.Remove(projectKey);
+            else p.StaticPingChannels[projectKey] = ids;
+        });
+        return null;
+    }
 
     // ================= ЛС =================
 

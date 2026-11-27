@@ -56,6 +56,8 @@ public sealed class GuildPrefs
     public ulong? MediaChannelId { get; set; }
     /// <summary>Быстрый поиск на сайте (Ctrl+K) ищет людей только с этими ролями; пусто — всех участников.</summary>
     public List<ulong> SearchRoleIds { get; set; } = [];
+    /// <summary>Статики: куда идёт «Ping members» — по ключу проекта ("" — все игры). Нет записи — канал поста статика.</summary>
+    public Dictionary<string, List<ulong>> StaticPingChannels { get; set; } = new();
     /// <summary>Пасхалка-маскот на сайте: в среднем раз в столько минут (0 — выключен).</summary>
     public int MascotMinutes { get; set; } = 15;
     /// <summary>То же в секундах (задаётся на сайте); null — берётся MascotMinutes × 60.</summary>
