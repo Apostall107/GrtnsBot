@@ -537,6 +537,7 @@ public static class BotTextCatalog
         T("static.ping.channelsPlaceholder", "Ping channels: menu", "Channels for the ping…", null, Placeholder);
         T("static.ping.channelsReset", "Ping channels: reset button", "Only the static's channel", null, Button);
         T("static.ping.channelsSaved", "Ping channels: saved", "📣 Pings now go to: {channels}", "{channels}", 1000);
+        T("static.ping.adminsOnly", "Ping channels: only admins", "Only bot admins choose where pings of a static go.", null, 500);
         T("static.ping.channelDenied", "Ping channels: no access", "You (or the bot) can't write in {channel} — pick another channel.", "{channel}", 500);
         T("static.ping.sent", "Ping: sent", "📣 Pinged {count} members.", "{count}", 500);
         T("static.ping.nobody", "Ping: nobody to ping", "Nobody to ping yet — you are the only member.", null, 500);

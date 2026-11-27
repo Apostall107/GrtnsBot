@@ -309,9 +309,9 @@ public sealed class StaticModule(StaticStore store, StaticService statics, LfgPr
         builder.WithSelectMenu(PeopleMenu(s, $"st:mchars:{s.Id}", T("static.manage.charsPlaceholder"), people), row: row++);
         builder.WithButton(T(s.Recruiting ? "static.manage.close" : "static.manage.open"), $"st:mrec:{s.Id}", ButtonStyle.Secondary,
                 new Emoji(s.Recruiting ? "🔒" : "📝"), row: row)
-            .WithButton(T("static.manage.edit"), $"st:medit:{s.Id}", ButtonStyle.Secondary, new Emoji("✏️"), row: row)
-            .WithButton(T("static.ping.channels"), $"st:mpingch:{s.Id}", ButtonStyle.Secondary, new Emoji("📣"), row: row)
-            .WithButton(T("static.manage.delete"), $"st:mdel:{s.Id}", ButtonStyle.Danger, new Emoji("🗑️"), row: row);
+            .WithButton(T("static.manage.edit"), $"st:medit:{s.Id}", ButtonStyle.Secondary, new Emoji("✏️"), row: row);
+        if (IsBotAdmin) builder.WithButton(T("static.ping.channels"), $"st:mpingch:{s.Id}", ButtonStyle.Secondary, new Emoji("📣"), row: row);
+        builder.WithButton(T("static.manage.delete"), $"st:mdel:{s.Id}", ButtonStyle.Danger, new Emoji("🗑️"), row: row);
         return (text.ToString(), builder.Build());
     }
 
@@ -434,7 +434,7 @@ public sealed class StaticModule(StaticStore store, StaticService statics, LfgPr
     [ComponentInteraction("st:mpingch:*")]
     public async Task OnPingChannels(string id)
     {
-        if (await GetManagedAsync(id) is not { } s) return;
+        if (await GetAdminAsync(id) is not { } s) return;
         var (content, comps) = PingChannelsScreen(s, null);
         await RespondAsync(content, components: comps, ephemeral: true, allowedMentions: AllowedMentions.None);
     }
@@ -459,7 +459,7 @@ public sealed class StaticModule(StaticStore store, StaticService statics, LfgPr
 
     private async Task SetPingChannelsAsync(string id, IEnumerable<ulong> channels)
     {
-        if (await GetManagedAsync(id) is not { } s) return;
+        if (await GetAdminAsync(id) is not { } s) return;
         await DeferAsync();
         var error = await statics.SetPingChannelsAsync(s, channels, Context.User);
         var (content, comps) = PingChannelsScreen(s, error ?? T("static.ping.channelsSaved", ("channels", StaticService.PingChannelsText(s))));
@@ -516,6 +516,17 @@ public sealed class StaticModule(StaticStore store, StaticService statics, LfgPr
         var isAdmin = Context.User is IGuildUser gu && admins.IsAdmin(gu);
         if (StaticService.CanManage(s, Context.User.Id, isAdmin)) return s;
         await RespondAsync(T("static.manage.only"), ephemeral: true);
+        return null;
+    }
+
+    private bool IsBotAdmin => Context.User is IGuildUser gu && admins.IsAdmin(gu);
+
+    /// <summary>Каналы пинга статика меняют только админы бота (модераторы), не организатор.</summary>
+    private async Task<StaticGroup?> GetAdminAsync(string id)
+    {
+        if (await GetStaticAsync(id) is not { } s) return null;
+        if (IsBotAdmin) return s;
+        await RespondAsync(T("static.ping.adminsOnly"), ephemeral: true);
         return null;
     }
 }

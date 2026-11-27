@@ -8382,7 +8382,7 @@ function staticPingDialog(s, data) {
   const send = h("button", { class: "btn" }, icon("bell-ring", 15), "Ping");
   send.addEventListener("click", async () => {
     const chosen = boxes.filter(b => b.checked).map(b => b.value);
-    const changed = chosen.length !== saved.length || chosen.some(id => !saved.includes(id));
+    const changed = !!data.myChannels && (chosen.length !== saved.length || chosen.some(id => !saved.includes(id)));
     const r = await act(send, async () => {
       if (changed) await gApi("PUT", `/me/statics/${encodeURIComponent(s.id)}/ping-channels`, { channelIds: chosen });
       return gApi("POST", `/me/statics/${encodeURIComponent(s.id)}/ping`, { message: msg.value || null });
@@ -8392,7 +8392,9 @@ function staticPingDialog(s, data) {
   d.replaceChildren(h("h2", {}, `Ping ${s.name}`),
     h("div", { class: "muted small" }, "Mentions every other member of the static in Discord."),
     h("div", { class: "field" }, h("label", {}, "Message (optional)"), msg),
-    h("div", { class: "field" }, h("label", {}, `Channels (up to ${max}, none = the static's channel)`), list),
+    // Only admins (LFG right) choose the channels; the organizer sees where the ping goes
+    data.myChannels ? h("div", { class: "field" }, h("label", {}, `Channels (up to ${max}, none = the static's channel)`), list)
+      : h("div", { class: "muted small" }, `Goes to: ${(s.pingChannels || []).map(c => "#" + c.name).join(", ")}`),
     h("div", { class: "actions" }, h("button", { class: "btn secondary", onclick: () => d.close() }, "Cancel"), send));
   d.showModal();
 }

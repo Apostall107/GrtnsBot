@@ -33,8 +33,8 @@ public static partial class PanelApi
                 panelPosted = panels.GetPosted(guildId, "statics").Count > 0,
                 maxOwned = StaticStore.MaxOwnedPerUser,
                 maxPingChannels = StaticService.MaxPingChannels,
-                // Каналы для «Ping members»: где пишут и я, и бот (только тем, кто управляет хоть одним статиком)
-                myChannels = member is not null && list.Any(s => StaticService.CanManage(s, me, admin))
+                // Каналы для «Ping members» выбирают только админы (право LFG): где пишут и они, и бот
+                myChannels = member is not null && admin
                     ? guild.TextChannels.Where(c => StaticService.CanWrite(member, c) && StaticService.CanWrite(guild.CurrentUser, c))
                         .OrderBy(c => c.Category?.Position ?? -1).ThenBy(c => c.Position)
                         .Select(c => new { id = c.Id.ToString(), name = c.Name, category = c.Category?.Name })
@@ -198,7 +198,9 @@ public static partial class PanelApi
 
         g.MapPut("/statics/{id}/ping-channels", (ulong guildId, string id, StaticPingChannelsBody body, ClaimsPrincipal user, DiscordSocketClient client,
                 [FromServices] StaticStore store, [FromServices] StaticService statics, [FromServices] PanelAccess access) =>
-            ManageAsync(guildId, id, user, client, store, access, (s, actor) =>
+            !access.Has(user.UserId(), PanelPermissions.Lfg)
+                ? Task.FromResult(Error("Only admins (LFG right) choose where pings of a static go."))
+                : ManageAsync(guildId, id, user, client, store, access, (s, actor) =>
                 statics.SetPingChannelsAsync(s, (body.ChannelIds ?? []).Select(ParseId).Where(c => c is not null).Select(c => c!.Value), actor)));
 
         g.MapPost("/statics/{id}/ping", async (ulong guildId, string id, StaticPingBody body, ClaimsPrincipal user, DiscordSocketClient client,
