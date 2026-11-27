@@ -8062,7 +8062,12 @@ async function pageStatics(main) {
   // Admins: the panel in Discord (statics are posted in its channel)
   if (can("lfg")) {
     main.insertBefore(h("details", { class: "static-admin", open: !data.panelPosted },
-      h("summary", { class: "section-label" }, "Admin · statics panels"), staticPanelsCard(data.panelPosted)), holder);
+      // Looks like a button (icon, hint, arrow) and gently pulses while closed — so it's clear there is something inside
+      h("summary", { class: "static-admin-sum" }, h("span", { class: "sa-icon" }, icon("settings", 16)),
+        h("span", { class: "sa-text" }, h("b", {}, "Admin · statics panels"), h("span", { class: "muted small" }, "Post panels in Discord and link them to games")),
+        !data.panelPosted ? h("span", { class: "badge wait" }, "not posted") : null,
+        h("span", { class: "sa-chev" }, icon("chevron-down", 18))),
+      staticPanelsCard(data.panelPosted)), holder);
   }
 
   main.insertBefore(staticCreateCard(data, tab), holder);
