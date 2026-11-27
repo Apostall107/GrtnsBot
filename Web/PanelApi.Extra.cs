@@ -968,6 +968,7 @@ public static partial class PanelApi
         ("POST", "/voice/panel", "voice", "Posted room panel"),
         ("POST", "/lfg/statics-panel", "lfg", "Posted statics panel"),
         ("PUT", "/lfg/statics-panels/{messageId}/project", "lfg", "Changed the project of a statics panel"),
+        ("PUT", "/lfg/statics-panels/{messageId}/sticky", "lfg", "Changed sticky statics panel (keep at the bottom)"),
         ("PUT", "/texts/bot", "texts", "Edited bot texts"),
         ("POST", "/texts/bot/reset", "texts", "Reset bot texts"),
         ("PUT", "/texts/{key}", "texts", "Edited panel text"),

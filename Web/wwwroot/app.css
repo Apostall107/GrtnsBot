@@ -3311,5 +3311,6 @@ dialog.hist-dialog:not([open]) { display: none; }
 }
 .static-panel-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .static-panel-row .slot-who { flex: 1; min-width: 140px; }
+.static-panel-row .check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: var(--fs-small); white-space: nowrap; }
 .static-panel-post { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .static-panel-post .grow { flex: 1; min-width: 180px; }

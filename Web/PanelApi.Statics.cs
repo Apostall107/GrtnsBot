@@ -245,6 +245,7 @@ public static partial class PanelApi
                     channelId = p.ChannelId.ToString(),
                     channel = guild.GetTextChannel(p.ChannelId)?.Name,
                     projectKey = p.ProjectKey,
+                    sticky = p.Sticky,
                     jumpUrl = $"https://discord.com/channels/{guildId}/{p.ChannelId}/{p.MessageId}"
                 })
             });
@@ -262,6 +263,10 @@ public static partial class PanelApi
                 if (key is not null) texts.SetPanelProject(guildId, "statics", message.Id, key);
             });
         });
+
+        // Sticky: держать панель внизу канала (бот публикует её заново после новых сообщений)
+        g.MapPut("/statics-panels/{messageId}/sticky", (ulong guildId, ulong messageId, StickyBody body, PanelTextStore texts) =>
+            texts.SetSticky(guildId, "statics", messageId, body.Sticky) ? Results.Ok() : Error("Panel not found — refresh the page."));
 
         g.MapPut("/statics-panels/{messageId}/project", (ulong guildId, ulong messageId, LfgPanelProjectBody body, LfgProjectStore projects,
             PanelTextStore texts) =>

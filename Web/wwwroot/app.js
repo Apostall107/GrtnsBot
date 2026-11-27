@@ -8129,9 +8129,14 @@ function staticPanelsCard(posted) {
     const list = (d.panels || []).length ? h("div", { class: "roster" }, d.panels.map(p => {
       const sel = hasProjects ? projectSelect(p.projectKey, "Default project") : null;
       if (sel) sel.addEventListener("change", () => act(sel, () => gApi("PUT", `/lfg/statics-panels/${p.messageId}/project`, { projectKey: sel.value || null }), "Project of the panel changed."));
+      // Sticky: the bot reposts the panel at the bottom of the channel after new messages
+      const sticky = h("input", { type: "checkbox" });
+      sticky.checked = !!p.sticky;
+      sticky.addEventListener("change", () => act(null, () => gApi("PUT", `/lfg/statics-panels/${p.messageId}/sticky`, { sticky: sticky.checked }),
+        sticky.checked ? "The panel stays at the bottom of the channel." : "Sticky off."));
       return h("div", { class: "slot taken static-panel-row" },
         h("span", { class: "slot-who" }, icon("hash", 14), p.channel || "deleted channel"),
-        sel, h("a", { class: "btn ghost sm", href: p.jumpUrl, target: "_blank", rel: "noopener" }, icon("external-link", 14), "Open"));
+        sel, h("label", { class: "check", title: "Keep at the bottom: after new messages the bot posts the panel again" }, sticky, icon("pin", 13), "Sticky"), h("a", { class: "btn ghost sm", href: p.jumpUrl, target: "_blank", rel: "noopener" }, icon("external-link", 14), "Open"));
     })) : h("div", { class: "muted small" }, "No statics panels yet.");
     const ch = channelSelect("text", "Choose a text channel…");
     const proj = hasProjects ? projectSelect(d.defaultProject, "Default project") : null;
